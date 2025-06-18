@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Neumorphic Design System */
+@layer components {
+  .neumorphic {
+    @apply bg-gray-100 shadow-neumorphic rounded-2xl;
+  }
+  
+  .neumorphic-inset {
+    @apply bg-gray-100 shadow-neumorphic-inset rounded-2xl;
+  }
+  
+  .neumorphic-button {
+    @apply bg-gray-100 shadow-neumorphic rounded-xl px-6 py-3 transition-all duration-200 hover:shadow-neumorphic-inset active:shadow-neumorphic-inset;
+  }
+  
+  .neumorphic-card {
+    @apply bg-gray-100 shadow-neumorphic rounded-2xl p-6 transition-all duration-200 hover:shadow-lg;
+  }
+  
+  .neumorphic-input {
+    @apply bg-gray-100 shadow-neumorphic-inset rounded-xl px-4 py-3 border-none outline-none focus:ring-2 focus:ring-primary-500;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}
+
+/* Global Styles */
+html {
+  @apply scroll-smooth;
+}
+
+body {
+  @apply bg-gray-50 text-gray-900 font-sans;
+}
+
+/* Loading Animation */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+} 
