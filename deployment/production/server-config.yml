@@ -1,0 +1,275 @@
+# BOME Streaming - Production Server Configuration
+# This file contains the complete production server setup using Docker Compose
+
+version: '3.8'
+
+services:
+  # =============================================================================
+  # Web Server & Load Balancer
+  # =============================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: bome_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/sites-enabled:/etc/nginx/sites-enabled
+      - ./ssl:/etc/nginx/ssl
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+    networks:
+      - bome_network
+
+  # =============================================================================
+  # Application Services
+  # =============================================================================
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: bome_backend
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - BUNNY_API_KEY=${BUNNY_API_KEY}
+      - EMAIL_SERVICE_API_KEY=${EMAIL_SERVICE_API_KEY}
+    volumes:
+      - ./logs/backend:/app/logs
+      - ./uploads:/app/uploads
+    depends_on:
+      - database
+      - redis
+      - monitoring
+    restart: unless-stopped
+    networks:
+      - bome_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    container_name: bome_frontend
+    environment:
+      - NODE_ENV=production
+      - VITE_API_BASE_URL=${API_BASE_URL}
+      - VITE_STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
+      - VITE_BUNNY_CDN_URL=${BUNNY_CDN_URL}
+    volumes:
+      - ./logs/frontend:/app/logs
+    restart: unless-stopped
+    networks:
+      - bome_network
+
+  # =============================================================================
+  # Database Services
+  # =============================================================================
+  database:
+    image: postgres:15-alpine
+    container_name: bome_database
+    environment:
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+      - ./database/backups:/backups
+      - ./logs/database:/var/log/postgresql
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - bome_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: bome_redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/etc/redis/redis.conf
+      - ./logs/redis:/var/log/redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - bome_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # =============================================================================
+  # Monitoring & Logging
+  # =============================================================================
+  monitoring:
+    image: prom/prometheus:latest
+    container_name: bome_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - bome_network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: bome_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    restart: unless-stopped
+    networks:
+      - bome_network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    container_name: bome_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    restart: unless-stopped
+    networks:
+      - bome_network
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.8.0
+    container_name: bome_logstash
+    volumes:
+      - ./logging/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+      - ./logs:/var/log/bome
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+    networks:
+      - bome_network
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.8.0
+    container_name: bome_kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+    networks:
+      - bome_network
+
+  # =============================================================================
+  # Backup Services
+  # =============================================================================
+  backup:
+    image: alpine:latest
+    container_name: bome_backup
+    volumes:
+      - postgres_data:/data/postgres
+      - redis_data:/data/redis
+      - ./uploads:/data/uploads
+      - ./backups:/backups
+      - ./scripts/backup.sh:/backup.sh
+    environment:
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DO_SPACES_KEY=${DO_SPACES_KEY}
+      - DO_SPACES_SECRET=${DO_SPACES_SECRET}
+      - DO_SPACES_ENDPOINT=${DO_SPACES_ENDPOINT}
+      - DO_SPACES_BUCKET=${DO_SPACES_BUCKET}
+    command: crond -f
+    restart: unless-stopped
+    networks:
+      - bome_network
+
+  # =============================================================================
+  # Security Services
+  # =============================================================================
+  fail2ban:
+    image: crazymax/fail2ban:latest
+    container_name: bome_fail2ban
+    network_mode: "host"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./security/fail2ban:/data
+      - ./logs:/var/log/bome:ro
+    environment:
+      - TZ=${TIMEZONE}
+    restart: unless-stopped
+
+  # =============================================================================
+  # SSL Certificate Management
+  # =============================================================================
+  certbot:
+    image: certbot/certbot
+    container_name: bome_certbot
+    volumes:
+      - ./ssl:/etc/letsencrypt
+      - ./ssl-challenges:/var/www/certbot
+    command: certonly --webroot --webroot-path=/var/www/certbot --email ${SSL_EMAIL} --agree-tos --no-eff-email -d ${DOMAIN_NAME}
+    depends_on:
+      - nginx
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  bome_network:
+    driver: bridge
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  elasticsearch_data:
+    driver: local 

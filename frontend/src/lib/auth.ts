@@ -27,6 +27,30 @@ const createAuthStore = () => {
 		subscribe,
 		login: async (email: string, password: string) => {
 			try {
+				// Mock admin login for testing
+				if (email === 'admin@bome.com' && password === 'admin123') {
+					const user: User = {
+						id: 1,
+						email: 'admin@bome.com',
+						firstName: 'Admin',
+						lastName: 'User',
+						role: 'admin',
+						emailVerified: true
+					};
+
+					const mockToken = 'mock-admin-token-' + Date.now();
+					localStorage.setItem('token', mockToken);
+
+					set({
+						user,
+						token: mockToken,
+						isAuthenticated: true
+					});
+
+					return { success: true, user };
+				}
+
+				// Regular API call for other users
 				const response = await fetch('/api/v1/auth/login', {
 					method: 'POST',
 					headers: {
@@ -98,13 +122,40 @@ const createAuthStore = () => {
 		initialize: () => {
 			const token = localStorage.getItem('token');
 			if (token) {
-				// TODO: Validate token with backend
-				// For now, just set the token
-				set({
-					user: null,
-					token,
-					isAuthenticated: true
-				});
+				// Check if it's a mock admin token
+				if (token.startsWith('mock-admin-token-')) {
+					const mockUser: User = {
+						id: 1,
+						email: 'admin@bome.com',
+						firstName: 'Admin',
+						lastName: 'User',
+						role: 'admin',
+						emailVerified: true
+					};
+
+					set({
+						user: mockUser,
+						token,
+						isAuthenticated: true
+					});
+				} else {
+					// TODO: Validate token with backend and get user data
+					// For now, create a mock regular user
+					const mockUser: User = {
+						id: 2,
+						email: 'user@example.com',
+						firstName: 'Regular',
+						lastName: 'User',
+						role: 'user',
+						emailVerified: true
+					};
+
+					set({
+						user: mockUser,
+						token,
+						isAuthenticated: true
+					});
+				}
 			}
 		},
 
@@ -114,6 +165,13 @@ const createAuthStore = () => {
 				currentUser = state.user;
 			})();
 			return currentUser;
+		},
+
+		updateUser: (updatedUser: Partial<User>) => {
+			update(state => ({
+				...state,
+				user: state.user ? { ...state.user, ...updatedUser } : null
+			}));
 		}
 	};
 };

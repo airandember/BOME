@@ -6,11 +6,13 @@
 	let isAuthenticated = false;
 	let user: any = null;
 	let isScrolled = false;
+	let isAdmin = false;
 
 	// Subscribe to auth store
 	auth.subscribe(state => {
 		isAuthenticated = state.isAuthenticated;
 		user = state.user;
+		isAdmin = user?.role === 'admin';
 	});
 
 	// Handle scroll for navbar background
@@ -83,6 +85,19 @@
 					</button>
 					
 					<div class="dropdown-menu glass" class:open={isMenuOpen}>
+						{#if isAdmin}
+							<a href="/admin" class="dropdown-item admin-link" on:click={closeMenu}>
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+									<rect x="3" y="3" width="7" height="9"></rect>
+									<rect x="14" y="3" width="7" height="5"></rect>
+									<rect x="14" y="12" width="7" height="9"></rect>
+									<rect x="3" y="16" width="7" height="5"></rect>
+								</svg>
+								<span>Admin Dashboard</span>
+								<div class="admin-badge">Admin</div>
+							</a>
+							<div class="dropdown-divider"></div>
+						{/if}
 						<a href="/account" class="dropdown-item" on:click={closeMenu}>
 							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
@@ -361,6 +376,34 @@
 
 	.logout:hover {
 		background: var(--error-bg);
+	}
+
+	.admin-link {
+		position: relative;
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%);
+		border: 1px solid rgba(99, 102, 241, 0.2);
+	}
+
+	.admin-link:hover {
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%);
+		border-color: rgba(99, 102, 241, 0.3);
+		transform: translateX(4px);
+	}
+
+	.admin-badge {
+		position: absolute;
+		right: var(--space-sm);
+		top: 50%;
+		transform: translateY(-50%);
+		background: var(--primary-gradient);
+		color: var(--white);
+		font-size: 10px;
+		font-weight: 600;
+		padding: 2px 6px;
+		border-radius: var(--radius-sm);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		box-shadow: var(--shadow-sm);
 	}
 
 	.mobile-menu-button {

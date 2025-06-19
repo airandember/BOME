@@ -201,6 +201,23 @@ export const videoService = {
 				operation,
 				video_ids: videoIds
 			});
+		},
+
+		// Content scheduling
+		scheduleVideo: async (id: number, publishDate: string) => {
+			return api.post(`/api/v1/admin/videos/${id}/schedule`, {
+				publish_date: publishDate
+			});
+		},
+
+		// Unschedule video
+		unscheduleVideo: async (id: number) => {
+			return api.delete(`/api/v1/admin/videos/${id}/schedule`);
+		},
+
+		// Get scheduled videos
+		getScheduledVideos: async () => {
+			return api.get('/api/v1/admin/videos/scheduled');
 		}
 	}
 };

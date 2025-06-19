@@ -56,6 +56,12 @@
 	let showEditModal = false;
 	let editingVideo: Video | null = null;
 
+	// Schedule modal state
+	let showScheduleModal = false;
+	let schedulingVideo: Video | null = null;
+	let scheduleDate = '';
+	let scheduleTime = '';
+
 	// Bulk operations
 	let showBulkActions = false;
 	let bulkOperation = '';
@@ -147,6 +153,42 @@
 		} catch (error) {
 			showToast(`Failed to perform bulk ${bulkOperation}`, 'error');
 			console.error('Error performing bulk operation:', error);
+		}
+	}
+
+	async function scheduleVideo() {
+		if (!schedulingVideo || !scheduleDate || !scheduleTime) {
+			showToast('Please select a date and time', 'warning');
+			return;
+		}
+
+		try {
+			const publishDateTime = `${scheduleDate}T${scheduleTime}:00Z`;
+			await videoService.admin.scheduleVideo(schedulingVideo.id, publishDateTime);
+			showToast('Video scheduled successfully', 'success');
+			showScheduleModal = false;
+			schedulingVideo = null;
+			scheduleDate = '';
+			scheduleTime = '';
+			loadVideos();
+		} catch (error) {
+			showToast('Failed to schedule video', 'error');
+			console.error('Error scheduling video:', error);
+		}
+	}
+
+	async function unscheduleVideo(videoId: number) {
+		if (!confirm('Are you sure you want to unschedule this video?')) {
+			return;
+		}
+
+		try {
+			await videoService.admin.unscheduleVideo(videoId);
+			showToast('Video unscheduled successfully', 'success');
+			loadVideos();
+		} catch (error) {
+			showToast('Failed to unschedule video', 'error');
+			console.error('Error unscheduling video:', error);
 		}
 	}
 
@@ -324,6 +366,13 @@
 				on:click={() => currentView = 'draft'}
 			>
 				Draft
+			</button>
+			<button 
+				class="tab-btn" 
+				class:active={currentView === 'scheduled'}
+				on:click={() => currentView = 'scheduled'}
+			>
+				Scheduled
 			</button>
 		</div>
 	</div>
@@ -515,6 +564,21 @@
 									</svg>
 								</button>
 								<button 
+									class="btn btn-info btn-sm"
+									on:click={() => {
+										schedulingVideo = video;
+										showScheduleModal = true;
+									}}
+									title="Schedule"
+								>
+									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+										<line x1="16" y1="2" x2="16" y2="6"></line>
+										<line x1="8" y1="2" x2="8" y2="6"></line>
+										<line x1="3" y1="10" x2="21" y2="10"></line>
+									</svg>
+								</button>
+								<button 
 									class="btn btn-error btn-sm"
 									on:click={() => deleteVideo(video.id)}
 									title="Delete"
@@ -571,6 +635,60 @@
 		{/if}
 	{/if}
 </div>
+
+<!-- Schedule Video Modal -->
+{#if showScheduleModal && schedulingVideo}
+	<div class="modal-overlay" on:click={() => showScheduleModal = false}>
+		<div class="modal" on:click|stopPropagation>
+			<div class="modal-header">
+				<h2>Schedule Video: {schedulingVideo.title}</h2>
+				<button class="close-btn" on:click={() => showScheduleModal = false}>
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<line x1="18" y1="6" x2="6" y2="18"></line>
+						<line x1="6" y1="6" x2="18" y2="18"></line>
+					</svg>
+				</button>
+			</div>
+
+			<div class="modal-content">
+				<div class="form-group">
+					<label for="schedule-date">Publish Date</label>
+					<input 
+						id="schedule-date"
+						type="date" 
+						bind:value={scheduleDate}
+						min={new Date().toISOString().split('T')[0]}
+					/>
+				</div>
+
+				<div class="form-group">
+					<label for="schedule-time">Publish Time</label>
+					<input 
+						id="schedule-time"
+						type="time" 
+						bind:value={scheduleTime}
+					/>
+				</div>
+
+				<div class="form-actions">
+					<button 
+						class="btn btn-secondary"
+						on:click={() => showScheduleModal = false}
+					>
+						Cancel
+					</button>
+					<button 
+						class="btn btn-primary"
+						on:click={scheduleVideo}
+						disabled={!scheduleDate || !scheduleTime}
+					>
+						Schedule Video
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.video-management {

@@ -45,6 +45,19 @@ export interface Invoice {
 	downloadUrl?: string;
 }
 
+export interface Refund {
+	id: string;
+	amount: number;
+	currency: string;
+	status: 'succeeded' | 'pending' | 'failed' | 'canceled';
+	reason: 'duplicate' | 'fraudulent' | 'requested_by_customer';
+	paymentIntentId: string;
+	chargeId?: string;
+	createdAt: string;
+	receiptNumber?: string;
+	failureReason?: string;
+}
+
 // Subscription service
 export const subscriptionService = {
 	// Get available subscription plans
@@ -74,7 +87,7 @@ export const subscriptionService = {
 
 	// Reactivate subscription
 	reactivateSubscription: async (subscriptionId: string) => {
-		return api.post(`/api/v1/subscriptions/${subscriptionId}/reactivate`);
+		return api.post(`/api/v1/subscriptions/${subscriptionId}/reactivate`, {});
 	},
 
 	// Update subscription (change plan)
@@ -96,12 +109,12 @@ export const subscriptionService = {
 
 	// Remove payment method
 	removePaymentMethod: async (paymentMethodId: string) => {
-		return api.delete(`/api/v1/payment-methods/${paymentMethodId}`, {});
+		return api.delete(`/api/v1/payment-methods/${paymentMethodId}`);
 	},
 
 	// Set default payment method
 	setDefaultPaymentMethod: async (paymentMethodId: string) => {
-		return api.post(`/api/v1/payment-methods/${paymentMethodId}/default`);
+		return api.post(`/api/v1/payment-methods/${paymentMethodId}/default`, {});
 	},
 
 	// Get billing history
@@ -137,6 +150,29 @@ export const subscriptionService = {
 	createCustomerPortalSession: async (returnUrl: string) => {
 		return api.post('/api/v1/subscriptions/portal', {
 			returnUrl
+		});
+	},
+
+	// Get customer refunds
+	getRefunds: async (limit = 20) => {
+		const params = new URLSearchParams({
+			limit: limit.toString()
+		});
+		
+		return api.get(`/api/v1/billing/refunds?${params.toString()}`);
+	},
+
+	// Get specific refund
+	getRefund: async (refundId: string) => {
+		return api.get(`/api/v1/billing/refunds/${refundId}`);
+	},
+
+	// Create refund
+	createRefund: async (paymentIntentId: string, amount?: number, reason?: string) => {
+		return api.post('/api/v1/billing/refunds', {
+			payment_intent_id: paymentIntentId,
+			amount: amount,
+			reason: reason || 'requested_by_customer'
 		});
 	}
 };
