@@ -2,6 +2,9 @@
 	import { onMount } from 'svelte';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import { goto } from '$app/navigation';
+	import { auth } from '$lib/auth';
+	import type { AdminAnalytics } from '$lib/types/advertising';
 
 	interface Activity {
 		type: 'user_signup' | 'video_upload' | 'subscription' | 'payment' | 'comment';
@@ -27,35 +30,79 @@
 		storageUsed: '45%'
 	};
 
+	let analytics: AdminAnalytics | null = null;
+	let loading = true;
+	let error: string | null = null;
+
 	onMount(async () => {
-		try {
-			// Simulate loading dashboard data
-			await new Promise(resolve => setTimeout(resolve, 1000));
-			
-			// Mock data for now - will be replaced with real API calls
-			stats = {
-				totalUsers: 1247,
-				totalVideos: 342,
-				totalRevenue: 45678,
-				activeSubscriptions: 892,
-				recentSignups: 23,
-				videoViews: 15678
-			};
-
-			recentActivity = [
-				{ type: 'user_signup', message: 'New user registered: john.doe@example.com', time: '2 minutes ago' },
-				{ type: 'video_upload', message: 'New video uploaded: "Ancient Civilizations"', time: '15 minutes ago' },
-				{ type: 'subscription', message: 'New premium subscription: jane.smith@example.com', time: '1 hour ago' },
-				{ type: 'payment', message: 'Payment processed: $29.99', time: '2 hours ago' },
-				{ type: 'comment', message: 'New comment on video: "Great content!"', time: '3 hours ago' }
-			];
-
-			isLoading = false;
-		} catch (error) {
-			showToast('Failed to load dashboard data', 'error');
-			isLoading = false;
+		if (!$auth.isAuthenticated) {
+			goto('/login');
+			return;
 		}
+
+		const user = $auth.user;
+		if (!user || user.role !== 'admin') {
+			goto('/');
+			return;
+		}
+
+		await loadAnalytics();
 	});
+
+	async function loadAnalytics() {
+		try {
+			const response = await fetch('/api/v1/admin/analytics', {
+				headers: {
+					'Authorization': `Bearer ${$auth.token}`
+				}
+			});
+
+			if (response.ok) {
+				const data = await response.json();
+				analytics = data.data;
+			} else {
+				// Mock analytics data
+				analytics = {
+					total_advertisers: 23,
+					active_campaigns: 12,
+					total_revenue: 15420.80,
+					pending_approvals: 5,
+					top_performing_placements: [
+						{
+							placement_id: 1,
+							name: 'Header Banner',
+							revenue: 8520.30,
+							impressions: 45230
+						},
+						{
+							placement_id: 2,
+							name: 'Sidebar Large',
+							revenue: 4890.50,
+							impressions: 28940
+						},
+						{
+							placement_id: 3,
+							name: 'Between Videos',
+							revenue: 2010.00,
+							impressions: 15680
+						}
+					],
+					revenue_by_month: [
+						{ month: 'Jan', revenue: 12450.80, advertisers: 18 },
+						{ month: 'Feb', revenue: 13890.20, advertisers: 20 },
+						{ month: 'Mar', revenue: 15420.80, advertisers: 23 },
+						{ month: 'Apr', revenue: 18230.50, advertisers: 25 },
+						{ month: 'May', revenue: 21340.90, advertisers: 28 },
+						{ month: 'Jun', revenue: 19850.60, advertisers: 26 }
+					]
+				};
+			}
+		} catch (err) {
+			error = 'Failed to load analytics';
+		} finally {
+			loading = false;
+		}
+	}
 
 	function formatCurrency(amount: number) {
 		return new Intl.NumberFormat('en-US', {
@@ -116,539 +163,562 @@
 		<LoadingSpinner size="large" color="primary" />
 		<p>Loading dashboard...</p>
 	</div>
-{:else}
-	<div class="dashboard">
-		<!-- Welcome Section -->
-		<div class="welcome-section glass">
-			<div class="welcome-content">
-				<h2>Welcome back, Administrator!</h2>
-				<p>Here's what's happening with your platform today.</p>
+{:else if error}
+	<div class="error-container">
+		<div class="alert alert-error">
+			<span>{error}</span>
+		</div>
+	</div>
+{:else if analytics}
+	<div class="admin-dashboard">
+		<div class="dashboard-header">
+			<div>
+				<h1>Admin Dashboard</h1>
+				<p>Overview of platform performance and advertising metrics</p>
 			</div>
-			<div class="welcome-actions">
-				<button class="btn btn-primary">
+			<div class="header-actions">
+				<button class="btn btn-secondary" on:click={loadAnalytics}>
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path>
-						<circle cx="12" cy="13" r="3"></circle>
+						<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+						<path d="M21 3v5h-5" />
+						<path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+						<path d="M3 21v-5h5" />
 					</svg>
-					Upload Video
-				</button>
-				<button class="btn btn-outline">
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-						<circle cx="9" cy="7" r="4"></circle>
-						<path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-						<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-					</svg>
-					Manage Users
+					Refresh
 				</button>
 			</div>
 		</div>
 
-		<!-- Stats Grid -->
-		<div class="stats-grid grid grid-4">
-			<div class="stat-card card glass">
-				<div class="stat-header">
-					<div class="stat-icon users">
+		<!-- Key Metrics -->
+		<div class="metrics-grid">
+			<div class="metric-card">
+				<div class="metric-header">
+					<div class="metric-icon advertisers">
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-							<circle cx="9" cy="7" r="4"></circle>
-							<path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-							<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+							<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+							<circle cx="9" cy="7" r="4" />
+							<path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+							<path d="M16 3.13a4 4 0 0 1 0 7.75" />
 						</svg>
 					</div>
-					<div class="stat-trend positive">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<line x1="12" y1="19" x2="12" y2="5"></line>
-							<polyline points="5,12 12,5 19,12"></polyline>
-						</svg>
-						+12%
-					</div>
+					<div class="metric-value">{analytics.total_advertisers}</div>
 				</div>
-				<div class="stat-content">
-					<div class="stat-value">{formatNumber(stats.totalUsers)}</div>
-					<div class="stat-label">Total Users</div>
-				</div>
+				<div class="metric-label">Total Advertisers</div>
+				<div class="metric-change positive">+3 this month</div>
 			</div>
 
-			<div class="stat-card card glass">
-				<div class="stat-header">
-					<div class="stat-icon videos">
+			<div class="metric-card">
+				<div class="metric-header">
+					<div class="metric-icon campaigns">
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<polygon points="23,7 16,12 23,17 23,7"></polygon>
-							<rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+							<rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+							<line x1="8" y1="21" x2="16" y2="21" />
+							<line x1="12" y1="17" x2="12" y2="21" />
 						</svg>
 					</div>
-					<div class="stat-trend positive">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<line x1="12" y1="19" x2="12" y2="5"></line>
-							<polyline points="5,12 12,5 19,12"></polyline>
-						</svg>
-						+8%
-					</div>
+					<div class="metric-value">{analytics.active_campaigns}</div>
 				</div>
-				<div class="stat-content">
-					<div class="stat-value">{formatNumber(stats.totalVideos)}</div>
-					<div class="stat-label">Total Videos</div>
-				</div>
+				<div class="metric-label">Active Campaigns</div>
+				<div class="metric-change positive">+2 this week</div>
 			</div>
 
-			<div class="stat-card card glass">
-				<div class="stat-header">
-					<div class="stat-icon revenue">
+			<div class="metric-card">
+				<div class="metric-header">
+					<div class="metric-icon revenue">
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<line x1="12" y1="1" x2="12" y2="23"></line>
-							<path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+							<line x1="12" y1="1" x2="12" y2="23" />
+							<path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
 						</svg>
 					</div>
-					<div class="stat-trend positive">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<line x1="12" y1="19" x2="12" y2="5"></line>
-							<polyline points="5,12 12,5 19,12"></polyline>
-						</svg>
-						+15%
-					</div>
+					<div class="metric-value">{formatCurrency(analytics.total_revenue)}</div>
 				</div>
-				<div class="stat-content">
-					<div class="stat-value">{formatCurrency(stats.totalRevenue)}</div>
-					<div class="stat-label">Total Revenue</div>
-				</div>
+				<div class="metric-label">Total Revenue</div>
+				<div class="metric-change positive">+15.7% vs last month</div>
 			</div>
 
-			<div class="stat-card card glass">
-				<div class="stat-header">
-					<div class="stat-icon subscriptions">
+			<div class="metric-card">
+				<div class="metric-header">
+					<div class="metric-icon pending">
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"></path>
-							<polyline points="16,21 12,17 8,21"></polyline>
-							<polyline points="12,17 12,3"></polyline>
+							<circle cx="12" cy="12" r="10" />
+							<polyline points="12,6 12,12 16,14" />
 						</svg>
 					</div>
-					<div class="stat-trend positive">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<line x1="12" y1="19" x2="12" y2="5"></line>
-							<polyline points="5,12 12,5 19,12"></polyline>
-						</svg>
-						+5%
-					</div>
+					<div class="metric-value">{analytics.pending_approvals}</div>
 				</div>
-				<div class="stat-content">
-					<div class="stat-value">{formatNumber(stats.activeSubscriptions)}</div>
-					<div class="stat-label">Active Subscriptions</div>
-				</div>
+				<div class="metric-label">Pending Approvals</div>
+				<a href="/admin/advertisements" class="metric-action">Review →</a>
 			</div>
 		</div>
 
-		<!-- Content Grid -->
-		<div class="content-grid grid grid-2">
-			<!-- Recent Activity -->
-			<div class="content-card card glass">
-				<div class="card-header">
-					<h3>Recent Activity</h3>
-					<button class="btn btn-ghost btn-small">View All</button>
+		<!-- Charts Section -->
+		<div class="charts-section">
+			<!-- Revenue Chart -->
+			<div class="chart-card">
+				<div class="chart-header">
+					<h3>Revenue Trend</h3>
+					<div class="chart-period">Last 6 months</div>
 				</div>
-				<div class="activity-list">
-					{#each recentActivity as activity}
-						<div class="activity-item">
-							<div class="activity-icon" class:user_signup={activity.type === 'user_signup'} class:video_upload={activity.type === 'video_upload'} class:subscription={activity.type === 'subscription'} class:payment={activity.type === 'payment'} class:comment={activity.type === 'comment'}>
-								{@html getActivityIcon(activity.type)}
-							</div>
-							<div class="activity-content">
-								<div class="activity-message">{activity.message}</div>
-								<div class="activity-time">{activity.time}</div>
-							</div>
+				<div class="revenue-chart">
+					{#each analytics.revenue_by_month as month}
+						<div class="month-bar">
+							<div 
+								class="bar-fill" 
+								style="height: {(month.revenue / 25000) * 100}%"
+								title="{month.month}: {formatCurrency(month.revenue)}"
+							></div>
+							<div class="month-label">{month.month}</div>
 						</div>
 					{/each}
 				</div>
 			</div>
 
-			<!-- System Health -->
-			<div class="content-card card glass">
-				<div class="card-header">
-					<h3>System Health</h3>
-					<div class="status-badge" class:healthy={systemHealth.status === 'healthy'} class:warning={systemHealth.status === 'warning'} class:error={systemHealth.status === 'error'}>
-						{systemHealth.status}
-					</div>
+			<!-- Top Placements -->
+			<div class="chart-card">
+				<div class="chart-header">
+					<h3>Top Performing Placements</h3>
+					<a href="/admin/placements" class="chart-action">View All →</a>
 				</div>
-				<div class="health-metrics">
-					<div class="health-item">
-						<div class="health-label">Uptime</div>
-						<div class="health-value">{systemHealth.uptime}</div>
-					</div>
-					<div class="health-item">
-						<div class="health-label">Last Backup</div>
-						<div class="health-value">{systemHealth.lastBackup}</div>
-					</div>
-					<div class="health-item">
-						<div class="health-label">Storage Used</div>
-						<div class="health-value">{systemHealth.storageUsed}</div>
-					</div>
+				<div class="placements-list">
+					{#each analytics.top_performing_placements as placement}
+						<div class="placement-item">
+							<div class="placement-info">
+								<div class="placement-name">{placement.name}</div>
+								<div class="placement-stats">
+									{formatNumber(placement.impressions)} impressions
+								</div>
+							</div>
+							<div class="placement-revenue">
+								{formatCurrency(placement.revenue)}
+							</div>
+						</div>
+					{/each}
 				</div>
-				<div class="health-actions">
-					<button class="btn btn-outline btn-small">
+			</div>
+		</div>
+
+		<!-- Quick Actions -->
+		<div class="quick-actions">
+			<h3>Quick Actions</h3>
+			<div class="actions-grid">
+				<a href="/admin/advertisements" class="action-card">
+					<div class="action-icon">
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-							<polyline points="7,10 12,15 17,10"></polyline>
-							<line x1="12" y1="15" x2="12" y2="3"></line>
+							<path d="M9 12l2 2 4-4" />
+							<path d="M21 12c.552 0 1-.448 1-1V5c0-.552-.448-1-1-1H3c-.552 0-1 .448-1 1v6c0 .552.448 1 1 1h18z" />
+							<path d="M3 12v6c0 .552.448 1 1 1h16c.552 0 1-.448 1-1v-6" />
 						</svg>
-						Backup Now
-					</button>
-					<button class="btn btn-ghost btn-small">
+					</div>
+					<div class="action-content">
+						<div class="action-title">Review Approvals</div>
+						<div class="action-description">Approve pending advertisers and campaigns</div>
+					</div>
+				</a>
+
+				<a href="/admin/placements" class="action-card">
+					<div class="action-icon">
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<circle cx="12" cy="12" r="3"></circle>
-							<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1 1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+							<path d="M12 2L2 7l10 5 10-5-10-5z" />
+							<path d="M2 17l10 5 10-5" />
+							<path d="M2 12l10 5 10-5" />
 						</svg>
-						Settings
-					</button>
-				</div>
+					</div>
+					<div class="action-content">
+						<div class="action-title">Manage Placements</div>
+						<div class="action-description">Configure ad placement locations and rates</div>
+					</div>
+				</a>
+
+				<a href="/admin/analytics" class="action-card">
+					<div class="action-icon">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<polyline points="22,12 18,12 15,21 9,3 6,12 2,12" />
+						</svg>
+					</div>
+					<div class="action-content">
+						<div class="action-title">View Analytics</div>
+						<div class="action-description">Detailed performance and revenue analytics</div>
+					</div>
+				</a>
+
+				<a href="/admin/users" class="action-card">
+					<div class="action-icon">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+							<circle cx="9" cy="7" r="4" />
+							<path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+							<path d="M16 3.13a4 4 0 0 1 0 7.75" />
+						</svg>
+					</div>
+					<div class="action-content">
+						<div class="action-title">User Management</div>
+						<div class="action-description">Manage users, roles, and permissions</div>
+					</div>
+				</a>
 			</div>
 		</div>
 	</div>
 {/if}
 
 <style>
-	.loading-container {
+	.admin-dashboard {
 		display: flex;
 		flex-direction: column;
+		gap: var(--space-xl);
+	}
+
+	.dashboard-header {
+		display: flex;
+		justify-content: space-between;
 		align-items: center;
-		justify-content: center;
-		min-height: 400px;
+		flex-wrap: wrap;
 		gap: var(--space-lg);
 	}
 
-	.loading-container p {
-		font-size: var(--text-lg);
-		color: var(--text-secondary);
-	}
-
-	.dashboard {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-2xl);
-	}
-
-	/* Welcome Section */
-	.welcome-section {
-		padding: var(--space-2xl);
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		border-radius: var(--radius-xl);
-	}
-
-	.welcome-content h2 {
+	.dashboard-header h1 {
 		font-size: var(--text-3xl);
-		margin-bottom: var(--space-sm);
+		font-weight: 700;
 		color: var(--text-primary);
-	}
-
-	.welcome-content p {
-		font-size: var(--text-lg);
-		color: var(--text-secondary);
 		margin: 0;
 	}
 
-	.welcome-actions {
+	.dashboard-header p {
+		color: var(--text-secondary);
+		margin: var(--space-sm) 0 0 0;
+	}
+
+	.header-actions {
 		display: flex;
 		gap: var(--space-md);
 	}
 
-	/* Stats Grid */
-	.stats-grid {
+	.loading-container,
+	.error-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: var(--space-4xl);
 		gap: var(--space-lg);
 	}
 
-	.stat-card {
+	.loading-spinner {
+		width: 40px;
+		height: 40px;
+		border: 3px solid var(--border-color);
+		border-top: 3px solid var(--primary);
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		0% { transform: rotate(0deg); }
+		100% { transform: rotate(360deg); }
+	}
+
+	.metrics-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+		gap: var(--space-lg);
+	}
+
+	.metric-card {
+		background: var(--bg-glass);
+		border-radius: var(--radius-xl);
 		padding: var(--space-xl);
+		border: 1px solid rgba(255, 255, 255, 0.1);
 		transition: all var(--transition-normal);
 	}
 
-	.stat-card:hover {
-		transform: translateY(-4px);
+	.metric-card:hover {
+		transform: translateY(-2px);
+		box-shadow: var(--shadow-lg);
 	}
 
-	.stat-header {
+	.metric-header {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		margin-bottom: var(--space-lg);
+		margin-bottom: var(--space-md);
 	}
 
-	.stat-icon {
+	.metric-icon {
 		width: 48px;
 		height: 48px;
 		border-radius: var(--radius-lg);
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		box-shadow: var(--shadow-md);
 	}
 
-	.stat-icon.users {
-		background: var(--primary-gradient);
-	}
-
-	.stat-icon.videos {
-		background: var(--secondary-gradient);
-	}
-
-	.stat-icon.revenue {
-		background: var(--accent-gradient);
-	}
-
-	.stat-icon.subscriptions {
-		background: var(--dark-gradient);
-	}
-
-	.stat-icon svg {
+	.metric-icon svg {
 		width: 24px;
 		height: 24px;
-		color: var(--white);
+		color: white;
 	}
 
-	.stat-trend {
-		display: flex;
-		align-items: center;
-		gap: var(--space-xs);
-		font-size: var(--text-sm);
-		font-weight: 600;
-		padding: var(--space-xs) var(--space-sm);
-		border-radius: var(--radius-full);
+	.metric-icon.advertisers {
+		background: linear-gradient(135deg, #3b82f6, #1d4ed8);
 	}
 
-	.stat-trend.positive {
-		background: rgba(0, 212, 170, 0.1);
-		color: var(--success);
+	.metric-icon.campaigns {
+		background: linear-gradient(135deg, #10b981, #047857);
 	}
 
-	.stat-trend.negative {
-		background: rgba(255, 107, 107, 0.1);
-		color: var(--error);
+	.metric-icon.revenue {
+		background: linear-gradient(135deg, #f59e0b, #d97706);
 	}
 
-	.stat-trend svg {
-		width: 12px;
-		height: 12px;
+	.metric-icon.pending {
+		background: linear-gradient(135deg, #ef4444, #dc2626);
 	}
 
-	.stat-content {
-		text-align: left;
-	}
-
-	.stat-value {
-		font-size: var(--text-4xl);
-		font-weight: 800;
+	.metric-value {
+		font-size: var(--text-2xl);
+		font-weight: 700;
 		color: var(--text-primary);
-		line-height: 1;
+	}
+
+	.metric-label {
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
 		margin-bottom: var(--space-xs);
 	}
 
-	.stat-label {
-		font-size: var(--text-sm);
-		color: var(--text-secondary);
-		font-weight: 500;
+	.metric-change {
+		font-size: var(--text-xs);
+		font-weight: 600;
 	}
 
-	/* Content Grid */
-	.content-grid {
-		gap: var(--space-lg);
+	.metric-change.positive {
+		color: var(--success);
 	}
 
-	.content-card {
+	.metric-action {
+		font-size: var(--text-xs);
+		color: var(--primary);
+		text-decoration: none;
+		font-weight: 600;
+	}
+
+	.metric-action:hover {
+		text-decoration: underline;
+	}
+
+	.charts-section {
+		display: grid;
+		grid-template-columns: 2fr 1fr;
+		gap: var(--space-xl);
+	}
+
+	.chart-card {
+		background: var(--bg-glass);
+		border-radius: var(--radius-xl);
 		padding: var(--space-xl);
+		border: 1px solid rgba(255, 255, 255, 0.1);
 	}
 
-	.card-header {
+	.chart-header {
 		display: flex;
-		align-items: center;
 		justify-content: space-between;
-		margin-bottom: var(--space-xl);
+		align-items: center;
+		margin-bottom: var(--space-lg);
 	}
 
-	.card-header h3 {
-		font-size: var(--text-xl);
+	.chart-header h3 {
+		font-size: var(--text-lg);
 		font-weight: 600;
 		color: var(--text-primary);
 		margin: 0;
 	}
 
-	.status-badge {
-		padding: var(--space-xs) var(--space-md);
-		border-radius: var(--radius-full);
-		font-size: var(--text-xs);
+	.chart-period {
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
+	}
+
+	.chart-action {
+		font-size: var(--text-sm);
+		color: var(--primary);
+		text-decoration: none;
 		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
 	}
 
-	.status-badge.healthy {
-		background: rgba(0, 212, 170, 0.1);
-		color: var(--success);
+	.chart-action:hover {
+		text-decoration: underline;
 	}
 
-	.status-badge.warning {
-		background: rgba(255, 167, 38, 0.1);
-		color: var(--warning);
+	.revenue-chart {
+		display: flex;
+		align-items: end;
+		gap: var(--space-md);
+		height: 200px;
+		padding: var(--space-lg) 0;
 	}
 
-	.status-badge.error {
-		background: rgba(255, 107, 107, 0.1);
-		color: var(--error);
+	.month-bar {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: var(--space-sm);
 	}
 
-	/* Activity List */
-	.activity-list {
+	.bar-fill {
+		width: 100%;
+		background: var(--primary-gradient);
+		border-radius: var(--radius-sm);
+		min-height: 10px;
+		transition: all 0.5s ease;
+		cursor: pointer;
+	}
+
+	.bar-fill:hover {
+		opacity: 0.8;
+		transform: scaleY(1.05);
+	}
+
+	.month-label {
+		font-size: var(--text-xs);
+		color: var(--text-secondary);
+		font-weight: 600;
+	}
+
+	.placements-list {
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-md);
 	}
 
-	.activity-item {
+	.placement-item {
 		display: flex;
-		align-items: flex-start;
-		gap: var(--space-md);
+		justify-content: space-between;
+		align-items: center;
 		padding: var(--space-md);
+		background: var(--bg-glass-dark);
 		border-radius: var(--radius-lg);
 		transition: all var(--transition-normal);
 	}
 
-	.activity-item:hover {
+	.placement-item:hover {
 		background: var(--bg-glass);
+		transform: translateX(4px);
 	}
 
-	.activity-icon {
-		width: 32px;
-		height: 32px;
+	.placement-name {
+		font-weight: 600;
+		color: var(--text-primary);
+		font-size: var(--text-sm);
+	}
+
+	.placement-stats {
+		font-size: var(--text-xs);
+		color: var(--text-secondary);
+		margin-top: var(--space-xs);
+	}
+
+	.placement-revenue {
+		font-weight: 700;
+		color: var(--primary);
+		font-size: var(--text-sm);
+	}
+
+	.quick-actions {
+		background: var(--bg-glass);
+		border-radius: var(--radius-xl);
+		padding: var(--space-xl);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+	}
+
+	.quick-actions h3 {
+		font-size: var(--text-xl);
+		font-weight: 600;
+		color: var(--text-primary);
+		margin: 0 0 var(--space-lg) 0;
+	}
+
+	.actions-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+		gap: var(--space-lg);
+	}
+
+	.action-card {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+		padding: var(--space-lg);
+		background: var(--bg-glass-dark);
+		border-radius: var(--radius-lg);
+		text-decoration: none;
+		transition: all var(--transition-normal);
+		border: 1px solid rgba(255, 255, 255, 0.05);
+	}
+
+	.action-card:hover {
+		background: var(--bg-glass);
+		transform: translateY(-2px);
+		box-shadow: var(--shadow-lg);
+	}
+
+	.action-icon {
+		width: 48px;
+		height: 48px;
+		background: var(--primary-gradient);
 		border-radius: var(--radius-lg);
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
-		background: var(--bg-glass);
 	}
 
-	.activity-icon.user_signup {
-		background: rgba(102, 126, 234, 0.1);
-		color: var(--primary);
+	.action-icon svg {
+		width: 24px;
+		height: 24px;
+		color: white;
 	}
 
-	.activity-icon.video_upload {
-		background: rgba(240, 147, 251, 0.1);
-		color: var(--secondary);
-	}
-
-	.activity-icon.subscription {
-		background: rgba(79, 172, 254, 0.1);
-		color: var(--accent);
-	}
-
-	.activity-icon.payment {
-		background: rgba(0, 212, 170, 0.1);
-		color: var(--success);
-	}
-
-	.activity-icon.comment {
-		background: rgba(255, 167, 38, 0.1);
-		color: var(--warning);
-	}
-
-	.activity-icon svg {
-		width: 16px;
-		height: 16px;
-	}
-
-	.activity-content {
-		flex: 1;
-	}
-
-	.activity-message {
-		font-size: var(--text-sm);
+	.action-title {
+		font-weight: 600;
 		color: var(--text-primary);
+		font-size: var(--text-base);
 		margin-bottom: var(--space-xs);
+	}
+
+	.action-description {
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
 		line-height: 1.4;
 	}
 
-	.activity-time {
-		font-size: var(--text-xs);
-		color: var(--text-secondary);
-	}
-
-	/* Health Metrics */
-	.health-metrics {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-lg);
-		margin-bottom: var(--space-xl);
-	}
-
-	.health-item {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: var(--space-md);
-		background: var(--bg-glass);
-		border-radius: var(--radius-lg);
-	}
-
-	.health-label {
-		font-size: var(--text-sm);
-		color: var(--text-secondary);
-		font-weight: 500;
-	}
-
-	.health-value {
-		font-size: var(--text-sm);
-		color: var(--text-primary);
-		font-weight: 600;
-	}
-
-	.health-actions {
-		display: flex;
-		gap: var(--space-md);
-	}
-
-	/* Responsive */
-	@media (max-width: 1024px) {
-		.stats-grid {
-			grid-template-columns: repeat(2, 1fr);
-		}
-
-		.content-grid {
+	/* Responsive Design */
+	@media (max-width: 1200px) {
+		.charts-section {
 			grid-template-columns: 1fr;
-		}
-
-		.welcome-section {
-			flex-direction: column;
-			gap: var(--space-lg);
-			text-align: center;
 		}
 	}
 
 	@media (max-width: 768px) {
-		.stats-grid {
+		.dashboard-header {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.metrics-grid {
+			grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		}
+
+		.actions-grid {
 			grid-template-columns: 1fr;
 		}
 
-		.welcome-actions {
+		.action-card {
 			flex-direction: column;
-			width: 100%;
+			text-align: center;
 		}
 
-		.health-actions {
-			flex-direction: column;
-		}
-	}
-
-	@media (max-width: 480px) {
-		.stat-card {
-			padding: var(--space-lg);
-		}
-
-		.content-card {
-			padding: var(--space-lg);
-		}
-
-		.stat-value {
-			font-size: var(--text-3xl);
+		.revenue-chart {
+			height: 150px;
 		}
 	}
 </style> 

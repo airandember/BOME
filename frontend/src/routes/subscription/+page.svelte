@@ -23,7 +23,7 @@
 	});
 
 	const handleSubscribe = async (planId: string) => {
-		if (!auth.isAuthenticated) {
+		if (!$auth.isAuthenticated) {
 			showToast('Please log in to subscribe', 'warning');
 			goto('/login');
 			return;

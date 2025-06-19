@@ -25,6 +25,14 @@ const createAuthStore = () => {
 
 	return {
 		subscribe,
+		// Computed property for isAuthenticated
+		get isAuthenticated() {
+			let authenticated = false;
+			subscribe(state => {
+				authenticated = state.isAuthenticated;
+			})();
+			return authenticated;
+		},
 		login: async (email: string, password: string) => {
 			try {
 				// Mock admin login for testing

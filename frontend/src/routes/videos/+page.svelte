@@ -147,7 +147,7 @@
 		{/if}
 
 		{#if loading}
-			<LoadingSpinner size="large" text="Loading videos..." />
+			<LoadingSpinner size="large" />
 		{:else if videos.length === 0}
 			<div class="empty-state">
 				<div class="empty-icon">📹</div>

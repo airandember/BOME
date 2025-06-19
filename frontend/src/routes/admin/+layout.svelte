@@ -106,6 +106,24 @@
 			</svg>`
 		},
 		{
+			href: '/admin/advertisements',
+			label: 'Advertisements',
+			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+				<line x1="8" y1="21" x2="16" y2="21"></line>
+				<line x1="12" y1="17" x2="12" y2="21"></line>
+			</svg>`
+		},
+		{
+			href: '/admin/placements',
+			label: 'Ad Placements',
+			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+				<polyline points="3.27,6.96 12,12.01 20.73,6.96"></polyline>
+				<line x1="12" y1="22.08" x2="12" y2="12"></line>
+			</svg>`
+		},
+		{
 			href: '/admin/settings',
 			label: 'Settings',
 			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

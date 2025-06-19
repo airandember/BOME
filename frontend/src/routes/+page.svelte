@@ -5,6 +5,7 @@
 	import Navigation from '$lib/components/Navigation.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import AdDisplay from '$lib/components/AdDisplay.svelte';
 
 	let isAuthenticated = false;
 	let scrollY = 0;
@@ -62,6 +63,13 @@
 
 	<Navigation />
 	
+	<!-- Header Ad Placement -->
+	<AdDisplay 
+		placementId={1} 
+		className="header"
+		fallbackContent="<div style='text-align: center; padding: 1rem; color: #666;'>Advertisement Space Available</div>"
+	/>
+	
 	<div class="hero-content container">
 		<div class="hero-text fade-in" class:loaded={isLoaded}>
 			<h1 class="hero-title">
@@ -114,47 +122,95 @@
 </section>
 
 <!-- Features Section -->
-<section id="features" class="features-section">
+<section class="features-section" id="features">
 	<div class="container">
-		<div class="section-header text-center fade-in" class:loaded={isLoaded}>
-			<h2 class="section-title">
-				Why Choose <span class="gradient-text">BOME</span>
-			</h2>
-			<p class="section-subtitle">
-				Experience the future of educational streaming with cutting-edge features designed for discovery and learning.
-			</p>
-		</div>
-
-		<div class="features-grid grid grid-3">
-			<div class="feature-card card glass slide-up" class:loaded={isLoaded}>
-				<div class="feature-icon">
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path>
-						<circle cx="12" cy="13" r="3"></circle>
-					</svg>
+		<div class="features-content">
+			<div class="features-main">
+				<div class="section-header text-center fade-in" class:loaded={isLoaded}>
+					<h2>Why Choose BOME?</h2>
+					<p>Discover what makes our platform the premier destination for Book of Mormon evidence</p>
 				</div>
-				<h3>4K Ultra HD</h3>
-				<p>Crystal clear video quality that brings ancient artifacts and archaeological sites to life with stunning detail.</p>
+
+				<div class="features-grid fade-in" class:loaded={isLoaded}>
+					<!-- Feature cards content here -->
+					<div class="feature-card glass">
+						<div class="feature-icon">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+							</svg>
+						</div>
+						<h3>Expert Analysis</h3>
+						<p>In-depth analysis from leading scholars and researchers in Book of Mormon studies.</p>
+					</div>
+
+					<div class="feature-card glass">
+						<div class="feature-icon">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<circle cx="12" cy="12" r="10"></circle>
+								<polygon points="10,8 16,12 10,16 10,8"></polygon>
+							</svg>
+						</div>
+						<h3>High-Quality Videos</h3>
+						<p>Professional documentaries and presentations in stunning HD quality.</p>
+					</div>
+
+					<div class="feature-card glass">
+						<div class="feature-icon">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+								<path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+							</svg>
+						</div>
+						<h3>Scholarly Research</h3>
+						<p>Access to peer-reviewed research and archaeological findings.</p>
+					</div>
+
+					<div class="feature-card glass">
+						<div class="feature-icon">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+								<circle cx="9" cy="7" r="4"></circle>
+								<path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+								<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+							</svg>
+						</div>
+						<h3>Community</h3>
+						<p>Connect with fellow seekers and scholars in our vibrant community.</p>
+					</div>
+				</div>
+
+				<!-- Content Ad Placement -->
+				<div class="content-ad-section">
+					<AdDisplay 
+						placementId={4} 
+						className="content"
+						fallbackContent="<div style='text-align: center; padding: 2rem; background: rgba(255,255,255,0.05); border-radius: 12px; color: #666;'>Sponsored Content Space</div>"
+					/>
+				</div>
 			</div>
 
-			<div class="feature-card card glass slide-up" class:loaded={isLoaded} style="animation-delay: 0.1s">
-				<div class="feature-icon">
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
-					</svg>
+			<!-- Sidebar with Ad -->
+			<div class="features-sidebar">
+				<AdDisplay 
+					placementId={2} 
+					className="sidebar"
+					fallbackContent="<div style='text-align: center; padding: 2rem; background: rgba(255,255,255,0.05); border-radius: 12px; color: #666;'>Sidebar Advertisement</div>"
+				/>
+				
+				<!-- Additional sidebar content -->
+				<div class="sidebar-content">
+					<h3>Latest Updates</h3>
+					<div class="update-item">
+						<h4>New Archaeological Discovery</h4>
+						<p>Recent findings in Central America provide new insights...</p>
+						<span class="date">2 days ago</span>
+					</div>
+					<div class="update-item">
+						<h4>Expert Interview Series</h4>
+						<p>Join us for exclusive interviews with leading scholars...</p>
+						<span class="date">1 week ago</span>
+					</div>
 				</div>
-				<h3>Expert Analysis</h3>
-				<p>Content curated and analyzed by leading archaeologists, historians, and Book of Mormon scholars.</p>
-			</div>
-
-			<div class="feature-card card glass slide-up" class:loaded={isLoaded} style="animation-delay: 0.2s">
-				<div class="feature-icon">
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"></path>
-					</svg>
-				</div>
-				<h3>Exclusive Content</h3>
-				<p>Access to rare footage, unpublished research, and behind-the-scenes content not available anywhere else.</p>
 			</div>
 		</div>
 	</div>
@@ -427,59 +483,81 @@
 	.features-section {
 		padding: var(--space-4xl) 0;
 		background: var(--bg-secondary);
+		position: relative;
 	}
 
-	.section-header {
-		margin-bottom: var(--space-4xl);
+	.features-content {
+		display: grid;
+		grid-template-columns: 1fr 300px;
+		gap: var(--space-2xl);
+		align-items: start;
 	}
 
-	.section-title {
-		font-size: var(--text-5xl);
-		margin-bottom: var(--space-lg);
-	}
-
-	.section-subtitle {
-		font-size: var(--text-xl);
-		color: var(--text-secondary);
-		max-width: 600px;
-		margin: 0 auto;
-	}
-
-	.feature-card {
-		padding: var(--space-2xl);
-		text-align: center;
-		transition: all var(--transition-normal);
-	}
-
-	.feature-card:hover {
-		transform: translateY(-8px);
-	}
-
-	.feature-icon {
-		width: 80px;
-		height: 80px;
-		background: var(--primary-gradient);
-		border-radius: 50%;
+	.features-main {
 		display: flex;
-		align-items: center;
-		justify-content: center;
-		margin: 0 auto var(--space-xl);
+		flex-direction: column;
+		gap: var(--space-2xl);
 	}
 
-	.feature-icon svg {
-		width: 32px;
-		height: 32px;
-		color: var(--white);
+	.features-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+		gap: var(--space-xl);
 	}
 
-	.feature-card h3 {
-		font-size: var(--text-2xl);
-		margin-bottom: var(--space-md);
+	.content-ad-section {
+		margin: var(--space-2xl) 0;
 	}
 
-	.feature-card p {
+	.features-sidebar {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xl);
+		position: sticky;
+		top: 100px;
+	}
+
+	.sidebar-content {
+		background: var(--bg-glass);
+		border-radius: var(--radius-xl);
+		padding: var(--space-xl);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+	}
+
+	.sidebar-content h3 {
+		font-size: var(--text-lg);
+		font-weight: 600;
+		color: var(--text-primary);
+		margin: 0 0 var(--space-lg) 0;
+	}
+
+	.update-item {
+		padding: var(--space-md) 0;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+	}
+
+	.update-item:last-child {
+		border-bottom: none;
+	}
+
+	.update-item h4 {
+		font-size: var(--text-sm);
+		font-weight: 600;
+		color: var(--text-primary);
+		margin: 0 0 var(--space-xs) 0;
+	}
+
+	.update-item p {
+		font-size: var(--text-sm);
 		color: var(--text-secondary);
-		line-height: 1.6;
+		margin: 0 0 var(--space-xs) 0;
+		line-height: 1.4;
+	}
+
+	.update-item .date {
+		font-size: var(--text-xs);
+		color: var(--text-secondary);
+		opacity: 0.7;
 	}
 
 	/* Stats Section */

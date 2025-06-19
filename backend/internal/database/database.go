@@ -73,6 +73,17 @@ func (db *DB) RunMigrations() error {
 		createFavoritesTable,
 		createUserActivityTable,
 		createAdminLogsTable,
+		createAdvertiserAccountsTable,
+		createAdCampaignsTable,
+		createAdvertisementsTable,
+		createAdPlacementsTable,
+		createAdSchedulesTable,
+		createAdAnalyticsTable,
+		createAdClicksTable,
+		createAdImpressionsTable,
+		createAdBillingTable,
+		createAdAuditLogTable,
+		createAdvertisementIndexes,
 	}
 
 	for i, migration := range migrations {
@@ -98,6 +109,11 @@ func (db *DB) RunMigrations() error {
 
 			log.Printf("Applied migration: %s", migrationName)
 		}
+	}
+
+	// Seed default ad placements after migrations
+	if err := db.SeedAdPlacements(); err != nil {
+		log.Printf("Warning: Failed to seed ad placements: %v", err)
 	}
 
 	log.Println("Database migrations completed")
