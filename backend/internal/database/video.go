@@ -8,21 +8,22 @@ import (
 
 // Video represents a video in the system
 type Video struct {
-	ID           int
-	Title        string
-	Description  string
-	BunnyVideoID string
-	ThumbnailURL string
-	Duration     int
-	FileSize     int64
-	Status       string
-	Category     string
-	Tags         []string
-	ViewCount    int
-	LikeCount    int
-	CreatedBy    int
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID                   int
+	Title                string
+	Description          string
+	BunnyVideoID         string
+	ThumbnailURL         string
+	Duration             int
+	FileSize             int64
+	Status               string
+	Category             string
+	Tags                 []string
+	ViewCount            int
+	LikeCount            int
+	CreatedBy            int
+	ScheduledPublishDate *time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 // CreateVideo inserts a new video into the database
@@ -185,5 +186,40 @@ func (db *DB) UpdateVideo(videoID int, updateData map[string]interface{}) error 
 // DeleteVideo deletes a video from the database
 func (db *DB) DeleteVideo(videoID int) error {
 	_, err := db.Exec(`DELETE FROM videos WHERE id = $1`, videoID)
+	return err
+}
+
+// ScheduleVideo schedules a video to be published at a specific time
+func (db *DB) ScheduleVideo(videoID int, publishDate time.Time) error {
+	_, err := db.Exec(`UPDATE videos SET scheduled_publish_date = $1, status = 'scheduled', updated_at = NOW() WHERE id = $2`, publishDate, videoID)
+	return err
+}
+
+// GetScheduledVideos retrieves videos scheduled to be published before the given time
+func (db *DB) GetScheduledVideos(beforeTime time.Time) ([]*Video, error) {
+	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, scheduled_publish_date, created_at, updated_at FROM videos WHERE status = 'scheduled' AND scheduled_publish_date <= $1`
+
+	rows, err := db.Query(query, beforeTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var videos []*Video
+	for rows.Next() {
+		video := &Video{}
+		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &video.Tags, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.ScheduledPublishDate, &video.CreatedAt, &video.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+		videos = append(videos, video)
+	}
+
+	return videos, nil
+}
+
+// UnscheduleVideo removes the scheduled publish date and sets status back to draft
+func (db *DB) UnscheduleVideo(videoID int) error {
+	_, err := db.Exec(`UPDATE videos SET scheduled_publish_date = NULL, status = 'draft', updated_at = NOW() WHERE id = $1`, videoID)
 	return err
 }

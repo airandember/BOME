@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"bome-backend/internal/database"
 
@@ -1048,6 +1049,176 @@ func GetVideoCategoriesHandler(db *database.DB) gin.HandlerFunc {
 	}
 }
 
+// ScheduleVideoHandler handles scheduling a video for admin
+func ScheduleVideoHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		videoID, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid video ID"})
+			return
+		}
+
+		var scheduleReq struct {
+			PublishDate string `json:"publish_date" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&scheduleReq); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		adminID := c.GetInt("user_id")
+
+		// Parse the publish date
+		publishDate, err := time.Parse("2006-01-02T15:04:05Z", scheduleReq.PublishDate)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format. Use ISO 8601 format"})
+			return
+		}
+
+		// Schedule video in database
+		if err := db.ScheduleVideo(videoID, publishDate); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to schedule video"})
+			return
+		}
+
+		// Log admin action
+		go db.CreateAdminLog(&adminID, "video_scheduled", "video", &videoID, map[string]interface{}{"publish_date": scheduleReq.PublishDate}, c.ClientIP(), c.GetHeader("User-Agent"))
+
+		c.JSON(http.StatusOK, gin.H{"message": "Video scheduled successfully"})
+	}
+}
+
+// UnscheduleVideoHandler handles unscheduling a video for admin
+func UnscheduleVideoHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		videoID, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid video ID"})
+			return
+		}
+
+		adminID := c.GetInt("user_id")
+
+		// Unschedule video from database
+		if err := db.UnscheduleVideo(videoID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to unschedule video"})
+			return
+		}
+
+		// Log admin action
+		go db.CreateAdminLog(&adminID, "video_unscheduled", "video", &videoID, nil, c.ClientIP(), c.GetHeader("User-Agent"))
+
+		c.JSON(http.StatusOK, gin.H{"message": "Video unscheduled successfully"})
+	}
+}
+
+// GetScheduledVideosHandler handles retrieving scheduled videos for admin
+func GetScheduledVideosHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Mock scheduled videos for development mode
+		if db == nil {
+			videos := []map[string]interface{}{
+				{
+					"id":          1,
+					"title":       "Archaeological Evidence of the Book of Mormon",
+					"description": "Exploring recent archaeological discoveries that support Book of Mormon narratives",
+					"duration":    "15:42",
+					"thumbnail":   "https://example.com/thumb1.jpg",
+					"status":      "published",
+					"category":    "Archaeology",
+					"uploaded_by": map[string]interface{}{
+						"id":    2,
+						"name":  "Dr. John Smith",
+						"email": "john.smith@byu.edu",
+					},
+					"upload_date": "2024-01-15T10:30:00Z",
+					"views":       1247,
+					"likes":       89,
+					"comments":    23,
+					"file_size":   "145.6 MB",
+					"resolution":  "1080p",
+					"tags":        []string{"archaeology", "evidence", "ancient-america"},
+				},
+				{
+					"id":          2,
+					"title":       "DNA and the Book of Mormon",
+					"description": "Scientific perspectives on DNA evidence and Book of Mormon populations",
+					"duration":    "22:15",
+					"thumbnail":   "https://example.com/thumb2.jpg",
+					"status":      "pending",
+					"category":    "Science",
+					"uploaded_by": map[string]interface{}{
+						"id":    3,
+						"name":  "Dr. Sarah Johnson",
+						"email": "sarah.johnson@byu.edu",
+					},
+					"upload_date": "2024-01-18T14:20:00Z",
+					"views":       0,
+					"likes":       0,
+					"comments":    0,
+					"file_size":   "298.4 MB",
+					"resolution":  "1080p",
+					"tags":        []string{"dna", "science", "genetics"},
+				},
+				{
+					"id":          3,
+					"title":       "Mesoamerican Connections",
+					"description": "Examining cultural and geographical connections between Mesoamerica and the Book of Mormon",
+					"duration":    "18:33",
+					"thumbnail":   "https://example.com/thumb3.jpg",
+					"status":      "published",
+					"category":    "Geography",
+					"uploaded_by": map[string]interface{}{
+						"id":    4,
+						"name":  "Dr. Michael Brown",
+						"email": "michael.brown@byu.edu",
+					},
+					"upload_date": "2024-01-20T09:45:00Z",
+					"views":       856,
+					"likes":       67,
+					"comments":    15,
+					"file_size":   "187.2 MB",
+					"resolution":  "1080p",
+					"tags":        []string{"mesoamerica", "geography", "culture"},
+				},
+				{
+					"id":          4,
+					"title":       "Linguistic Analysis of Book of Mormon Names",
+					"description": "Scholarly analysis of Hebrew and Egyptian linguistic patterns in Book of Mormon names",
+					"duration":    "25:18",
+					"thumbnail":   "https://example.com/thumb4.jpg",
+					"status":      "draft",
+					"category":    "Linguistics",
+					"uploaded_by": map[string]interface{}{
+						"id":    5,
+						"name":  "Dr. Rachel Davis",
+						"email": "rachel.davis@byu.edu",
+					},
+					"upload_date": "2024-01-22T16:12:00Z",
+					"views":       0,
+					"likes":       0,
+					"comments":    0,
+					"file_size":   "324.1 MB",
+					"resolution":  "1080p",
+					"tags":        []string{"linguistics", "hebrew", "names"},
+				},
+			}
+
+			c.JSON(http.StatusOK, gin.H{"videos": videos})
+			return
+		}
+
+		// Real database implementation
+		videos, err := db.GetScheduledVideos(time.Now())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get scheduled videos"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"videos": videos})
+	}
+}
+
 // SetupAdminRoutes sets up all admin routes
 func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
 	router.GET("/users", GetUsersHandler(db))
@@ -1063,4 +1234,7 @@ func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
 	router.POST("/videos/bulk", BulkVideoOperationHandler(db))
 	router.GET("/videos/stats", GetVideoStatsHandler(db))
 	router.GET("/videos/categories", GetVideoCategoriesHandler(db))
+	router.POST("/videos/:id/schedule", ScheduleVideoHandler(db))
+	router.DELETE("/videos/:id/schedule", UnscheduleVideoHandler(db))
+	router.GET("/videos/scheduled", GetScheduledVideosHandler(db))
 }

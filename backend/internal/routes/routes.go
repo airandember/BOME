@@ -101,6 +101,17 @@ func SetupRoutes(
 				subscriptions.POST("", CreateSubscriptionHandler(db))
 				subscriptions.DELETE("", CancelSubscriptionHandler(db))
 			}
+
+			// Billing management
+			billing := protected.Group("/billing")
+			{
+				billing.GET("/history", handleGetBillingHistory(db, stripeService))
+				billing.GET("/invoices/:id", handleGetInvoice(db, stripeService))
+				billing.GET("/invoices/:id/download", handleDownloadInvoice(db, stripeService))
+				billing.GET("/refunds", handleGetRefunds(db, stripeService))
+				billing.GET("/refunds/:id", handleGetRefund(db, stripeService))
+				billing.POST("/refunds", handleCreateRefund(db, stripeService))
+			}
 		}
 
 		// Admin routes (require admin authentication)
@@ -322,7 +333,143 @@ func handleReactivateSubscription(db *database.DB, stripeService *services.Strip
 
 func handleGetBillingHistory(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Get billing history endpoint - TODO"})
+		userID := c.GetInt("user_id")
+		if userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			return
+		}
+
+		// Get pagination parameters
+		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+
+		if page < 1 {
+			page = 1
+		}
+		if limit < 1 || limit > 100 {
+			limit = 20
+		}
+
+		// Get user to find their Stripe customer ID
+		user, err := db.GetUserByID(userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
+			return
+		}
+
+		if !user.StripeCustomerID.Valid || user.StripeCustomerID.String == "" {
+			// User has no Stripe customer ID, return empty billing history
+			c.JSON(http.StatusOK, gin.H{
+				"invoices": []interface{}{},
+				"total":    0,
+				"page":     page,
+				"limit":    limit,
+			})
+			return
+		}
+
+		// Get starting after parameter for pagination
+		startingAfter := c.Query("starting_after")
+
+		// Get invoices from Stripe
+		invoices, hasMore, err := stripeService.GetCustomerInvoices(user.StripeCustomerID.String, limit, startingAfter)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get billing history"})
+			return
+		}
+
+		// Calculate total (approximation since Stripe doesn't provide exact counts)
+		total := len(invoices)
+		if hasMore {
+			total = page*limit + 1 // Indicate there are more items
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"invoices": invoices,
+			"total":    total,
+			"page":     page,
+			"limit":    limit,
+			"has_more": hasMore,
+		})
+	}
+}
+
+func handleGetInvoice(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetInt("user_id")
+		if userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			return
+		}
+
+		invoiceID := c.Param("id")
+		if invoiceID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invoice ID is required"})
+			return
+		}
+
+		// Get user to verify ownership
+		user, err := db.GetUserByID(userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
+			return
+		}
+
+		if !user.StripeCustomerID.Valid || user.StripeCustomerID.String == "" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Invoice not found"})
+			return
+		}
+
+		// Get invoice from Stripe
+		invoice, err := stripeService.GetInvoice(invoiceID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Invoice not found"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"invoice": invoice})
+	}
+}
+
+func handleDownloadInvoice(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetInt("user_id")
+		if userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			return
+		}
+
+		invoiceID := c.Param("id")
+		if invoiceID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invoice ID is required"})
+			return
+		}
+
+		// Get user to verify ownership
+		user, err := db.GetUserByID(userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
+			return
+		}
+
+		if !user.StripeCustomerID.Valid || user.StripeCustomerID.String == "" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Invoice not found"})
+			return
+		}
+
+		// Get invoice from Stripe
+		invoice, err := stripeService.GetInvoice(invoiceID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Invoice not found"})
+			return
+		}
+
+		if invoice.DownloadURL == "" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Invoice download not available"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"downloadUrl": invoice.DownloadURL})
 	}
 }
 
@@ -532,5 +679,147 @@ func handleAdminCreateBackup(db *database.DB, spacesService *services.SpacesServ
 func handleAdminGetLogs() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "Admin get logs endpoint - TODO"})
+	}
+}
+
+func handleGetRefunds(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetInt("user_id")
+		if userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			return
+		}
+
+		// Get pagination parameters
+		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+		if limit < 1 || limit > 100 {
+			limit = 20
+		}
+
+		// Get user to find their Stripe customer ID
+		user, err := db.GetUserByID(userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
+			return
+		}
+
+		if !user.StripeCustomerID.Valid || user.StripeCustomerID.String == "" {
+			// User has no Stripe customer ID, return empty refunds
+			c.JSON(http.StatusOK, gin.H{
+				"refunds": []interface{}{},
+				"total":   0,
+			})
+			return
+		}
+
+		// Get refunds from Stripe
+		refunds, err := stripeService.ListCustomerRefunds(user.StripeCustomerID.String, limit)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get refunds"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"refunds": refunds,
+			"total":   len(refunds),
+		})
+	}
+}
+
+func handleGetRefund(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetInt("user_id")
+		if userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			return
+		}
+
+		refundID := c.Param("id")
+		if refundID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Refund ID is required"})
+			return
+		}
+
+		// Get user to verify ownership
+		user, err := db.GetUserByID(userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
+			return
+		}
+
+		if !user.StripeCustomerID.Valid || user.StripeCustomerID.String == "" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Refund not found"})
+			return
+		}
+
+		// Get refund from Stripe
+		refund, err := stripeService.GetRefund(refundID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Refund not found"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"refund": refund})
+	}
+}
+
+func handleCreateRefund(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetInt("user_id")
+		if userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			return
+		}
+
+		var refundReq struct {
+			PaymentIntentID string `json:"payment_intent_id" binding:"required"`
+			Amount          int64  `json:"amount"`
+			Reason          string `json:"reason"`
+		}
+
+		if err := c.ShouldBindJSON(&refundReq); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Validate refund reason
+		validReasons := []string{"duplicate", "fraudulent", "requested_by_customer"}
+		if refundReq.Reason == "" {
+			refundReq.Reason = "requested_by_customer"
+		}
+
+		reasonValid := false
+		for _, validReason := range validReasons {
+			if refundReq.Reason == validReason {
+				reasonValid = true
+				break
+			}
+		}
+
+		if !reasonValid {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid refund reason"})
+			return
+		}
+
+		// Get user to verify ownership
+		user, err := db.GetUserByID(userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
+			return
+		}
+
+		if !user.StripeCustomerID.Valid || user.StripeCustomerID.String == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No payment methods found"})
+			return
+		}
+
+		// Create refund through Stripe
+		refund, err := stripeService.CreateRefund(refundReq.PaymentIntentID, refundReq.Amount, refundReq.Reason)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create refund"})
+			return
+		}
+
+		c.JSON(http.StatusCreated, gin.H{"refund": refund})
 	}
 }

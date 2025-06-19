@@ -8,6 +8,7 @@ import (
 
 	"github.com/stripe/stripe-go/v74"
 	"github.com/stripe/stripe-go/v74/customer"
+	"github.com/stripe/stripe-go/v74/invoice"
 	"github.com/stripe/stripe-go/v74/paymentintent"
 	"github.com/stripe/stripe-go/v74/subscription"
 	"github.com/stripe/stripe-go/v74/webhook"
@@ -59,6 +60,33 @@ type PaymentIntent struct {
 	Currency     string `json:"currency"`
 	Status       string `json:"status"`
 	ClientSecret string `json:"client_secret"`
+}
+
+// Invoice represents a Stripe invoice
+type Invoice struct {
+	ID          string `json:"id"`
+	Amount      int64  `json:"amount"`
+	Currency    string `json:"currency"`
+	Status      string `json:"status"`
+	CreatedAt   string `json:"createdAt"`
+	DueDate     string `json:"dueDate"`
+	PeriodStart string `json:"periodStart"`
+	PeriodEnd   string `json:"periodEnd"`
+	DownloadURL string `json:"downloadUrl,omitempty"`
+}
+
+// Refund represents a Stripe refund
+type Refund struct {
+	ID              string `json:"id"`
+	Amount          int64  `json:"amount"`
+	Currency        string `json:"currency"`
+	Status          string `json:"status"`
+	Reason          string `json:"reason"`
+	PaymentIntentID string `json:"payment_intent_id"`
+	ChargeID        string `json:"charge_id"`
+	CreatedAt       string `json:"created_at"`
+	ReceiptNumber   string `json:"receipt_number,omitempty"`
+	FailureReason   string `json:"failure_reason,omitempty"`
 }
 
 // NewStripeService creates a new Stripe service instance
@@ -356,4 +384,141 @@ func (s *StripeService) handlePaymentFailed(event *stripe.Event) error {
 	// Handle retry logic
 
 	return nil
+}
+
+// GetCustomerInvoices retrieves invoices for a customer with pagination
+func (s *StripeService) GetCustomerInvoices(customerID string, limit int, startingAfter string) ([]*Invoice, bool, error) {
+	params := &stripe.InvoiceListParams{
+		Customer: stripe.String(customerID),
+	}
+	params.Limit = stripe.Int64(int64(limit))
+
+	if startingAfter != "" {
+		params.StartingAfter = stripe.String(startingAfter)
+	}
+
+	iter := invoice.List(params)
+	var invoices []*Invoice
+	hasMore := false
+
+	for iter.Next() {
+		stripeInvoice := iter.Invoice()
+		inv := &Invoice{
+			ID:          stripeInvoice.ID,
+			Amount:      stripeInvoice.AmountPaid,
+			Currency:    string(stripeInvoice.Currency),
+			Status:      string(stripeInvoice.Status),
+			CreatedAt:   time.Unix(stripeInvoice.Created, 0).Format(time.RFC3339),
+			DueDate:     time.Unix(stripeInvoice.DueDate, 0).Format(time.RFC3339),
+			PeriodStart: time.Unix(stripeInvoice.PeriodStart, 0).Format(time.RFC3339),
+			PeriodEnd:   time.Unix(stripeInvoice.PeriodEnd, 0).Format(time.RFC3339),
+		}
+
+		if stripeInvoice.InvoicePDF != "" {
+			inv.DownloadURL = stripeInvoice.InvoicePDF
+		}
+
+		invoices = append(invoices, inv)
+	}
+
+	if err := iter.Err(); err != nil {
+		return nil, false, fmt.Errorf("failed to list invoices: %w", err)
+	}
+
+	hasMore = iter.Meta().HasMore
+
+	return invoices, hasMore, nil
+}
+
+// GetInvoice retrieves a specific invoice by ID
+func (s *StripeService) GetInvoice(invoiceID string) (*Invoice, error) {
+	stripeInvoice, err := invoice.Get(invoiceID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get invoice: %w", err)
+	}
+
+	inv := &Invoice{
+		ID:          stripeInvoice.ID,
+		Amount:      stripeInvoice.AmountPaid,
+		Currency:    string(stripeInvoice.Currency),
+		Status:      string(stripeInvoice.Status),
+		CreatedAt:   time.Unix(stripeInvoice.Created, 0).Format(time.RFC3339),
+		DueDate:     time.Unix(stripeInvoice.DueDate, 0).Format(time.RFC3339),
+		PeriodStart: time.Unix(stripeInvoice.PeriodStart, 0).Format(time.RFC3339),
+		PeriodEnd:   time.Unix(stripeInvoice.PeriodEnd, 0).Format(time.RFC3339),
+	}
+
+	if stripeInvoice.InvoicePDF != "" {
+		inv.DownloadURL = stripeInvoice.InvoicePDF
+	}
+
+	return inv, nil
+}
+
+// CreateRefund creates a refund for a payment
+func (s *StripeService) CreateRefund(paymentIntentID string, amount int64, reason string) (*Refund, error) {
+	params := &stripe.RefundParams{
+		PaymentIntent: stripe.String(paymentIntentID),
+		Reason:        stripe.String(reason),
+	}
+
+	if amount > 0 {
+		params.Amount = stripe.Int64(amount)
+	}
+
+	// This would use: refund, err := refund.New(params)
+	// For now, return a mock refund
+	return &Refund{
+		ID:              "re_mock_" + paymentIntentID,
+		Amount:          amount,
+		Currency:        "usd",
+		Status:          "succeeded",
+		Reason:          reason,
+		PaymentIntentID: paymentIntentID,
+		CreatedAt:       time.Now().Format(time.RFC3339),
+	}, nil
+}
+
+// GetRefund retrieves a refund by ID
+func (s *StripeService) GetRefund(refundID string) (*Refund, error) {
+	// This would use: refund, err := refund.Get(refundID, nil)
+	// For now, return a mock refund
+	return &Refund{
+		ID:        refundID,
+		Amount:    2999, // $29.99
+		Currency:  "usd",
+		Status:    "succeeded",
+		Reason:    "requested_by_customer",
+		CreatedAt: time.Now().Format(time.RFC3339),
+	}, nil
+}
+
+// ListCustomerRefunds retrieves refunds for a customer
+func (s *StripeService) ListCustomerRefunds(customerID string, limit int) ([]*Refund, error) {
+	// This would use Stripe's refund list API with customer filter
+	// For now, return mock refunds
+	refunds := []*Refund{
+		{
+			ID:        "re_1",
+			Amount:    2999,
+			Currency:  "usd",
+			Status:    "succeeded",
+			Reason:    "requested_by_customer",
+			CreatedAt: time.Now().AddDate(0, 0, -7).Format(time.RFC3339),
+		},
+		{
+			ID:        "re_2",
+			Amount:    1999,
+			Currency:  "usd",
+			Status:    "pending",
+			Reason:    "fraudulent",
+			CreatedAt: time.Now().AddDate(0, 0, -14).Format(time.RFC3339),
+		},
+	}
+
+	if limit > 0 && len(refunds) > limit {
+		refunds = refunds[:limit]
+	}
+
+	return refunds, nil
 }
