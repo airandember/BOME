@@ -13,15 +13,34 @@
 	let user: any = null;
 	let isLoaded = false;
 	let isSidebarOpen = true;
+	let authChecked = false;
 
 	// Subscribe to auth store
-	auth.subscribe(state => {
+	const unsubscribe = auth.subscribe(state => {
 		isAuthenticated = state.isAuthenticated;
 		user = state.user;
 		isAdmin = user?.role === 'admin';
+		
+		// Only check auth after we have a definitive state
+		if (!authChecked) {
+			checkAuth();
+		}
 	});
 
 	onMount(() => {
+		// Small delay to ensure auth store is initialized
+		setTimeout(() => {
+			checkAuth();
+		}, 50);
+
+		return () => {
+			unsubscribe();
+		};
+	});
+
+	function checkAuth() {
+		authChecked = true;
+		
 		// Check admin access
 		if (!isAuthenticated) {
 			goto('/login');
@@ -33,10 +52,11 @@
 			return;
 		}
 
+		// All checks passed, show the admin interface
 		setTimeout(() => {
 			isLoaded = true;
 		}, 100);
-	});
+	}
 
 	const toggleSidebar = () => {
 		isSidebarOpen = !isSidebarOpen;

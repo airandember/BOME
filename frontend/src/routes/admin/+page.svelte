@@ -12,7 +12,6 @@
 		time: string;
 	}
 
-	let isLoading = true;
 	let stats = {
 		totalUsers: 0,
 		totalVideos: 0,
@@ -50,6 +49,9 @@
 	});
 
 	async function loadAnalytics() {
+		loading = true;
+		error = null;
+		
 		try {
 			const response = await fetch('/api/v1/admin/analytics', {
 				headers: {
@@ -158,7 +160,7 @@
 	<title>Admin Dashboard - BOME</title>
 </svelte:head>
 
-{#if isLoading}
+{#if loading}
 	<div class="loading-container">
 		<LoadingSpinner size="large" color="primary" />
 		<p>Loading dashboard...</p>

@@ -9,8 +9,14 @@ export interface AdvertiserAccount {
 	tax_id?: string;
 	website?: string;
 	industry?: string;
-	status: 'pending' | 'approved' | 'rejected';
+	status: 'pending' | 'approved' | 'rejected' | 'cancelled';
 	verification_notes?: string;
+	approved_by?: number;
+	approved_at?: string;
+	rejected_by?: number;
+	rejected_at?: string;
+	cancelled_by?: number;
+	cancelled_at?: string;
 	stripe_customer_id?: string;
 	created_at: string;
 	updated_at: string;
@@ -21,7 +27,7 @@ export interface AdCampaign {
 	advertiser_id: number;
 	name: string;
 	description?: string;
-	status: 'draft' | 'pending' | 'approved' | 'active' | 'paused' | 'completed' | 'rejected';
+	status: 'draft' | 'pending' | 'approved' | 'active' | 'paused' | 'completed' | 'rejected' | 'cancelled';
 	start_date: string;
 	end_date?: string;
 	budget: number;
@@ -32,6 +38,10 @@ export interface AdCampaign {
 	approval_notes?: string;
 	approved_by?: number;
 	approved_at?: string;
+	rejected_by?: number;
+	rejected_at?: string;
+	cancelled_by?: number;
+	cancelled_at?: string;
 	created_at: string;
 	updated_at: string;
 }
