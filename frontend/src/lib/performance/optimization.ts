@@ -12,7 +12,7 @@ export const PERFORMANCE_CONFIG = {
 };
 
 // Image Optimization
-export class ImageOptimizer {
+class ImageOptimizer {
 	private static cache = new Map<string, HTMLImageElement>();
 	private static loadingImages = new Set<string>();
 
@@ -64,7 +64,9 @@ export class ImageOptimizer {
 				// Manage cache size
 				if (this.cache.size > PERFORMANCE_CONFIG.IMAGE_CACHE_SIZE) {
 					const firstKey = this.cache.keys().next().value;
-					this.cache.delete(firstKey);
+					if (firstKey) {
+						this.cache.delete(firstKey);
+					}
 				}
 				
 				resolve(img);
@@ -88,7 +90,7 @@ export class ImageOptimizer {
 }
 
 // Lazy Loading Manager
-export class LazyLoader {
+class LazyLoader {
 	private static observer: IntersectionObserver | null = null;
 	private static targets = new WeakMap<Element, () => void>();
 
@@ -140,7 +142,7 @@ export class LazyLoader {
 }
 
 // Video Optimization
-export class VideoOptimizer {
+class VideoOptimizer {
 	private static preloadedVideos = new Map<string, HTMLVideoElement>();
 	private static loadingVideos = new Set<string>();
 
@@ -182,12 +184,14 @@ export class VideoOptimizer {
 				// Manage cache size
 				if (this.preloadedVideos.size > PERFORMANCE_CONFIG.VIDEO_PRELOAD_SIZE) {
 					const firstKey = this.preloadedVideos.keys().next().value;
-					const firstVideo = this.preloadedVideos.get(firstKey);
-					if (firstVideo) {
-						firstVideo.src = '';
-						firstVideo.load();
+					if (firstKey) {
+						const firstVideo = this.preloadedVideos.get(firstKey);
+						if (firstVideo) {
+							firstVideo.src = '';
+							firstVideo.load();
+						}
+						this.preloadedVideos.delete(firstKey);
 					}
-					this.preloadedVideos.delete(firstKey);
 				}
 				
 				resolve(video);
@@ -228,7 +232,7 @@ export class VideoOptimizer {
 }
 
 // Performance Utilities
-export class PerformanceUtils {
+class PerformanceUtils {
 	static debounce<T extends (...args: any[]) => void>(
 		func: T,
 		delay: number = PERFORMANCE_CONFIG.DEBOUNCE_DELAY
@@ -338,7 +342,7 @@ export class PerformanceUtils {
 }
 
 // Bundle Optimization
-export class BundleOptimizer {
+class BundleOptimizer {
 	static async loadModule<T>(moduleFactory: () => Promise<T>): Promise<T> {
 		try {
 			return await moduleFactory();
@@ -363,7 +367,7 @@ export class BundleOptimizer {
 }
 
 // Cache Management
-export class CacheManager {
+class CacheManager {
 	private static caches = new Map<string, Map<string, { data: any; timestamp: number; ttl: number }>>();
 
 	static createCache(name: string): void {
@@ -429,7 +433,7 @@ export class CacheManager {
 }
 
 // Performance Monitoring
-export class PerformanceMonitor {
+class PerformanceMonitor {
 	private static metrics = writable<{
 		loadTime: number;
 		renderTime: number;

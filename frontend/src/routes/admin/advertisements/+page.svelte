@@ -3292,6 +3292,13 @@
 		border-radius: var(--radius-xl);
 		border: 1px solid rgba(255, 255, 255, 0.05);
 		overflow: hidden;
+		transition: all var(--transition-normal);
+	}
+
+	.accordion-section:hover {
+		border-color: rgba(255, 255, 255, 0.1);
+		transform: translateY(-1px);
+		box-shadow: var(--shadow-lg);
 	}
 
 	.accordion-header {
@@ -3305,15 +3312,37 @@
 		cursor: pointer;
 		transition: all var(--transition-normal);
 		color: var(--text-primary);
+		position: relative;
+		overflow: hidden;
+	}
+
+	.accordion-header::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: -100%;
+		width: 100%;
+		height: 100%;
+		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.03), transparent);
+		transition: left 0.6s ease;
+	}
+
+	.accordion-header:hover::before {
+		left: 100%;
 	}
 
 	.accordion-header:hover {
 		background: rgba(255, 255, 255, 0.02);
+		transform: scale(1.01);
 	}
 
 	.accordion-header.active {
 		background: rgba(255, 255, 255, 0.05);
 		border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+	}
+
+	.accordion-header.active:hover {
+		background: rgba(255, 255, 255, 0.07);
 	}
 
 	.accordion-title {
@@ -3322,6 +3351,11 @@
 		gap: var(--space-md);
 		font-weight: 600;
 		font-size: var(--text-lg);
+		transition: all var(--transition-normal);
+	}
+
+	.accordion-header:hover .accordion-title {
+		transform: translateX(2px);
 	}
 
 	.accordion-icon {
@@ -3329,6 +3363,12 @@
 		height: 24px;
 		color: var(--primary);
 		flex-shrink: 0;
+		transition: all var(--transition-normal);
+	}
+
+	.accordion-header:hover .accordion-icon {
+		transform: scale(1.1);
+		filter: brightness(1.2);
 	}
 
 	.accordion-count {
@@ -3340,24 +3380,143 @@
 		font-weight: 600;
 		min-width: 24px;
 		text-align: center;
+		transition: all var(--transition-normal);
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	}
+
+	.accordion-header:hover .accordion-count {
+		transform: scale(1.05);
+		box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 	}
 
 	.accordion-chevron {
 		width: 20px;
 		height: 20px;
 		color: var(--text-secondary);
-		transition: transform var(--transition-normal);
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 		flex-shrink: 0;
 	}
 
 	.accordion-chevron.rotated {
 		transform: rotate(180deg);
+		color: var(--primary);
+	}
+
+	.accordion-header:hover .accordion-chevron {
+		color: var(--text-primary);
+		transform: scale(1.1);
+	}
+
+	.accordion-header:hover .accordion-chevron.rotated {
+		transform: rotate(180deg) scale(1.1);
 	}
 
 	.accordion-content {
+		max-height: 0;
+		overflow: hidden;
+		transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+		opacity: 0;
+		transform: translateY(-10px);
+		background: var(--bg-glass);
+	}
+
+	.accordion-section:has(.accordion-header.active) .accordion-content {
+		max-height: 2000px;
+		opacity: 1;
+		transform: translateY(0);
 		padding: var(--space-lg);
 		border-top: 1px solid rgba(255, 255, 255, 0.05);
-		background: var(--bg-glass);
+	}
+
+	/* Fallback for browsers that don't support :has() */
+	.accordion-content.active {
+		max-height: 2000px;
+		opacity: 1;
+		transform: translateY(0);
+		padding: var(--space-lg);
+		border-top: 1px solid rgba(255, 255, 255, 0.05);
+	}
+
+	/* Stagger animation for accordion items */
+	.accordion-content .accounts-grid > *,
+	.accordion-content .campaigns-grid > * {
+		animation: slideInUp 0.3s ease-out backwards;
+	}
+
+	.accordion-content .accounts-grid > *:nth-child(1),
+	.accordion-content .campaigns-grid > *:nth-child(1) {
+		animation-delay: 0.1s;
+	}
+
+	.accordion-content .accounts-grid > *:nth-child(2),
+	.accordion-content .campaigns-grid > *:nth-child(2) {
+		animation-delay: 0.15s;
+	}
+
+	.accordion-content .accounts-grid > *:nth-child(3),
+	.accordion-content .campaigns-grid > *:nth-child(3) {
+		animation-delay: 0.2s;
+	}
+
+	.accordion-content .accounts-grid > *:nth-child(4),
+	.accordion-content .campaigns-grid > *:nth-child(4) {
+		animation-delay: 0.25s;
+	}
+
+	.accordion-content .accounts-grid > *:nth-child(n+5),
+	.accordion-content .campaigns-grid > *:nth-child(n+5) {
+		animation-delay: 0.3s;
+	}
+
+	@keyframes slideInUp {
+		from {
+			opacity: 0;
+			transform: translateY(20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	/* Enhanced card animations */
+	.account-card,
+	.campaign-card {
+		background: var(--bg-glass-dark);
+		border-radius: var(--radius-xl);
+		border: 1px solid rgba(255, 255, 255, 0.05);
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		overflow: hidden;
+		position: relative;
+	}
+
+	.account-card::before,
+	.campaign-card::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, transparent 50%);
+		opacity: 0;
+		transition: opacity var(--transition-normal);
+		pointer-events: none;
+	}
+
+	.account-card:hover,
+	.campaign-card:hover {
+		transform: translateY(-4px) scale(1.02);
+		box-shadow: 
+			var(--shadow-lg),
+			0 20px 40px rgba(0, 0, 0, 0.1),
+			0 0 0 1px rgba(255, 255, 255, 0.1);
+		border-color: rgba(255, 255, 255, 0.15);
+	}
+
+	.account-card:hover::before,
+	.campaign-card:hover::before {
+		opacity: 1;
 	}
 
 	/* Campaign Metrics */

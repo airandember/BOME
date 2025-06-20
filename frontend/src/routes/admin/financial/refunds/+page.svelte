@@ -568,7 +568,12 @@
 
 <!-- Refund Details Modal -->
 {#if showRefundModal && selectedRefund}
-	<div class="modal-overlay" on:click={() => showRefundModal = false}>
+	<div class="modal-overlay" 
+		on:click={() => showRefundModal = false}
+		on:keydown={(e) => e.key === 'Escape' && (showRefundModal = false)}
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1">
 		<div class="modal-content" on:click|stopPropagation>
 			<div class="modal-header">
 				<h2>Refund Details</h2>
@@ -666,11 +671,11 @@
 			</div>
 			
 			<div class="modal-footer">
-				{#if selectedRefund.status === 'pending'}
-					<button class="btn btn-success" on:click={() => handleProcessRefund(selectedRefund.id, 'approve')}>
+				{#if selectedRefund?.status === 'pending'}
+					<button class="btn btn-success" on:click={() => handleProcessRefund(selectedRefund!.id, 'approve')}>
 						Approve Refund
 					</button>
-					<button class="btn btn-error" on:click={() => handleProcessRefund(selectedRefund.id, 'reject')}>
+					<button class="btn btn-error" on:click={() => handleProcessRefund(selectedRefund!.id, 'reject')}>
 						Reject Refund
 					</button>
 				{/if}

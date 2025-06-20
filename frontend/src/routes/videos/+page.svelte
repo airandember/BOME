@@ -3,6 +3,8 @@
 	import { videoService, type Video, type VideoCategory } from '$lib/video';
 	import VideoCard from '$lib/components/VideoCard.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import Navigation from '$lib/components/Navigation.svelte';
+	import Footer from '$lib/components/Footer.svelte';
 	import { toasts } from '$lib/stores/toast';
 
 	let videos: Video[] = [];
@@ -101,6 +103,8 @@
 	<meta name="description" content="Browse our collection of Book of Mormon evidence videos." />
 </svelte:head>
 
+<Navigation />
+
 <div class="videos-page">
 	<div class="container">
 		<header class="page-header">
@@ -178,6 +182,8 @@
 		{/if}
 	</div>
 </div>
+
+<Footer />
 
 <style>
 	.videos-page {

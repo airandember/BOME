@@ -2,6 +2,8 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/auth';
+	import Navigation from '$lib/components/Navigation.svelte';
+	import Footer from '$lib/components/Footer.svelte';
 	import type { AdvertiserAccount, AdCampaign, DashboardAnalytics } from '$lib/types/advertising';
 	
 	let advertiserAccount: AdvertiserAccount | null = null;
@@ -112,6 +114,8 @@
 <svelte:head>
 	<title>Advertiser Dashboard - BOME</title>
 </svelte:head>
+
+<Navigation />
 
 <div class="min-h-screen bg-gray-50 py-8">
 	<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -446,4 +450,6 @@
 			{/if}
 		{/if}
 	</div>
-</div> 
+</div>
+
+<Footer /> 

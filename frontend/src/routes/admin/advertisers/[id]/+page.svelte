@@ -26,6 +26,14 @@
 	let reviewingCancelledCampaignId: number | null = null;
 	let cancellingAdvertiser = false;
 
+	// Accordion state management for campaigns
+	let campaignAccordionState = {
+		pending: true,
+		approved: false,
+		rejected: false,
+		cancelled: false
+	};
+
 	const advertiserId = parseInt($page.params.id);
 
 	// Mock admin data
@@ -474,6 +482,30 @@
 				return null;
 		}
 	}
+
+	// Accordion helper functions
+	function toggleCampaignAccordion(status: 'pending' | 'approved' | 'rejected' | 'cancelled') {
+		campaignAccordionState[status] = !campaignAccordionState[status];
+	}
+
+	function getCampaignsByStatus(status: string): AdCampaign[] {
+		if (status === 'approved') {
+			return campaigns.filter(campaign => campaign.status === 'approved' || campaign.status === 'active');
+		}
+		return campaigns.filter(campaign => campaign.status === status);
+	}
+
+	function getCampaignCounts() {
+		return {
+			pending: campaigns.filter(camp => camp.status === 'pending').length,
+			approved: campaigns.filter(camp => camp.status === 'approved' || camp.status === 'active').length,
+			rejected: campaigns.filter(camp => camp.status === 'rejected').length,
+			cancelled: campaigns.filter(camp => camp.status === 'cancelled').length
+		};
+	}
+
+	// Computed campaign counts
+	$: campaignCounts = getCampaignCounts();
 </script>
 
 <svelte:head>
@@ -598,217 +630,550 @@
 				<h2>Campaigns ({campaigns.length})</h2>
 				<span class="active-count">{analytics.activeCampaigns} Active</span>
 			</div>
-			<div class="campaigns-grid">
-				{#each campaigns as campaign}
-					{@const campaignStatusInfo = getCampaignStatusInfo(campaign)}
-					<div class="campaign-card">
-						<div class="campaign-header">
-							<div class="campaign-info">
-								<div class="campaign-icon">
+
+			<!-- Pending Campaigns Accordion -->
+			<div class="accordion-section">
+				<button 
+					class="accordion-header {campaignAccordionState.pending ? 'active' : ''}"
+					on:click={() => toggleCampaignAccordion('pending')}
+				>
+					<div class="accordion-title">
+						<svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<circle cx="12" cy="12" r="10" />
+							<path d="M12 6v6l4 2" />
+						</svg>
+						<span>Pending Approval</span>
+						<span class="accordion-count">{campaignCounts.pending}</span>
+					</div>
+					<svg class="accordion-chevron {campaignAccordionState.pending ? 'rotated' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M6 9l6 6 6-6" />
+					</svg>
+				</button>
+				{#if campaignAccordionState.pending}
+					{@const pendingCampaigns = getCampaignsByStatus('pending')}
+					<div class="accordion-content">
+						{#if pendingCampaigns.length === 0}
+							<div class="empty-state">
+								<div class="empty-icon">
 									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-										<line x1="8" y1="21" x2="16" y2="21" />
-										<line x1="12" y1="17" x2="12" y2="21" />
+										<circle cx="12" cy="12" r="10" />
+										<path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+										<path d="M12 17h.01" />
 									</svg>
 								</div>
-								<div class="campaign-details">
-									<h3>{campaign.name}</h3>
-									<div class="campaign-meta">
-										<span class="status-badge {getStatusBadgeClass(campaign.status)}">
-											{campaign.status}
-										</span>
-										{#if campaignStatusInfo}
-											<div class="status-info">
-												<span class="status-action">{campaignStatusInfo.text} by {campaignStatusInfo.admin}</span>
-												<span class="status-date">{campaignStatusInfo.date}</span>
+								<h3>No pending campaigns</h3>
+								<p>No campaigns are currently pending approval.</p>
+							</div>
+						{:else}
+							<div class="campaigns-grid">
+								{#each pendingCampaigns as campaign}
+									{@const campaignStatusInfo = getCampaignStatusInfo(campaign)}
+									<div class="campaign-card">
+										<div class="campaign-header">
+											<div class="campaign-info">
+												<div class="campaign-icon">
+													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+														<rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+														<line x1="8" y1="21" x2="16" y2="21" />
+														<line x1="12" y1="17" x2="12" y2="21" />
+													</svg>
+												</div>
+												<div class="campaign-details">
+													<h3>{campaign.name}</h3>
+													<div class="campaign-meta">
+														<span class="status-badge {getStatusBadgeClass(campaign.status)}">
+															{campaign.status}
+														</span>
+													</div>
+													<div class="card-actions">
+														<button
+															class="btn btn-sm btn-success"
+															on:click={() => approveCampaign(campaign.id)}
+														>
+															<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+																<path d="M9 12l2 2 4-4" />
+															</svg>
+															Approve
+														</button>
+														<button
+															class="btn btn-sm btn-error"
+															on:click={() => rejectCampaign(campaign.id)}
+														>
+															<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+																<path d="M18 6L6 18M6 6l12 12" />
+															</svg>
+															Reject
+														</button>
+													</div>
+												</div>
 											</div>
-										{/if}
+										</div>
+										
+										<div class="campaign-content">
+											<div class="campaign-description">
+												<p>{campaign.description}</p>
+											</div>
+											
+											<div class="campaign-metrics">
+												<div class="metric">
+													<label>Budget</label>
+													<span class="budget-amount">{formatCurrency(campaign.budget)}</span>
+												</div>
+												<div class="metric">
+													<label>Duration</label>
+													<span>{formatDate(campaign.start_date)} - {campaign.end_date ? formatDate(campaign.end_date) : 'Ongoing'}</span>
+												</div>
+												<div class="metric">
+													<label>Billing</label>
+													<span>{formatCurrency(campaign.billing_rate)} / {campaign.billing_type}</span>
+												</div>
+											</div>
+											
+											{#if campaign.target_audience}
+												<div class="audience-section">
+													<label>Target Audience</label>
+													<p>{campaign.target_audience}</p>
+												</div>
+											{/if}
+										</div>
 									</div>
-									{#if campaign.status === 'pending'}
-										<div class="card-actions">
-											<button
-												class="btn btn-sm btn-success"
-												on:click={() => approveCampaign(campaign.id)}
-											>
-												<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-													<path d="M9 12l2 2 4-4" />
-												</svg>
-												Approve
-											</button>
-											<button
-												class="btn btn-sm btn-error"
-												on:click={() => rejectCampaign(campaign.id)}
-											>
-												<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-													<path d="M18 6L6 18M6 6l12 12" />
-												</svg>
-												Reject
-											</button>
-										</div>
-									{/if}
-								</div>
+								{/each}
 							</div>
-						</div>
-						
-						<div class="campaign-content">
-							<div class="campaign-description">
-								<p>{campaign.description}</p>
-							</div>
-							
-							<div class="campaign-metrics">
-								<div class="metric">
-									<label>Budget</label>
-									<span class="budget-amount">{formatCurrency(campaign.budget)}</span>
-								</div>
-								<div class="metric">
-									<label>Spent</label>
-									<span>{formatCurrency(campaign.spent_amount)}</span>
-								</div>
-								<div class="metric">
-									<label>Duration</label>
-									<span>{formatDate(campaign.start_date)} - {campaign.end_date ? formatDate(campaign.end_date) : 'Ongoing'}</span>
-								</div>
-								<div class="metric">
-									<label>Billing</label>
-									<span>{formatCurrency(campaign.billing_rate)} / {campaign.billing_type}</span>
-								</div>
-							</div>
-							
-							{#if campaign.target_audience}
-								<div class="audience-section">
-									<label>Target Audience</label>
-									<p>{campaign.target_audience}</p>
-								</div>
-							{/if}
-							
-							{#if campaign.approval_notes}
-								<div class="notes-section">
-									<label>Notes</label>
-									<p>{campaign.approval_notes}</p>
-								</div>
-							{/if}
-							
-							<!-- Action buttons for approved/rejected campaigns -->
-							{#if campaign.status === 'approved' || campaign.status === 'active'}
-								<div class="cancel-section">
-									{#if cancellingCampaignId === campaign.id}
-										<div class="cancel-confirmation">
-											<p class="confirmation-text">Are you sure you want to cancel this campaign?</p>
-											<div class="confirmation-actions">
-												<button
-													class="btn btn-sm btn-error"
-													on:click={() => confirmCancelCampaign(campaign.id)}
-												>
-													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-														<path d="M9 12l2 2 4-4" />
-													</svg>
-													Confirm
-												</button>
-												<button
-													class="btn btn-sm btn-secondary"
-													on:click={hideCancelConfirmation}
-												>
-													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-														<path d="M18 6L6 18M6 6l12 12" />
-													</svg>
-													Cancel
-												</button>
-											</div>
-										</div>
-									{:else}
-										<button
-											class="btn btn-cancel"
-											on:click={() => showCancelConfirmation(campaign.id)}
-										>
-											<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-												<path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-											</svg>
-											Cancel Campaign
-										</button>
-									{/if}
-								</div>
-							{:else if campaign.status === 'rejected'}
-								<div class="cancel-section">
-									{#if reviewingCampaignId === campaign.id}
-										<div class="review-confirmation">
-											<p class="confirmation-text">Would you like to approve this campaign?</p>
-											<div class="confirmation-actions">
-												<button
-													class="btn btn-sm btn-success"
-													on:click={() => confirmReviewApproval(campaign.id)}
-												>
-													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-														<path d="M9 12l2 2 4-4" />
-													</svg>
-													Approve
-												</button>
-												<button
-													class="btn btn-sm btn-secondary"
-													on:click={hideReviewConfirmation}
-												>
-													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-														<path d="M18 6L6 18M6 6l12 12" />
-													</svg>
-													Cancel
-												</button>
-											</div>
-										</div>
-									{:else}
-										<button
-											class="btn btn-review"
-											on:click={() => showReviewConfirmation(campaign.id)}
-										>
-											<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-												<circle cx="11" cy="11" r="8" />
-												<path d="m21 21-4.35-4.35" />
-											</svg>
-											Review Campaign
-										</button>
-									{/if}
-								</div>
-							{:else if campaign.status === 'cancelled'}
-								<div class="cancel-section">
-									{#if reviewingCancelledCampaignId === campaign.id}
-										<div class="review-confirmation">
-											<p class="confirmation-text">Would you like to reactivate this campaign?</p>
-											<div class="confirmation-actions">
-												<button
-													class="btn btn-sm btn-success"
-													on:click={() => confirmCancelledCampaignReactivation(campaign.id)}
-												>
-													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-														<path d="M9 12l2 2 4-4" />
-													</svg>
-													Reactivate
-												</button>
-												<button
-													class="btn btn-sm btn-secondary"
-													on:click={hideCancelledCampaignReviewConfirmation}
-												>
-													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-														<path d="M18 6L6 18M6 6l12 12" />
-													</svg>
-													Cancel
-												</button>
-											</div>
-										</div>
-									{:else}
-										<button
-											class="btn btn-review"
-											on:click={() => showCancelledCampaignReviewConfirmation(campaign.id)}
-										>
-											<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-												<circle cx="11" cy="11" r="8" />
-												<path d="m21 21-4.35-4.35" />
-											</svg>
-											Review Campaign
-										</button>
-									{/if}
-								</div>
-							{/if}
-						</div>
+						{/if}
 					</div>
-				{/each}
+				{/if}
+			</div>
+
+			<!-- Approved Campaigns Accordion -->
+			<div class="accordion-section">
+				<button 
+					class="accordion-header {campaignAccordionState.approved ? 'active' : ''}"
+					on:click={() => toggleCampaignAccordion('approved')}
+				>
+					<div class="accordion-title">
+						<svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M9 12l2 2 4-4" />
+							<circle cx="12" cy="12" r="10" />
+						</svg>
+						<span>Approved</span>
+						<span class="accordion-count">{campaignCounts.approved}</span>
+					</div>
+					<svg class="accordion-chevron {campaignAccordionState.approved ? 'rotated' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M6 9l6 6 6-6" />
+					</svg>
+				</button>
+				{#if campaignAccordionState.approved}
+					{@const approvedCampaigns = getCampaignsByStatus('approved')}
+					<div class="accordion-content">
+						{#if approvedCampaigns.length === 0}
+							<div class="empty-state">
+								<div class="empty-icon">
+									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<circle cx="12" cy="12" r="10" />
+										<path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+										<path d="M12 17h.01" />
+									</svg>
+								</div>
+								<h3>No approved campaigns</h3>
+								<p>No approved campaigns found.</p>
+							</div>
+						{:else}
+							<div class="campaigns-grid">
+								{#each approvedCampaigns as campaign}
+									{@const campaignStatusInfo = getCampaignStatusInfo(campaign)}
+									<div class="campaign-card">
+										<div class="campaign-header">
+											<div class="campaign-info">
+												<div class="campaign-icon">
+													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+														<rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+														<line x1="8" y1="21" x2="16" y2="21" />
+														<line x1="12" y1="17" x2="12" y2="21" />
+													</svg>
+												</div>
+												<div class="campaign-details">
+													<h3>{campaign.name}</h3>
+													<div class="campaign-meta">
+														<span class="status-badge {getStatusBadgeClass(campaign.status)}">
+															{campaign.status}
+														</span>
+														{#if campaignStatusInfo}
+															<div class="status-info">
+																<span class="status-action">{campaignStatusInfo.text} by {campaignStatusInfo.admin}</span>
+																<span class="status-date">{campaignStatusInfo.date}</span>
+															</div>
+														{/if}
+													</div>
+												</div>
+											</div>
+										</div>
+										
+										<div class="campaign-content">
+											<div class="campaign-description">
+												<p>{campaign.description}</p>
+											</div>
+											
+											<div class="campaign-metrics">
+												<div class="metric">
+													<label>Budget</label>
+													<span class="budget-amount">{formatCurrency(campaign.budget)}</span>
+												</div>
+												<div class="metric">
+													<label>Spent</label>
+													<span>{formatCurrency(campaign.spent_amount)}</span>
+												</div>
+												<div class="metric">
+													<label>Duration</label>
+													<span>{formatDate(campaign.start_date)} - {campaign.end_date ? formatDate(campaign.end_date) : 'Ongoing'}</span>
+												</div>
+												<div class="metric">
+													<label>Billing</label>
+													<span>{formatCurrency(campaign.billing_rate)} / {campaign.billing_type}</span>
+												</div>
+											</div>
+											
+											{#if campaign.target_audience}
+												<div class="audience-section">
+													<label>Target Audience</label>
+													<p>{campaign.target_audience}</p>
+												</div>
+											{/if}
+											
+											<!-- Cancel button for approved campaigns -->
+											<div class="cancel-section">
+												{#if cancellingCampaignId === campaign.id}
+													<div class="cancel-confirmation">
+														<p class="confirmation-text">Are you sure you want to cancel this campaign?</p>
+														<div class="confirmation-actions">
+															<button
+																class="btn btn-sm btn-error"
+																on:click={() => confirmCancelCampaign(campaign.id)}
+															>
+																<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+																	<path d="M9 12l2 2 4-4" />
+																</svg>
+																Confirm
+															</button>
+															<button
+																class="btn btn-sm btn-secondary"
+																on:click={hideCancelConfirmation}
+															>
+																<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+																	<path d="M18 6L6 18M6 6l12 12" />
+																</svg>
+																Cancel
+															</button>
+														</div>
+													</div>
+												{:else}
+													<button
+														class="btn btn-cancel"
+														on:click={() => showCancelConfirmation(campaign.id)}
+													>
+														<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+															<path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+														</svg>
+														Cancel Campaign
+													</button>
+												{/if}
+											</div>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
+
+			<!-- Rejected Campaigns Accordion -->
+			<div class="accordion-section">
+				<button 
+					class="accordion-header {campaignAccordionState.rejected ? 'active' : ''}"
+					on:click={() => toggleCampaignAccordion('rejected')}
+				>
+					<div class="accordion-title">
+						<svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<circle cx="12" cy="12" r="10" />
+							<line x1="15" y1="9" x2="9" y2="15" />
+							<line x1="9" y1="9" x2="15" y2="15" />
+						</svg>
+						<span>Rejected</span>
+						<span class="accordion-count">{campaignCounts.rejected}</span>
+					</div>
+					<svg class="accordion-chevron {campaignAccordionState.rejected ? 'rotated' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M6 9l6 6 6-6" />
+					</svg>
+				</button>
+				{#if campaignAccordionState.rejected}
+					{@const rejectedCampaigns = getCampaignsByStatus('rejected')}
+					<div class="accordion-content">
+						{#if rejectedCampaigns.length === 0}
+							<div class="empty-state">
+								<div class="empty-icon">
+									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<circle cx="12" cy="12" r="10" />
+										<path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+										<path d="M12 17h.01" />
+									</svg>
+								</div>
+								<h3>No rejected campaigns</h3>
+								<p>No rejected campaigns found.</p>
+							</div>
+						{:else}
+							<div class="campaigns-grid">
+								{#each rejectedCampaigns as campaign}
+									{@const campaignStatusInfo = getCampaignStatusInfo(campaign)}
+									<div class="campaign-card">
+										<div class="campaign-header">
+											<div class="campaign-info">
+												<div class="campaign-icon">
+													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+														<rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+														<line x1="8" y1="21" x2="16" y2="21" />
+														<line x1="12" y1="17" x2="12" y2="21" />
+													</svg>
+												</div>
+												<div class="campaign-details">
+													<h3>{campaign.name}</h3>
+													<div class="campaign-meta">
+														<span class="status-badge {getStatusBadgeClass(campaign.status)}">
+															{campaign.status}
+														</span>
+														{#if campaignStatusInfo}
+															<div class="status-info">
+																<span class="status-action">{campaignStatusInfo.text} by {campaignStatusInfo.admin}</span>
+																<span class="status-date">{campaignStatusInfo.date}</span>
+															</div>
+														{/if}
+													</div>
+												</div>
+											</div>
+										</div>
+										
+										<div class="campaign-content">
+											<div class="campaign-description">
+												<p>{campaign.description}</p>
+											</div>
+											
+											<div class="campaign-metrics">
+												<div class="metric">
+													<label>Budget</label>
+													<span class="budget-amount">{formatCurrency(campaign.budget)}</span>
+												</div>
+												<div class="metric">
+													<label>Duration</label>
+													<span>{formatDate(campaign.start_date)} - {campaign.end_date ? formatDate(campaign.end_date) : 'Ongoing'}</span>
+												</div>
+												<div class="metric">
+													<label>Billing</label>
+													<span>{formatCurrency(campaign.billing_rate)} / {campaign.billing_type}</span>
+												</div>
+											</div>
+											
+											{#if campaign.target_audience}
+												<div class="audience-section">
+													<label>Target Audience</label>
+													<p>{campaign.target_audience}</p>
+												</div>
+											{/if}
+											
+											{#if campaign.approval_notes}
+												<div class="notes-section">
+													<label>Notes</label>
+													<p>{campaign.approval_notes}</p>
+												</div>
+											{/if}
+											
+											<!-- Review button for rejected campaigns -->
+											<div class="cancel-section">
+												{#if reviewingCampaignId === campaign.id}
+													<div class="review-confirmation">
+														<p class="confirmation-text">Would you like to approve this campaign?</p>
+														<div class="confirmation-actions">
+															<button
+																class="btn btn-sm btn-success"
+																on:click={() => confirmReviewApproval(campaign.id)}
+															>
+																<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+																	<path d="M9 12l2 2 4-4" />
+																</svg>
+																Approve
+															</button>
+															<button
+																class="btn btn-sm btn-secondary"
+																on:click={hideReviewConfirmation}
+															>
+																<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+																	<path d="M18 6L6 18M6 6l12 12" />
+																</svg>
+																Cancel
+															</button>
+														</div>
+													</div>
+												{:else}
+													<button
+														class="btn btn-review"
+														on:click={() => showReviewConfirmation(campaign.id)}
+													>
+														<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+															<circle cx="11" cy="11" r="8" />
+															<path d="m21 21-4.35-4.35" />
+														</svg>
+														Review Campaign
+													</button>
+												{/if}
+											</div>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
+
+			<!-- Cancelled Campaigns Accordion -->
+			<div class="accordion-section">
+				<button 
+					class="accordion-header {campaignAccordionState.cancelled ? 'active' : ''}"
+					on:click={() => toggleCampaignAccordion('cancelled')}
+				>
+					<div class="accordion-title">
+						<svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<circle cx="12" cy="12" r="10" />
+							<path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+						</svg>
+						<span>Cancelled</span>
+						<span class="accordion-count">{campaignCounts.cancelled}</span>
+					</div>
+					<svg class="accordion-chevron {campaignAccordionState.cancelled ? 'rotated' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M6 9l6 6 6-6" />
+					</svg>
+				</button>
+				{#if campaignAccordionState.cancelled}
+					{@const cancelledCampaigns = getCampaignsByStatus('cancelled')}
+					<div class="accordion-content">
+						{#if cancelledCampaigns.length === 0}
+							<div class="empty-state">
+								<div class="empty-icon">
+									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<circle cx="12" cy="12" r="10" />
+										<path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+										<path d="M12 17h.01" />
+									</svg>
+								</div>
+								<h3>No cancelled campaigns</h3>
+								<p>No cancelled campaigns found.</p>
+							</div>
+						{:else}
+							<div class="campaigns-grid">
+								{#each cancelledCampaigns as campaign}
+									{@const campaignStatusInfo = getCampaignStatusInfo(campaign)}
+									<div class="campaign-card">
+										<div class="campaign-header">
+											<div class="campaign-info">
+												<div class="campaign-icon">
+													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+														<rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+														<line x1="8" y1="21" x2="16" y2="21" />
+														<line x1="12" y1="17" x2="12" y2="21" />
+													</svg>
+												</div>
+												<div class="campaign-details">
+													<h3>{campaign.name}</h3>
+													<div class="campaign-meta">
+														<span class="status-badge {getStatusBadgeClass(campaign.status)}">
+															{campaign.status}
+														</span>
+														{#if campaignStatusInfo}
+															<div class="status-info">
+																<span class="status-action">{campaignStatusInfo.text} by {campaignStatusInfo.admin}</span>
+																<span class="status-date">{campaignStatusInfo.date}</span>
+															</div>
+														{/if}
+													</div>
+												</div>
+											</div>
+										</div>
+										
+										<div class="campaign-content">
+											<div class="campaign-description">
+												<p>{campaign.description}</p>
+											</div>
+											
+											<div class="campaign-metrics">
+												<div class="metric">
+													<label>Budget</label>
+													<span class="budget-amount">{formatCurrency(campaign.budget)}</span>
+												</div>
+												<div class="metric">
+													<label>Spent</label>
+													<span>{formatCurrency(campaign.spent_amount)}</span>
+												</div>
+												<div class="metric">
+													<label>Duration</label>
+													<span>{formatDate(campaign.start_date)} - {campaign.end_date ? formatDate(campaign.end_date) : 'Ongoing'}</span>
+												</div>
+												<div class="metric">
+													<label>Billing</label>
+													<span>{formatCurrency(campaign.billing_rate)} / {campaign.billing_type}</span>
+												</div>
+											</div>
+											
+											{#if campaign.target_audience}
+												<div class="audience-section">
+													<label>Target Audience</label>
+													<p>{campaign.target_audience}</p>
+												</div>
+											{/if}
+											
+											<!-- Review button for cancelled campaigns -->
+											<div class="cancel-section">
+												{#if reviewingCancelledCampaignId === campaign.id}
+													<div class="review-confirmation">
+														<p class="confirmation-text">Would you like to reactivate this campaign?</p>
+														<div class="confirmation-actions">
+															<button
+																class="btn btn-sm btn-success"
+																on:click={() => confirmCancelledCampaignReactivation(campaign.id)}
+															>
+																<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+																	<path d="M9 12l2 2 4-4" />
+																</svg>
+																Reactivate
+															</button>
+															<button
+																class="btn btn-sm btn-secondary"
+																on:click={hideCancelledCampaignReviewConfirmation}
+															>
+																<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+																	<path d="M18 6L6 18M6 6l12 12" />
+																</svg>
+																Cancel
+															</button>
+														</div>
+													</div>
+												{:else}
+													<button
+														class="btn btn-review"
+														on:click={() => showCancelledCampaignReviewConfirmation(campaign.id)}
+													>
+														<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+															<circle cx="11" cy="11" r="8" />
+															<path d="m21 21-4.35-4.35" />
+														</svg>
+														Review Campaign
+													</button>
+												{/if}
+											</div>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
 			</div>
 		</div>
 
@@ -1650,62 +2015,252 @@
 
 		.advertiser-header {
 			flex-direction: column;
-			align-items: flex-start;
+			align-items: center;
 			text-align: center;
 		}
 
 		.analytics-grid {
-			grid-template-columns: 1fr;
+			grid-template-columns: repeat(2, 1fr);
 		}
 
 		.campaigns-grid {
 			grid-template-columns: 1fr;
 		}
 
-		.campaign-header {
-			flex-direction: column;
-			align-items: stretch;
-			gap: var(--space-md);
-		}
-
-		.campaign-info {
-			align-items: center;
-		}
-
-		.card-actions {
-			justify-content: stretch;
-		}
-
-		.card-actions .btn {
-			flex: 1;
-			max-width: none;
-		}
-
-		.table-header,
-		.table-row {
-			grid-template-columns: 1fr;
-			gap: var(--space-sm);
-		}
-
-		.table-header {
-			display: none;
-		}
-
-		.table-cell {
-			padding: var(--space-sm) 0;
-			border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-		}
-
-		.table-cell:before {
-			content: attr(data-label);
-			font-weight: 600;
-			color: var(--text-secondary);
-			display: block;
-			margin-bottom: var(--space-xs);
-		}
-
 		.info-grid {
 			grid-template-columns: 1fr;
 		}
+
+		.placements-table {
+			overflow-x: auto;
+		}
+
+		.header-cell,
+		.table-cell {
+			min-width: 100px;
+		}
+	}
+
+	/* Accordion Styles */
+	.accordion-section {
+		margin-bottom: var(--space-lg);
+		background: var(--bg-glass-dark);
+		border-radius: var(--radius-xl);
+		border: 1px solid rgba(255, 255, 255, 0.05);
+		overflow: hidden;
+		transition: all var(--transition-normal);
+	}
+
+	.accordion-section:hover {
+		border-color: rgba(255, 255, 255, 0.1);
+		transform: translateY(-1px);
+		box-shadow: var(--shadow-lg);
+	}
+
+	.accordion-header {
+		width: 100%;
+		padding: var(--space-lg);
+		background: none;
+		border: none;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		cursor: pointer;
+		transition: all var(--transition-normal);
+		color: var(--text-primary);
+		position: relative;
+		overflow: hidden;
+	}
+
+	.accordion-header::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: -100%;
+		width: 100%;
+		height: 100%;
+		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.03), transparent);
+		transition: left 0.6s ease;
+	}
+
+	.accordion-header:hover::before {
+		left: 100%;
+	}
+
+	.accordion-header:hover {
+		background: rgba(255, 255, 255, 0.02);
+		transform: scale(1.01);
+	}
+
+	.accordion-header.active {
+		background: rgba(255, 255, 255, 0.05);
+		border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+	}
+
+	.accordion-header.active:hover {
+		background: rgba(255, 255, 255, 0.07);
+	}
+
+	.accordion-title {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+		font-weight: 600;
+		font-size: var(--text-lg);
+		transition: all var(--transition-normal);
+	}
+
+	.accordion-header:hover .accordion-title {
+		transform: translateX(2px);
+	}
+
+	.accordion-icon {
+		width: 24px;
+		height: 24px;
+		color: var(--primary);
+		flex-shrink: 0;
+		transition: all var(--transition-normal);
+	}
+
+	.accordion-header:hover .accordion-icon {
+		transform: scale(1.1);
+		filter: brightness(1.2);
+	}
+
+	.accordion-count {
+		background: var(--primary-gradient);
+		color: var(--white);
+		padding: var(--space-xs) var(--space-sm);
+		border-radius: var(--radius-full);
+		font-size: var(--text-xs);
+		font-weight: 600;
+		min-width: 24px;
+		text-align: center;
+		transition: all var(--transition-normal);
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	}
+
+	.accordion-header:hover .accordion-count {
+		transform: scale(1.05);
+		box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+	}
+
+	.accordion-chevron {
+		width: 20px;
+		height: 20px;
+		color: var(--text-secondary);
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		flex-shrink: 0;
+	}
+
+	.accordion-chevron.rotated {
+		transform: rotate(180deg);
+		color: var(--primary);
+	}
+
+	.accordion-header:hover .accordion-chevron {
+		color: var(--text-primary);
+		transform: scale(1.1);
+	}
+
+	.accordion-header:hover .accordion-chevron.rotated {
+		transform: rotate(180deg) scale(1.1);
+	}
+
+	.accordion-content {
+		max-height: 0;
+		overflow: hidden;
+		transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+		opacity: 0;
+		transform: translateY(-10px);
+		background: var(--bg-glass);
+	}
+
+	.accordion-section:has(.accordion-header.active) .accordion-content {
+		max-height: 2000px;
+		opacity: 1;
+		transform: translateY(0);
+		padding: var(--space-lg);
+		border-top: 1px solid rgba(255, 255, 255, 0.05);
+	}
+
+	/* Fallback for browsers that don't support :has() */
+	.accordion-content.active {
+		max-height: 2000px;
+		opacity: 1;
+		transform: translateY(0);
+		padding: var(--space-lg);
+		border-top: 1px solid rgba(255, 255, 255, 0.05);
+	}
+
+	/* Stagger animation for accordion items */
+	.accordion-content .campaigns-grid > * {
+		animation: slideInUp 0.3s ease-out backwards;
+	}
+
+	.accordion-content .campaigns-grid > *:nth-child(1) {
+		animation-delay: 0.1s;
+	}
+
+	.accordion-content .campaigns-grid > *:nth-child(2) {
+		animation-delay: 0.15s;
+	}
+
+	.accordion-content .campaigns-grid > *:nth-child(3) {
+		animation-delay: 0.2s;
+	}
+
+	.accordion-content .campaigns-grid > *:nth-child(4) {
+		animation-delay: 0.25s;
+	}
+
+	.accordion-content .campaigns-grid > *:nth-child(n+5) {
+		animation-delay: 0.3s;
+	}
+
+	@keyframes slideInUp {
+		from {
+			opacity: 0;
+			transform: translateY(20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	/* Empty State */
+	.empty-state {
+		text-align: center;
+		padding: var(--space-4xl);
+	}
+
+	.empty-icon {
+		width: 80px;
+		height: 80px;
+		background: var(--bg-glass-dark);
+		border-radius: var(--radius-xl);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin: 0 auto var(--space-lg);
+		color: var(--text-secondary);
+	}
+
+	.empty-icon svg {
+		width: 40px;
+		height: 40px;
+	}
+
+	.empty-state h3 {
+		font-size: var(--text-xl);
+		font-weight: 600;
+		color: var(--text-primary);
+		margin: 0 0 var(--space-sm) 0;
+	}
+
+	.empty-state p {
+		color: var(--text-secondary);
+		margin: 0;
 	}
 </style> 

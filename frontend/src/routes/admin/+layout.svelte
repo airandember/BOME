@@ -126,6 +126,18 @@
 			</svg>`
 		},
 		{
+			href: '/admin/roles',
+			label: 'Role Management',
+			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+				<circle cx="12" cy="7" r="4"></circle>
+				<path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+				<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+				<circle cx="16" cy="7" r="4"></circle>
+				<path d="M20 11v2a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4v-2"></path>
+			</svg>`
+		},
+		{
 			href: '/admin/advertisements',
 			label: 'Advertisements',
 			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -211,11 +223,20 @@
 					{#if isSidebarOpen}
 						<div class="user-details">
 							<div class="user-name">{user?.firstName} {user?.lastName}</div>
-							<div class="user-role">Administrator</div>
+							<div class="user-role">
+								{#if user?.roles && user.roles.length > 0}
+									{user.roles[0].name}
+								{:else}
+									Administrator
+								{/if}
+							</div>
+							{#if user?.roles && user.roles.some((r: any) => r.id === 'super-administrator')}
+								<div class="super-admin-badge">Super Admin</div>
+							{/if}
 						</div>
 					{/if}
 				</div>
-				<button class="logout-btn" on:click={() => auth.logout()}>
+				<button class="logout-btn" on:click={async () => { await auth.logout(); goto('/login'); }}>
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 						<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
 						<polyline points="16,17 21,12 16,7"></polyline>
@@ -242,6 +263,12 @@
 					<h1 class="page-title">Admin Dashboard</h1>
 				</div>
 				<div class="header-right">
+					<a href="/" class="home-btn" title="Go to Home">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+							<polyline points="9,22 9,12 15,12 15,22"></polyline>
+						</svg>
+					</a>
 					<ThemeToggle />
 				</div>
 			</header>
@@ -449,6 +476,28 @@
 		color: var(--text-secondary);
 	}
 
+	.super-admin-badge {
+		background: linear-gradient(135deg, #dc2626, #991b1b);
+		color: white;
+		padding: var(--space-1) var(--space-2);
+		border-radius: var(--radius-sm);
+		font-size: var(--text-xs);
+		font-weight: 600;
+		margin-top: var(--space-1);
+		text-align: center;
+		box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
+		animation: glow 2s ease-in-out infinite alternate;
+	}
+
+	@keyframes glow {
+		from {
+			box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
+		}
+		to {
+			box-shadow: 0 2px 8px rgba(220, 38, 38, 0.4), 0 0 16px rgba(220, 38, 38, 0.1);
+		}
+	}
+
 	.logout-btn {
 		display: flex;
 		align-items: center;
@@ -535,6 +584,37 @@
 		font-weight: 700;
 		color: var(--text-primary);
 		margin: 0;
+	}
+
+	.header-right {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+	}
+
+	.home-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		border-radius: var(--radius-lg);
+		background: var(--bg-glass);
+		color: var(--text-primary);
+		text-decoration: none;
+		transition: all var(--transition-normal);
+		cursor: pointer;
+	}
+
+	.home-btn:hover {
+		background: var(--bg-glass-dark);
+		transform: translateY(-2px);
+		box-shadow: var(--shadow-md);
+	}
+
+	.home-btn svg {
+		width: 20px;
+		height: 20px;
 	}
 
 	.content-area {

@@ -5,6 +5,8 @@
 	import { subscriptionService, subscriptionUtils, type SubscriptionPlan } from '$lib/subscription';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import Navigation from '$lib/components/Navigation.svelte';
+	import Footer from '$lib/components/Footer.svelte';
 
 	let plans: SubscriptionPlan[] = [];
 	let loading = true;
@@ -62,6 +64,8 @@
 	<title>Subscription Plans - BOME</title>
 	<meta name="description" content="Choose your subscription plan to access exclusive Book of Mormon evidence content" />
 </svelte:head>
+
+<Navigation />
 
 <div class="subscription-page">
 	<div class="container">
@@ -159,6 +163,8 @@
 		{/if}
 	</div>
 </div>
+
+<Footer />
 
 <style>
 	.subscription-page {

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { auth } from '$lib/auth';
 	import ThemeToggle from './ThemeToggle.svelte';
+	import { goto } from '$app/navigation';
 
 	let isMenuOpen = false;
 	let isAuthenticated = false;
@@ -30,8 +31,9 @@
 		isMenuOpen = false;
 	};
 
-	const handleLogout = () => {
-		auth.logout();
+	const handleLogout = async () => {
+		await auth.logout();
+		goto('/login');
 		closeMenu();
 	};
 </script>
@@ -57,6 +59,9 @@
 			</a>
 			<a href="/videos" class="nav-link" on:click={closeMenu}>
 				<span>Videos</span>
+			</a>
+			<a href="/blog" class="nav-link" on:click={closeMenu}>
+				<span>Articles</span>
 			</a>
 			<a href="/categories" class="nav-link" on:click={closeMenu}>
 				<span>Categories</span>
