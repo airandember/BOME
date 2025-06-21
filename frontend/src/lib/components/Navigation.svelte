@@ -60,7 +60,7 @@
 			<a href="/videos" class="nav-link" on:click={closeMenu}>
 				<span>Videos</span>
 			</a>
-			<a href="/blog" class="nav-link" on:click={closeMenu}>
+			<a href="/articles" class="nav-link" on:click={closeMenu}>
 				<span>Articles</span>
 			</a>
 			<a href="/categories" class="nav-link" on:click={closeMenu}>

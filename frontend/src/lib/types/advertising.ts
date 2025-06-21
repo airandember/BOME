@@ -29,7 +29,7 @@ export interface AdCampaign {
 	description?: string;
 	status: 'draft' | 'pending' | 'approved' | 'active' | 'paused' | 'completed' | 'rejected' | 'cancelled';
 	start_date: string;
-	end_date?: string;
+	end_date: string;
 	budget: number;
 	spent_amount: number;
 	target_audience?: string;
@@ -244,4 +244,160 @@ export interface AdServeResponse {
 		click_url: string;
 		view_tracking: boolean;
 	};
+}
+
+export interface AdvertiserPackage {
+	id: number;
+	name: string;
+	description: string;
+	price: number;
+	billing_cycle: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+	features: AdvertiserPackageFeature[];
+	limits: AdvertiserPackageLimits;
+	is_active: boolean;
+	is_featured: boolean;
+	sort_order: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface AdvertiserPackageFeature {
+	id: number;
+	package_id: number;
+	name: string;
+	description: string;
+	is_included: boolean;
+	limit_value?: number;
+	limit_type?: 'campaigns' | 'ads' | 'impressions' | 'clicks' | 'storage';
+}
+
+export interface AdvertiserPackageLimits {
+	max_campaigns: number;
+	max_ads_per_campaign: number;
+	max_monthly_impressions: number;
+	max_file_size_mb: number;
+	max_storage_gb: number;
+	allowed_ad_types: ('banner' | 'large' | 'small' | 'video' | 'interactive')[];
+	allowed_placements: string[];
+	priority_boost: number;
+	analytics_retention_days: number;
+	support_level: 'basic' | 'priority' | 'premium';
+}
+
+export interface AdAsset {
+	id: number;
+	campaign_id: number;
+	ad_id?: number;
+	asset_type: 'image' | 'video' | 'audio' | 'document' | 'banner' | 'logo';
+	file_name: string;
+	file_path: string;
+	file_size: number;
+	mime_type: string;
+	width?: number;
+	height?: number;
+	duration?: number;
+	alt_text?: string;
+	description?: string;
+	status: 'pending' | 'approved' | 'rejected' | 'processing';
+	approval_notes?: string;
+	approved_by?: number;
+	approved_at?: string;
+	rejected_by?: number;
+	rejected_at?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface AssetUploadRequest {
+	campaign_id: number;
+	ad_id?: number;
+	asset_type: 'image' | 'video' | 'audio' | 'document' | 'banner' | 'logo';
+	alt_text?: string;
+	description?: string;
+}
+
+export interface AssetUploadResponse {
+	asset: AdAsset;
+	upload_url: string;
+	upload_fields: Record<string, string>;
+}
+
+export interface CampaignAssetRequirement {
+	ad_type: 'banner' | 'large' | 'small' | 'video' | 'interactive';
+	required_assets: {
+		asset_type: 'image' | 'video' | 'audio' | 'document' | 'banner' | 'logo';
+		min_width?: number;
+		max_width?: number;
+		min_height?: number;
+		max_height?: number;
+		max_file_size_mb?: number;
+		allowed_formats?: string[];
+		is_required: boolean;
+		description: string;
+	}[];
+}
+
+// Enhanced Advertisement interface with assets
+export interface EnhancedAdvertisement extends Advertisement {
+	assets: AdAsset[];
+	primary_asset?: AdAsset;
+	asset_count: number;
+	has_required_assets: boolean;
+}
+
+// Enhanced Campaign interface with assets and package info
+export interface EnhancedAdCampaign extends AdCampaign {
+	assets: AdAsset[];
+	advertisements: EnhancedAdvertisement[];
+	spent: number;
+	asset_count: number;
+	has_required_assets: boolean;
+	package_info?: {
+		package_id: number;
+		package_name: string;
+		remaining_campaigns: number;
+		remaining_ads: number;
+		remaining_storage_gb: number;
+	};
+	asset_requirements: CampaignAssetRequirement[];
+}
+
+export interface AdvertiserSubscription {
+	id: number;
+	advertiser_id: number;
+	package_id: number;
+	stripe_subscription_id: string;
+	status: 'active' | 'canceled' | 'past_due' | 'unpaid' | 'trialing';
+	current_period_start: string;
+	current_period_end: string;
+	cancel_at_period_end: boolean;
+	usage_stats: {
+		campaigns_used: number;
+		ads_used: number;
+		storage_used_gb: number;
+		monthly_impressions: number;
+		monthly_clicks: number;
+	};
+	created_at: string;
+	updated_at: string;
+}
+
+// File upload utilities
+export interface FileUploadProgress {
+	file_name: string;
+	file_size: number;
+	uploaded_bytes: number;
+	percentage: number;
+	status: 'pending' | 'uploading' | 'processing' | 'completed' | 'error';
+	error_message?: string;
+}
+
+export interface BulkAssetUpload {
+	campaign_id: number;
+	files: File[];
+	progress: FileUploadProgress[];
+	total_size: number;
+	completed_count: number;
+	failed_count: number;
+	status: 'pending' | 'uploading' | 'processing' | 'completed' | 'error';
 } 

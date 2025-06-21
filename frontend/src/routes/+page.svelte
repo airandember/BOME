@@ -174,7 +174,7 @@
 
 			<!-- Three Navigation Cards -->
 			<div class="navigation-cards">
-				<a href="/blog" class="nav-card">
+				<a href="/articles" class="nav-card">
 					<div class="card-action">READ</div>
 					<div class="nav-card-content">
 						<div class="card-icon">
@@ -1240,7 +1240,7 @@
 					-10px -10px 20px rgba(13, 3, 41, 0.5),
 					inset 0 0 10px rgba(255, 255, 255, 0.5),
 					inset 0 0 10px rgba(0, 0, 0, 0.2);
-		width: 280px;
+		width: 400px;
 		min-height: 400px;
 		display: flex;
 		flex-direction: column;

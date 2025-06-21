@@ -55,8 +55,8 @@
 		}
 
 		// Apply tag filter
-		if (selectedTag) {
-			result = result.filter(article => article.tags.includes(selectedTag));
+		if (selectedTag && selectedTag !== null) {
+			result = result.filter(article => article.tags.includes(selectedTag!));
 		}
 
 		// Apply sorting
@@ -140,6 +140,9 @@
 	<title>Articles & Research - BOME | Book of Mormon Evidence</title>
 	<meta name="description" content="Explore scholarly articles, archaeological evidence, and research supporting the Book of Mormon. Expert analysis and latest discoveries." />
 	<meta name="keywords" content="Book of Mormon, articles, research, archaeology, evidence, scholarly analysis" />
+	<meta property="og:title" content="Articles & Research - BOME" />
+	<meta property="og:description" content="Explore scholarly articles, archaeological evidence, and research supporting the Book of Mormon." />
+	<meta property="og:url" content="https://bome.org/articles" />
 </svelte:head>
 
 <Navigation />
@@ -157,9 +160,14 @@
 		
 		<!-- Ad Placement: Header Banner -->
 		<div class="ad-placement">
-			<AdDisplay placement="blog-header" />
+			<AdDisplay placement="articles-header" />
 		</div>
 	</section>
+
+	<!-- Ad Placement: Between Featured and Filters -->
+	<div class="ad-placement">
+		<AdDisplay placement="articles-mid" />
+	</div>
 
 	<!-- Featured Articles Carousel -->
 	{#if featuredArticles.length > 0}
@@ -182,7 +190,7 @@
 								<span class="read-time">{article.readTime} min read</span>
 							</div>
 							<h3 class="featured-title">
-								<a href="/blog/{article.slug}">{article.title}</a>
+								<a href="/articles/{article.slug}">{article.title}</a>
 							</h3>
 							<p class="featured-excerpt">{article.excerpt}</p>
 							<div class="featured-footer">
@@ -201,6 +209,11 @@
 			</div>
 		</section>
 	{/if}
+
+	<!-- Ad Placement: Mid-page -->
+	<div class="ad-placement">
+		<AdDisplay placement="blog-mid" />
+	</div>
 
 	<div class="main-content">
 		<!-- Sidebar -->
@@ -266,7 +279,7 @@
 
 			<!-- Ad Placement: Sidebar -->
 			<div class="ad-placement sidebar-ad">
-				<AdDisplay placement="blog-sidebar" />
+				<AdDisplay placement="articles-sidebar" />
 			</div>
 		</aside>
 
@@ -343,7 +356,7 @@
 									<span class="read-time">{article.readTime} min read</span>
 								</div>
 								<h3 class="article-title">
-									<a href="/blog/{article.slug}">{article.title}</a>
+									<a href="/articles/{article.slug}">{article.title}</a>
 								</h3>
 								<p class="article-excerpt">{article.excerpt}</p>
 								<div class="article-tags">
@@ -361,15 +374,15 @@
 										<span class="views">{article.views.toLocaleString()} views</span>
 										<span class="likes">{article.likes} likes</span>
 									</div>
-									<a href="/blog/{article.slug}" class="read-more">Read More</a>
+									<a href="/articles/{article.slug}" class="read-more">Read More</a>
 								</div>
 							</div>
 						</article>
 
-						<!-- Ad Placement: Between Articles (every 3rd article) -->
-						{#if (index + 1) % 3 === 0 && index < paginatedArticles.length - 1}
-							<div class="ad-placement inline-ad">
-								<AdDisplay placement="blog-feed" />
+						<!-- Ad Placement: Between Articles -->
+						{#if index === 2}
+							<div class="ad-placement feed-ad">
+								<AdDisplay placement="articles-feed" />
 							</div>
 						{/if}
 					{/each}
@@ -407,6 +420,11 @@
 				</div>
 			{/if}
 		</section>
+	</div>
+
+	<!-- Ad Placement: Footer -->
+	<div class="ad-placement">
+		<AdDisplay placement="articles-footer" />
 	</div>
 </main>
 

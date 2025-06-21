@@ -134,7 +134,7 @@
 			<div class="error-content">
 				<h1>Article Not Found</h1>
 				<p>The article you're looking for doesn't exist or has been moved.</p>
-				<a href="/blog" class="back-button">← Back to Articles</a>
+				<a href="/articles" class="back-button">← Back to Articles</a>
 			</div>
 		</div>
 	{:else if article}
@@ -142,11 +142,13 @@
 		<header class="article-header">
 			<div class="header-content">
 				<nav class="breadcrumb">
-					<a href="/blog">Articles</a>
-					<span>›</span>
-					<a href="/blog?category={category?.id}">{category?.name}</a>
-					<span>›</span>
-					<span>{article.title}</span>
+					<a href="/">Home</a>
+					<span class="separator">›</span>
+					<a href="/articles">Articles</a>
+					<span class="separator">›</span>
+					<a href="/articles?category={category?.id}">{category?.name}</a>
+					<span class="separator">›</span>
+					<span class="current">{article.title}</span>
 				</nav>
 
 				<div class="article-meta-header">
@@ -214,7 +216,7 @@
 					<h3>Tags</h3>
 					<div class="tags-list">
 						{#each article.tags as tag}
-							<a href="/blog?tag={encodeURIComponent(tag)}" class="tag-link">{tag}</a>
+							<a href="/articles?tag={encodeURIComponent(tag)}" class="tag-link">{tag}</a>
 						{/each}
 					</div>
 				</div>
@@ -291,7 +293,7 @@
 								<article class="related-article">
 									<img src={relatedArticle.featuredImage} alt={relatedArticle.title} class="related-image" />
 									<div class="related-content">
-										<h4><a href="/blog/{relatedArticle.slug}">{relatedArticle.title}</a></h4>
+										<h4><a href="/articles/{relatedArticle.slug}">{relatedArticle.title}</a></h4>
 										<p class="related-meta">{formatDate(relatedArticle.publishedAt)} • {relatedArticle.readTime} min read</p>
 									</div>
 								</article>
@@ -309,7 +311,7 @@
 								<article class="related-article">
 									<img src={relatedArticle.featuredImage} alt={relatedArticle.title} class="related-image" />
 									<div class="related-content">
-										<h4><a href="/blog/{relatedArticle.slug}">{relatedArticle.title}</a></h4>
+										<h4><a href="/articles/{relatedArticle.slug}">{relatedArticle.title}</a></h4>
 										<p class="related-meta">{formatDate(relatedArticle.publishedAt)} • {relatedArticle.readTime} min read</p>
 									</div>
 								</article>

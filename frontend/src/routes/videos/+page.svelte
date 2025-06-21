@@ -6,6 +6,7 @@
 	import Navigation from '$lib/components/Navigation.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import { toasts } from '$lib/stores/toast';
+	import AdDisplay from '$lib/components/AdDisplay.svelte';
 
 	let videos: Video[] = [];
 	let categories: VideoCategory[] = [];
@@ -107,6 +108,11 @@
 
 <div class="videos-page">
 	<div class="container">
+		<!-- Ad Placement: Header Banner -->
+		<div class="ad-placement">
+			<AdDisplay placement="videos-header" />
+		</div>
+
 		<header class="page-header">
 			<h1>Videos</h1>
 			<p>Explore our collection of Book of Mormon evidence videos</p>
@@ -144,6 +150,11 @@
 			</div>
 		</div>
 
+		<!-- Ad Placement: Mid-page -->
+		<div class="ad-placement">
+			<AdDisplay placement="videos-mid" />
+		</div>
+
 		{#if error}
 			<div class="error-message">
 				{error}
@@ -162,24 +173,67 @@
 				</button>
 			</div>
 		{:else}
-			<div class="videos-grid">
-				{#each videos as video (video.id)}
-					<VideoCard {video} />
-				{/each}
-			</div>
+			<div class="content-with-sidebar">
+				<div class="main-content">
+					<div class="videos-grid">
+						{#each videos as video, index (video.id)}
+							<VideoCard {video} />
+							<!-- Ad between videos every 6 videos -->
+							{#if (index + 1) % 6 === 0 && index < videos.length - 1}
+								<div class="ad-placement between-videos">
+									<AdDisplay placement="videos-between" />
+								</div>
+							{/if}
+						{/each}
+					</div>
 
-			{#if hasMore}
-				<div class="load-more">
-					<button 
-						class="btn-secondary" 
-						on:click={loadMore}
-						disabled={loadingMore}
-					>
-						{loadingMore ? 'Loading...' : 'Load More'}
-					</button>
+					{#if hasMore}
+						<div class="load-more">
+							<button 
+								class="btn-secondary" 
+								on:click={loadMore}
+								disabled={loadingMore}
+							>
+								{loadingMore ? 'Loading...' : 'Load More'}
+							</button>
+						</div>
+					{/if}
 				</div>
-			{/if}
+
+				<!-- Sidebar with ads -->
+				<aside class="sidebar">
+					<div class="sidebar-content">
+						<h3>Sponsored</h3>
+						<div class="ad-placement">
+							<AdDisplay placement="videos-sidebar" />
+						</div>
+						
+						<!-- Additional sidebar content can go here -->
+						<div class="sidebar-section">
+							<h4>Popular Categories</h4>
+							<div class="category-list">
+								{#each categories.slice(0, 5) as category}
+									<button 
+										class="category-item"
+										on:click={() => {
+											selectedCategory = category.name;
+											handleCategoryChange();
+										}}
+									>
+										{category.name} ({category.videoCount})
+									</button>
+								{/each}
+							</div>
+						</div>
+					</div>
+				</aside>
+			</div>
 		{/if}
+
+		<!-- Ad Placement: Footer -->
+		<div class="ad-placement">
+			<AdDisplay placement="videos-footer" />
+		</div>
 	</div>
 </div>
 
@@ -279,11 +333,96 @@
 			0 0 0 2px var(--accent-color);
 	}
 
+	.content-with-sidebar {
+		display: grid;
+		grid-template-columns: 1fr 300px;
+		gap: 2rem;
+		margin-bottom: 2rem;
+	}
+
+	.main-content {
+		min-width: 0; /* Prevent overflow */
+	}
+
 	.videos-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 		gap: 2rem;
 		margin-bottom: 2rem;
+	}
+
+	.sidebar {
+		position: sticky;
+		top: 2rem;
+		height: fit-content;
+	}
+
+	.sidebar-content {
+		background: var(--card-bg);
+		border-radius: 20px;
+		padding: 1.5rem;
+		box-shadow: 
+			8px 8px 16px var(--shadow-dark),
+			-8px -8px 16px var(--shadow-light);
+	}
+
+	.sidebar h3 {
+		font-size: 1.2rem;
+		font-weight: 600;
+		color: var(--text-primary);
+		margin-bottom: 1rem;
+	}
+
+	.sidebar-section {
+		margin-top: 2rem;
+		padding-top: 2rem;
+		border-top: 1px solid var(--border-color);
+	}
+
+	.sidebar-section h4 {
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--text-primary);
+		margin-bottom: 1rem;
+	}
+
+	.category-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.category-item {
+		background: var(--bg-secondary);
+		border: none;
+		padding: 0.75rem 1rem;
+		border-radius: 10px;
+		color: var(--text-primary);
+		cursor: pointer;
+		transition: all 0.3s ease;
+		text-align: left;
+		font-size: 0.9rem;
+		box-shadow: 
+			2px 2px 4px var(--shadow-dark),
+			-2px -2px 4px var(--shadow-light);
+	}
+
+	.category-item:hover {
+		background: var(--primary-color);
+		color: white;
+		transform: translateY(-1px);
+	}
+
+	/* Ad Placements */
+	.ad-placement {
+		margin: 2rem 0;
+		display: flex;
+		justify-content: center;
+	}
+
+	.ad-placement.between-videos {
+		grid-column: 1 / -1; /* Span full width of grid */
+		margin: 1rem 0;
 	}
 
 	.load-more {
@@ -309,7 +448,6 @@
 
 	.empty-state p {
 		color: var(--text-secondary);
-		font-size: 1.1rem;
 		margin-bottom: 2rem;
 	}
 
@@ -371,37 +509,54 @@
 	}
 
 	/* Responsive Design */
+	@media (max-width: 1024px) {
+		.content-with-sidebar {
+			grid-template-columns: 1fr 250px;
+		}
+	}
+
 	@media (max-width: 768px) {
-		.container {
-			padding: 0 1rem;
+		.content-with-sidebar {
+			grid-template-columns: 1fr;
+			gap: 1rem;
 		}
 
-		.page-header h1 {
-			font-size: 2rem;
+		.sidebar {
+			position: static;
+			order: -1; /* Show sidebar above content on mobile */
+		}
+
+		.sidebar-content {
+			padding: 1rem;
+		}
+
+		.videos-grid {
+			grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+			gap: 1rem;
 		}
 
 		.filters-section {
-			padding: 1.5rem;
+			padding: 1rem;
 		}
 
 		.search-bar {
 			flex-direction: column;
+			gap: 0.5rem;
 		}
 
 		.category-filters {
 			flex-direction: column;
-			align-items: stretch;
-		}
-
-		.videos-grid {
-			grid-template-columns: 1fr;
-			gap: 1.5rem;
+			gap: 0.5rem;
 		}
 	}
 
-	@media (min-width: 769px) and (max-width: 1024px) {
+	@media (max-width: 480px) {
 		.videos-grid {
-			grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+			grid-template-columns: 1fr;
+		}
+
+		.container {
+			padding: 0 1rem;
 		}
 	}
 

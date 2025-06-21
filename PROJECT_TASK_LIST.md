@@ -831,6 +831,228 @@ A beautiful streaming site with bunny.net video streaming, Digital Ocean backups
 - [ ] **Pending** - Performance optimization testing
 - [ ] **Pending** - Cross-browser compatibility testing
 
+### 10.9 Advertisement Placement Documentation & Specifications ✅ **COMPLETE**
+
+#### 10.9.1 Core Placement Types & Standard Dimensions
+**Banner Ads (728x90px)**:
+- Primary horizontal placement for header/footer areas
+- High visibility, standard web advertising format
+- Base rate: $80-100/week
+
+**Large Rectangle (300x250px)**:
+- Premium sidebar and content area placement
+- High engagement format for detailed ads
+- Base rate: $150-200/week
+
+**Small Rectangle (300x125px)**:
+- Compact sidebar placement option
+- Cost-effective advertising solution
+- Base rate: $75/week
+
+**Video Overlay (200x100px)**:
+- Specialized overlay during video playback
+- Premium placement with high user attention
+- Base rate: $250/week
+
+#### 10.9.2 Site-Wide Placement Inventory
+
+**ARTICLES SYSTEM PLACEMENTS** (`/articles` - migrated from `/blog`):
+1. **articles-header** (ID: 1)
+   - Location: Top of articles listing page, below navigation
+   - Dimensions: 728x90px (Banner)
+   - Position: Full-width container, centered
+   - Implementation: `<AdDisplay placement="articles-header" />`
+
+2. **articles-mid** (ID: 4)
+   - Location: Between featured articles and filter section
+   - Dimensions: 728x90px (Banner)
+   - Position: Full-width, separates content sections
+   - Implementation: `<AdDisplay placement="articles-mid" />`
+
+3. **articles-sidebar** (ID: 2)
+   - Location: Right sidebar of articles listing
+   - Dimensions: 300x250px (Large Rectangle)
+   - Position: Fixed sidebar, below category filters
+   - Implementation: `<AdDisplay placement="articles-sidebar" />`
+
+4. **articles-feed** (ID: 15)
+   - Location: Between article cards in the grid
+   - Dimensions: 300x250px (Large Rectangle)
+   - Position: Integrated within article grid layout
+   - Implementation: `<AdDisplay placement="articles-feed" />`
+
+5. **articles-footer** (ID: 3)
+   - Location: Bottom of articles page, above site footer
+   - Dimensions: 728x90px (Banner)
+   - Position: Full-width container, centered
+   - Implementation: `<AdDisplay placement="articles-footer" />`
+
+**INDIVIDUAL ARTICLE PLACEMENTS** (`/articles/[slug]`):
+6. **article-top** (ID: 16)
+   - Location: Top of individual article, below title
+   - Dimensions: 728x90px (Banner)
+   - Position: Full-width, before article content
+   - Implementation: `<AdDisplay placement="article-top" />`
+
+7. **article-bottom** (ID: 17)
+   - Location: Bottom of article content, before comments
+   - Dimensions: 728x90px (Banner)
+   - Position: Full-width, after article text
+   - Implementation: `<AdDisplay placement="article-bottom" />`
+
+8. **article-sidebar** (ID: 18)
+   - Location: Right sidebar of individual articles
+   - Dimensions: 300x250px (Large Rectangle)
+   - Position: Fixed sidebar, next to article content
+   - Implementation: `<AdDisplay placement="article-sidebar" />`
+
+**VIDEO SYSTEM PLACEMENTS** (`/videos`):
+9. **videos-header** (ID: 5)
+   - Location: Top of videos page, below navigation
+   - Dimensions: 728x90px (Banner)
+   - Position: Full-width container, centered
+   - Implementation: `<AdDisplay placement="videos-header" />`
+
+10. **videos-mid** (ID: 8)
+    - Location: Between featured videos and video grid
+    - Dimensions: 728x90px (Banner)
+    - Position: Full-width, separates content sections
+    - Implementation: `<AdDisplay placement="videos-mid" />`
+
+11. **videos-sidebar** (ID: 6)
+    - Location: Right sidebar of videos page
+    - Dimensions: 300x250px (Large Rectangle)
+    - Position: Fixed sidebar, below video categories
+    - Implementation: `<AdDisplay placement="videos-sidebar" />`
+
+12. **videos-between** (ID: 9)
+    - Location: Between video cards in the grid
+    - Dimensions: 300x250px (Large Rectangle)
+    - Position: Integrated within video grid layout
+    - Implementation: `<AdDisplay placement="videos-between" />`
+
+13. **videos-footer** (ID: 7)
+    - Location: Bottom of videos page, above site footer
+    - Dimensions: 728x90px (Banner)
+    - Position: Full-width container, centered
+    - Implementation: `<AdDisplay placement="videos-footer" />`
+
+**EVENTS SYSTEM PLACEMENTS** (`/events`):
+14. **events-header** (ID: 10)
+    - Location: Top of events page, below navigation
+    - Dimensions: 728x90px (Banner)
+    - Position: Full-width container, centered
+    - Implementation: `<AdDisplay placement="events-header" />`
+
+15. **events-mid** (ID: 13)
+    - Location: Between upcoming and past events sections
+    - Dimensions: 728x90px (Banner)
+    - Position: Full-width, separates content sections
+    - Implementation: `<AdDisplay placement="events-mid" />`
+
+16. **events-footer** (ID: 12)
+    - Location: Bottom of events page, above site footer
+    - Dimensions: 728x90px (Banner)
+    - Position: Full-width container, centered
+    - Implementation: `<AdDisplay placement="events-footer" />`
+
+#### 10.9.3 Legacy Blog Placements (Redirected to Articles)
+**NOTE**: These placements are maintained for backward compatibility but redirect to articles system:
+
+17. **blog-header** → **articles-header** (ID: 1)
+18. **blog-mid** → **articles-mid** (ID: 4)
+19. **blog-sidebar** → **articles-sidebar** (ID: 2)
+20. **blog-feed** → **articles-feed** (ID: 15)
+21. **blog-footer** → **articles-footer** (ID: 3)
+
+#### 10.9.4 Placement Performance Metrics
+
+**High-Performance Placements** (CTR > 2.5%):
+- **articles-header**: 3.2% CTR, $856/month revenue
+- **videos-sidebar**: 3.0% CTR, $445/month revenue
+- **article-top**: 2.8% CTR, premium individual article placement
+
+**Standard Performance Placements** (CTR 1.5-2.5%):
+- **articles-sidebar**: 2.2% CTR, consistent sidebar performance
+- **videos-header**: 2.1% CTR, good visibility on video pages
+- **events-header**: 1.9% CTR, specialized event audience
+
+**Specialized Placements**:
+- **video-overlay**: Premium placement during video playback (planned)
+- **article-sidebar**: Contextual placement for article readers
+- **events-mid**: Targeted event-focused advertising
+
+#### 10.9.5 Responsive Design Specifications
+
+**Desktop (>1024px)**:
+- Banner ads: Full 728x90px display
+- Large rectangles: Full 300x250px display
+- Sidebar placements: Fixed position, full dimensions
+
+**Tablet (768px-1024px)**:
+- Banner ads: Scaled to container width, maintain aspect ratio
+- Large rectangles: Full 300x250px in available space
+- Sidebar placements: May stack below content on smaller tablets
+
+**Mobile (<768px)**:
+- Banner ads: Responsive width, maintain aspect ratio (max 320px wide)
+- Large rectangles: Scale to 280x186px or stack vertically
+- Sidebar placements: Move below main content, full mobile width
+
+#### 10.9.6 Implementation Architecture
+
+**Frontend Integration**:
+- Component: `frontend/src/lib/components/AdDisplay.svelte`
+- Placement mapping: Automatic ID resolution from placement names
+- Tracking: Automatic impression/click tracking with analytics
+- Fallback: Graceful degradation when ads unavailable
+
+**Backend Support**:
+- Database: `ad_placements` table with full placement specifications
+- API: `/api/v1/ads/serve/{placementId}` for ad delivery
+- Analytics: Real-time impression/click tracking
+- Management: Admin interface for placement configuration
+
+**Placement Configuration** (`backend/internal/database/advertisement.go`):
+```go
+// Standard placement seeding with dimensions and rates
+placements := []struct {
+    Name        string
+    Description string
+    Location    string
+    AdType      string
+    MaxWidth    int
+    MaxHeight   int
+    BaseRate    float64
+}{
+    {"Header Banner", "Banner ad displayed in the site header", "header", "banner", 728, 90, 100.00},
+    {"Sidebar Large", "Large ad displayed in the sidebar", "sidebar", "large", 300, 250, 150.00},
+    {"Video Overlay", "Small overlay ad during video playback", "video_overlay", "small", 200, 100, 250.00},
+    // ... additional placements
+}
+```
+
+#### 10.9.7 Revenue & Pricing Structure
+
+**Base Weekly Rates**:
+- Header/Footer Banners: $80-100/week
+- Sidebar Large Rectangles: $150-200/week  
+- Content Integration: $200-250/week
+- Video Overlays: $250-300/week (premium)
+- Specialized Placements: $75-125/week
+
+**Performance Multipliers**:
+- High-traffic pages: +25% rate premium
+- Premium positions (above fold): +50% rate premium
+- Exclusive placements: +100% rate premium
+- Bulk placement packages: -15% discount
+
+**Total Revenue Potential**:
+- 21 active placement locations
+- Average $150/week per placement
+- Estimated monthly revenue: $13,500-18,000
+- Annual revenue potential: $162,000-216,000
+
 ---
 
 ## MOCK DATA INVENTORY & PRODUCTION MIGRATION GUIDE

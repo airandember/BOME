@@ -10,7 +10,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 1,
 		title: "Archaeological Evidence for the Book of Mormon",
 		description: "Exploring recent archaeological discoveries that support Book of Mormon narratives, including ancient civilizations, metallurgy, and cultural practices found in the Americas.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/archaeological-evidence-bom/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/archaeological-evidence-bom/playlist.m3u8",
 		duration: 942, // 15:42
 		viewCount: 24567,
@@ -24,7 +24,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 2,
 		title: "DNA and the Book of Mormon: Scientific Perspectives",
 		description: "A comprehensive look at DNA evidence and its relationship to Book of Mormon populations, examining recent genetic studies and their implications.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/dna-book-mormon-science/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/dna-book-mormon-science/playlist.m3u8",
 		duration: 1335, // 22:15
 		viewCount: 18934,
@@ -38,7 +38,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 3,
 		title: "Mesoamerican Connections to Book of Mormon Geography",
 		description: "Examining cultural and geographical connections between Mesoamerica and the Book of Mormon, including recent discoveries and scholarly research.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/mesoamerican-connections/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/mesoamerican-connections/playlist.m3u8",
 		duration: 1113, // 18:33
 		viewCount: 31245,
@@ -52,7 +52,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 4,
 		title: "Linguistic Analysis of Book of Mormon Names",
 		description: "Scholarly analysis of Hebrew and Egyptian linguistic patterns in Book of Mormon names and their ancient Near Eastern connections.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/linguistic-analysis-names/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/linguistic-analysis-names/playlist.m3u8",
 		duration: 1518, // 25:18
 		viewCount: 15678,
@@ -66,7 +66,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 5,
 		title: "Metallurgy in Ancient America: Book of Mormon Evidence",
 		description: "Evidence of advanced metallurgy in pre-Columbian America and its relationship to Book of Mormon descriptions of metalworking.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/ancient-metallurgy/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/ancient-metallurgy/playlist.m3u8",
 		duration: 1267, // 21:07
 		viewCount: 12456,
@@ -80,7 +80,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 6,
 		title: "Ancient American Writing Systems and the Book of Mormon",
 		description: "Exploring ancient writing systems found in the Americas and their potential connections to Book of Mormon record-keeping practices.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/ancient-writing-systems/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/ancient-writing-systems/playlist.m3u8",
 		duration: 1789, // 29:49
 		viewCount: 9876,
@@ -94,7 +94,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 7,
 		title: "Climate and Geography: Book of Mormon Lands",
 		description: "Analysis of climate patterns and geographical features described in the Book of Mormon and their correlation with Mesoamerican regions.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/climate-geography/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/climate-geography/playlist.m3u8",
 		duration: 1456, // 24:16
 		viewCount: 21345,
@@ -108,7 +108,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 8,
 		title: "Warfare and Military Tactics in the Book of Mormon",
 		description: "Examination of military strategies, fortifications, and warfare described in the Book of Mormon and their historical context.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/warfare-military-tactics/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/warfare-military-tactics/playlist.m3u8",
 		duration: 1634, // 27:14
 		viewCount: 17890,
@@ -122,7 +122,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 9,
 		title: "Agricultural Practices in Ancient America",
 		description: "Evidence of sophisticated agricultural techniques in pre-Columbian America that align with Book of Mormon descriptions.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/agricultural-practices/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/agricultural-practices/playlist.m3u8",
 		duration: 1123, // 18:43
 		viewCount: 13567,
@@ -136,7 +136,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 10,
 		title: "Trade Networks in Ancient Mesoamerica",
 		description: "Exploring extensive trade networks in ancient Mesoamerica and their relationship to Book of Mormon descriptions of commerce.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/trade-networks/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/trade-networks/playlist.m3u8",
 		duration: 1398, // 23:18
 		viewCount: 19234,
@@ -150,7 +150,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 11,
 		title: "Religious Practices and Temples in Ancient America",
 		description: "Archaeological evidence of temple worship and religious practices in ancient America that parallel Book of Mormon descriptions.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/religious-practices-temples/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/religious-practices-temples/playlist.m3u8",
 		duration: 1876, // 31:16
 		viewCount: 25678,
@@ -164,7 +164,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 12,
 		title: "Cement and Construction in Ancient America",
 		description: "Evidence of advanced construction techniques and cement use in pre-Columbian America, as mentioned in the Book of Mormon.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/cement-construction/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/cement-construction/playlist.m3u8",
 		duration: 1245, // 20:45
 		viewCount: 11234,
@@ -178,7 +178,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 13,
 		title: "Population Genetics and Migration Patterns",
 		description: "Recent genetic studies revealing complex migration patterns to the Americas and their implications for Book of Mormon populations.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/population-genetics/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/population-genetics/playlist.m3u8",
 		duration: 1567, // 26:07
 		viewCount: 16789,
@@ -192,7 +192,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 14,
 		title: "Ancient Roads and Transportation Systems",
 		description: "Evidence of sophisticated road networks and transportation systems in ancient Mesoamerica mentioned in the Book of Mormon.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/ancient-roads-transportation/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/ancient-roads-transportation/playlist.m3u8",
 		duration: 1334, // 22:14
 		viewCount: 14567,
@@ -206,7 +206,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 15,
 		title: "Textiles and Clothing in Ancient America",
 		description: "Archaeological evidence of sophisticated textile production and clothing styles in ancient America as described in the Book of Mormon.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/textiles-clothing/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/textiles-clothing/playlist.m3u8",
 		duration: 1189, // 19:49
 		viewCount: 8934,
@@ -220,7 +220,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 16,
 		title: "Calendars and Astronomy in Ancient Mesoamerica",
 		description: "Sophisticated astronomical knowledge and calendar systems in ancient Mesoamerica and their potential Book of Mormon connections.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/calendars-astronomy/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/calendars-astronomy/playlist.m3u8",
 		duration: 1723, // 28:43
 		viewCount: 22456,
@@ -234,7 +234,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 17,
 		title: "Disease and Health in Ancient American Populations",
 		description: "Analysis of health patterns and disease in ancient American populations and their relationship to Book of Mormon accounts.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/disease-health-populations/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/disease-health-populations/playlist.m3u8",
 		duration: 1456, // 24:16
 		viewCount: 12789,
@@ -248,7 +248,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 18,
 		title: "Horses and Animals in Book of Mormon Lands",
 		description: "Examining evidence for various animals mentioned in the Book of Mormon and their potential identifications in ancient America.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/horses-animals-bom/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/horses-animals-bom/playlist.m3u8",
 		duration: 1612, // 26:52
 		viewCount: 18345,
@@ -262,7 +262,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 19,
 		title: "Government and Political Systems in the Book of Mormon",
 		description: "Analysis of governmental structures and political systems described in the Book of Mormon and their historical parallels.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/government-political-systems/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/government-political-systems/playlist.m3u8",
 		duration: 1789, // 29:49
 		viewCount: 15234,
@@ -276,7 +276,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 20,
 		title: "Maritime Technology and Ocean Travel",
 		description: "Evidence of advanced maritime technology in ancient times and its relationship to Book of Mormon accounts of ocean voyages.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/maritime-technology/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/maritime-technology/playlist.m3u8",
 		duration: 1445, // 24:05
 		viewCount: 13678,
@@ -290,7 +290,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 21,
 		title: "Book of Mormon Witnesses: Historical Analysis",
 		description: "Comprehensive examination of the testimonies and lives of the Book of Mormon witnesses and their historical credibility.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/bom-witnesses-analysis/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/bom-witnesses-analysis/playlist.m3u8",
 		duration: 2145, // 35:45
 		viewCount: 28934,
@@ -304,7 +304,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 22,
 		title: "Chiasmus and Literary Patterns in the Book of Mormon",
 		description: "Analysis of complex literary structures, including chiasmus and other Hebrew poetic forms found in the Book of Mormon.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/chiasmus-literary-patterns/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/chiasmus-literary-patterns/playlist.m3u8",
 		duration: 1834, // 30:34
 		viewCount: 19876,
@@ -318,7 +318,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 23,
 		title: "Volcanic Activity and Book of Mormon Destruction",
 		description: "Geological evidence of volcanic activity in Mesoamerica correlating with destruction described in 3 Nephi.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/volcanic-activity-destruction/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/volcanic-activity-destruction/playlist.m3u8",
 		duration: 1523, // 25:23
 		viewCount: 16543,
@@ -332,7 +332,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 24,
 		title: "Ancient American Coinage and Currency Systems",
 		description: "Evidence of sophisticated monetary systems in ancient America and their relationship to Book of Mormon descriptions.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/ancient-coinage-currency/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/ancient-coinage-currency/playlist.m3u8",
 		duration: 1367, // 22:47
 		viewCount: 12345,
@@ -346,7 +346,7 @@ export const MOCK_VIDEOS: Video[] = [
 		id: 25,
 		title: "The Translation Process: Historical and Spiritual Perspectives",
 		description: "Examination of the Book of Mormon translation process, historical accounts, and spiritual aspects of revelation.",
-		thumbnailUrl: "https://vz-12345678-123.b-cdn.net/thumbnails/translation-process/thumbnail.jpg",
+		thumbnailUrl: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 		videoUrl: "https://vz-12345678-123.b-cdn.net/videos/translation-process/playlist.m3u8",
 		duration: 2234, // 37:14
 		viewCount: 31567,
@@ -893,7 +893,7 @@ Key findings include:
 - Metallurgical evidence including copper and bronze artifacts
 
 These discoveries continue to challenge previous assumptions about the complexity of ancient American civilizations and provide compelling archaeological context for Book of Mormon narratives.`,
-		featuredImage: '/api/placeholder/800/400',
+		featuredImage: '/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 		authorId: 1,
 		categoryId: 1,
 		tags: ['Archaeology', 'Mesoamerica', 'Nephites', 'Lamanites', 'Excavations'],
@@ -919,7 +919,7 @@ Key research developments include:
 - Evidence for multiple migration events over thousands of years
 
 Dr. Robert Chen's latest research demonstrates the complexity of ancient American genetics and challenges oversimplified models of population history. The evidence suggests a much more nuanced picture of ancient American peoples than previously understood.`,
-		featuredImage: '/api/placeholder/800/400',
+		featuredImage: '/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 		authorId: 4,
 		categoryId: 6,
 		tags: ['DNA Studies', 'Ancient America', 'Migration Patterns', 'Genetics'],
@@ -945,7 +945,7 @@ Notable chiastic passages include:
 - 3 Nephi 17: Christ's ministry among the Nephites
 
 The complexity and consistency of these patterns suggest familiarity with ancient Hebrew literary traditions that would have been unknown to 19th-century Americans. Dr. James Peterson's comparative analysis with Dead Sea Scroll texts reveals remarkable parallels in structure and style.`,
-		featuredImage: '/api/placeholder/800/400',
+		featuredImage: '/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 		authorId: 2,
 		categoryId: 3,
 		tags: ['Chiasmus', 'Hebrew Influences', 'Ancient Texts', 'Biblical Parallels'],
@@ -971,7 +971,7 @@ Evidence includes:
 - Standardized weights and measures suggesting organized commerce
 
 Dr. Emily Thompson's research demonstrates that these trade networks were not only extensive but also highly organized, requiring the kind of political and social structures described in Book of Mormon accounts of Nephite and Lamanite societies.`,
-		featuredImage: '/api/placeholder/800/400',
+		featuredImage: '/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 		authorId: 5,
 		categoryId: 4,
 		tags: ['Trade Routes', 'Economics', 'Pre-Columbian', 'Civilizations'],
@@ -997,7 +997,7 @@ Key discoveries include:
 - Iron artifacts from pre-Columbian contexts
 
 Dr. Michael Davis's analysis of these artifacts demonstrates technological capabilities that align with Book of Mormon descriptions of Nephite and Jaredite metallurgy. The evidence challenges assumptions about technological limitations in ancient America.`,
-		featuredImage: '/api/placeholder/800/400',
+		featuredImage: '/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 		authorId: 6,
 		categoryId: 6,
 		tags: ['Metallurgy', 'Technology', 'Bronze', 'Copper', 'Ancient America'],
@@ -1023,7 +1023,7 @@ Key findings include:
 - Phonological similarities in religious terminology
 
 While the evidence is still being evaluated by the linguistic community, these findings suggest the possibility of ancient trans-oceanic contact that could explain the linguistic sophistication evident in the Book of Mormon text.`,
-		featuredImage: '/api/placeholder/800/400',
+		featuredImage: '/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 		authorId: 3,
 		categoryId: 3,
 		tags: ['Linguistics', 'Hebrew Influences', 'Egyptian Connections', 'Mesoamerica'],

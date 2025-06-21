@@ -66,6 +66,31 @@ const createAuthStore = () => {
 					return { success: true, user };
 				}
 
+				// Mock regular user login for testing
+				if ((email === 'user@bome.com' || email === 'user@bome.test') && password === 'user123') {
+					const user: User = {
+						id: 2,
+						email: email, // Use the provided email
+						firstName: 'Test',
+						lastName: 'User',
+						role: 'user', // Regular user role
+						roles: [], // No special roles for regular user
+						emailVerified: true
+					};
+
+					const mockToken = 'mock-user-token-' + Date.now();
+					localStorage.setItem('token', mockToken);
+					localStorage.setItem('userData', JSON.stringify(user));
+
+					set({
+						user,
+						token: mockToken,
+						isAuthenticated: true
+					});
+
+					return { success: true, user };
+				}
+
 				// Regular API call for other users
 				const response = await fetch('/api/v1/auth/login', {
 					method: 'POST',
@@ -175,6 +200,37 @@ const createAuthStore = () => {
 						lastName: 'Administrator',
 						role: 'admin',
 						roles: superAdminRole ? [superAdminRole] : [],
+						emailVerified: true
+					};
+
+					set({
+						user: mockUser,
+						token,
+						isAuthenticated: true
+					});
+				} else if (token.startsWith('mock-user-token-')) {
+					// Handle mock regular user token
+					const storedUserData = localStorage.getItem('userData');
+					let email = 'user@bome.com'; // default
+					
+					if (storedUserData) {
+						try {
+							const userData = JSON.parse(storedUserData);
+							if (userData.email) {
+								email = userData.email;
+							}
+						} catch (error) {
+							console.error('Failed to parse stored user data:', error);
+						}
+					}
+
+					const mockUser: User = {
+						id: 2,
+						email: email,
+						firstName: 'Test',
+						lastName: 'User',
+						role: 'user',
+						roles: [],
 						emailVerified: true
 					};
 
