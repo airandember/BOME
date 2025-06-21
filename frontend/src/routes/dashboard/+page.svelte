@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { auth } from '$lib/auth';
-	import { goto } from '$app/navigation';
-	import { showToast } from '$lib/toast';
+	import { videoService } from '$lib/video';
+	import { MOCK_DASHBOARD_DATA } from '$lib/mockData';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import Navigation from '$lib/components/Navigation.svelte';
+	import Footer from '$lib/components/Footer.svelte';
 
 	interface User {
 		id: number;
@@ -41,161 +43,56 @@
 		subscriptionStatus: string;
 	}
 
-	let user: User | null = null;
+	let user: any = null;
 	let isAuthenticated = false;
 	let loading = true;
-	let userStats: UserStats | null = null;
-	let recentActivity: Activity[] = [];
-	let favoriteVideos: Video[] = [];
-	let recommendedVideos: Video[] = [];
-	let continueWatching: Video[] = [];
+	let error = '';
 
-	// Subscribe to auth store
-	auth.subscribe(state => {
-		user = state.user;
-		isAuthenticated = state.isAuthenticated;
-	});
+	// Dashboard data
+	let stats = {
+		totalWatchTime: 0,
+		videosWatched: 0,
+		favoriteVideos: 0,
+		completedSeries: 0
+	};
+	let recentActivity: any[] = [];
+	let recommendedVideos: any[] = [];
+	let favoriteVideos: any[] = [];
+	let continueWatching: any[] = [];
 
 	onMount(async () => {
-		if (!isAuthenticated) {
-			goto('/login');
-			return;
-		}
+		// Subscribe to auth state
+		auth.subscribe((state) => {
+			user = state.user;
+			isAuthenticated = state.isAuthenticated;
+		});
 
+		if (isAuthenticated) {
+			await loadDashboardData();
+		}
+		loading = false;
+	});
+
+	async function loadDashboardData() {
 		try {
 			loading = true;
-			
-			// Mock data for development - would be replaced with real API calls
-			await new Promise(resolve => setTimeout(resolve, 1000));
-			
-			userStats = {
-				videosWatched: 47,
-				totalWatchTime: '12h 34m',
-				favoriteVideos: 8,
-				commentsPosted: 23,
-				joinedDate: '2024-01-15',
-				subscriptionStatus: 'Premium'
-			};
+			error = '';
 
-			recentActivity = [
-				{
-					type: 'watched',
-					video: {
-						id: 1,
-						title: 'Archaeological Evidence for the Book of Mormon',
-						description: 'Exploring recent archaeological discoveries...',
-						thumbnail: '/api/placeholder/320/180',
-						duration: '24:15',
-						views: 15420,
-						likes: 892,
-						createdAt: '2024-06-15',
-						category: 'Archaeology'
-					},
-					timestamp: '2 hours ago'
-				},
-				{
-					type: 'liked',
-					video: {
-						id: 2,
-						title: 'DNA and the Book of Mormon',
-						description: 'Scientific analysis of genetic evidence...',
-						thumbnail: '/api/placeholder/320/180',
-						duration: '18:32',
-						views: 8750,
-						likes: 456,
-						createdAt: '2024-06-10',
-						category: 'Science'
-					},
-					timestamp: '1 day ago'
-				},
-				{
-					type: 'commented',
-					video: {
-						id: 3,
-						title: 'Ancient American Civilizations',
-						description: 'Comparing Book of Mormon civilizations...',
-						thumbnail: '/api/placeholder/320/180',
-						duration: '31:45',
-						views: 12340,
-						likes: 678,
-						createdAt: '2024-06-08',
-						category: 'History'
-					},
-					timestamp: '3 days ago'
-				}
-			];
+			// Load dashboard data - use mock data for development
+			stats = MOCK_DASHBOARD_DATA.stats;
+			recentActivity = MOCK_DASHBOARD_DATA.recentActivity;
+			recommendedVideos = MOCK_DASHBOARD_DATA.recommendedVideos;
+			favoriteVideos = MOCK_DASHBOARD_DATA.favoriteVideos;
+			continueWatching = MOCK_DASHBOARD_DATA.continueWatching;
 
-			favoriteVideos = [
-				{
-					id: 4,
-					title: 'Nephite Metallurgy Evidence',
-					description: 'Analysis of ancient metalworking...',
-					thumbnail: '/api/placeholder/320/180',
-					duration: '22:10',
-					views: 9876,
-					likes: 543,
-					createdAt: '2024-06-05',
-					category: 'Archaeology'
-				},
-				{
-					id: 5,
-					title: 'Book of Mormon Geography',
-					description: 'Mapping ancient civilizations...',
-					thumbnail: '/api/placeholder/320/180',
-					duration: '28:45',
-					views: 11234,
-					likes: 721,
-					createdAt: '2024-06-01',
-					category: 'Geography'
-				}
-			];
-
-			recommendedVideos = [
-				{
-					id: 6,
-					title: 'New Archaeological Discoveries',
-					description: 'Latest findings in Mesoamerica...',
-					thumbnail: '/api/placeholder/320/180',
-					duration: '19:30',
-					views: 5432,
-					likes: 298,
-					createdAt: '2024-06-18',
-					category: 'Archaeology'
-				},
-				{
-					id: 7,
-					title: 'Linguistic Analysis of Ancient Texts',
-					description: 'Comparing Hebrew and Nephite languages...',
-					thumbnail: '/api/placeholder/320/180',
-					duration: '26:15',
-					views: 7890,
-					likes: 412,
-					createdAt: '2024-06-16',
-					category: 'Linguistics'
-				}
-			];
-
-			continueWatching = [
-				{
-					id: 8,
-					title: 'The Jaredite Civilization',
-					description: 'Exploring the earliest Book of Mormon peoples...',
-					thumbnail: '/api/placeholder/320/180',
-					duration: '35:20',
-					views: 6789,
-					likes: 345,
-					createdAt: '2024-06-12',
-					category: 'History'
-				}
-			];
-
-		} catch (error) {
-			showToast('Failed to load dashboard data', 'error');
-			console.error('Error loading dashboard:', error);
+			console.log('Dashboard data loaded successfully');
+		} catch (err) {
+			error = 'Failed to load dashboard data';
+			console.error('Error loading dashboard:', err);
 		} finally {
 			loading = false;
 		}
-	});
+	}
 
 	function formatDate(dateString: string) {
 		return new Date(dateString).toLocaleDateString('en-US', {
@@ -257,6 +154,8 @@
 	<title>Dashboard - BOME</title>
 </svelte:head>
 
+<Navigation />
+
 {#if loading}
 	<div class="loading-container">
 		<LoadingSpinner size="large" color="primary" />
@@ -285,7 +184,7 @@
 					</svg>
 				</div>
 				<div class="stat-content">
-					<div class="stat-value">{userStats?.videosWatched || 0}</div>
+					<div class="stat-value">{stats.videosWatched}</div>
 					<div class="stat-label">Videos Watched</div>
 				</div>
 			</div>
@@ -298,7 +197,7 @@
 					</svg>
 				</div>
 				<div class="stat-content">
-					<div class="stat-value">{userStats?.totalWatchTime || '0h 0m'}</div>
+					<div class="stat-value">{stats.totalWatchTime}</div>
 					<div class="stat-label">Watch Time</div>
 				</div>
 			</div>
@@ -310,7 +209,7 @@
 					</svg>
 				</div>
 				<div class="stat-content">
-					<div class="stat-value">{userStats?.favoriteVideos || 0}</div>
+					<div class="stat-value">{stats.favoriteVideos}</div>
 					<div class="stat-label">Favorites</div>
 				</div>
 			</div>
@@ -324,8 +223,8 @@
 					</svg>
 				</div>
 				<div class="stat-content">
-					<div class="stat-value">{userStats?.subscriptionStatus || 'Free'}</div>
-					<div class="stat-label">Subscription</div>
+					<div class="stat-value">{stats.completedSeries}</div>
+					<div class="stat-label">Completed Series</div>
 				</div>
 			</div>
 		</div>
@@ -343,7 +242,7 @@
 						{#each continueWatching as video}
 							<div class="video-card">
 								<div class="video-thumbnail">
-									<img src={video.thumbnail} alt={video.title} />
+									<img src={video.thumbnailUrl} alt={video.title} />
 									<div class="video-duration">{video.duration}</div>
 									<div class="progress-bar">
 										<div class="progress-fill" style="width: 65%"></div>
@@ -351,7 +250,7 @@
 								</div>
 								<div class="video-info">
 									<h3 class="video-title">{video.title}</h3>
-									<p class="video-meta">{formatNumber(video.views)} views • {video.category}</p>
+									<p class="video-meta">{formatNumber(video.viewCount)} views • {video.category}</p>
 								</div>
 							</div>
 						{/each}
@@ -389,12 +288,12 @@
 					{#each recommendedVideos as video}
 						<div class="video-card">
 							<div class="video-thumbnail">
-								<img src={video.thumbnail} alt={video.title} />
+								<img src={video.thumbnailUrl} alt={video.title} />
 								<div class="video-duration">{video.duration}</div>
 							</div>
 							<div class="video-info">
 								<h3 class="video-title">{video.title}</h3>
-								<p class="video-meta">{formatNumber(video.views)} views • {video.category}</p>
+								<p class="video-meta">{formatNumber(video.viewCount)} views • {video.category}</p>
 							</div>
 						</div>
 					{/each}
@@ -411,12 +310,12 @@
 					{#each favoriteVideos as video}
 						<div class="video-card">
 							<div class="video-thumbnail">
-								<img src={video.thumbnail} alt={video.title} />
+								<img src={video.thumbnailUrl} alt={video.title} />
 								<div class="video-duration">{video.duration}</div>
 							</div>
 							<div class="video-info">
 								<h3 class="video-title">{video.title}</h3>
-								<p class="video-meta">{formatNumber(video.views)} views • {video.category}</p>
+								<p class="video-meta">{formatNumber(video.viewCount)} views • {video.category}</p>
 							</div>
 						</div>
 					{/each}
@@ -450,18 +349,19 @@
 					</svg>
 					My Favorites
 				</a>
-				<a href="/subscription" class="action-btn">
+				<a href="/advertise" class="action-btn advertise-btn">
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"></path>
-						<polyline points="16,21 12,17 8,21"></polyline>
-						<polyline points="12,17 12,3"></polyline>
+						<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+						<circle cx="12" cy="12" r="3"/>
 					</svg>
-					Upgrade Plan
+					Advertise with BOME
 				</a>
 			</div>
 		</div>
 	</div>
 {/if}
+
+<Footer />
 
 <style>
 	.loading-container {
@@ -781,6 +681,47 @@
 		width: 20px;
 		height: 20px;
 		color: var(--primary);
+	}
+
+	.advertise-btn {
+		background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+		color: var(--white);
+		border: 2px solid transparent;
+		position: relative;
+		overflow: hidden;
+	}
+
+	.advertise-btn::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: linear-gradient(135deg, var(--secondary) 0%, var(--primary) 100%);
+		opacity: 0;
+		transition: opacity var(--transition-normal);
+	}
+
+	.advertise-btn:hover::before {
+		opacity: 1;
+	}
+
+	.advertise-btn:hover {
+		transform: translateY(-4px);
+		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+	}
+
+	.advertise-btn svg {
+		color: var(--white);
+		position: relative;
+		z-index: 1;
+	}
+
+	.advertise-btn span,
+	.advertise-btn {
+		position: relative;
+		z-index: 1;
 	}
 
 	@media (max-width: 1024px) {

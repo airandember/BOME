@@ -514,7 +514,12 @@
 
 <!-- Create/Edit Modal -->
 {#if showCreateModal || showEditModal}
-	<div class="modal-overlay" on:click={closeModals}>
+	<div class="modal-overlay" 
+		on:click={closeModals}
+		on:keydown={(e) => e.key === 'Escape' && closeModals()}
+		role="button"
+		aria-modal="true"
+		tabindex="-1">
 		<div class="modal-content" on:click|stopPropagation>
 			<div class="modal-header">
 				<h2>{showCreateModal ? 'Create New API Key' : 'Edit API Key'}</h2>
@@ -558,7 +563,10 @@
 								<input
 									type="checkbox"
 									checked={formData.permissions.includes(permission.value)}
-									on:change={(e) => handlePermissionChange(permission.value, e.target.checked)}
+									on:change={(e) => {
+										const target = e.target as HTMLInputElement;
+										if (target) handlePermissionChange(permission.value, target.checked);
+									}}
 								/>
 								<span class="checkbox-label">{permission.label}</span>
 							</label>

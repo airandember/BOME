@@ -211,6 +211,38 @@ func GetAnalyticsHandler(db *database.DB) gin.HandlerFunc {
 		// Mock analytics data for development mode when database is not available
 		if db == nil {
 			analytics := map[string]interface{}{
+				"total_advertisers": 23,
+				"active_campaigns":  12,
+				"total_revenue":     15420.80,
+				"pending_approvals": 5,
+				"top_performing_placements": []map[string]interface{}{
+					{
+						"placement_id": 1,
+						"name":         "Header Banner",
+						"revenue":      8520.30,
+						"impressions":  45230,
+					},
+					{
+						"placement_id": 2,
+						"name":         "Sidebar Large",
+						"revenue":      4890.50,
+						"impressions":  28940,
+					},
+					{
+						"placement_id": 3,
+						"name":         "Between Videos",
+						"revenue":      2010.00,
+						"impressions":  15680,
+					},
+				},
+				"revenue_by_month": []map[string]interface{}{
+					{"month": "Jan", "revenue": 12450.80, "advertisers": 18},
+					{"month": "Feb", "revenue": 13890.20, "advertisers": 20},
+					{"month": "Mar", "revenue": 15420.80, "advertisers": 23},
+					{"month": "Apr", "revenue": 18230.50, "advertisers": 25},
+					{"month": "May", "revenue": 21340.90, "advertisers": 28},
+					{"month": "Jun", "revenue": 19850.60, "advertisers": 26},
+				},
 				"users": map[string]interface{}{
 					"total":          1247,
 					"new_today":      23,
@@ -239,134 +271,8 @@ func GetAnalyticsHandler(db *database.DB) gin.HandlerFunc {
 						{"name": "Linguistics", "count": 25, "views": 1842},
 					},
 				},
-				"subscriptions": map[string]interface{}{
-					"active":        892,
-					"new_today":     12,
-					"new_week":      67,
-					"new_month":     234,
-					"cancelled":     45,
-					"revenue_today": 348.50,
-					"revenue_week":  2456.75,
-					"revenue_month": 12678.90,
-					"revenue_year":  145234.50,
-					"mrr":           12678.90,
-					"arr":           152146.80,
-					"ltv":           245.67,
-					"plans": []map[string]interface{}{
-						{"name": "Free", "count": 355, "revenue": 0},
-						{"name": "Basic", "count": 298, "revenue": 2980.00},
-						{"name": "Premium", "count": 239, "revenue": 9560.00},
-					},
-				},
-				"engagement": map[string]interface{}{
-					"avg_watch_time":    "12:34",
-					"completion_rate":   0.78,
-					"like_ratio":        0.92,
-					"comment_rate":      0.15,
-					"share_count":       567,
-					"bounce_rate":       0.23,
-					"session_duration":  "18:45",
-					"pages_per_session": 3.2,
-				},
-				"system": map[string]interface{}{
-					"uptime":          "99.9%",
-					"response_time":   "245ms",
-					"error_rate":      "0.02%",
-					"storage_used":    "45.2GB",
-					"bandwidth_used":  "1.2TB",
-					"cdn_hits":        "98.5%",
-					"database_size":   "2.3GB",
-					"active_sessions": 234,
-				},
-				"geographic": map[string]interface{}{
-					"top_countries": []map[string]interface{}{
-						{"country": "United States", "users": 567, "percentage": 45.5},
-						{"country": "Canada", "users": 234, "percentage": 18.8},
-						{"country": "United Kingdom", "users": 156, "percentage": 12.5},
-						{"country": "Australia", "users": 89, "percentage": 7.1},
-						{"country": "Mexico", "users": 67, "percentage": 5.4},
-					},
-					"top_states": []map[string]interface{}{
-						{"state": "Utah", "users": 123, "percentage": 21.7},
-						{"state": "California", "users": 89, "percentage": 15.7},
-						{"state": "Texas", "users": 76, "percentage": 13.4},
-						{"state": "Idaho", "users": 54, "percentage": 9.5},
-						{"state": "Arizona", "users": 43, "percentage": 7.6},
-					},
-				},
-				"devices": map[string]interface{}{
-					"desktop": map[string]interface{}{
-						"users":       678,
-						"percentage":  54.4,
-						"avg_session": "22:15",
-					},
-					"mobile": map[string]interface{}{
-						"users":       432,
-						"percentage":  34.6,
-						"avg_session": "15:30",
-					},
-					"tablet": map[string]interface{}{
-						"users":       137,
-						"percentage":  11.0,
-						"avg_session": "18:45",
-					},
-					"browsers": []map[string]interface{}{
-						{"name": "Chrome", "users": 567, "percentage": 45.5},
-						{"name": "Safari", "users": 234, "percentage": 18.8},
-						{"name": "Firefox", "users": 156, "percentage": 12.5},
-						{"name": "Edge", "users": 123, "percentage": 9.9},
-						{"name": "Other", "users": 167, "percentage": 13.4},
-					},
-				},
-				"time_series": map[string]interface{}{
-					"users": []map[string]interface{}{
-						{"date": "2024-06-12", "new_users": 23, "active_users": 234, "returning_users": 456},
-						{"date": "2024-06-13", "new_users": 34, "active_users": 267, "returning_users": 489},
-						{"date": "2024-06-14", "new_users": 28, "active_users": 245, "returning_users": 467},
-						{"date": "2024-06-15", "new_users": 45, "active_users": 289, "returning_users": 512},
-						{"date": "2024-06-16", "new_users": 32, "active_users": 256, "returning_users": 478},
-						{"date": "2024-06-17", "new_users": 38, "active_users": 278, "returning_users": 495},
-						{"date": "2024-06-18", "new_users": 29, "active_users": 251, "returning_users": 471},
-					},
-					"revenue": []map[string]interface{}{
-						{"date": "2024-06-12", "revenue": 234.50, "subscriptions": 12, "upgrades": 3},
-						{"date": "2024-06-13", "revenue": 345.75, "subscriptions": 18, "upgrades": 5},
-						{"date": "2024-06-14", "revenue": 289.25, "subscriptions": 15, "upgrades": 2},
-						{"date": "2024-06-15", "revenue": 456.80, "subscriptions": 23, "upgrades": 7},
-						{"date": "2024-06-16", "revenue": 312.45, "subscriptions": 16, "upgrades": 4},
-						{"date": "2024-06-17", "revenue": 398.60, "subscriptions": 20, "upgrades": 6},
-						{"date": "2024-06-18", "revenue": 278.90, "subscriptions": 14, "upgrades": 3},
-					},
-					"engagement": []map[string]interface{}{
-						{"date": "2024-06-12", "views": 1234, "likes": 234, "comments": 89, "shares": 45},
-						{"date": "2024-06-13", "views": 1456, "likes": 278, "comments": 102, "shares": 52},
-						{"date": "2024-06-14", "views": 1298, "likes": 245, "comments": 95, "shares": 48},
-						{"date": "2024-06-15", "views": 1567, "likes": 298, "comments": 115, "shares": 58},
-						{"date": "2024-06-16", "views": 1389, "likes": 267, "comments": 98, "shares": 51},
-						{"date": "2024-06-17", "views": 1445, "likes": 285, "comments": 107, "shares": 55},
-						{"date": "2024-06-18", "views": 1312, "likes": 256, "comments": 92, "shares": 47},
-					},
-				},
-				"conversion": map[string]interface{}{
-					"funnel": []map[string]interface{}{
-						{"stage": "Visitors", "count": 5678, "conversion": 100.0},
-						{"stage": "Signups", "count": 1247, "conversion": 22.0},
-						{"stage": "Email Verified", "count": 1089, "conversion": 87.3},
-						{"stage": "First Video Watched", "count": 956, "conversion": 87.8},
-						{"stage": "Subscription Started", "count": 234, "conversion": 24.5},
-						{"stage": "Active Subscribers", "count": 189, "conversion": 80.8},
-					},
-					"cohort_analysis": []map[string]interface{}{
-						{"cohort": "2024-01", "users": 234, "retention_30d": 0.67, "retention_90d": 0.45},
-						{"cohort": "2024-02", "users": 289, "retention_30d": 0.72, "retention_90d": 0.48},
-						{"cohort": "2024-03", "users": 345, "retention_30d": 0.69, "retention_90d": 0.46},
-						{"cohort": "2024-04", "users": 298, "retention_30d": 0.74, "retention_90d": 0.51},
-						{"cohort": "2024-05", "users": 356, "retention_30d": 0.71, "retention_90d": 0.49},
-						{"cohort": "2024-06", "users": 234, "retention_30d": 0.73, "retention_90d": 0.0},
-					},
-				},
 			}
-			c.JSON(http.StatusOK, gin.H{"analytics": analytics, "period": period})
+			c.JSON(http.StatusOK, gin.H{"data": analytics, "period": period})
 			return
 		}
 
@@ -402,14 +308,15 @@ func GetAnalyticsHandler(db *database.DB) gin.HandlerFunc {
 		}
 
 		analytics := map[string]interface{}{
-			"users":           userCount,
-			"videos":          videoCount,
-			"total_views":     totalViews,
-			"total_likes":     totalLikes,
-			"recent_activity": recentActivity,
+			"users":    userCount,
+			"videos":   videoCount,
+			"views":    totalViews,
+			"likes":    totalLikes,
+			"activity": recentActivity,
+			"period":   period,
 		}
 
-		c.JSON(http.StatusOK, gin.H{"analytics": analytics, "period": period})
+		c.JSON(http.StatusOK, gin.H{"data": analytics, "period": period})
 	}
 }
 
@@ -1222,6 +1129,7 @@ func GetScheduledVideosHandler(db *database.DB) gin.HandlerFunc {
 // SetupAdminRoutes sets up all admin routes
 func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
 	router.GET("/users", GetUsersHandler(db))
+	router.GET("/analytics", GetAnalyticsHandler(db))
 	router.GET("/analytics/overview", GetAnalyticsHandler(db))
 	router.GET("/system/health", GetSystemHealthHandler(db))
 

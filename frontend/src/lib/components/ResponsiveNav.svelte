@@ -15,9 +15,9 @@
 		});
 	});
 
-	function handleLogout() {
-		auth.logout();
-		goto('/');
+	async function handleLogout() {
+		await auth.logout();
+		goto('/login');
 		mobileMenuOpen = false;
 		userMenuOpen = false;
 	}

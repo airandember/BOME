@@ -5,6 +5,8 @@
 	import { subscriptionService, subscriptionUtils, type Subscription } from '$lib/subscription';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import Navigation from '$lib/components/Navigation.svelte';
+	import Footer from '$lib/components/Footer.svelte';
 
 	let user: any = null;
 	let subscription: Subscription | null = null;
@@ -84,6 +86,8 @@
 	<title>My Account - BOME</title>
 	<meta name="description" content="Manage your BOME account, subscription, and billing information" />
 </svelte:head>
+
+<Navigation />
 
 <div class="account-page">
 	<div class="container">
@@ -332,6 +336,8 @@
 		{/if}
 	</div>
 </div>
+
+<Footer />
 
 <style>
 	.account-page {

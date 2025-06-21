@@ -118,46 +118,8 @@ func SetupRoutes(
 		admin := v1.Group("/admin")
 		admin.Use(middleware.AuthMiddleware(), middleware.AdminMiddleware())
 		{
-			// User management
-			adminUsers := admin.Group("/users")
-			{
-				adminUsers.GET("", GetUsersHandler(db))
-				adminUsers.GET("/:id", GetUserHandler(db))
-				adminUsers.PUT("/:id", UpdateUserHandler(db))
-				adminUsers.DELETE("/:id", DeleteUserHandler(db))
-			}
-
-			// Video management
-			adminVideos := admin.Group("/videos")
-			{
-				adminVideos.GET("", GetAdminVideosHandler(db))
-				adminVideos.POST("", handleAdminUploadVideo(db, bunnyService))
-				adminVideos.PUT("/:id", UpdateVideoHandler(db))
-				adminVideos.DELETE("/:id", DeleteVideoHandler(db))
-				adminVideos.GET("/pending", handleAdminGetPendingVideos(db))
-				adminVideos.POST("/:id/approve", handleAdminApproveVideo(db))
-				adminVideos.POST("/:id/reject", handleAdminRejectVideo(db))
-				adminVideos.POST("/bulk", BulkVideoOperationHandler(db))
-				adminVideos.GET("/stats", GetVideoStatsHandler(db))
-				adminVideos.GET("/categories", GetVideoCategoriesHandler(db))
-			}
-
-			// Analytics
-			adminAnalytics := admin.Group("/analytics")
-			{
-				adminAnalytics.GET("/overview", GetAnalyticsHandler(db))
-				adminAnalytics.GET("/detailed/:metric", GetDetailedAnalyticsHandler(db))
-				adminAnalytics.GET("/realtime", GetRealTimeAnalyticsHandler(db))
-				adminAnalytics.GET("/export", ExportAnalyticsHandler(db))
-			}
-
-			// System management
-			adminSystem := admin.Group("/system")
-			{
-				adminSystem.GET("/health", GetSystemHealthHandler(db))
-				adminSystem.POST("/backup", handleAdminCreateBackup(db, spacesService))
-				adminSystem.GET("/logs", handleAdminGetLogs())
-			}
+			// Set up all admin routes from admin.go
+			SetupAdminRoutes(admin, db)
 		}
 	}
 }

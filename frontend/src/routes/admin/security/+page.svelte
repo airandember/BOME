@@ -49,10 +49,10 @@
 	let securityData: SecurityMetrics | null = null;
 	let loading = true;
 	let error = '';
-	let refreshInterval: NodeJS.Timeout;
+	let refreshInterval: number;
 
-	onMount(async () => {
-		await loadSecurityData();
+	onMount(() => {
+		loadSecurityData();
 		
 		// Auto-refresh every 30 seconds
 		refreshInterval = setInterval(loadSecurityData, 30000);
