@@ -31,6 +31,34 @@ This document provides information about test accounts available for the BOME (B
   - Favorites and playlists
   - Comment system
 
+### 3. Advertiser Account
+- **Email**: `advertiser@bome.com` or `advertiser@bome.test`
+- **Password**: `advertiser123`
+- **Role**: Advertiser
+- **Access**: Advertiser dashboard and campaign management
+- **Features**:
+  - Advertiser dashboard
+  - Campaign creation and management
+  - Advertisement creation and management
+  - Analytics and reporting
+  - Budget and billing management
+  - Asset management
+  - Performance tracking
+
+### 4. Business Advertiser Account
+- **Email**: `business@bome.test`
+- **Password**: `business123`, `advertiser123`, or `password123`
+- **Role**: Advertiser
+- **Access**: Advertiser dashboard and campaign management
+- **Features**:
+  - Advertiser dashboard
+  - Campaign creation and management
+  - Advertisement creation and management
+  - Analytics and reporting
+  - Budget and billing management
+  - Asset management
+  - Performance tracking
+
 ## How to Use Test Accounts
 
 1. **Start the Development Server**:
@@ -47,6 +75,7 @@ This document provides information about test accounts available for the BOME (B
 
 4. **Access Different Dashboards**:
    - **Admin**: Will be redirected to `/admin` with full admin interface
+   - **Advertiser**: Will be redirected to `/advertiser` with advertiser dashboard
    - **Regular User**: Will be redirected to `/dashboard` with user interface
 
 ## Testing Different User Experiences
@@ -57,6 +86,15 @@ This document provides information about test accounts available for the BOME (B
 - Test user management at `/admin/users`
 - Test role management at `/admin/roles`
 - Test financial management at `/admin/financial`
+
+### Advertiser Testing
+- Navigate to `/advertiser` for advertiser dashboard
+- Test campaign creation at `/advertiser/campaigns/new`
+- Test campaign management at `/advertiser/campaigns`
+- Test advertisement creation at `/advertiser/campaigns/[id]/ads/new`
+- Test analytics dashboard at `/advertiser/analytics`
+- Test account management at `/advertiser/account`
+- Test account setup at `/advertiser/setup` (if not already set up)
 
 ### Regular User Testing
 - Navigate to `/dashboard` for user dashboard

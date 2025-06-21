@@ -50,7 +50,8 @@
 				<h4>Explore</h4>
 				<ul>
 					<li><a href="/videos">Videos</a></li>
-					<li><a href="/categories">Categories</a></li>
+					<li><a href="/articles">Articles</a></li>
+					<li><a href="/events">Events</a></li>
 					<li><a href="/about">About</a></li>
 					<li><a href="/contact">Contact</a></li>
 				</ul>
@@ -79,6 +80,12 @@
 				<ul>
 					<li><a href="/help">Help Center</a></li>
 					<li><a href="/faq">FAQ</a></li>
+					<li><a href="/advertise" class="advertise-link">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
+						</svg>
+						Advertise with us!
+					</a></li>
 					<li><a href="/privacy">Privacy Policy</a></li>
 					<li><a href="/terms">Terms of Service</a></li>
 				</ul>
@@ -212,6 +219,31 @@
 
 	.footer-section a:hover {
 		color: var(--primary);
+	}
+
+	/* Special styling for advertise link */
+	.advertise-link {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs);
+		font-weight: 600;
+		color: var(--primary) !important;
+		transition: all var(--transition-normal);
+	}
+
+	.advertise-link svg {
+		width: 16px;
+		height: 16px;
+		transition: transform var(--transition-normal);
+	}
+
+	.advertise-link:hover {
+		color: var(--primary-dark) !important;
+		transform: translateX(2px);
+	}
+
+	.advertise-link:hover svg {
+		transform: scale(1.1);
 	}
 
 	.footer-bottom {

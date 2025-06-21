@@ -24,6 +24,12 @@
 			goto('/login');
 			return;
 		}
+
+		// If user is already an advertiser, redirect to dashboard
+		if ($auth.user?.role === 'advertiser') {
+			goto('/advertiser');
+			return;
+		}
 	});
 
 	function validateForm(): boolean {
@@ -69,26 +75,24 @@
 
 			const data = await response.json();
 
-			if (response.ok) {
+			if (data.success) {
+				// Update user role locally to 'advertiser' since account was created
+				// Note: In production, the role will be updated when admin approves the account
+				// For development/testing, we'll update it immediately
+				if ($auth.user) {
+					auth.updateUser({ role: 'advertiser' });
+				}
+				
 				submitted = true;
 				// Redirect to advertiser dashboard after a short delay
 				setTimeout(() => {
 					goto('/advertiser');
 				}, 3000);
 			} else {
-				if (data.error) {
-					// Handle specific field errors if provided
-					if (typeof data.error === 'object') {
-						errors = data.error;
-					} else {
-						errors.general = data.error;
-					}
-				} else {
-					errors.general = 'Failed to create advertiser account. Please try again.';
-				}
+				errors.general = data.error || 'Failed to create advertiser account';
 			}
 		} catch (error) {
-			errors.general = 'Network error. Please check your connection and try again.';
+			errors.general = (error as Error).message;
 		} finally {
 			loading = false;
 		}

@@ -16,9 +16,9 @@ func SetupAdvertisementRoutes(
 	router *gin.RouterGroup,
 	adService *services.AdvertisementService,
 ) {
-	// Advertiser routes (require authentication)
+	// Advertiser routes (require advertiser role)
 	advertiser := router.Group("/advertiser")
-	advertiser.Use(middleware.AuthMiddleware())
+	advertiser.Use(middleware.AuthMiddleware(), middleware.AdvertiserMiddleware())
 	{
 		// Advertiser account management
 		advertiser.POST("/account", createAdvertiserAccountHandler(adService))

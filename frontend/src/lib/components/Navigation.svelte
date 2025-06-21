@@ -8,12 +8,14 @@
 	let user: any = null;
 	let isScrolled = false;
 	let isAdmin = false;
+	let isAdvertiser = false;
 
 	// Subscribe to auth store
 	auth.subscribe(state => {
 		isAuthenticated = state.isAuthenticated;
 		user = state.user;
 		isAdmin = user?.role === 'admin';
+		isAdvertiser = user?.role === 'advertiser';
 	});
 
 	// Handle scroll for navbar background
@@ -100,6 +102,34 @@
 								</svg>
 								<span>Admin Dashboard</span>
 								<div class="admin-badge">Admin</div>
+							</a>
+							<div class="dropdown-divider"></div>
+						{:else if isAdvertiser}
+							<a href="/advertiser" class="dropdown-item advertiser-link" on:click={closeMenu}>
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+									<path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
+								</svg>
+								<span>Advertiser Dashboard</span>
+								<div class="advertiser-badge">Advertiser</div>
+							</a>
+							<a href="/advertiser/campaigns" class="dropdown-item" on:click={closeMenu}>
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+									<path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+								</svg>
+								<span>My Campaigns</span>
+							</a>
+							<a href="/advertiser/analytics" class="dropdown-item" on:click={closeMenu}>
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+									<path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+								</svg>
+								<span>Analytics</span>
+							</a>
+							<a href="/advertiser/account" class="dropdown-item" on:click={closeMenu}>
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+									<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+									<circle cx="12" cy="7" r="4"></circle>
+								</svg>
+								<span>Account Settings</span>
 							</a>
 							<div class="dropdown-divider"></div>
 						{/if}
@@ -401,6 +431,34 @@
 		top: 50%;
 		transform: translateY(-50%);
 		background: var(--primary-gradient);
+		color: var(--white);
+		font-size: 10px;
+		font-weight: 600;
+		padding: 2px 6px;
+		border-radius: var(--radius-sm);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		box-shadow: var(--shadow-sm);
+	}
+
+	.advertiser-link {
+		position: relative;
+		background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(16, 185, 129, 0.1) 100%);
+		border: 1px solid rgba(34, 197, 94, 0.2);
+	}
+
+	.advertiser-link:hover {
+		background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%);
+		border-color: rgba(34, 197, 94, 0.3);
+		transform: translateX(4px);
+	}
+
+	.advertiser-badge {
+		position: absolute;
+		right: var(--space-sm);
+		top: 50%;
+		transform: translateY(-50%);
+		background: linear-gradient(135deg, #22c55e 0%, #10b981 100%);
 		color: var(--white);
 		font-size: 10px;
 		font-weight: 600;
