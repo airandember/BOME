@@ -71,22 +71,86 @@ func (s *AdvertisementService) GetAdvertiserAccountByUserID(userID int) (*databa
 
 // ApproveAdvertiserAccount approves an advertiser account
 func (s *AdvertisementService) ApproveAdvertiserAccount(id int, notes string) error {
-	_, err := s.db.Exec(`
+	// Start a transaction to ensure both updates succeed or fail together
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Get the advertiser account to find the user_id
+	var userID int
+	err = tx.QueryRow(`
+		SELECT user_id FROM advertiser_accounts WHERE id = $1
+	`, id).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("failed to get advertiser account: %w", err)
+	}
+
+	// Update advertiser account status
+	_, err = tx.Exec(`
 		UPDATE advertiser_accounts 
 		SET status = 'approved', verification_notes = $1, updated_at = NOW()
 		WHERE id = $2
 	`, notes, id)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to approve advertiser account: %w", err)
+	}
+
+	// Update user role to 'advertiser'
+	_, err = tx.Exec(`
+		UPDATE users 
+		SET role = 'advertiser', updated_at = NOW()
+		WHERE id = $1
+	`, userID)
+	if err != nil {
+		return fmt.Errorf("failed to update user role: %w", err)
+	}
+
+	// Commit the transaction
+	return tx.Commit()
 }
 
 // RejectAdvertiserAccount rejects an advertiser account
 func (s *AdvertisementService) RejectAdvertiserAccount(id int, notes string) error {
-	_, err := s.db.Exec(`
+	// Start a transaction to ensure both updates succeed or fail together
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Get the advertiser account to find the user_id
+	var userID int
+	err = tx.QueryRow(`
+		SELECT user_id FROM advertiser_accounts WHERE id = $1
+	`, id).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("failed to get advertiser account: %w", err)
+	}
+
+	// Update advertiser account status
+	_, err = tx.Exec(`
 		UPDATE advertiser_accounts 
 		SET status = 'rejected', verification_notes = $1, updated_at = NOW()
 		WHERE id = $2
 	`, notes, id)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to reject advertiser account: %w", err)
+	}
+
+	// Reset user role back to 'user'
+	_, err = tx.Exec(`
+		UPDATE users 
+		SET role = 'user', updated_at = NOW()
+		WHERE id = $1
+	`, userID)
+	if err != nil {
+		return fmt.Errorf("failed to update user role: %w", err)
+	}
+
+	// Commit the transaction
+	return tx.Commit()
 }
 
 // CreateAdCampaign creates a new advertising campaign

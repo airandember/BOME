@@ -178,6 +178,40 @@ func AdminMiddleware() gin.HandlerFunc {
 	}
 }
 
+// AdvertiserMiddleware returns a gin.HandlerFunc for advertiser authentication
+func AdvertiserMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		_, exists := c.Get("user_id")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Authentication required",
+			})
+			c.Abort()
+			return
+		}
+
+		userRole, exists := c.Get("user_role")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "User role not found",
+			})
+			c.Abort()
+			return
+		}
+
+		// Check if user is advertiser or admin (admins can access advertiser features)
+		if userRole != "advertiser" && userRole != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "Advertiser access required",
+			})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
 // ClientInfo represents rate limiting information for a client
 type ClientInfo struct {
 	Requests int

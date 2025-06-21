@@ -91,6 +91,56 @@ const createAuthStore = () => {
 					return { success: true, user };
 				}
 
+				// Mock advertiser login for testing - multiple patterns supported
+				if ((email === 'advertiser@bome.com' || email === 'advertiser@bome.test') && password === 'advertiser123') {
+					const user: User = {
+						id: 3,
+						email: email, // Use the provided email
+						firstName: 'Business',
+						lastName: 'Advertiser',
+						role: 'advertiser', // Advertiser role
+						roles: [], // No special roles for regular advertiser
+						emailVerified: true
+					};
+
+					const mockToken = 'mock-advertiser-token-' + Date.now();
+					localStorage.setItem('token', mockToken);
+					localStorage.setItem('userData', JSON.stringify(user));
+
+					set({
+						user,
+						token: mockToken,
+						isAuthenticated: true
+					});
+
+					return { success: true, user };
+				}
+
+				// Mock business advertiser login - flexible password support
+				if (email === 'business@bome.test' && (password === 'business123' || password === 'advertiser123' || password === 'password123')) {
+					const user: User = {
+						id: 4,
+						email: email, // Use the provided email
+						firstName: 'Business',
+						lastName: 'Owner',
+						role: 'advertiser', // Advertiser role
+						roles: [], // No special roles for regular advertiser
+						emailVerified: true
+					};
+
+					const mockToken = 'mock-advertiser-token-' + Date.now();
+					localStorage.setItem('token', mockToken);
+					localStorage.setItem('userData', JSON.stringify(user));
+
+					set({
+						user,
+						token: mockToken,
+						isAuthenticated: true
+					});
+
+					return { success: true, user };
+				}
+
 				// Regular API call for other users
 				const response = await fetch('/api/v1/auth/login', {
 					method: 'POST',
@@ -230,6 +280,37 @@ const createAuthStore = () => {
 						firstName: 'User',
 						lastName: 'Account',
 						role: 'user',
+						roles: [],
+						emailVerified: true
+					};
+
+					set({
+						user: mockUser,
+						token,
+						isAuthenticated: true
+					});
+				} else if (token.startsWith('mock-advertiser-token-')) {
+					// Handle mock advertiser token
+					const storedUserData = localStorage.getItem('userData');
+					let email = 'advertiser@bome.com'; // default
+					
+					if (storedUserData) {
+						try {
+							const userData = JSON.parse(storedUserData);
+							if (userData.email) {
+								email = userData.email;
+							}
+						} catch (error) {
+							console.error('Failed to parse stored user data:', error);
+						}
+					}
+
+					const mockUser: User = {
+						id: 3,
+						email: email,
+						firstName: 'Business',
+						lastName: 'Advertiser',
+						role: 'advertiser',
 						roles: [],
 						emailVerified: true
 					};
