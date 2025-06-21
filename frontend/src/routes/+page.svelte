@@ -1147,7 +1147,7 @@
 		padding: 2rem 0;
 		text-align: center;
 		color: white;
-		width: 51vw;
+		width: 100vw;
 		height: 6vh;
 		background: rgba(150, 142, 132, 0.5);
 		border-radius: 0 0 15px 15px;
