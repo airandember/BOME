@@ -65,8 +65,8 @@
 			<a href="/articles" class="nav-link" on:click={closeMenu}>
 				<span>Articles</span>
 			</a>
-			<a href="/categories" class="nav-link" on:click={closeMenu}>
-				<span>Categories</span>
+			<a href="/events" class="nav-link" on:click={closeMenu}>
+				<span>Events</span>
 			</a>
 			<a href="/about" class="nav-link" on:click={closeMenu}>
 				<span>About</span>
