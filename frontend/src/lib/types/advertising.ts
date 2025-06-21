@@ -27,6 +27,7 @@ export interface AdCampaign {
 	advertiser_id: number;
 	name: string;
 	description?: string;
+	image_url?: string;
 	status: 'draft' | 'pending' | 'approved' | 'active' | 'paused' | 'completed' | 'rejected' | 'cancelled';
 	start_date: string;
 	end_date: string;

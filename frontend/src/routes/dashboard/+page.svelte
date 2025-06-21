@@ -349,13 +349,12 @@
 					</svg>
 					My Favorites
 				</a>
-				<a href="/subscription" class="action-btn">
+				<a href="/advertise" class="action-btn advertise-btn">
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"></path>
-						<polyline points="16,21 12,17 8,21"></polyline>
-						<polyline points="12,17 12,3"></polyline>
+						<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+						<circle cx="12" cy="12" r="3"/>
 					</svg>
-					Upgrade Plan
+					Advertise with BOME
 				</a>
 			</div>
 		</div>
@@ -682,6 +681,47 @@
 		width: 20px;
 		height: 20px;
 		color: var(--primary);
+	}
+
+	.advertise-btn {
+		background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+		color: var(--white);
+		border: 2px solid transparent;
+		position: relative;
+		overflow: hidden;
+	}
+
+	.advertise-btn::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: linear-gradient(135deg, var(--secondary) 0%, var(--primary) 100%);
+		opacity: 0;
+		transition: opacity var(--transition-normal);
+	}
+
+	.advertise-btn:hover::before {
+		opacity: 1;
+	}
+
+	.advertise-btn:hover {
+		transform: translateY(-4px);
+		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+	}
+
+	.advertise-btn svg {
+		color: var(--white);
+		position: relative;
+		z-index: 1;
+	}
+
+	.advertise-btn span,
+	.advertise-btn {
+		position: relative;
+		z-index: 1;
 	}
 
 	@media (max-width: 1024px) {

@@ -182,6 +182,7 @@
 				target_audience: 'Tech professionals, developers, and IT decision makers aged 25-45',
 				billing_type: 'monthly',
 				billing_rate: 5000,
+				image_url: '/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 				created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
 				updated_at: new Date().toISOString()
 			},
@@ -198,6 +199,7 @@
 				target_audience: 'Small business owners and marketing professionals',
 				billing_type: 'weekly',
 				billing_rate: 666.67,
+				image_url: '/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 				approved_by: 1,
 				approved_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
 				created_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
@@ -216,6 +218,7 @@
 				target_audience: 'Holiday shoppers, families, and gift buyers aged 30-55',
 				billing_type: 'monthly',
 				billing_rate: 6000,
+				image_url: '/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 				approval_notes: 'Campaign content does not align with platform guidelines',
 				rejected_by: 2,
 				rejected_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
@@ -235,6 +238,7 @@
 				target_audience: 'Small businesses and startups needing design services',
 				billing_type: 'monthly',
 				billing_rate: 1666.67,
+				image_url: '/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 				cancelled_by: 1,
 				cancelled_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
 				created_at: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
@@ -253,6 +257,7 @@
 				target_audience: 'Tech enthusiasts, AI researchers, and industry professionals',
 				billing_type: 'monthly',
 				billing_rate: 3000,
+				image_url: '/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 				created_at: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
 				updated_at: new Date().toISOString()
 			}

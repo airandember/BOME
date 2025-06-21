@@ -71,8 +71,8 @@ const createAuthStore = () => {
 					const user: User = {
 						id: 2,
 						email: email, // Use the provided email
-						firstName: 'Test',
-						lastName: 'User',
+						firstName: 'User',
+						lastName: 'Account',
 						role: 'user', // Regular user role
 						roles: [], // No special roles for regular user
 						emailVerified: true
@@ -227,8 +227,8 @@ const createAuthStore = () => {
 					const mockUser: User = {
 						id: 2,
 						email: email,
-						firstName: 'Test',
-						lastName: 'User',
+						firstName: 'User',
+						lastName: 'Account',
 						role: 'user',
 						roles: [],
 						emailVerified: true
