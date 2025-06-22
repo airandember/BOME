@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/auth';
+	import { advertiserStore } from '$lib/stores/advertiser';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import type { AdvertiserAccount, AdCampaign } from '$lib/types/advertising';
 	
@@ -51,6 +52,11 @@
 	$: advertiserCounts = getAdvertiserCounts(filteredAdvertiserAccounts);
 	$: campaignCounts = getCampaignCounts(filteredCampaigns);
 
+	// Subscribe to advertiser store updates
+	$: {
+		advertiserAccounts = $advertiserStore.accounts;
+	}
+
 	onMount(async () => {
 		if (!$auth.isAuthenticated) {
 			goto('/login');
@@ -79,91 +85,11 @@
 	}
 
 	async function loadAdvertisers() {
-		// Mock data for demonstration - expanded to include more examples
-		advertiserAccounts = [
-			{
-				id: 1,
-				user_id: 2,
-				company_name: 'TechCorp Solutions',
-				business_email: 'contact@techcorp.com',
-				contact_name: 'Sarah Johnson',
-				contact_phone: '(555) 123-4567',
-				business_address: '123 Innovation Drive, Tech City, TC 12345',
-				tax_id: '12-3456789',
-				website: 'https://techcorp.com',
-				industry: 'Technology',
-				status: 'pending',
-				created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-				updated_at: new Date().toISOString()
-			},
-			{
-				id: 2,
-				user_id: 3,
-				company_name: 'Digital Marketing Pro',
-				business_email: 'hello@digitalmarketing.com',
-				contact_name: 'Michael Chen',
-				contact_phone: '(555) 987-6543',
-				business_address: '456 Marketing Blvd, Adville, AV 67890',
-				tax_id: '98-7654321',
-				website: 'https://digitalmarketing.com',
-				industry: 'Marketing',
-				status: 'approved',
-				approved_by: 1,
-				approved_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-				created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-				updated_at: new Date().toISOString()
-			},
-			{
-				id: 3,
-				user_id: 4,
-				company_name: 'Global Ventures LLC',
-				business_email: 'info@globalventures.com',
-				contact_name: 'Emma Rodriguez',
-				contact_phone: '(555) 456-7890',
-				business_address: '789 Business Park, Enterprise City, EC 13579',
-				tax_id: '45-6789012',
-				website: 'https://globalventures.com',
-				industry: 'Finance',
-				status: 'rejected',
-				verification_notes: 'Incomplete documentation provided',
-				rejected_by: 2,
-				rejected_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-				created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-				updated_at: new Date().toISOString()
-			},
-			{
-				id: 4,
-				user_id: 5,
-				company_name: 'Creative Studios Inc',
-				business_email: 'contact@creativestudios.com',
-				contact_name: 'David Kim',
-				contact_phone: '(555) 789-0123',
-				business_address: '321 Creative Ave, Art District, AD 24680',
-				tax_id: '67-8901234',
-				website: 'https://creativestudios.com',
-				industry: 'Design',
-				status: 'cancelled',
-				cancelled_by: 1,
-				cancelled_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-				created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-				updated_at: new Date().toISOString()
-			},
-			{
-				id: 5,
-				user_id: 6,
-				company_name: 'NextGen Solutions',
-				business_email: 'hello@nextgen.com',
-				contact_name: 'Lisa Wang',
-				contact_phone: '(555) 234-5678',
-				business_address: '654 Future Blvd, Innovation City, IC 97531',
-				tax_id: '89-0123456',
-				website: 'https://nextgen.com',
-				industry: 'Technology',
-				status: 'pending',
-				created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-				updated_at: new Date().toISOString()
-			}
-		];
+		try {
+			await advertiserStore.loadAll();
+		} catch (error) {
+			console.error('Failed to load advertisers:', error);
+		}
 	}
 
 	async function loadCampaigns() {
@@ -325,12 +251,8 @@
 
 	async function approveAdvertiser(advertiserId: number) {
 		try {
-			// Mock API call
-			await new Promise(resolve => setTimeout(resolve, 500));
-			
-			advertiserAccounts = advertiserAccounts.map(acc => 
-				acc.id === advertiserId ? { ...acc, status: 'approved' } : acc
-			);
+			const currentUser = $auth.user;
+			await advertiserStore.approveAccount(advertiserId, currentUser?.id || 1);
 		} catch (err) {
 			error = 'Failed to approve advertiser';
 		}
@@ -341,12 +263,8 @@
 		if (!reason) return;
 
 		try {
-			// Mock API call
-			await new Promise(resolve => setTimeout(resolve, 500));
-			
-			advertiserAccounts = advertiserAccounts.map(acc => 
-				acc.id === advertiserId ? { ...acc, status: 'rejected', verification_notes: reason } : acc
-			);
+			const currentUser = $auth.user;
+			await advertiserStore.rejectAccount(advertiserId, currentUser?.id || 1, reason);
 		} catch (err) {
 			error = 'Failed to reject advertiser';
 		}
@@ -451,22 +369,8 @@
 
 	async function confirmAccountReviewApproval(accountId: number) {
 		try {
-			// Mock API call
-			await new Promise(resolve => setTimeout(resolve, 500));
-			
-			advertiserAccounts = advertiserAccounts.map(account => 
-				account.id === accountId ? { 
-					...account, 
-					status: 'approved',
-					approved_by: 1, // Mock current admin ID
-					approved_at: new Date().toISOString(),
-					// Clear rejection data
-					rejected_by: undefined,
-					rejected_at: undefined,
-					verification_notes: 'Account approved after review'
-				} : account
-			);
-			
+			const currentUser = $auth.user;
+			await advertiserStore.approveAccount(accountId, currentUser?.id || 1);
 			reviewingAccountId = null;
 		} catch (err) {
 			error = 'Failed to approve account';

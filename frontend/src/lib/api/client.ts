@@ -1,464 +1,596 @@
-import { writable } from 'svelte/store';
-import { showToast } from '$lib/toast';
+// BOME Frontend API Client
+// Centralized HTTP client for all backend communication
 
-// API Configuration
-export const API_CONFIG = {
-	BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1',
-	TIMEOUT: 30000,
-	RETRY_ATTEMPTS: 3,
-	RETRY_DELAY: 1000,
-	CACHE_TTL: 5 * 60 * 1000, // 5 minutes
-};
+import { apiCache, cacheKeys, cacheInvalidation } from '$lib/utils/cache';
 
-// API Response Types
-export interface ApiResponse<T = any> {
-	success: boolean;
+interface ApiResponse<T> {
 	data?: T;
 	error?: string;
 	message?: string;
-	meta?: {
-		page?: number;
-		limit?: number;
-		total?: number;
-		totalPages?: number;
+}
+
+interface PaginatedResponse<T> {
+	data: T[];
+	pagination: {
+		current_page: number;
+		per_page: number;
+		total: number;
+		total_pages: number;
 	};
 }
 
-// Custom Error Class
-export class ApiError extends Error {
-	public code: string;
-	public details?: any;
-	public timestamp: string;
-
-	constructor({ code, message, details, timestamp }: {
-		code: string;
-		message: string;
-		details?: any;
-		timestamp: string;
-	}) {
-		super(message);
-		this.name = 'ApiError';
-		this.code = code;
-		this.details = details;
-		this.timestamp = timestamp;
-	}
+interface LoginRequest {
+	email: string;
+	password: string;
 }
 
-// Cache Management
-class ApiCache {
-	private cache = new Map<string, { data: any; timestamp: number; ttl: number }>();
+interface LoginResponse {
+	token: string;
+	user: {
+		id: number;
+		email: string;
+		role: string;
+		full_name: string;
+	};
+}
 
-	set(key: string, data: any, ttl: number = API_CONFIG.CACHE_TTL): void {
-		this.cache.set(key, {
-			data,
-			timestamp: Date.now(),
-			ttl
-		});
+interface RetryConfig {
+	maxRetries: number;
+	baseDelay: number;
+	maxDelay: number;
+	retryableStatuses: number[];
+}
+
+interface TokenInfo {
+	token: string;
+	expiresAt: number;
+	refreshToken?: string;
+}
+
+interface RequestOptions {
+	useCache?: boolean;
+	cacheTTL?: number;
+	invalidateCache?: boolean;
+}
+
+export class ApiClient {
+	private baseURL: string;
+	private tokenInfo: TokenInfo | null = null;
+	private refreshPromise: Promise<boolean> | null = null;
+	private retryConfig: RetryConfig = {
+		maxRetries: 3,
+		baseDelay: 1000, // 1 second
+		maxDelay: 10000, // 10 seconds
+		retryableStatuses: [408, 429, 500, 502, 503, 504]
+	};
+
+	constructor() {
+		// Environment-specific API endpoints
+		this.baseURL = this.getBaseURL();
+		this.tokenInfo = this.getStoredTokenInfo();
 	}
 
-	get(key: string): any | null {
-		const item = this.cache.get(key);
-		if (!item) return null;
+	private getBaseURL(): string {
+		if (typeof window === 'undefined') return 'http://localhost:8080'; // SSR fallback
+		
+		const env = import.meta.env;
+		
+		// Development
+		if (env.DEV) {
+			return env.VITE_API_URL || 'http://localhost:8080';
+		}
+		
+		// Production
+		if (env.PROD) {	
+			return env.VITE_API_URL || 'https://api.bome.org';
+		}
+		
+		// Staging
+		return env.VITE_API_URL || 'https://staging-api.bome.org';
+	}
 
-		if (Date.now() - item.timestamp > item.ttl) {
-			this.cache.delete(key);
+	private getStoredTokenInfo(): TokenInfo | null {
+		if (typeof window === 'undefined') return null;
+		
+		const stored = localStorage.getItem('bome_token_info');
+		if (!stored) return null;
+		
+		try {
+			return JSON.parse(stored);
+		} catch {
 			return null;
 		}
-
-		return item.data;
 	}
 
-	clear(): void {
-		this.cache.clear();
+	// Decode JWT token to get expiration time
+	private decodeJWT(token: string): { exp?: number } {
+		try {
+			const payload = token.split('.')[1];
+			const decoded = JSON.parse(atob(payload));
+			return decoded;
+		} catch {
+			return {};
+		}
 	}
 
-	delete(key: string): void {
-		this.cache.delete(key);
+	// Check if token is expired or will expire soon (within 5 minutes)
+	private isTokenExpired(): boolean {
+		if (!this.tokenInfo) return true;
+		
+		const now = Date.now() / 1000;
+		const buffer = 5 * 60; // 5 minutes buffer
+		
+		return this.tokenInfo.expiresAt <= (now + buffer);
 	}
-}
 
-// Request Queue for Retry Logic
-class RequestQueue {
-	private queue: Array<() => Promise<any>> = [];
-	private processing = false;
+	// Get current token (for backward compatibility)
+	get token(): string | null {
+		return this.tokenInfo?.token || null;
+	}
 
-	async add<T>(request: () => Promise<T>): Promise<T> {
-		return new Promise((resolve, reject) => {
-			this.queue.push(async () => {
-				try {
-					const result = await request();
-					resolve(result);
-				} catch (error) {
-					reject(error);
+	setToken(token: string, refreshToken?: string) {
+		const decoded = this.decodeJWT(token);
+		const expiresAt = decoded.exp || (Date.now() / 1000) + (24 * 60 * 60); // Default 24 hours
+		
+		this.tokenInfo = {
+			token,
+			expiresAt,
+			refreshToken
+		};
+		
+		if (typeof window !== 'undefined') {
+			localStorage.setItem('bome_token_info', JSON.stringify(this.tokenInfo));
+		}
+	}
+
+	removeToken() {
+		this.tokenInfo = null;
+		if (typeof window !== 'undefined') {
+			localStorage.removeItem('bome_token_info');
+		}
+		// Clear user-related cache on logout
+		apiCache.invalidatePattern(/^user:/);
+		apiCache.invalidatePattern(/^dashboard:/);
+	}
+
+	// Refresh token if needed
+	private async refreshTokenIfNeeded(): Promise<boolean> {
+		if (!this.isTokenExpired()) return true;
+		
+		// If refresh is already in progress, wait for it
+		if (this.refreshPromise) {
+			return this.refreshPromise;
+		}
+		
+		// Start refresh process
+		this.refreshPromise = this.performTokenRefresh();
+		const result = await this.refreshPromise;
+		this.refreshPromise = null;
+		
+		return result;
+	}
+
+	private async performTokenRefresh(): Promise<boolean> {
+		if (!this.tokenInfo?.refreshToken) {
+			console.warn('No refresh token available, user needs to login again');
+			this.removeToken();
+			// Dispatch custom event for logout
+			if (typeof window !== 'undefined') {
+				window.dispatchEvent(new CustomEvent('auth:token-expired'));
+			}
+			return false;
+		}
+
+		try {
+			const response = await fetch(`${this.baseURL}/api/v1/auth/refresh`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'Authorization': `Bearer ${this.tokenInfo.refreshToken}`
 				}
 			});
 
-			if (!this.processing) {
-				this.process();
+			if (!response.ok) {
+				throw new Error('Token refresh failed');
 			}
-		});
-	}
 
-	private async process(): Promise<void> {
-		this.processing = true;
-
-		while (this.queue.length > 0) {
-			const request = this.queue.shift();
-			if (request) {
-				await request();
+			const data = await response.json();
+			
+			if (data.token) {
+				this.setToken(data.token, data.refreshToken || this.tokenInfo.refreshToken);
+				console.log('Token refreshed successfully');
+				return true;
 			}
+
+			throw new Error('No token in refresh response');
+		} catch (error) {
+			console.error('Token refresh failed:', error);
+			this.removeToken();
+			
+			// Dispatch custom event for logout
+			if (typeof window !== 'undefined') {
+				window.dispatchEvent(new CustomEvent('auth:token-expired'));
+			}
+			
+			return false;
 		}
-
-		this.processing = false;
 	}
-}
 
-// API Client Class
-class ApiClient {
-	private cache = new ApiCache();
-	private requestQueue = new RequestQueue();
-	private abortControllers = new Map<string, AbortController>();
+	// Exponential backoff delay calculation
+	private calculateDelay(attempt: number): number {
+		const delay = this.retryConfig.baseDelay * Math.pow(2, attempt);
+		// Add jitter to prevent thundering herd
+		const jitter = Math.random() * 0.1 * delay;
+		return Math.min(delay + jitter, this.retryConfig.maxDelay);
+	}
 
-	// Connection Status Store
-	public connectionStatus = writable<'connected' | 'disconnected' | 'reconnecting'>('connected');
+	// Sleep utility for retry delays
+	private sleep(ms: number): Promise<void> {
+		return new Promise(resolve => setTimeout(resolve, ms));
+	}
 
-	private async makeRequest<T>(
-		url: string,
+	// Check if status code is retryable
+	private isRetryableError(status: number): boolean {
+		return this.retryConfig.retryableStatuses.includes(status);
+	}
+
+	// Check if error is a network error (no response)
+	private isNetworkError(error: any): boolean {
+		return error instanceof TypeError && error.message.includes('fetch');
+	}
+
+	private async requestWithRetry<T>(
+		endpoint: string, 
 		options: RequestInit = {},
-		useCache: boolean = true,
-		cacheTtl?: number
+		attempt: number = 0,
+		requestOptions: RequestOptions = {}
 	): Promise<ApiResponse<T>> {
-		const fullUrl = `${API_CONFIG.BASE_URL}${url}`;
-		const cacheKey = `${options.method || 'GET'}:${fullUrl}:${JSON.stringify(options.body || {})}`;
-
-		// Check cache for GET requests
-		if (useCache && (!options.method || options.method === 'GET')) {
-			const cachedData = this.cache.get(cacheKey);
-			if (cachedData) {
-				return cachedData;
+		// Check cache first if enabled
+		if (requestOptions.useCache && options.method === 'GET') {
+			const cached = apiCache.get(endpoint);
+			if (cached) {
+				return { data: cached };
 			}
 		}
 
-		// Create abort controller for request cancellation
-		const abortController = new AbortController();
-		this.abortControllers.set(cacheKey, abortController);
+		// Refresh token if needed (except for auth endpoints)
+		if (!endpoint.startsWith('/auth/') && !await this.refreshTokenIfNeeded()) {
+			return { error: 'Authentication required' };
+		}
 
-		const requestOptions: RequestInit = {
+		const url = `${this.baseURL}/api/v1${endpoint}`;
+		
+		const headers: Record<string, string> = {
+			'Content-Type': 'application/json',
+		};
+
+		// Add existing headers
+		if (options.headers) {
+			Object.assign(headers, options.headers);
+		}
+
+		if (this.tokenInfo?.token) {
+			headers['Authorization'] = `Bearer ${this.tokenInfo.token}`;
+		}
+
+		const config: RequestInit = {
 			...options,
-			signal: abortController.signal,
-			headers: {
-				'Content-Type': 'application/json',
-				...this.getAuthHeaders(),
-				...options.headers,
-			},
+			headers,
+			// Set reasonable timeout
+			signal: AbortSignal.timeout(30000), // 30 seconds
 		};
 
 		try {
-			const response = await this.executeWithRetry(
-				() => fetch(fullUrl, requestOptions),
-				API_CONFIG.RETRY_ATTEMPTS
-			);
+			const response = await fetch(url, config);
+			
+			if (!response.ok) {
+				// Handle 401 Unauthorized - try token refresh once
+				if (response.status === 401 && attempt === 0 && !endpoint.startsWith('/auth/')) {
+					console.log('Received 401, attempting token refresh...');
+					if (await this.performTokenRefresh()) {
+						// Retry the request with new token
+						return this.requestWithRetry(endpoint, options, attempt + 1, requestOptions);
+					}
+				}
+
+				// Check if we should retry
+				if (attempt < this.retryConfig.maxRetries && this.isRetryableError(response.status)) {
+					const delay = this.calculateDelay(attempt);
+					console.warn(`API request failed (${response.status}), retrying in ${delay}ms... (attempt ${attempt + 1}/${this.retryConfig.maxRetries})`);
+					await this.sleep(delay);
+					return this.requestWithRetry(endpoint, options, attempt + 1, requestOptions);
+				}
+
+				const errorData = await response.json().catch(() => ({}));
+				throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+			}
 
 			const data = await response.json();
-
-			if (!response.ok) {
-				throw new ApiError({
-					code: response.status.toString(),
-					message: data.error || data.message || 'Request failed',
-					details: data,
-					timestamp: new Date().toISOString()
-				});
-			}
-
-			const result: ApiResponse<T> = {
-				success: true,
-				data: data.data || data,
-				message: data.message,
-				meta: data.meta
-			};
-
-			// Cache successful GET requests
-			if (useCache && (!options.method || options.method === 'GET')) {
-				this.cache.set(cacheKey, result, cacheTtl);
-			}
-
-			this.connectionStatus.set('connected');
-			return result;
-
-		} catch (error) {
-			if (error instanceof Error && error.name === 'AbortError') {
-				throw new ApiError({
-					code: 'ABORTED',
-					message: 'Request was cancelled',
-					timestamp: new Date().toISOString()
-				});
-			}
-
-			if (error instanceof ApiError) {
-				throw error;
-			}
-
-			// Network error
-			this.connectionStatus.set('disconnected');
-			const errorMessage = error instanceof Error ? error.message : 'Network request failed';
-			throw new ApiError({
-				code: 'NETWORK_ERROR',
-				message: errorMessage,
-				details: error,
-				timestamp: new Date().toISOString()
-			});
-		} finally {
-			this.abortControllers.delete(cacheKey);
-		}
-	}
-
-	private async executeWithRetry<T>(
-		request: () => Promise<T>,
-		maxAttempts: number
-	): Promise<T> {
-		let lastError: Error;
-
-		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-			try {
-				return await request();
-			} catch (error) {
-				lastError = error as Error;
-
-				if (attempt === maxAttempts) {
-					break;
-				}
-
-				// Don't retry for certain error types
-				const errorStatus = (error as any)?.status;
-				if (errorStatus >= 400 && errorStatus < 500) {
-					break;
-				}
-
-				// Wait before retry with exponential backoff
-				const delay = API_CONFIG.RETRY_DELAY * Math.pow(2, attempt - 1);
-				await new Promise(resolve => setTimeout(resolve, delay));
-
-				this.connectionStatus.set('reconnecting');
-			}
-		}
-
-		throw lastError!;
-	}
-
-	private getAuthHeaders(): Record<string, string> {
-		const token = localStorage.getItem('token');
-		return token ? { Authorization: `Bearer ${token}` } : {};
-	}
-
-	// Public API Methods
-	async get<T>(url: string, useCache: boolean = true, cacheTtl?: number): Promise<ApiResponse<T>> {
-		return this.makeRequest<T>(url, { method: 'GET' }, useCache, cacheTtl);
-	}
-
-	async post<T>(url: string, data?: any): Promise<ApiResponse<T>> {
-		return this.makeRequest<T>(url, {
-			method: 'POST',
-			body: data ? JSON.stringify(data) : undefined
-		}, false);
-	}
-
-	async put<T>(url: string, data?: any): Promise<ApiResponse<T>> {
-		return this.makeRequest<T>(url, {
-			method: 'PUT',
-			body: data ? JSON.stringify(data) : undefined
-		}, false);
-	}
-
-	async patch<T>(url: string, data?: any): Promise<ApiResponse<T>> {
-		return this.makeRequest<T>(url, {
-			method: 'PATCH',
-			body: data ? JSON.stringify(data) : undefined
-		}, false);
-	}
-
-	async delete<T>(url: string): Promise<ApiResponse<T>> {
-		return this.makeRequest<T>(url, { method: 'DELETE' }, false);
-	}
-
-	// File Upload
-	async upload<T>(url: string, file: File, onProgress?: (progress: number) => void): Promise<ApiResponse<T>> {
-		const formData = new FormData();
-		formData.append('file', file);
-
-		const xhr = new XMLHttpRequest();
-		
-		return new Promise((resolve, reject) => {
-			xhr.upload.addEventListener('progress', (e) => {
-				if (e.lengthComputable && onProgress) {
-					const progress = (e.loaded / e.total) * 100;
-					onProgress(progress);
-				}
-			});
-
-			xhr.addEventListener('load', () => {
-				try {
-					const response = JSON.parse(xhr.responseText);
-					if (xhr.status >= 200 && xhr.status < 300) {
-						resolve({
-							success: true,
-							data: response.data || response
-						});
-					} else {
-						reject(new ApiError({
-							code: xhr.status.toString(),
-							message: response.error || 'Upload failed',
-							timestamp: new Date().toISOString()
-						}));
-					}
-				} catch (error) {
-					reject(new ApiError({
-						code: 'PARSE_ERROR',
-						message: 'Failed to parse response',
-						timestamp: new Date().toISOString()
-					}));
-				}
-			});
-
-			xhr.addEventListener('error', () => {
-				reject(new ApiError({
-					code: 'UPLOAD_ERROR',
-					message: 'Upload failed',
-					timestamp: new Date().toISOString()
-				}));
-			});
-
-			xhr.open('POST', `${API_CONFIG.BASE_URL}${url}`);
 			
-			// Add auth headers
-			const authHeaders = this.getAuthHeaders();
-			Object.entries(authHeaders).forEach(([key, value]) => {
-				xhr.setRequestHeader(key, value);
-			});
+			// Cache successful GET requests
+			if (requestOptions.useCache && options.method === 'GET' && data) {
+				apiCache.set(endpoint, data.data || data, requestOptions.cacheTTL);
+			}
 
-			xhr.send(formData);
+			// Invalidate cache if requested
+			if (requestOptions.invalidateCache) {
+				this.invalidateRelatedCache(endpoint, options.method);
+			}
+
+			return { data };
+		} catch (error) {
+			// Check if we should retry on network errors
+			if (attempt < this.retryConfig.maxRetries && this.isNetworkError(error)) {
+				const delay = this.calculateDelay(attempt);
+				console.warn(`Network error, retrying in ${delay}ms... (attempt ${attempt + 1}/${this.retryConfig.maxRetries})`);
+				await this.sleep(delay);
+				return this.requestWithRetry(endpoint, options, attempt + 1, requestOptions);
+			}
+
+			console.error(`API Error [${endpoint}]:`, error);
+			return { 
+				error: error instanceof Error ? error.message : 'Unknown error occurred' 
+			};
+		}
+	}
+
+	private invalidateRelatedCache(endpoint: string, method?: string) {
+		// Invalidate cache based on endpoint and method
+		if (endpoint.includes('/videos')) {
+			cacheInvalidation.videos();
+		} else if (endpoint.includes('/admin')) {
+			cacheInvalidation.admin();
+		} else if (endpoint.includes('/users') || endpoint.includes('/dashboard')) {
+			// Extract user ID if possible and invalidate user cache
+			const userIdMatch = endpoint.match(/\/users\/(\d+)/);
+			if (userIdMatch) {
+				cacheInvalidation.user(parseInt(userIdMatch[1]));
+			}
+		}
+	}
+
+	private async request<T>(
+		endpoint: string, 
+		options: RequestInit = {},
+		requestOptions: RequestOptions = {}
+	): Promise<ApiResponse<T>> {
+		return this.requestWithRetry(endpoint, options, 0, requestOptions);
+	}
+
+	// Authentication endpoints
+	async login(credentials: LoginRequest): Promise<ApiResponse<LoginResponse>> {
+		const response = await this.request<LoginResponse>('/auth/login', {
+			method: 'POST',
+			body: JSON.stringify(credentials),
+		}, { invalidateCache: true });
+
+		if (response.data?.token) {
+			// Note: In a real implementation, the backend should return refreshToken
+			this.setToken(response.data.token, response.data.token); // Using same token as refresh for mock
+		}
+
+		return response;
+	}
+
+	async logout(): Promise<ApiResponse<{ message: string }>> {
+		const response = await this.request<{ message: string }>('/auth/logout', {
+			method: 'POST',
+		}, { invalidateCache: true });
+
+		this.removeToken();
+		return response;
+	}
+
+	async register(userData: any): Promise<ApiResponse<{ message: string }>> {
+		return this.request<{ message: string }>('/auth/register', {
+			method: 'POST',
+			body: JSON.stringify(userData),
 		});
 	}
 
-	// Cache Management
-	clearCache(): void {
-		this.cache.clear();
-	}
+	// Video endpoints with caching
+	async getVideos(params?: {
+		page?: number;
+		limit?: number;
+		category?: string;
+		search?: string;
+	}): Promise<ApiResponse<PaginatedResponse<any>>> {
+		const searchParams = new URLSearchParams();
+		if (params?.page) searchParams.set('page', params.page.toString());
+		if (params?.limit) searchParams.set('limit', params.limit.toString());
+		if (params?.category) searchParams.set('category', params.category);
+		if (params?.search) searchParams.set('search', params.search);
 
-	deleteCacheKey(key: string): void {
-		this.cache.delete(key);
-	}
-
-	// Request Cancellation
-	cancelRequest(url: string, method: string = 'GET'): void {
-		const cacheKey = `${method}:${API_CONFIG.BASE_URL}${url}`;
-		const controller = this.abortControllers.get(cacheKey);
-		if (controller) {
-			controller.abort();
-		}
-	}
-
-	cancelAllRequests(): void {
-		this.abortControllers.forEach(controller => controller.abort());
-		this.abortControllers.clear();
-	}
-}
-
-// WebSocket Manager
-class WebSocketManager {
-	private ws: WebSocket | null = null;
-	private reconnectAttempts = 0;
-	private maxReconnectAttempts = 5;
-	private reconnectDelay = 1000;
-	private listeners = new Map<string, Set<(data: any) => void>>();
-
-	public connectionStatus = writable<'connected' | 'disconnected' | 'connecting'>('disconnected');
-
-	connect(url?: string): void {
-		const wsUrl = url || import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
+		const queryString = searchParams.toString();
+		const endpoint = `/videos${queryString ? `?${queryString}` : ''}`;
 		
-		this.connectionStatus.set('connecting');
-		this.ws = new WebSocket(wsUrl);
-
-		this.ws.onopen = () => {
-			console.log('WebSocket connected');
-			this.connectionStatus.set('connected');
-			this.reconnectAttempts = 0;
-		};
-
-		this.ws.onmessage = (event) => {
-			try {
-				const data = JSON.parse(event.data);
-				const { type, payload } = data;
-
-				const typeListeners = this.listeners.get(type);
-				if (typeListeners) {
-					typeListeners.forEach(callback => callback(payload));
-				}
-			} catch (error) {
-				console.error('Failed to parse WebSocket message:', error);
-			}
-		};
-
-		this.ws.onclose = () => {
-			console.log('WebSocket disconnected');
-			this.connectionStatus.set('disconnected');
-			this.attemptReconnect();
-		};
-
-		this.ws.onerror = (error) => {
-			console.error('WebSocket error:', error);
-			this.connectionStatus.set('disconnected');
-		};
+		return this.request<PaginatedResponse<any>>(endpoint, {}, {
+			useCache: true,
+			cacheTTL: 5 * 60 * 1000 // 5 minutes
+		});
 	}
 
-	private attemptReconnect(): void {
-		if (this.reconnectAttempts < this.maxReconnectAttempts) {
-			this.reconnectAttempts++;
-			const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-			
-			setTimeout(() => {
-				console.log(`Attempting WebSocket reconnection (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-				this.connect();
-			}, delay);
-		}
+	async getVideo(id: number): Promise<ApiResponse<{ video: any }>> {
+		return this.request<{ video: any }>(`/videos/${id}`, {}, {
+			useCache: true,
+			cacheTTL: 10 * 60 * 1000 // 10 minutes
+		});
 	}
 
-	subscribe(type: string, callback: (data: any) => void): () => void {
-		if (!this.listeners.has(type)) {
-			this.listeners.set(type, new Set());
-		}
-
-		this.listeners.get(type)!.add(callback);
-
-		// Return unsubscribe function
-		return () => {
-			const typeListeners = this.listeners.get(type);
-			if (typeListeners) {
-				typeListeners.delete(callback);
-				if (typeListeners.size === 0) {
-					this.listeners.delete(type);
-				}
-			}
-		};
+	async getVideoComments(id: number): Promise<ApiResponse<{ comments: any[] }>> {
+		return this.request<{ comments: any[] }>(`/videos/${id}/comments`, {}, {
+			useCache: true,
+			cacheTTL: 2 * 60 * 1000 // 2 minutes
+		});
 	}
 
-	send(type: string, payload: any): void {
-		if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-			this.ws.send(JSON.stringify({ type, payload }));
-		} else {
-			console.warn('WebSocket is not connected');
-		}
+	async getVideoCategories(): Promise<ApiResponse<{ categories: any[] }>> {
+		return this.request<{ categories: any[] }>('/videos/categories', {}, {
+			useCache: true,
+			cacheTTL: 30 * 60 * 1000 // 30 minutes
+		});
 	}
 
-	disconnect(): void {
-		if (this.ws) {
-			this.ws.close();
-			this.ws = null;
-		}
-		this.listeners.clear();
+	// Admin endpoints with caching
+	async getAdminAnalytics(): Promise<ApiResponse<{ analytics: any }>> {
+		return this.request<{ analytics: any }>('/admin/analytics', {}, {
+			useCache: true,
+			cacheTTL: 2 * 60 * 1000 // 2 minutes
+		});
+	}
+
+	async getAdminUsers(): Promise<ApiResponse<{ users: any[], total: number }>> {
+		return this.request<{ users: any[], total: number }>('/admin/users', {}, {
+			useCache: true,
+			cacheTTL: 5 * 60 * 1000 // 5 minutes
+		});
+	}
+
+	async getAdminVideos(): Promise<ApiResponse<any>> {
+		return this.request<any>('/admin/videos', {}, {
+			useCache: true,
+			cacheTTL: 5 * 60 * 1000 // 5 minutes
+		});
+	}
+
+	// Advertisement endpoints with caching
+	async getAdvertisers(status?: string): Promise<ApiResponse<{ advertisers: any[], total: number }>> {
+		const endpoint = status ? `/admin/advertisers?status=${status}` : '/admin/advertisers';
+		return this.request<{ advertisers: any[], total: number }>(endpoint, {}, {
+			useCache: true,
+			cacheTTL: 3 * 60 * 1000 // 3 minutes
+		});
+	}
+
+	async getAdvertiser(id: number): Promise<ApiResponse<{ advertiser: any }>> {
+		return this.request<{ advertiser: any }>(`/admin/advertisers/${id}`, {}, {
+			useCache: true,
+			cacheTTL: 5 * 60 * 1000 // 5 minutes
+		});
+	}
+
+	async getCampaigns(params?: {
+		advertiser_id?: number;
+		status?: string;
+	}): Promise<ApiResponse<{ campaigns: any[], total: number }>> {
+		const searchParams = new URLSearchParams();
+		if (params?.advertiser_id) searchParams.set('advertiser_id', params.advertiser_id.toString());
+		if (params?.status) searchParams.set('status', params.status);
+
+		const queryString = searchParams.toString();
+		const endpoint = `/admin/campaigns${queryString ? `?${queryString}` : ''}`;
+		
+		return this.request<{ campaigns: any[], total: number }>(endpoint, {}, {
+			useCache: true,
+			cacheTTL: 3 * 60 * 1000 // 3 minutes
+		});
+	}
+
+	async getCampaign(id: number): Promise<ApiResponse<{ campaign: any }>> {
+		return this.request<{ campaign: any }>(`/admin/campaigns/${id}`, {}, {
+			useCache: true,
+			cacheTTL: 5 * 60 * 1000 // 5 minutes
+		});
+	}
+
+	// Dashboard endpoint with caching
+	async getDashboard(): Promise<ApiResponse<{ data: any }>> {
+		return this.request<{ data: any }>('/dashboard', {}, {
+			useCache: true,
+			cacheTTL: 2 * 60 * 1000 // 2 minutes
+		});
+	}
+
+	// Article endpoints with caching
+	async getArticles(params?: {
+		page?: number;
+		limit?: number;
+		category?: string;
+		search?: string;
+		featured?: boolean;
+	}): Promise<ApiResponse<PaginatedResponse<any>>> {
+		const searchParams = new URLSearchParams();
+		if (params?.page) searchParams.set('page', params.page.toString());
+		if (params?.limit) searchParams.set('limit', params.limit.toString());
+		if (params?.category) searchParams.set('category', params.category);
+		if (params?.search) searchParams.set('search', params.search);
+		if (params?.featured) searchParams.set('featured', 'true');
+
+		const queryString = searchParams.toString();
+		const endpoint = `/articles${queryString ? `?${queryString}` : ''}`;
+		
+		return this.request<PaginatedResponse<any>>(endpoint, {}, {
+			useCache: true,
+			cacheTTL: 10 * 60 * 1000 // 10 minutes
+		});
+	}
+
+	async getArticle(slug: string): Promise<ApiResponse<{ article: any }>> {
+		return this.request<{ article: any }>(`/articles/${slug}`, {}, {
+			useCache: true,
+			cacheTTL: 30 * 60 * 1000 // 30 minutes
+		});
+	}
+
+	async getArticleCategories(): Promise<ApiResponse<{ categories: any[] }>> {
+		return this.request<{ categories: any[] }>('/articles/categories', {}, {
+			useCache: true,
+			cacheTTL: 60 * 60 * 1000 // 1 hour
+		});
+	}
+
+	async getAuthors(): Promise<ApiResponse<{ authors: any[] }>> {
+		return this.request<{ authors: any[] }>('/authors', {}, {
+			useCache: true,
+			cacheTTL: 30 * 60 * 1000 // 30 minutes
+		});
+	}
+
+	// Role endpoints with caching
+	async getRoles(): Promise<ApiResponse<{ roles: any[] }>> {
+		return this.request<{ roles: any[] }>('/roles', {}, {
+			useCache: true,
+			cacheTTL: 15 * 60 * 1000 // 15 minutes
+		});
+	}
+
+	async getPermissions(): Promise<ApiResponse<{ permissions: any[] }>> {
+		return this.request<{ permissions: any[] }>('/permissions', {}, {
+			useCache: true,
+			cacheTTL: 30 * 60 * 1000 // 30 minutes
+		});
+	}
+
+	async getRoleAnalytics(): Promise<ApiResponse<{ analytics: any }>> {
+		return this.request<{ analytics: any }>('/roles/analytics', {}, {
+			useCache: true,
+			cacheTTL: 5 * 60 * 1000 // 5 minutes
+		});
+	}
+
+	async getUsersWithRoles(): Promise<ApiResponse<{ users: any[] }>> {
+		return this.request<{ users: any[] }>('/users/roles', {}, {
+			useCache: true,
+			cacheTTL: 5 * 60 * 1000 // 5 minutes
+		});
+	}
+
+	// Cache management methods
+	getCacheStats() {
+		return apiCache.getStats();
+	}
+
+	clearCache() {
+		apiCache.clear();
+	}
+
+	invalidateCache(pattern: string | RegExp) {
+		return apiCache.invalidatePattern(pattern);
 	}
 }
 
-// Export instances
+// Create singleton instance
 export const apiClient = new ApiClient();
-export const wsManager = new WebSocketManager(); 
+
+// Export types for external use
+export type { ApiResponse, PaginatedResponse, LoginRequest, LoginResponse }; 

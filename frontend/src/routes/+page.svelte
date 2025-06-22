@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { auth } from '$lib/auth';
 	import { goto } from '$app/navigation';
+	import { browser } from '$app/environment';
 	import Navigation from '$lib/components/Navigation.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 
@@ -17,6 +18,8 @@
 	});
 
 	onMount(() => {
+		if (!browser) return; // Skip initialization during SSR
+		
 		// Initialize scroll snapping and animation triggers
 		setupScrollAnimations();
 		
@@ -85,6 +88,7 @@
 	});
 
 	function setupScrollAnimations() {
+		if (!browser) return; // Skip during SSR
 		sections = Array.from(document.querySelectorAll('.zoom-section'));
 		// Start with first section
 		updateSectionStates(0);

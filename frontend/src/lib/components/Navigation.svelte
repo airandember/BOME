@@ -2,6 +2,8 @@
 	import { auth } from '$lib/auth';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import { goto } from '$app/navigation';
+	import { browser } from '$app/environment';
+	import { onMount } from 'svelte';
 
 	let isMenuOpen = false;
 	let isAuthenticated = false;
@@ -18,12 +20,20 @@
 		isAdvertiser = user?.role === 'advertiser';
 	});
 
-	// Handle scroll for navbar background
-	if (typeof window !== 'undefined') {
-		window.addEventListener('scroll', () => {
-			isScrolled = window.scrollY > 50;
-		});
-	}
+	// Handle scroll for navbar background - only in browser
+	onMount(() => {
+		if (browser) {
+			const handleScroll = () => {
+				isScrolled = window.scrollY > 50;
+			};
+			
+			window.addEventListener('scroll', handleScroll);
+			
+			return () => {
+				window.removeEventListener('scroll', handleScroll);
+			};
+		}
+	});
 
 	const toggleMenu = () => {
 		isMenuOpen = !isMenuOpen;

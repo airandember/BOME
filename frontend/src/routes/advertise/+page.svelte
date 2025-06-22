@@ -2,10 +2,10 @@
 	import { onMount } from 'svelte';
 	import { auth } from '$lib/auth';
 	import { goto } from '$app/navigation';
+	import { advertiserStore } from '$lib/stores/advertiser';
 	import Navigation from '$lib/components/Navigation.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
-	import CampaignCreator from '$lib/components/advertiser/CampaignCreator.svelte';
 	import type { AdvertiserAccount, AdvertiserPackage } from '$lib/types/advertising';
 
 	let user: any = null;
@@ -14,6 +14,7 @@
 	let currentStep = 1;
 	let advertiserAccount: AdvertiserAccount | null = null;
 	let selectedPackage: AdvertiserPackage | null = null;
+	let applicationSubmitted = false;
 
 	// Mock packages data
 	const packages: AdvertiserPackage[] = [
@@ -126,9 +127,18 @@
 	});
 
 	async function checkAdvertiserStatus() {
-		// Mock check - in production, this would be an API call
-		// For now, assume user doesn't have an advertiser account
-		advertiserAccount = null;
+		try {
+			// Check if user already has an advertiser account using the store
+			const existingAccount = await advertiserStore.getByUserId(user.id);
+			if (existingAccount) {
+				advertiserAccount = existingAccount;
+				// If account exists, redirect to dashboard with appropriate tab
+				goto('/dashboard?tab=advertiser');
+				return;
+			}
+		} catch (error) {
+			console.error('Error checking advertiser status:', error);
+		}
 	}
 
 	function validateBusinessForm() {
@@ -164,19 +174,13 @@
 		
 		submitting = true;
 		try {
-			// Mock API call - in production, this would register the business
-			await new Promise(resolve => setTimeout(resolve, 2000));
-			
-			// Mock success response
-			advertiserAccount = {
-				id: Math.floor(Math.random() * 1000),
+			// Submit application using the store
+			const applicationData = {
 				user_id: user.id,
-				...businessForm,
-				status: 'pending',
-				created_at: new Date().toISOString(),
-				updated_at: new Date().toISOString()
+				...businessForm
 			};
 			
+			advertiserAccount = await advertiserStore.submitApplication(applicationData);
 			currentStep = 2;
 		} catch (error) {
 			console.error('Registration failed:', error);
@@ -185,30 +189,28 @@
 		}
 	}
 
-	function selectPackage(pkg: AdvertiserPackage) {
+	async function selectPackage(pkg: AdvertiserPackage) {
 		selectedPackage = pkg;
-		currentStep = 3;
+		submitting = true;
+		
+		try {
+			// Mock API call to submit complete application
+			await new Promise(resolve => setTimeout(resolve, 1500));
+			
+			// Mark application as submitted
+			applicationSubmitted = true;
+			currentStep = 3;
+		} catch (error) {
+			console.error('Package selection failed:', error);
+		} finally {
+			submitting = false;
+		}
 	}
 
 	function goToStep(step: number) {
 		if (step <= currentStep || (step === 2 && advertiserAccount)) {
 			currentStep = step;
 		}
-	}
-
-	function handleCampaignCreated(event: CustomEvent) {
-		const campaignData = event.detail;
-		console.log('Campaign created successfully:', campaignData);
-		
-		// Show success message and redirect to next step or completion
-		alert('Campaign created successfully! Your campaign has been submitted for approval. You will receive an email notification once it has been reviewed.');
-		
-		// In a real implementation, you might redirect to a success page or dashboard
-		// goto('/advertise/success');
-	}
-
-	function handleGoBack() {
-		currentStep = 2;
 	}
 
 	function formatPrice(price: number) {
@@ -275,7 +277,7 @@
 				<div class="step-line" class:completed={currentStep > 2}></div>
 				<div class="step" class:active={currentStep >= 3}>
 					<div class="step-number">3</div>
-					<div class="step-label">Create Campaign</div>
+					<div class="step-label">Application Review</div>
 				</div>
 			</div>
 		</div>
@@ -353,29 +355,19 @@
 							</div>
 						</div>
 
-						<div class="form-group">
-							<label for="business_address">Business Address</label>
-							<textarea
-								id="business_address"
-								bind:value={businessForm.business_address}
-								placeholder="Your business address"
-								rows="3"
-							></textarea>
-						</div>
-
 						<div class="form-row">
 							<div class="form-group">
-								<label for="website">Website</label>
+								<label for="business_address">Business Address</label>
 								<input
-									type="url"
-									id="website"
-									bind:value={businessForm.website}
-									placeholder="https://yourwebsite.com"
+									type="text"
+									id="business_address"
+									bind:value={businessForm.business_address}
+									placeholder="123 Main St, City, State 12345"
 								/>
 							</div>
 							
 							<div class="form-group">
-								<label for="tax_id">Tax ID (Optional)</label>
+								<label for="tax_id">Tax ID / EIN</label>
 								<input
 									type="text"
 									id="tax_id"
@@ -385,22 +377,40 @@
 							</div>
 						</div>
 
-						<div class="form-group">
-							<label for="industry">Industry *</label>
-							<select id="industry" bind:value={businessForm.industry} class:error={formErrors.industry} required>
-								<option value="">Select your industry</option>
-								<option value="education">Education</option>
-								<option value="religious">Religious Organizations</option>
-								<option value="publishing">Publishing & Media</option>
-								<option value="technology">Technology</option>
-								<option value="retail">Retail & E-commerce</option>
-								<option value="consulting">Consulting & Services</option>
-								<option value="nonprofit">Non-profit</option>
-								<option value="other">Other</option>
-							</select>
-							{#if formErrors.industry}
-								<span class="error-message">{formErrors.industry}</span>
-							{/if}
+						<div class="form-row">
+							<div class="form-group">
+								<label for="website">Website</label>
+								<input
+									type="url"
+									id="website"
+									bind:value={businessForm.website}
+									placeholder="https://www.yourcompany.com"
+								/>
+							</div>
+							
+							<div class="form-group">
+								<label for="industry">Industry *</label>
+								<select
+									id="industry"
+									bind:value={businessForm.industry}
+									class:error={formErrors.industry}
+									required
+								>
+									<option value="">Select Industry</option>
+									<option value="books">Books & Publishing</option>
+									<option value="education">Education</option>
+									<option value="religion">Religious Organizations</option>
+									<option value="nonprofit">Non-Profit</option>
+									<option value="software">Software & Technology</option>
+									<option value="retail">Retail & E-commerce</option>
+									<option value="services">Professional Services</option>
+									<option value="media">Media & Entertainment</option>
+									<option value="other">Other</option>
+								</select>
+								{#if formErrors.industry}
+									<span class="error-message">{formErrors.industry}</span>
+								{/if}
+							</div>
 						</div>
 
 						<div class="form-actions">
@@ -409,7 +419,7 @@
 									<LoadingSpinner size="small" color="white" />
 									Submitting...
 								{:else}
-									Register Business
+									Continue to Package Selection
 								{/if}
 							</button>
 						</div>
@@ -420,7 +430,7 @@
 				<!-- Package Selection Step -->
 				<div class="packages-section">
 					<h2>Choose Your Advertising Package</h2>
-					<p>Select the package that best fits your advertising needs and budget. You can upgrade or downgrade at any time.</p>
+					<p>Select the package that best fits your advertising needs. You can upgrade or downgrade your package at any time after approval.</p>
 					
 					<div class="packages-grid">
 						{#each packages as pkg}
@@ -432,107 +442,136 @@
 								<div class="package-header">
 									<h3>{pkg.name}</h3>
 									<div class="package-price">
-										{formatPrice(pkg.price)}
-										<span class="billing-cycle">/{pkg.billing_cycle}</span>
+										<span class="price">{formatPrice(pkg.price)}</span>
+										<span class="period">/{pkg.billing_cycle}</span>
 									</div>
+									<p class="package-description">{pkg.description}</p>
 								</div>
-								
-								<p class="package-description">{pkg.description}</p>
 								
 								<div class="package-features">
 									<div class="feature">
-										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-											<polyline points="20,6 9,17 4,12"></polyline>
-										</svg>
-										Up to {pkg.limits.max_campaigns} campaigns
+										<span class="feature-label">Max Campaigns:</span>
+										<span class="feature-value">{pkg.limits.max_campaigns}</span>
 									</div>
 									<div class="feature">
-										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-											<polyline points="20,6 9,17 4,12"></polyline>
-										</svg>
-										{pkg.limits.max_ads_per_campaign} ads per campaign
+										<span class="feature-label">Ads per Campaign:</span>
+										<span class="feature-value">{pkg.limits.max_ads_per_campaign}</span>
 									</div>
 									<div class="feature">
-										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-											<polyline points="20,6 9,17 4,12"></polyline>
-										</svg>
-										{formatNumber(pkg.limits.max_monthly_impressions)} monthly impressions
+										<span class="feature-label">Monthly Impressions:</span>
+										<span class="feature-value">{formatNumber(pkg.limits.max_monthly_impressions)}</span>
 									</div>
 									<div class="feature">
-										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-											<polyline points="20,6 9,17 4,12"></polyline>
-										</svg>
-										{pkg.limits.max_storage_gb}GB storage
+										<span class="feature-label">Storage:</span>
+										<span class="feature-value">{pkg.limits.max_storage_gb}GB</span>
 									</div>
 									<div class="feature">
-										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-											<polyline points="20,6 9,17 4,12"></polyline>
-										</svg>
-										{pkg.limits.support_level} support
+										<span class="feature-label">Support Level:</span>
+										<span class="feature-value">{pkg.limits.support_level}</span>
 									</div>
 									<div class="feature">
-										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-											<polyline points="20,6 9,17 4,12"></polyline>
-										</svg>
-										{pkg.limits.analytics_retention_days} days analytics retention
+										<span class="feature-label">Analytics Retention:</span>
+										<span class="feature-value">{pkg.limits.analytics_retention_days} days</span>
 									</div>
 								</div>
 								
-								<button class="select-package-btn" on:click={() => selectPackage(pkg)}>
-									Select {pkg.name}
-								</button>
+								<div class="package-actions">
+									<button 
+										type="button" 
+										class="select-package-btn"
+										class:selected={selectedPackage?.id === pkg.id}
+										disabled={submitting}
+										on:click={() => selectPackage(pkg)}
+									>
+										{#if submitting && selectedPackage?.id === pkg.id}
+											<LoadingSpinner size="small" color="white" />
+											Submitting Application...
+										{:else if selectedPackage?.id === pkg.id}
+											Selected
+										{:else}
+											Select {pkg.name}
+										{/if}
+									</button>
+								</div>
 							</div>
 						{/each}
 					</div>
 				</div>
 
 			{:else if currentStep === 3}
-				<!-- Campaign Creation Step -->
-				<CampaignCreator 
-					{selectedPackage} 
-					{advertiserAccount}
-					on:campaignCreated={handleCampaignCreated}
-					on:goBack={handleGoBack}
-				/>
+				<!-- Application Submitted -->
+				<div class="success-section glass">
+					<div class="success-icon">
+						<svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+							<path d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+						</svg>
+					</div>
+					
+					<h2>Application Submitted Successfully!</h2>
+					<p>Thank you for your interest in advertising with Book of Mormon Evidence. Your application has been submitted for review.</p>
+					
+					<div class="application-summary">
+						<h3>Application Summary</h3>
+						<div class="summary-item">
+							<span class="label">Company:</span>
+							<span class="value">{advertiserAccount?.company_name}</span>
+						</div>
+						<div class="summary-item">
+							<span class="label">Contact:</span>
+							<span class="value">{advertiserAccount?.contact_name}</span>
+						</div>
+						<div class="summary-item">
+							<span class="label">Email:</span>
+							<span class="value">{advertiserAccount?.business_email}</span>
+						</div>
+						<div class="summary-item">
+							<span class="label">Selected Package:</span>
+							<span class="value">{selectedPackage?.name} - {formatPrice(selectedPackage?.price || 0)}/month</span>
+						</div>
+						<div class="summary-item">
+							<span class="label">Status:</span>
+							<span class="value status-pending">Pending Review</span>
+						</div>
+					</div>
+					
+					<div class="next-steps">
+						<h3>What Happens Next?</h3>
+						<div class="steps-list">
+							<div class="next-step">
+								<div class="step-icon">1</div>
+								<div class="step-content">
+									<h4>Application Review</h4>
+									<p>Our team will review your application within 2-3 business days to ensure it meets our community guidelines.</p>
+								</div>
+							</div>
+							<div class="next-step">
+								<div class="step-icon">2</div>
+								<div class="step-content">
+									<h4>Approval Notification</h4>
+									<p>You'll receive an email notification once your application is approved, along with access to your advertiser dashboard.</p>
+								</div>
+							</div>
+							<div class="next-step">
+								<div class="step-icon">3</div>
+								<div class="step-content">
+									<h4>Create Your First Campaign</h4>
+									<p>Once approved, you can log into your advertiser dashboard to create and manage your advertising campaigns.</p>
+								</div>
+							</div>
+						</div>
+					</div>
+					
+					<div class="contact-info">
+						<p><strong>Questions?</strong> Contact our advertising team at <a href="mailto:advertising@bome.org">advertising@bome.org</a></p>
+					</div>
+					
+					<div class="success-actions">
+						<button type="button" class="dashboard-btn" on:click={() => goto('/dashboard?tab=advertiser&from=advertise')}>
+							Return to Dashboard
+						</button>
+					</div>
+				</div>
 			{/if}
-		</div>
-
-		<!-- Ad Specifications Section -->
-		<div class="specifications-section glass">
-			<h2>Advertisement Specifications</h2>
-			<p>Ensure your advertisements meet our technical requirements for optimal display across all placements.</p>
-			
-			<div class="specs-grid">
-				<div class="spec-card">
-					<h3>Banner Ads (728x90px)</h3>
-					<ul>
-						<li>Recommended for header and footer placements</li>
-						<li>Maximum file size: 2MB</li>
-						<li>Formats: JPG, PNG, GIF, WebP</li>
-						<li>Base rate: $80-100/week</li>
-					</ul>
-				</div>
-				
-				<div class="spec-card">
-					<h3>Large Rectangle (300x250px)</h3>
-					<ul>
-						<li>Premium sidebar and content placements</li>
-						<li>Maximum file size: 2MB</li>
-						<li>Formats: JPG, PNG, GIF, WebP</li>
-						<li>Base rate: $150-200/week</li>
-					</ul>
-				</div>
-				
-				<div class="spec-card">
-					<h3>Small Rectangle (300x125px)</h3>
-					<ul>
-						<li>Compact sidebar placement option</li>
-						<li>Maximum file size: 1MB</li>
-						<li>Formats: JPG, PNG, WebP</li>
-						<li>Base rate: $75/week</li>
-					</ul>
-				</div>
-			</div>
 		</div>
 	</div>
 {/if}
@@ -847,12 +886,20 @@
 	}
 
 	.package-price {
+		display: flex;
+		align-items: baseline;
+		justify-content: center;
+		gap: var(--space-xs);
+		margin-bottom: var(--space-md);
+	}
+
+	.price {
 		font-size: var(--text-3xl);
 		font-weight: 700;
 		color: var(--primary);
 	}
 
-	.billing-cycle {
+	.period {
 		font-size: var(--text-sm);
 		color: var(--text-secondary);
 		font-weight: 400;
@@ -863,6 +910,7 @@
 		text-align: center;
 		margin-bottom: var(--space-lg);
 		line-height: 1.5;
+		font-size: var(--text-sm);
 	}
 
 	.package-features {
@@ -874,17 +922,26 @@
 
 	.feature {
 		display: flex;
+		justify-content: space-between;
 		align-items: center;
-		gap: var(--space-sm);
-		color: var(--text-primary);
+		padding: var(--space-sm) 0;
+		border-bottom: 1px solid var(--border-color);
+	}
+
+	.feature-label {
+		color: var(--text-secondary);
 		font-size: var(--text-sm);
 	}
 
-	.feature svg {
-		width: 16px;
-		height: 16px;
-		color: var(--success);
-		flex-shrink: 0;
+	.feature-value {
+		color: var(--text-primary);
+		font-weight: 600;
+		font-size: var(--text-sm);
+	}
+
+	.package-actions {
+		display: flex;
+		justify-content: center;
 	}
 
 	.select-package-btn {
@@ -897,49 +954,103 @@
 		font-weight: 600;
 		cursor: pointer;
 		transition: all var(--transition-normal);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-sm);
 	}
 
-	.select-package-btn:hover {
+	.select-package-btn:hover:not(:disabled) {
 		transform: translateY(-2px);
 		box-shadow: var(--shadow-md);
 	}
 
-	.campaign-info {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: var(--space-2xl);
+	.select-package-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
 	}
 
-	.selected-package-summary h3 {
+	.select-package-btn.selected {
+		background: var(--success);
+	}
+
+	/* Success Section Styles */
+	.success-section {
+		padding: var(--space-3xl);
+		border-radius: var(--radius-xl);
+		text-align: center;
+		margin-bottom: var(--space-2xl);
+	}
+
+	.success-icon {
+		margin: 0 auto var(--space-xl);
+		width: 64px;
+		height: 64px;
+		color: var(--success);
+	}
+
+	.success-section h2 {
+		font-size: var(--text-2xl);
+		font-weight: 600;
+		color: var(--text-primary);
+		margin-bottom: var(--space-md);
+	}
+
+	.success-section > p {
+		color: var(--text-secondary);
+		margin-bottom: var(--space-2xl);
+		line-height: 1.6;
+	}
+
+	.application-summary {
+		background: var(--bg-glass-dark);
+		border-radius: var(--radius-lg);
+		padding: var(--space-xl);
+		margin-bottom: var(--space-2xl);
+		text-align: left;
+	}
+
+	.application-summary h3 {
 		font-size: var(--text-lg);
 		font-weight: 600;
 		color: var(--text-primary);
 		margin-bottom: var(--space-lg);
+		text-align: center;
 	}
 
-	.package-limits {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-md);
-	}
-
-	.limit-item {
+	.summary-item {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		padding: var(--space-sm) 0;
+		padding: var(--space-md) 0;
 		border-bottom: 1px solid var(--border-color);
 	}
 
-	.limit-label {
-		color: var(--text-secondary);
-		font-size: var(--text-sm);
+	.summary-item:last-child {
+		border-bottom: none;
 	}
 
-	.limit-value {
+	.summary-item .label {
+		color: var(--text-secondary);
+		font-weight: 500;
+	}
+
+	.summary-item .value {
 		color: var(--text-primary);
 		font-weight: 600;
-		font-size: var(--text-sm);
+	}
+
+	.status-pending {
+		color: var(--warning) !important;
+		background: rgba(var(--warning-rgb), 0.1);
+		padding: var(--space-xs) var(--space-sm);
+		border-radius: var(--radius-sm);
+		font-size: var(--text-xs);
+	}
+
+	.next-steps {
+		text-align: left;
+		margin-bottom: var(--space-2xl);
 	}
 
 	.next-steps h3 {
@@ -947,155 +1058,101 @@
 		font-weight: 600;
 		color: var(--text-primary);
 		margin-bottom: var(--space-lg);
+		text-align: center;
 	}
 
-	.next-steps ol {
-		padding-left: var(--space-lg);
-		margin-bottom: var(--space-xl);
-	}
-
-	.next-steps li {
-		color: var(--text-secondary);
-		margin-bottom: var(--space-sm);
-		line-height: 1.5;
-	}
-
-	.action-buttons {
+	.steps-list {
 		display: flex;
+		flex-direction: column;
+		gap: var(--space-lg);
+	}
+
+	.next-step {
+		display: flex;
+		align-items: flex-start;
 		gap: var(--space-md);
 	}
 
-	.back-btn {
-		background: var(--bg-glass);
+	.step-icon {
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		background: var(--primary);
+		color: var(--white);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-weight: 600;
+		font-size: var(--text-sm);
+		flex-shrink: 0;
+	}
+
+	.step-content h4 {
+		font-size: var(--text-md);
+		font-weight: 600;
 		color: var(--text-primary);
-		border: 1px solid var(--border-color);
-		padding: var(--space-md) var(--space-lg);
-		border-radius: var(--radius-md);
-		font-weight: 500;
-		cursor: pointer;
-		transition: all var(--transition-normal);
+		margin-bottom: var(--space-xs);
 	}
 
-	.back-btn:hover {
+	.step-content p {
+		color: var(--text-secondary);
+		line-height: 1.5;
+		font-size: var(--text-sm);
+	}
+
+	.contact-info {
 		background: var(--bg-glass-dark);
+		border-radius: var(--radius-lg);
+		padding: var(--space-lg);
+		margin-bottom: var(--space-2xl);
 	}
 
-	.proceed-btn {
+	.contact-info p {
+		margin: 0;
+		color: var(--text-secondary);
+		text-align: center;
+	}
+
+	.contact-info a {
+		color: var(--primary);
+		text-decoration: none;
+		font-weight: 600;
+	}
+
+	.contact-info a:hover {
+		text-decoration: underline;
+	}
+
+	.success-actions {
+		display: flex;
+		justify-content: center;
+	}
+
+	.dashboard-btn {
 		background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
 		color: var(--white);
 		border: none;
-		padding: var(--space-md) var(--space-lg);
+		padding: var(--space-md) var(--space-xl);
 		border-radius: var(--radius-md);
 		font-weight: 600;
 		cursor: pointer;
 		transition: all var(--transition-normal);
-		flex: 1;
 	}
 
-	.proceed-btn:hover {
+	.dashboard-btn:hover {
 		transform: translateY(-2px);
 		box-shadow: var(--shadow-md);
 	}
 
-	.specifications-section {
-		padding: var(--space-2xl);
-		border-radius: var(--radius-xl);
-	}
-
-	.specifications-section h2 {
-		font-size: var(--text-2xl);
-		font-weight: 600;
-		color: var(--text-primary);
-		text-align: center;
-		margin-bottom: var(--space-md);
-	}
-
-	.specifications-section p {
-		color: var(--text-secondary);
-		text-align: center;
-		margin-bottom: var(--space-2xl);
-		line-height: 1.6;
-	}
-
-	.specs-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-		gap: var(--space-xl);
-	}
-
-	.spec-card {
-		background: var(--bg-glass);
-		padding: var(--space-xl);
-		border-radius: var(--radius-lg);
-		border: 1px solid var(--border-color);
-	}
-
-	.spec-card h3 {
-		font-size: var(--text-lg);
-		font-weight: 600;
-		color: var(--text-primary);
-		margin-bottom: var(--space-lg);
-	}
-
-	.spec-card ul {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-	}
-
-	.spec-card li {
-		color: var(--text-secondary);
-		margin-bottom: var(--space-sm);
-		padding-left: var(--space-lg);
-		position: relative;
-		line-height: 1.5;
-	}
-
-	.spec-card li::before {
-		content: '•';
-		color: var(--primary);
-		position: absolute;
-		left: 0;
-		font-weight: 600;
-	}
-
-	@media (max-width: 1024px) {
-		.campaign-info {
-			grid-template-columns: 1fr;
-		}
-		
-		.hero-stats {
-			gap: var(--space-xl);
-		}
-	}
-
+	/* Responsive Design */
 	@media (max-width: 768px) {
-		.advertise-page {
-			padding: var(--space-lg) var(--space-md);
+		.hero-stats {
+			grid-template-columns: 1fr;
+			gap: var(--space-md);
 		}
 
 		.form-row {
 			grid-template-columns: 1fr;
-		}
-
-		.hero-stats {
-			flex-direction: column;
-			gap: var(--space-lg);
-		}
-
-		.steps {
-			flex-direction: column;
-			gap: var(--space-lg);
-		}
-
-		.step-line {
-			width: 2px;
-			height: 40px;
-			margin: 0;
-		}
-
-		.action-buttons {
-			flex-direction: column;
 		}
 
 		.packages-grid {
@@ -1106,8 +1163,26 @@
 			transform: none;
 		}
 
-		.hero-content h1 {
-			font-size: var(--text-3xl);
+		.steps {
+			flex-direction: column;
+			gap: var(--space-md);
+		}
+
+		.step-line {
+			display: none;
+		}
+
+		.success-section {
+			padding: var(--space-2xl) var(--space-lg);
+		}
+
+		.next-step {
+			flex-direction: column;
+			text-align: center;
+		}
+
+		.step-content {
+			text-align: center;
 		}
 	}
 </style> 

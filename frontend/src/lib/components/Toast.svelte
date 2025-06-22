@@ -1,327 +1,246 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
-	import { fade, fly } from 'svelte/transition';
-	import { quintOut } from 'svelte/easing';
+	import { createEventDispatcher, onMount } from 'svelte';
+	import { fly, fade } from 'svelte/transition';
 
 	export let type: 'success' | 'error' | 'warning' | 'info' = 'info';
-	export let message: string;
-	export let duration: number = 5000;
-	export let onDismiss: () => void = () => {};
+	export let title: string = '';
+	export let message: string = '';
+	export let duration: number = 5000; // 5 seconds default
+	export let persistent: boolean = false; // Don't auto-dismiss
+	export let showIcon: boolean = true;
+	export let showClose: boolean = true;
 
 	const dispatch = createEventDispatcher();
 
+	let visible = true;
 	let timeoutId: number;
 
-	// Auto-dismiss after duration
-	$: if (duration > 0) {
-		clearTimeout(timeoutId);
-		timeoutId = setTimeout(() => {
-			dispatch('dismiss');
-		}, duration);
-	}
-
-	function handleDismiss() {
-		onDismiss();
-	}
-
-	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter' || event.key === ' ') {
-			event.preventDefault();
-			handleDismiss();
+	// Auto-dismiss after duration (unless persistent)
+	onMount(() => {
+		if (!persistent && duration > 0) {
+			timeoutId = window.setTimeout(() => {
+				dismiss();
+			}, duration);
 		}
+
+		return () => {
+			if (timeoutId) {
+				clearTimeout(timeoutId);
+			}
+		};
+	});
+
+	function dismiss() {
+		visible = false;
+		dispatch('dismiss');
 	}
 
-	function getIcon() {
+	function handleClick() {
+		dispatch('click');
+	}
+
+	// Get icon based on type
+	function getIcon(type: string): string {
 		switch (type) {
-			case 'success':
-				return `
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-						<polyline points="22,4 12,14.01 9,11.01"></polyline>
-					</svg>
-				`;
-			case 'error':
-				return `
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<circle cx="12" cy="12" r="10"></circle>
-						<line x1="15" y1="9" x2="9" y2="15"></line>
-						<line x1="9" y1="9" x2="15" y2="15"></line>
-					</svg>
-				`;
-			case 'warning':
-				return `
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-						<line x1="12" y1="9" x2="12" y2="13"></line>
-						<line x1="12" y1="17" x2="12.01" y2="17"></line>
-					</svg>
-				`;
-			case 'info':
-			default:
-				return `
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<circle cx="12" cy="12" r="10"></circle>
-						<line x1="12" y1="16" x2="12" y2="12"></line>
-						<line x1="12" y1="8" x2="12.01" y2="8"></line>
-					</svg>
-				`;
+			case 'success': return '✓';
+			case 'error': return '✕';
+			case 'warning': return '⚠';
+			case 'info': return 'ℹ';
+			default: return 'ℹ';
 		}
 	}
 
-	function getTypeStyles() {
+	// Get colors based on type
+	function getTypeClasses(type: string): string {
 		switch (type) {
-			case 'success':
-				return {
-					bg: 'var(--success-bg)',
-					border: 'var(--success-color)',
-					icon: 'var(--success-color)'
-				};
-			case 'error':
-				return {
-					bg: 'var(--error-bg)',
-					border: 'var(--error-color)',
-					icon: 'var(--error-color)'
-				};
-			case 'warning':
-				return {
-					bg: 'var(--warning-bg)',
-					border: 'var(--warning-color)',
-					icon: 'var(--warning-color)'
-				};
-			case 'info':
-			default:
-				return {
-					bg: 'var(--primary-bg)',
-					border: 'var(--primary-color)',
-					icon: 'var(--primary-color)'
-				};
+			case 'success': return 'toast-success';
+			case 'error': return 'toast-error';
+			case 'warning': return 'toast-warning';
+			case 'info': return 'toast-info';
+			default: return 'toast-info';
 		}
 	}
-
-	const styles = getTypeStyles();
 </script>
 
-<div 
-	class="toast glass"
-	class:success={type === 'success'}
-	class:error={type === 'error'}
-	class:warning={type === 'warning'}
-	class:info={type === 'info'}
-	style="--toast-bg: {styles.bg}; --toast-border: {styles.border}; --toast-icon: {styles.icon}"
-	on:click={handleDismiss}
-	on:keydown={handleKeydown}
-	role="alert"
-	aria-live="polite"
-	tabindex="0"
-	transition:fly={{ y: 50, duration: 300, easing: quintOut }}
->
-	<div class="toast-content">
-		<div class="toast-icon" class:success={type === 'success'} class:error={type === 'error'} class:warning={type === 'warning'} class:info={type === 'info'}>
-			{@html getIcon()}
+{#if visible}
+	<div 
+		class="toast {getTypeClasses(type)}"
+		transition:fly="{{ y: -50, duration: 300 }}"
+		role="alert"
+		aria-live="polite"
+		on:click={handleClick}
+	>
+		{#if showIcon}
+			<div class="toast-icon">
+				{getIcon(type)}
+			</div>
+		{/if}
+		
+		<div class="toast-content">
+			{#if title}
+				<div class="toast-title">{title}</div>
+			{/if}
+			<div class="toast-message">{message}</div>
 		</div>
-		<div class="toast-message">
-			{message}
-		</div>
-		<button class="toast-close" on:click|stopPropagation={handleDismiss} aria-label="Dismiss notification">
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<line x1="18" y1="6" x2="6" y2="18"></line>
-				<line x1="6" y1="6" x2="18" y2="18"></line>
-			</svg>
-		</button>
+
+		{#if showClose}
+			<button 
+				class="toast-close"
+				on:click|stopPropagation={dismiss}
+				aria-label="Close notification"
+			>
+				✕
+			</button>
+		{/if}
+
+		{#if !persistent && duration > 0}
+			<div class="toast-progress">
+				<div class="toast-progress-bar" style="animation-duration: {duration}ms;"></div>
+			</div>
+		{/if}
 	</div>
-	
-	{#if duration > 0}
-		<div class="toast-progress" style="animation-duration: {duration}ms"></div>
-	{/if}
-</div>
+{/if}
 
 <style>
 	.toast {
+		display: flex;
+		align-items: flex-start;
+		gap: 12px;
+		padding: 16px;
+		margin-bottom: 8px;
+		border-radius: 8px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		backdrop-filter: blur(10px);
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		min-width: 320px;
+		max-width: 500px;
 		position: relative;
-		min-width: 300px;
-		max-width: 400px;
-		padding: var(--space-lg);
-		border-radius: var(--radius-xl);
-		border: 1px solid var(--toast-border, rgba(255, 255, 255, 0.1));
-		background: var(--toast-bg, var(--bg-glass));
-		backdrop-filter: blur(20px);
-		-webkit-backdrop-filter: blur(20px);
-		box-shadow: var(--shadow-lg);
-		cursor: pointer;
 		overflow: hidden;
-		transition: all var(--transition-normal);
+		cursor: pointer;
+		transition: all 0.2s ease;
 	}
 
 	.toast:hover {
 		transform: translateY(-2px);
-		box-shadow: var(--shadow-xl);
-	}
-
-	.toast-content {
-		display: flex;
-		align-items: flex-start;
-		gap: var(--space-md);
+		box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
 	}
 
 	.toast-icon {
 		flex-shrink: 0;
 		width: 24px;
 		height: 24px;
+		border-radius: 50%;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		border-radius: var(--radius-full);
-		background: rgba(255, 255, 255, 0.1);
+		font-weight: bold;
+		font-size: 14px;
+		color: white;
 	}
 
-	.toast-icon svg {
-		width: 16px;
-		height: 16px;
-		color: var(--toast-icon, var(--text-primary));
+	.toast-content {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.toast-title {
+		font-weight: 600;
+		font-size: 14px;
+		margin-bottom: 4px;
+		color: var(--text-primary);
 	}
 
 	.toast-message {
-		flex: 1;
-		color: var(--text-primary);
-		font-size: var(--text-sm);
-		line-height: var(--leading-relaxed);
-		margin: 0;
+		font-size: 13px;
+		line-height: 1.4;
+		color: var(--text-secondary);
+		word-wrap: break-word;
 	}
 
 	.toast-close {
 		flex-shrink: 0;
-		width: 24px;
-		height: 24px;
-		border: none;
 		background: none;
-		border-radius: var(--radius-full);
-		display: flex;
-		align-items: center;
-		justify-content: center;
+		border: none;
 		cursor: pointer;
-		transition: all var(--transition-fast);
+		padding: 4px;
+		border-radius: 4px;
 		color: var(--text-secondary);
+		font-size: 16px;
+		line-height: 1;
+		transition: all 0.2s ease;
 	}
 
 	.toast-close:hover {
 		background: rgba(255, 255, 255, 0.1);
 		color: var(--text-primary);
-		transform: scale(1.1);
-	}
-
-	.toast-close svg {
-		width: 16px;
-		height: 16px;
 	}
 
 	.toast-progress {
 		position: absolute;
 		bottom: 0;
 		left: 0;
+		right: 0;
 		height: 3px;
-		background: var(--toast-border, var(--primary));
+		background: rgba(255, 255, 255, 0.2);
+	}
+
+	.toast-progress-bar {
+		height: 100%;
+		background: rgba(255, 255, 255, 0.8);
 		animation: progress linear forwards;
+		transform-origin: left;
 	}
 
 	@keyframes progress {
-		from {
-			width: 100%;
-		}
-		to {
-			width: 0%;
-		}
+		from { transform: scaleX(1); }
+		to { transform: scaleX(0); }
 	}
 
 	/* Type-specific styles */
-	.toast.success {
-		border-color: var(--success);
+	.toast-success {
+		background: linear-gradient(135deg, rgba(34, 197, 94, 0.9), rgba(22, 163, 74, 0.9));
+		border-color: rgba(34, 197, 94, 0.3);
 	}
 
-	.toast.success .toast-icon {
-		background: rgba(0, 212, 170, 0.1);
+	.toast-success .toast-icon {
+		background: rgba(255, 255, 255, 0.2);
 	}
 
-	.toast.success .toast-icon svg {
-		color: var(--success);
+	.toast-error {
+		background: linear-gradient(135deg, rgba(239, 68, 68, 0.9), rgba(220, 38, 38, 0.9));
+		border-color: rgba(239, 68, 68, 0.3);
 	}
 
-	.toast.error {
-		border-color: var(--error);
+	.toast-error .toast-icon {
+		background: rgba(255, 255, 255, 0.2);
 	}
 
-	.toast.error .toast-icon {
-		background: rgba(255, 107, 107, 0.1);
+	.toast-warning {
+		background: linear-gradient(135deg, rgba(245, 158, 11, 0.9), rgba(217, 119, 6, 0.9));
+		border-color: rgba(245, 158, 11, 0.3);
 	}
 
-	.toast.error .toast-icon svg {
-		color: var(--error);
+	.toast-warning .toast-icon {
+		background: rgba(255, 255, 255, 0.2);
 	}
 
-	.toast.warning {
-		border-color: var(--warning);
+	.toast-info {
+		background: linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(37, 99, 235, 0.9));
+		border-color: rgba(59, 130, 246, 0.3);
 	}
 
-	.toast.warning .toast-icon {
-		background: rgba(255, 167, 38, 0.1);
+	.toast-info .toast-icon {
+		background: rgba(255, 255, 255, 0.2);
 	}
 
-	.toast.warning .toast-icon svg {
-		color: var(--warning);
-	}
-
-	.toast.info {
-		border-color: var(--primary);
-	}
-
-	.toast.info .toast-icon {
-		background: rgba(102, 126, 234, 0.1);
-	}
-
-	.toast.info .toast-icon svg {
-		color: var(--primary);
-	}
-
-	/* Responsive */
-	@media (max-width: 768px) {
+	/* Dark mode adjustments */
+	@media (prefers-color-scheme: dark) {
 		.toast {
-			min-width: 280px;
-			max-width: 350px;
-			padding: var(--space-md);
+			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 		}
 
-		.toast-message {
-			font-size: var(--text-xs);
-		}
-	}
-
-	@media (max-width: 480px) {
-		.toast {
-			min-width: 260px;
-			max-width: 320px;
-		}
-
-		.toast-content {
-			gap: var(--space-sm);
-		}
-
-		.toast-icon {
-			width: 20px;
-			height: 20px;
-		}
-
-		.toast-icon svg {
-			width: 14px;
-			height: 14px;
-		}
-
-		.toast-close {
-			width: 20px;
-			height: 20px;
-		}
-
-		.toast-close svg {
-			width: 14px;
-			height: 14px;
+		.toast:hover {
+			box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
 		}
 	}
 </style> 
