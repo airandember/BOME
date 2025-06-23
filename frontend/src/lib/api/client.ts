@@ -2,6 +2,12 @@
 // Centralized HTTP client for all backend communication
 
 import { apiCache, cacheKeys, cacheInvalidation } from '$lib/utils/cache';
+import { browser } from '$app/environment';
+import type { 
+	YouTubeVideosResponse, 
+	YouTubeStatus, 
+	YouTubeSubscriptionResponse 
+} from '../types/youtube';
 
 interface ApiResponse<T> {
 	data?: T;
@@ -586,6 +592,32 @@ export class ApiClient {
 
 	invalidateCache(pattern: string | RegExp) {
 		return apiCache.invalidatePattern(pattern);
+	}
+
+	// YouTube API methods
+	async getYouTubeVideos(limit?: number): Promise<ApiResponse<YouTubeVideosResponse>> {
+		const params = limit ? `?limit=${limit}` : '';
+		return this.request<YouTubeVideosResponse>(`/youtube/videos${params}`);
+	}
+
+	async getLatestYouTubeVideos(): Promise<ApiResponse<YouTubeVideosResponse>> {
+		return this.request<YouTubeVideosResponse>('/youtube/videos/latest');
+	}
+
+	async getYouTubeStatus(): Promise<ApiResponse<YouTubeStatus>> {
+		return this.request<YouTubeStatus>('/youtube/status');
+	}
+
+	async subscribeToYouTube(): Promise<ApiResponse<YouTubeSubscriptionResponse>> {
+		return this.request<YouTubeSubscriptionResponse>('/youtube/subscribe', {
+			method: 'POST',
+		});
+	}
+
+	async unsubscribeFromYouTube(): Promise<ApiResponse<YouTubeSubscriptionResponse>> {
+		return this.request<YouTubeSubscriptionResponse>('/youtube/unsubscribe', {
+			method: 'POST',
+		});
 	}
 }
 

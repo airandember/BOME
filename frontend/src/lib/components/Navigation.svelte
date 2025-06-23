@@ -11,6 +11,7 @@
 	let isScrolled = false;
 	let isAdmin = false;
 	let isAdvertiser = false;
+	let isVideoDropdownOpen = false;
 
 	// Subscribe to auth store
 	auth.subscribe(state => {
@@ -69,9 +70,43 @@
 			<a href="/" class="nav-link" on:click={closeMenu}>
 				<span>Home</span>
 			</a>
-			<a href="/videos" class="nav-link" on:click={closeMenu}>
-				<span>Videos</span>
-			</a>
+			
+			<!-- Video Dropdown -->
+			<div class="nav-dropdown">
+				<button 
+					class="nav-link dropdown-trigger" 
+					on:click={() => isVideoDropdownOpen = !isVideoDropdownOpen}
+				>
+					<span>Videos</span>
+					<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<polyline points="6,9 12,15 18,9"></polyline>
+					</svg>
+				</button>
+				
+				<div class="nav-dropdown-menu" class:open={isVideoDropdownOpen}>
+					<a href="/youtube" class="dropdown-item" on:click={() => { closeMenu(); isVideoDropdownOpen = false; }}>
+						<svg viewBox="0 0 24 24" fill="currentColor">
+							<path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+						</svg>
+						<div class="dropdown-item-content">
+							<span class="dropdown-item-title">YouTube</span>
+							<span class="dropdown-item-subtitle">Free videos</span>
+						</div>
+						<div class="free-badge">Free</div>
+					</a>
+					<a href="/videos" class="dropdown-item premium-item" on:click={() => { closeMenu(); isVideoDropdownOpen = false; }}>
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<polygon points="13,2 3,14 12,14 11,22 21,10 12,10 13,2"></polygon>
+						</svg>
+						<div class="dropdown-item-content">
+							<span class="dropdown-item-title">Premium</span>
+							<span class="dropdown-item-subtitle">Exclusive content</span>
+						</div>
+						<div class="premium-badge">Premium</div>
+					</a>
+				</div>
+			</div>
+			
 			<a href="/articles" class="nav-link" on:click={closeMenu}>
 				<span>Articles</span>
 			</a>
@@ -521,6 +556,135 @@
 
 	.hamburger.open span:nth-child(3) {
 		transform: rotate(-45deg) translate(6px, -6px);
+	}
+
+	/* Video Dropdown Styles */
+	.nav-dropdown {
+		position: relative;
+	}
+
+	.dropdown-trigger {
+		background: none;
+		border: none;
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs);
+		cursor: pointer;
+	}
+
+	.dropdown-trigger .chevron {
+		width: 16px;
+		height: 16px;
+		transition: transform var(--transition-normal);
+	}
+
+	.nav-dropdown-menu.open ~ .dropdown-trigger .chevron,
+	.nav-dropdown:hover .dropdown-trigger .chevron {
+		transform: rotate(180deg);
+	}
+
+	.nav-dropdown-menu {
+		position: absolute;
+		top: calc(100% + 8px);
+		left: 0;
+		min-width: 280px;
+		background: var(--bg-glass);
+		backdrop-filter: blur(20px);
+		-webkit-backdrop-filter: blur(20px);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: var(--radius-xl);
+		box-shadow: var(--shadow-xl);
+		padding: var(--space-sm);
+		opacity: 0;
+		visibility: hidden;
+		transform: translateY(-8px);
+		transition: all var(--transition-normal);
+		z-index: 1000;
+	}
+
+	.nav-dropdown-menu.open {
+		opacity: 1;
+		visibility: visible;
+		transform: translateY(0);
+	}
+
+	.nav-dropdown-menu .dropdown-item {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+		padding: var(--space-md);
+		text-decoration: none;
+		color: var(--text-primary);
+		border-radius: var(--radius-lg);
+		transition: all var(--transition-normal);
+		position: relative;
+	}
+
+	.nav-dropdown-menu .dropdown-item:hover {
+		background: var(--bg-glass);
+		transform: translateX(4px);
+	}
+
+	.nav-dropdown-menu .dropdown-item svg {
+		width: 20px;
+		height: 20px;
+		flex-shrink: 0;
+	}
+
+	.dropdown-item-content {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.dropdown-item-title {
+		font-weight: 600;
+		font-size: var(--text-sm);
+	}
+
+	.dropdown-item-subtitle {
+		font-size: var(--text-xs);
+		color: var(--text-secondary);
+	}
+
+	.free-badge {
+		background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+		color: white;
+		font-size: 10px;
+		font-weight: 600;
+		padding: 4px 8px;
+		border-radius: var(--radius-sm);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.premium-badge {
+		background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+		color: white;
+		font-size: 10px;
+		font-weight: 600;
+		padding: 4px 8px;
+		border-radius: var(--radius-sm);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.premium-item {
+		border: 1px solid rgba(245, 158, 11, 0.2);
+		background: linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, rgba(217, 119, 6, 0.05) 100%);
+	}
+
+	.premium-item:hover {
+		border-color: rgba(245, 158, 11, 0.3);
+		background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.1) 100%);
+	}
+
+	/* Close dropdown when clicking outside */
+	.nav-dropdown:not(:hover) .nav-dropdown-menu:not(.open) {
+		opacity: 0;
+		visibility: hidden;
+		transform: translateY(-8px);
 	}
 
 	@media (max-width: 768px) {

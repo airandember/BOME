@@ -37,6 +37,7 @@ func SetupRoutes(
 	SetupMockDataRoutes(v1)
 	SetupArticlesRoutes(v1)
 	SetupRolesRoutes(v1)
+	SetupYouTubeRoutes(v1, db)
 
 	{
 		// Mock authentication routes (for development)
