@@ -1,17 +1,11 @@
 package services
 
 import (
-	"crypto/hmac"
-	"crypto/sha1"
-	"encoding/hex"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"log"
-	"net/http"
-	"net/url"
-	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -19,241 +13,167 @@ import (
 	"bome-backend/internal/database"
 )
 
-// YouTubeService handles YouTube PubSubHubbub webhooks and video management
+// YouTubeService handles YouTube operations - production ready but using mock data
 type YouTubeService struct {
-	channelID   string
-	callbackURL string
-	verifyToken string
-	hubURL      string
-	client      *http.Client
-	db          *database.DB
+	mockDataPath string
 }
 
-// YouTubeFeed represents the XML feed from YouTube PubSubHubbub
-type YouTubeFeed struct {
-	XMLName xml.Name       `xml:"feed"`
-	Entries []YouTubeEntry `xml:"entry"`
+// YouTubeMockData represents the structure of our mock JSON file
+type YouTubeMockData struct {
+	Feed struct {
+		Title      string `json:"title"`
+		ChannelID  string `json:"channel_id"`
+		ChannelURL string `json:"channel_url"`
+		Updated    string `json:"updated"`
+	} `json:"feed"`
+	Videos      []YouTubeVideoMock `json:"videos"`
+	ChannelInfo struct {
+		ID              string `json:"id"`
+		Title           string `json:"title"`
+		Description     string `json:"description"`
+		SubscriberCount int    `json:"subscriber_count"`
+		VideoCount      int    `json:"video_count"`
+		ViewCount       int    `json:"view_count"`
+		PublishedAt     string `json:"published_at"`
+		Country         string `json:"country"`
+		CustomURL       string `json:"custom_url"`
+		ThumbnailURL    string `json:"thumbnail_url"`
+	} `json:"channel_info"`
+	Metadata struct {
+		TotalVideos int    `json:"total_videos"`
+		LastUpdated string `json:"last_updated"`
+		APIVersion  string `json:"api_version"`
+		MockData    bool   `json:"mock_data"`
+	} `json:"metadata"`
 }
 
-// YouTubeEntry represents an individual video entry in the feed
-type YouTubeEntry struct {
-	ID        string    `xml:"id"`
-	VideoID   string    `xml:"videoId"`
-	ChannelID string    `xml:"channelId"`
-	Title     string    `xml:"title"`
-	Published time.Time `xml:"published"`
-	Updated   time.Time `xml:"updated"`
-	Author    struct {
-		Name string `xml:"name"`
-		URI  string `xml:"uri"`
-	} `xml:"author"`
-	Link struct {
-		Href string `xml:"href,attr"`
-	} `xml:"link"`
+// YouTubeVideoMock represents a video from our mock data
+type YouTubeVideoMock struct {
+	ID           string   `json:"id"`
+	Title        string   `json:"title"`
+	Description  string   `json:"description"`
+	Published    string   `json:"published"`
+	Updated      string   `json:"updated"`
+	ChannelID    string   `json:"channel_id"`
+	ChannelTitle string   `json:"channel_title"`
+	ThumbnailURL string   `json:"thumbnail_url"`
+	VideoURL     string   `json:"video_url"`
+	EmbedURL     string   `json:"embed_url"`
+	Duration     string   `json:"duration"`
+	ViewCount    int64    `json:"view_count"`
+	LikeCount    int64    `json:"like_count"`
+	CommentCount int64    `json:"comment_count"`
+	Tags         []string `json:"tags"`
+	CategoryID   string   `json:"category_id"`
+	Category     string   `json:"category"`
+	Language     string   `json:"language"`
+	Status       string   `json:"status"`
 }
 
-// YouTubeVideosResponse represents the JSON response for frontend
+// YouTubeVideosResponse represents the API response format
 type YouTubeVideosResponse struct {
 	Videos      []database.YouTubeVideo `json:"videos"`
 	LastUpdated time.Time               `json:"last_updated"`
 	TotalCount  int                     `json:"total_count"`
+	Channel     *ChannelInfo            `json:"channel,omitempty"`
 }
 
-// NewYouTubeService creates a new YouTube webhook service
+// ChannelInfo represents YouTube channel information
+type ChannelInfo struct {
+	ID              string    `json:"id"`
+	Title           string    `json:"title"`
+	Description     string    `json:"description"`
+	SubscriberCount int       `json:"subscriber_count"`
+	VideoCount      int       `json:"video_count"`
+	ViewCount       int       `json:"view_count"`
+	PublishedAt     time.Time `json:"published_at"`
+	Country         string    `json:"country"`
+	CustomURL       string    `json:"custom_url"`
+	ThumbnailURL    string    `json:"thumbnail_url"`
+}
+
+// NewYouTubeService creates a new YouTube service
 func NewYouTubeService(db *database.DB) *YouTubeService {
+	// Mock data path - in production this would be replaced with real API calls
+	mockDataPath := filepath.Join("internal", "MOCK_DATA", "YOUTUBE_MOCK.json")
+
+	log.Printf("YouTube service initialized with mock data from: %s", mockDataPath)
+
 	return &YouTubeService{
-		channelID:   "UCHp1EBgpKytZt_-j72EZ83Q", // Book of Mormon Evidence channel
-		callbackURL: os.Getenv("YOUTUBE_WEBHOOK_URL"),
-		verifyToken: os.Getenv("YOUTUBE_VERIFY_TOKEN"),
-		hubURL:      "https://pubsubhubbub.appspot.com/subscribe",
-		client:      &http.Client{Timeout: 30 * time.Second},
-		db:          db,
+		mockDataPath: mockDataPath,
 	}
 }
 
-// Subscribe subscribes to YouTube channel updates via PubSubHubbub
-func (y *YouTubeService) Subscribe() error {
-	topicURL := fmt.Sprintf("https://www.youtube.com/xml/feeds/videos.xml?channel_id=%s", y.channelID)
-
-	data := url.Values{}
-	data.Set("hub.callback", y.callbackURL)
-	data.Set("hub.topic", topicURL)
-	data.Set("hub.verify", "async")
-	data.Set("hub.mode", "subscribe")
-	data.Set("hub.verify_token", y.verifyToken)
-	data.Set("hub.lease_seconds", "864000") // 10 days
-
-	req, err := http.NewRequest("POST", y.hubURL, strings.NewReader(data.Encode()))
+// loadMockData loads the mock data from JSON file
+func (y *YouTubeService) loadMockData() (*YouTubeMockData, error) {
+	data, err := ioutil.ReadFile(y.mockDataPath)
 	if err != nil {
-		return fmt.Errorf("failed to create subscription request: %w", err)
+		return nil, fmt.Errorf("failed to read mock data file: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	var mockData YouTubeMockData
+	if err := json.Unmarshal(data, &mockData); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal mock data: %w", err)
+	}
 
-	resp, err := y.client.Do(req)
+	return &mockData, nil
+}
+
+// convertMockToDatabase converts mock video data to database format
+func (y *YouTubeService) convertMockToDatabase(mockVideo YouTubeVideoMock) (database.YouTubeVideo, error) {
+	published, err := time.Parse(time.RFC3339, mockVideo.Published)
 	if err != nil {
-		return fmt.Errorf("failed to send subscription request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("subscription failed with status %d: %s", resp.StatusCode, string(body))
+		published = time.Now()
 	}
 
-	log.Printf("Successfully subscribed to YouTube channel %s", y.channelID)
-	return nil
-}
-
-// Unsubscribe unsubscribes from YouTube channel updates
-func (y *YouTubeService) Unsubscribe() error {
-	topicURL := fmt.Sprintf("https://www.youtube.com/xml/feeds/videos.xml?channel_id=%s", y.channelID)
-
-	data := url.Values{}
-	data.Set("hub.callback", y.callbackURL)
-	data.Set("hub.topic", topicURL)
-	data.Set("hub.verify", "async")
-	data.Set("hub.mode", "unsubscribe")
-	data.Set("hub.verify_token", y.verifyToken)
-
-	req, err := http.NewRequest("POST", y.hubURL, strings.NewReader(data.Encode()))
+	updated, err := time.Parse(time.RFC3339, mockVideo.Updated)
 	if err != nil {
-		return fmt.Errorf("failed to create unsubscription request: %w", err)
+		updated = time.Now()
 	}
 
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := y.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send unsubscription request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	log.Printf("Successfully unsubscribed from YouTube channel %s", y.channelID)
-	return nil
-}
-
-// HandleVerification handles the webhook verification challenge
-func (y *YouTubeService) HandleVerification(w http.ResponseWriter, r *http.Request) {
-	challenge := r.URL.Query().Get("hub.challenge")
-	mode := r.URL.Query().Get("hub.mode")
-	topic := r.URL.Query().Get("hub.topic")
-	verifyToken := r.URL.Query().Get("hub.verify_token")
-
-	log.Printf("YouTube webhook verification: mode=%s, topic=%s, token=%s", mode, topic, verifyToken)
-
-	// Verify the request
-	expectedTopic := fmt.Sprintf("https://www.youtube.com/xml/feeds/videos.xml?channel_id=%s", y.channelID)
-	if topic != expectedTopic {
-		log.Printf("Invalid topic: expected %s, got %s", expectedTopic, topic)
-		w.WriteHeader(http.StatusForbidden)
-		return
-	}
-
-	if verifyToken != y.verifyToken {
-		log.Printf("Invalid verify token: expected %s, got %s", y.verifyToken, verifyToken)
-		w.WriteHeader(http.StatusForbidden)
-		return
-	}
-
-	if mode == "subscribe" || mode == "unsubscribe" {
-		log.Printf("YouTube webhook %s verification successful", mode)
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(challenge))
-		return
-	}
-
-	w.WriteHeader(http.StatusForbidden)
-}
-
-// HandleNotification handles new video notifications from YouTube
-func (y *YouTubeService) HandleNotification(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		log.Printf("Failed to read notification body: %v", err)
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	log.Printf("Received YouTube notification: %s", string(body))
-
-	var feed YouTubeFeed
-	if err := xml.Unmarshal(body, &feed); err != nil {
-		log.Printf("Failed to parse XML feed: %v", err)
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	// Process each video entry
-	for _, entry := range feed.Entries {
-		if err := y.processVideoEntry(entry); err != nil {
-			log.Printf("Failed to process video entry %s: %v", entry.VideoID, err)
-		}
-	}
-
-	// Update the cached JSON file
-	if err := y.updateVideoCache(); err != nil {
-		log.Printf("Failed to update video cache: %v", err)
-	}
-
-	w.WriteHeader(http.StatusOK)
-}
-
-// processVideoEntry processes a single video entry from the feed
-func (y *YouTubeService) processVideoEntry(entry YouTubeEntry) error {
-	// Extract video ID from the entry ID
-	videoID := entry.VideoID
-	if videoID == "" {
-		// Fallback: extract from entry.ID if videoId is not present
-		parts := strings.Split(entry.ID, ":")
-		if len(parts) > 0 {
-			videoID = parts[len(parts)-1]
-		}
-	}
-
-	if videoID == "" {
-		return fmt.Errorf("could not extract video ID from entry")
-	}
-
-	video := database.YouTubeVideo{
-		ID:           videoID,
-		Title:        entry.Title,
-		Description:  "", // Will be fetched from YouTube API if needed
-		PublishedAt:  entry.Published,
-		UpdatedAt:    entry.Updated,
-		ThumbnailURL: fmt.Sprintf("https://img.youtube.com/vi/%s/maxresdefault.jpg", videoID),
-		VideoURL:     fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID),
-		EmbedURL:     fmt.Sprintf("https://www.youtube.com/embed/%s", videoID),
-	}
-
-	// Store or update video in database
-	return y.storeVideo(video)
-}
-
-// storeVideo stores a YouTube video in the database
-func (y *YouTubeService) storeVideo(video database.YouTubeVideo) error {
-	// Check if video already exists
-	existingVideo, err := y.db.GetYouTubeVideoByID(video.ID)
-	if err == nil && existingVideo != nil {
-		// Update existing video
-		return y.db.UpdateYouTubeVideo(video)
-	}
-
-	// Create new video record
-	return y.db.CreateYouTubeVideo(video)
+	return database.YouTubeVideo{
+		ID:           mockVideo.ID,
+		Title:        mockVideo.Title,
+		Description:  mockVideo.Description,
+		PublishedAt:  published,
+		UpdatedAt:    updated,
+		ThumbnailURL: mockVideo.ThumbnailURL,
+		VideoURL:     mockVideo.VideoURL,
+		EmbedURL:     mockVideo.EmbedURL,
+		Duration:     mockVideo.Duration,
+		ViewCount:    mockVideo.ViewCount,
+		Tags:         mockVideo.Tags,
+		Category:     mockVideo.Category,
+		CreatedAt:    published,
+	}, nil
 }
 
 // GetLatestVideos returns the latest YouTube videos sorted by newest first
 func (y *YouTubeService) GetLatestVideos(limit int) (*YouTubeVideosResponse, error) {
-	videos, err := y.db.GetYouTubeVideos(limit)
+	mockData, err := y.loadMockData()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get YouTube videos: %w", err)
+		return nil, err
+	}
+
+	var videos []database.YouTubeVideo
+	for _, mockVideo := range mockData.Videos {
+		video, err := y.convertMockToDatabase(mockVideo)
+		if err != nil {
+			log.Printf("Error converting mock video %s: %v", mockVideo.ID, err)
+			continue
+		}
+		videos = append(videos, video)
 	}
 
 	// Sort videos by published date (newest first)
 	sort.Slice(videos, func(i, j int) bool {
 		return videos[i].PublishedAt.After(videos[j].PublishedAt)
 	})
+
+	// Apply limit if specified
+	if limit > 0 && limit < len(videos) {
+		videos = videos[:limit]
+	}
 
 	return &YouTubeVideosResponse{
 		Videos:      videos,
@@ -262,83 +182,201 @@ func (y *YouTubeService) GetLatestVideos(limit int) (*YouTubeVideosResponse, err
 	}, nil
 }
 
-// updateVideoCache updates the cached JSON file for frontend consumption
-func (y *YouTubeService) updateVideoCache() error {
-	videos, err := y.GetLatestVideos(50) // Cache last 50 videos
+// GetVideoByID returns a specific video by ID
+func (y *YouTubeService) GetVideoByID(id string) (*database.YouTubeVideo, error) {
+	mockData, err := y.loadMockData()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Create cache directory if it doesn't exist
-	cacheDir := "./cache"
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		return fmt.Errorf("failed to create cache directory: %w", err)
+	for _, mockVideo := range mockData.Videos {
+		if mockVideo.ID == id {
+			video, err := y.convertMockToDatabase(mockVideo)
+			if err != nil {
+				return nil, err
+			}
+			return &video, nil
+		}
 	}
 
-	// Write to cache file
-	cacheFile := "./cache/youtube_videos.json"
-	data, err := json.MarshalIndent(videos, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal videos: %w", err)
-	}
-
-	if err := os.WriteFile(cacheFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write cache file: %w", err)
-	}
-
-	log.Printf("Updated YouTube video cache with %d videos", len(videos.Videos))
-	return nil
+	return nil, fmt.Errorf("video not found: %s", id)
 }
 
-// LoadCachedVideos loads videos from the cache file
-func (y *YouTubeService) LoadCachedVideos() (*YouTubeVideosResponse, error) {
-	cacheFile := "./cache/youtube_videos.json"
-
-	data, err := os.ReadFile(cacheFile)
+// GetChannelInfo returns YouTube channel information
+func (y *YouTubeService) GetChannelInfo() (*ChannelInfo, error) {
+	mockData, err := y.loadMockData()
 	if err != nil {
-		// If cache doesn't exist, return empty response
-		return &YouTubeVideosResponse{
-			Videos:      []database.YouTubeVideo{},
-			LastUpdated: time.Now(),
-			TotalCount:  0,
-		}, nil
+		return nil, err
 	}
 
-	var response YouTubeVideosResponse
-	if err := json.Unmarshal(data, &response); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal cached videos: %w", err)
+	publishedAt, err := time.Parse(time.RFC3339, mockData.ChannelInfo.PublishedAt)
+	if err != nil {
+		publishedAt = time.Now()
 	}
 
-	return &response, nil
+	return &ChannelInfo{
+		ID:              mockData.ChannelInfo.ID,
+		Title:           mockData.ChannelInfo.Title,
+		Description:     mockData.ChannelInfo.Description,
+		SubscriberCount: mockData.ChannelInfo.SubscriberCount,
+		VideoCount:      mockData.ChannelInfo.VideoCount,
+		ViewCount:       mockData.ChannelInfo.ViewCount,
+		PublishedAt:     publishedAt,
+		Country:         mockData.ChannelInfo.Country,
+		CustomURL:       mockData.ChannelInfo.CustomURL,
+		ThumbnailURL:    mockData.ChannelInfo.ThumbnailURL,
+	}, nil
 }
 
-// InitialFetch performs an initial fetch of videos (for setup)
-func (y *YouTubeService) InitialFetch() error {
-	// This would typically use YouTube Data API v3 to fetch initial videos
-	// For now, we'll create a placeholder that gets populated by webhooks
-	log.Printf("YouTube service initialized for channel: %s", y.channelID)
-	log.Printf("Webhook URL: %s", y.callbackURL)
+// SearchVideos searches for videos by query
+func (y *YouTubeService) SearchVideos(query string, limit int) (*YouTubeVideosResponse, error) {
+	mockData, err := y.loadMockData()
+	if err != nil {
+		return nil, err
+	}
 
-	// Create initial empty cache
-	return y.updateVideoCache()
+	var matchedVideos []database.YouTubeVideo
+	query = strings.ToLower(query)
+
+	for _, mockVideo := range mockData.Videos {
+		// Search in title, description, and tags
+		if strings.Contains(strings.ToLower(mockVideo.Title), query) ||
+			strings.Contains(strings.ToLower(mockVideo.Description), query) ||
+			y.containsTag(mockVideo.Tags, query) {
+
+			video, err := y.convertMockToDatabase(mockVideo)
+			if err != nil {
+				log.Printf("Error converting mock video %s: %v", mockVideo.ID, err)
+				continue
+			}
+			matchedVideos = append(matchedVideos, video)
+		}
+	}
+
+	// Sort by published date (newest first)
+	sort.Slice(matchedVideos, func(i, j int) bool {
+		return matchedVideos[i].PublishedAt.After(matchedVideos[j].PublishedAt)
+	})
+
+	// Apply limit if specified
+	if limit > 0 && limit < len(matchedVideos) {
+		matchedVideos = matchedVideos[:limit]
+	}
+
+	return &YouTubeVideosResponse{
+		Videos:      matchedVideos,
+		LastUpdated: time.Now(),
+		TotalCount:  len(matchedVideos),
+	}, nil
 }
 
-// ValidateSignature validates webhook signature (if YouTube sends one)
-func (y *YouTubeService) ValidateSignature(payload []byte, signature string) bool {
-	// YouTube PubSubHubbub doesn't typically use HMAC signatures
-	// but we can implement this for additional security if needed
-	if signature == "" {
-		return true // No signature to validate
+// GetVideosByCategory returns videos filtered by category
+func (y *YouTubeService) GetVideosByCategory(category string, limit int) (*YouTubeVideosResponse, error) {
+	mockData, err := y.loadMockData()
+	if err != nil {
+		return nil, err
 	}
 
-	secret := os.Getenv("YOUTUBE_WEBHOOK_SECRET")
-	if secret == "" {
-		return true // No secret configured
+	var categoryVideos []database.YouTubeVideo
+	category = strings.ToLower(category)
+
+	for _, mockVideo := range mockData.Videos {
+		if strings.ToLower(mockVideo.Category) == category {
+			video, err := y.convertMockToDatabase(mockVideo)
+			if err != nil {
+				log.Printf("Error converting mock video %s: %v", mockVideo.ID, err)
+				continue
+			}
+			categoryVideos = append(categoryVideos, video)
+		}
 	}
 
-	mac := hmac.New(sha1.New, []byte(secret))
-	mac.Write(payload)
-	expectedSignature := "sha1=" + hex.EncodeToString(mac.Sum(nil))
+	// Sort by published date (newest first)
+	sort.Slice(categoryVideos, func(i, j int) bool {
+		return categoryVideos[i].PublishedAt.After(categoryVideos[j].PublishedAt)
+	})
 
-	return hmac.Equal([]byte(signature), []byte(expectedSignature))
+	// Apply limit if specified
+	if limit > 0 && limit < len(categoryVideos) {
+		categoryVideos = categoryVideos[:limit]
+	}
+
+	return &YouTubeVideosResponse{
+		Videos:      categoryVideos,
+		LastUpdated: time.Now(),
+		TotalCount:  len(categoryVideos),
+	}, nil
+}
+
+// GetStatus returns the current status of the YouTube integration
+func (y *YouTubeService) GetStatus() (map[string]interface{}, error) {
+	mockData, err := y.loadMockData()
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"channel_id":    mockData.Feed.ChannelID,
+		"channel_title": mockData.ChannelInfo.Title,
+		"total_videos":  mockData.Metadata.TotalVideos,
+		"last_updated":  mockData.Metadata.LastUpdated,
+		"api_version":   mockData.Metadata.APIVersion,
+		"mock_mode":     mockData.Metadata.MockData,
+		"status":        "active",
+		"data_source":   "mock_json",
+	}, nil
+}
+
+// containsTag checks if any tag contains the search query
+func (y *YouTubeService) containsTag(tags []string, query string) bool {
+	for _, tag := range tags {
+		if strings.Contains(strings.ToLower(tag), query) {
+			return true
+		}
+	}
+	return false
+}
+
+// GetAllCategories returns all unique categories from videos
+func (y *YouTubeService) GetAllCategories() ([]string, error) {
+	mockData, err := y.loadMockData()
+	if err != nil {
+		return nil, err
+	}
+
+	categorySet := make(map[string]bool)
+	for _, video := range mockData.Videos {
+		categorySet[video.Category] = true
+	}
+
+	var categories []string
+	for category := range categorySet {
+		categories = append(categories, category)
+	}
+
+	sort.Strings(categories)
+	return categories, nil
+}
+
+// GetAllTags returns all unique tags from videos
+func (y *YouTubeService) GetAllTags() ([]string, error) {
+	mockData, err := y.loadMockData()
+	if err != nil {
+		return nil, err
+	}
+
+	tagSet := make(map[string]bool)
+	for _, video := range mockData.Videos {
+		for _, tag := range video.Tags {
+			tagSet[tag] = true
+		}
+	}
+
+	var tags []string
+	for tag := range tagSet {
+		tags = append(tags, tag)
+	}
+
+	sort.Strings(tags)
+	return tags, nil
 }

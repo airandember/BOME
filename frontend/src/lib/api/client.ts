@@ -3,11 +3,6 @@
 
 import { apiCache, cacheKeys, cacheInvalidation } from '$lib/utils/cache';
 import { browser } from '$app/environment';
-import type { 
-	YouTubeVideosResponse, 
-	YouTubeStatus, 
-	YouTubeSubscriptionResponse 
-} from '../types/youtube';
 
 interface ApiResponse<T> {
 	data?: T;
@@ -79,20 +74,14 @@ export class ApiClient {
 	private getBaseURL(): string {
 		if (typeof window === 'undefined') return 'http://localhost:8080'; // SSR fallback
 		
+		// In development, use the proxy setup - just return empty string so requests go to same origin
 		const env = import.meta.env;
-		
-		// Development
 		if (env.DEV) {
-			return env.VITE_API_URL || 'http://localhost:8080';
+			return ''; // Use proxy, requests will go to /api/* and be proxied to backend
 		}
 		
-		// Production
-		if (env.PROD) {	
-			return env.VITE_API_URL || 'https://api.bome.org';
-		}
-		
-		// Staging
-		return env.VITE_API_URL || 'https://staging-api.bome.org';
+		// In production, use environment variable or default
+		return env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
 	}
 
 	private getStoredTokenInfo(): TokenInfo | null {
@@ -188,7 +177,10 @@ export class ApiClient {
 		}
 
 		try {
-			const response = await fetch(`${this.baseURL}/api/v1/auth/refresh`, {
+			// Build URL using same logic as main request method
+			const url = this.baseURL ? `${this.baseURL}/api/v1/auth/refresh` : `/api/v1/auth/refresh`;
+			
+			const response = await fetch(url, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -264,7 +256,8 @@ export class ApiClient {
 			return { error: 'Authentication required' };
 		}
 
-		const url = `${this.baseURL}/api/v1${endpoint}`;
+		// Build URL - if baseURL is empty (dev mode), just use the endpoint (proxy will handle it)
+		const url = this.baseURL ? `${this.baseURL}/api/v1${endpoint}` : `/api/v1${endpoint}`;
 		
 		const headers: Record<string, string> = {
 			'Content-Type': 'application/json',
@@ -592,32 +585,6 @@ export class ApiClient {
 
 	invalidateCache(pattern: string | RegExp) {
 		return apiCache.invalidatePattern(pattern);
-	}
-
-	// YouTube API methods
-	async getYouTubeVideos(limit?: number): Promise<ApiResponse<YouTubeVideosResponse>> {
-		const params = limit ? `?limit=${limit}` : '';
-		return this.request<YouTubeVideosResponse>(`/youtube/videos${params}`);
-	}
-
-	async getLatestYouTubeVideos(): Promise<ApiResponse<YouTubeVideosResponse>> {
-		return this.request<YouTubeVideosResponse>('/youtube/videos/latest');
-	}
-
-	async getYouTubeStatus(): Promise<ApiResponse<YouTubeStatus>> {
-		return this.request<YouTubeStatus>('/youtube/status');
-	}
-
-	async subscribeToYouTube(): Promise<ApiResponse<YouTubeSubscriptionResponse>> {
-		return this.request<YouTubeSubscriptionResponse>('/youtube/subscribe', {
-			method: 'POST',
-		});
-	}
-
-	async unsubscribeFromYouTube(): Promise<ApiResponse<YouTubeSubscriptionResponse>> {
-		return this.request<YouTubeSubscriptionResponse>('/youtube/unsubscribe', {
-			method: 'POST',
-		});
 	}
 }
 

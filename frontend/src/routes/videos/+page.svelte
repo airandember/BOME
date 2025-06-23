@@ -7,16 +7,18 @@
 	import Footer from '$lib/components/Footer.svelte';
 	import { toastStore } from '$lib/stores/toast';
 	import AdDisplay from '$lib/components/AdDisplay.svelte';
+	import SubscriptionCheck from '$lib/components/SubscriptionCheck.svelte';
 
 	let videos: Video[] = [];
 	let categories: VideoCategory[] = [];
-	let loading = true;
+	let loading = false;
 	let error = '';
 	let searchQuery = '';
 	let selectedCategory = '';
 	let currentPage = 1;
 	let hasMore = true;
 	let loadingMore = false;
+	let authChecking = true;
 
 	onMount(async () => {
 		await loadInitialData();
@@ -97,6 +99,14 @@
 		selectedCategory = '';
 		loadVideos(true);
 	}
+
+	function handleAuthLoadingChange(event: CustomEvent<{loading: boolean}>) {
+		authChecking = event.detail.loading;
+	}
+
+	function handleAccessGranted() {
+		loadInitialData();
+	}
 </script>
 
 <svelte:head>
@@ -106,144 +116,184 @@
 
 <Navigation />
 
-<div class="videos-page">
-	<div class="container">
-		<!-- Ad Placement: Header Banner -->
-		<div class="ad-placement">
-			<AdDisplay placement="videos-header" />
-		</div>
-
-		<header class="page-header">
-			<h1>Videos</h1>
-			<p>Explore our collection of Book of Mormon evidence videos</p>
-		</header>
-
-		<div class="filters-section">
-			<div class="search-bar">
-				<input
-					type="text"
-					placeholder="Search videos..."
-					bind:value={searchQuery}
-					on:keydown={(e) => e.key === 'Enter' && handleSearch()}
-					aria-label="Search videos"
-				/>
-				<button class="btn-primary" on:click={handleSearch}>
-					🔍 Search
-				</button>
-			</div>
-
-			<div class="category-filters">
-				<select 
-					bind:value={selectedCategory} 
-					on:change={handleCategoryChange}
-					aria-label="Filter by category"
-				>
-					<option value="">All Categories</option>
-					{#each categories as category}
-						<option value={category.name}>{category.name} ({category.videoCount})</option>
-					{/each}
-				</select>
-
-				<button class="btn-secondary" on:click={clearFilters}>
-					Clear Filters
-				</button>
-			</div>
-		</div>
-
-		<!-- Ad Placement: Mid-page -->
-		<div class="ad-placement">
-			<AdDisplay placement="videos-mid" />
-		</div>
-
-		{#if error}
-			<div class="error-message">
-				{error}
-			</div>
-		{/if}
-
-		{#if loading}
-			<LoadingSpinner size="large" />
-		{:else if videos.length === 0}
-			<div class="empty-state">
-				<div class="empty-icon">📹</div>
-				<h3>No videos found</h3>
-				<p>Try adjusting your search or filters</p>
-				<button class="btn-primary" on:click={clearFilters}>
-					Clear All Filters
-				</button>
-			</div>
-		{:else}
-			<div class="content-with-sidebar">
-				<div class="main-content">
-					<div class="videos-grid">
-						{#each videos as video, index (video.id)}
-							<VideoCard {video} />
-							<!-- Ad between videos every 6 videos -->
-							{#if (index + 1) % 6 === 0 && index < videos.length - 1}
-								<div class="ad-placement between-videos">
-									<AdDisplay placement="videos-between" />
-								</div>
-							{/if}
-						{/each}
-					</div>
-
-					{#if hasMore}
-						<div class="load-more">
-							<button 
-								class="btn-secondary" 
-								on:click={loadMore}
-								disabled={loadingMore}
-							>
-								{loadingMore ? 'Loading...' : 'Load More'}
-							</button>
-						</div>
-					{/if}
+<div class="page-wrapper">
+	<main class="main-content-wrapper">
+		<SubscriptionCheck 
+			redirectTo="/login" 
+			requireSubscription={true}
+			on:loadingChange={handleAuthLoadingChange}
+			on:accessGranted={handleAccessGranted}
+		>
+			{#if loading}
+				<div class="loading-container">
+					<LoadingSpinner size="large" />
+					<p>Loading videos...</p>
 				</div>
-
-				<!-- Sidebar with ads -->
-				<aside class="sidebar">
-					<div class="sidebar-content">
-						<h3>Sponsored</h3>
+			{:else}
+				<div class="videos-page">
+					<div class="container">
+						<!-- Ad Placement: Header Banner -->
 						<div class="ad-placement">
-							<AdDisplay placement="videos-sidebar" />
+							<AdDisplay placement="videos-header" />
 						</div>
-						
-						<!-- Additional sidebar content can go here -->
-						<div class="sidebar-section">
-							<h4>Popular Categories</h4>
-							<div class="category-list">
-								{#each categories.slice(0, 5) as category}
-									<button 
-										class="category-item"
-										on:click={() => {
-											selectedCategory = category.name;
-											handleCategoryChange();
-										}}
-									>
-										{category.name} ({category.videoCount})
-									</button>
-								{/each}
+
+						<header class="page-header">
+							<h1>Videos</h1>
+							<p>Explore our collection of Book of Mormon evidence videos</p>
+						</header>
+
+						<div class="filters-section">
+							<div class="search-bar">
+								<input
+									type="text"
+									placeholder="Search videos..."
+									bind:value={searchQuery}
+									on:keydown={(e) => e.key === 'Enter' && handleSearch()}
+									aria-label="Search videos"
+								/>
+								<button class="btn-primary" on:click={handleSearch}>
+									🔍 Search
+								</button>
+							</div>
+
+							<div class="category-filters">
+								<select 
+									bind:value={selectedCategory} 
+									on:change={handleCategoryChange}
+									aria-label="Filter by category"
+								>
+									<option value="">All Categories</option>
+									{#each categories as category}
+										<option value={category.name}>{category.name} ({category.videoCount})</option>
+									{/each}
+								</select>
+
+								<button class="btn-secondary" on:click={clearFilters}>
+									Clear Filters
+								</button>
 							</div>
 						</div>
-					</div>
-				</aside>
-			</div>
-		{/if}
 
-		<!-- Ad Placement: Footer -->
-		<div class="ad-placement">
-			<AdDisplay placement="videos-footer" />
-		</div>
-	</div>
+						<!-- Ad Placement: Mid-page -->
+						<div class="ad-placement">
+							<AdDisplay placement="videos-mid" />
+						</div>
+
+						{#if error}
+							<div class="error-message">
+								{error}
+							</div>
+						{/if}
+
+						{#if videos.length === 0}
+							<div class="empty-state">
+								<div class="empty-icon">📹</div>
+								<h3>No videos found</h3>
+								<p>Try adjusting your search or filters</p>
+								<button class="btn-primary" on:click={clearFilters}>
+									Clear All Filters
+								</button>
+							</div>
+						{:else}
+							<div class="content-with-sidebar">
+								<div class="main-content">
+									<div class="videos-grid">
+										{#each videos as video, index (video.id)}
+											<VideoCard {video} />
+											<!-- Ad between videos every 6 videos -->
+											{#if (index + 1) % 6 === 0 && index < videos.length - 1}
+												<div class="ad-placement between-videos">
+													<AdDisplay placement="videos-between" />
+												</div>
+											{/if}
+										{/each}
+									</div>
+
+									{#if hasMore}
+										<div class="load-more">
+											<button 
+												class="btn-secondary" 
+												on:click={loadMore}
+												disabled={loadingMore}
+											>
+												{loadingMore ? 'Loading...' : 'Load More'}
+											</button>
+										</div>
+									{/if}
+								</div>
+
+								<!-- Sidebar with ads -->
+								<aside class="sidebar">
+									<div class="sidebar-content">
+										<h3>Sponsored</h3>
+										<div class="ad-placement">
+											<AdDisplay placement="videos-sidebar" />
+										</div>
+										
+										<!-- Additional sidebar content can go here -->
+										<div class="sidebar-section">
+											<h4>Popular Categories</h4>
+											<div class="category-list">
+												{#each categories.slice(0, 5) as category}
+													<button 
+														class="category-item"
+														on:click={() => {
+															selectedCategory = category.name;
+															handleCategoryChange();
+														}}
+													>
+														{category.name} ({category.videoCount})
+													</button>
+												{/each}
+											</div>
+										</div>
+									</div>
+								</aside>
+							</div>
+						{/if}
+
+						<!-- Ad Placement: Footer -->
+						<div class="ad-placement">
+							<AdDisplay placement="videos-footer" />
+						</div>
+					</div>
+				</div>
+			{/if}
+		</SubscriptionCheck>
+	</main>
+	<Footer />
 </div>
 
-<Footer />
-
 <style>
-	.videos-page {
+	.page-wrapper {
+		display: flex;
+		flex-direction: column;
 		min-height: 100vh;
+	}
+
+	.main-content-wrapper {
+		flex: 1 0 auto;
+		width: 100%;
+	}
+
+	.loading-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		min-height: 50vh;
+		gap: 1rem;
+	}
+
+	.loading-container p {
+		color: var(--text-color);
+		font-size: 1.1rem;
+	}
+
+	.videos-page {
 		background: var(--bg-color);
 		padding: 2rem 0;
+		width: 100%;
 	}
 
 	.container {

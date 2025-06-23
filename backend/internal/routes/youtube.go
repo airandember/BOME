@@ -3,7 +3,7 @@ package routes
 import (
 	"net/http"
 	"strconv"
-	"time"
+	"strings"
 
 	"bome-backend/internal/database"
 	"bome-backend/internal/services"
@@ -15,33 +15,18 @@ import (
 func SetupYouTubeRoutes(router *gin.RouterGroup, db *database.DB) {
 	youtubeService := services.NewYouTubeService(db)
 
-	// Webhook endpoint for YouTube PubSubHubbub
-	router.Any("/webhook/youtube", handleYouTubeWebhook(youtubeService))
-
 	// API endpoints for frontend
 	youtube := router.Group("/youtube")
 	{
 		youtube.GET("/videos", getYouTubeVideos(youtubeService))
 		youtube.GET("/videos/latest", getLatestYouTubeVideos(youtubeService))
-		youtube.POST("/subscribe", subscribeToChannel(youtubeService))
-		youtube.POST("/unsubscribe", unsubscribeFromChannel(youtubeService))
+		youtube.GET("/videos/search", searchYouTubeVideos(youtubeService))
+		youtube.GET("/videos/category/:category", getYouTubeVideosByCategory(youtubeService))
+		youtube.GET("/videos/:id", getYouTubeVideoByID(youtubeService))
 		youtube.GET("/status", getYouTubeStatus(youtubeService))
-	}
-}
-
-// handleYouTubeWebhook handles both verification and notification requests
-func handleYouTubeWebhook(youtubeService *services.YouTubeService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		switch c.Request.Method {
-		case "GET":
-			// Handle verification challenge
-			youtubeService.HandleVerification(c.Writer, c.Request)
-		case "POST":
-			// Handle video notification
-			youtubeService.HandleNotification(c.Writer, c.Request)
-		default:
-			c.JSON(http.StatusMethodNotAllowed, gin.H{"error": "Method not allowed"})
-		}
+		youtube.GET("/channel", getYouTubeChannelInfo(youtubeService))
+		youtube.GET("/categories", getYouTubeCategories(youtubeService))
+		youtube.GET("/tags", getYouTubeTags(youtubeService))
 	}
 }
 
@@ -71,18 +56,23 @@ func getYouTubeVideos(youtubeService *services.YouTubeService) gin.HandlerFunc {
 	}
 }
 
-// getLatestYouTubeVideos returns the latest YouTube videos (cached)
+// getLatestYouTubeVideos returns the latest YouTube videos
 func getLatestYouTubeVideos(youtubeService *services.YouTubeService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Try to load from cache first
-		response, err := youtubeService.LoadCachedVideos()
-		if err != nil {
-			// If cache fails, try to get from database
-			response, err = youtubeService.GetLatestVideos(10)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get latest YouTube videos"})
-				return
+		// Parse limit parameter
+		limitStr := c.Query("limit")
+		limit := 10 // default limit for latest
+
+		if limitStr != "" {
+			if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+				limit = parsedLimit
 			}
+		}
+
+		response, err := youtubeService.GetLatestVideos(limit)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get latest YouTube videos"})
+			return
 		}
 
 		// Return JSON response
@@ -91,64 +81,146 @@ func getLatestYouTubeVideos(youtubeService *services.YouTubeService) gin.Handler
 	}
 }
 
-// subscribeToChannel manually triggers subscription to YouTube channel
-func subscribeToChannel(youtubeService *services.YouTubeService) gin.HandlerFunc {
+// searchYouTubeVideos handles video search requests
+func searchYouTubeVideos(youtubeService *services.YouTubeService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		err := youtubeService.Subscribe()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Failed to subscribe to YouTube channel: " + err.Error(),
-			})
+		query := c.Query("q")
+		if query == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Search query parameter 'q' is required"})
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"message": "Successfully subscribed to YouTube channel updates",
-		})
+		limitStr := c.Query("limit")
+		limit := 20 // default limit
+
+		if limitStr != "" {
+			if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+				limit = parsedLimit
+			}
+		}
+
+		response, err := youtubeService.SearchVideos(query, limit)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to search YouTube videos"})
+			return
+		}
+
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.JSON(http.StatusOK, response)
 	}
 }
 
-// unsubscribeFromChannel manually triggers unsubscription from YouTube channel
-func unsubscribeFromChannel(youtubeService *services.YouTubeService) gin.HandlerFunc {
+// getYouTubeVideosByCategory returns videos filtered by category
+func getYouTubeVideosByCategory(youtubeService *services.YouTubeService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		err := youtubeService.Unsubscribe()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Failed to unsubscribe from YouTube channel: " + err.Error(),
-			})
+		category := c.Param("category")
+		if category == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Category parameter is required"})
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"message": "Successfully unsubscribed from YouTube channel updates",
-		})
+		limitStr := c.Query("limit")
+		limit := 20 // default limit
+
+		if limitStr != "" {
+			if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+				limit = parsedLimit
+			}
+		}
+
+		response, err := youtubeService.GetVideosByCategory(category, limit)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get YouTube videos by category"})
+			return
+		}
+
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.JSON(http.StatusOK, response)
+	}
+}
+
+// getYouTubeVideoByID returns a specific video by ID
+func getYouTubeVideoByID(youtubeService *services.YouTubeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		videoID := c.Param("id")
+		if videoID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Video ID parameter is required"})
+			return
+		}
+
+		video, err := youtubeService.GetVideoByID(videoID)
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Video not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get YouTube video"})
+			return
+		}
+
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.JSON(http.StatusOK, video)
+	}
+}
+
+// getYouTubeChannelInfo returns YouTube channel information
+func getYouTubeChannelInfo(youtubeService *services.YouTubeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		channelInfo, err := youtubeService.GetChannelInfo()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get YouTube channel info"})
+			return
+		}
+
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.JSON(http.StatusOK, channelInfo)
 	}
 }
 
 // getYouTubeStatus returns the current status of the YouTube integration
 func getYouTubeStatus(youtubeService *services.YouTubeService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get video count and last update info
-		response, err := youtubeService.LoadCachedVideos()
+		status, err := youtubeService.GetStatus()
 		if err != nil {
-			response = &services.YouTubeVideosResponse{
-				Videos:      []database.YouTubeVideo{},
-				LastUpdated: time.Time{},
-				TotalCount:  0,
-			}
-		}
-
-		status := gin.H{
-			"channel_id":     "UCHp1EBgpKytZt_-j72EZ83Q",
-			"channel_name":   "@BookofMormonEvidence",
-			"total_videos":   response.TotalCount,
-			"last_updated":   response.LastUpdated,
-			"webhook_active": true, // This could be determined by checking subscription status
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get YouTube status"})
+			return
 		}
 
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.JSON(http.StatusOK, status)
+	}
+}
+
+// getYouTubeCategories returns all available video categories
+func getYouTubeCategories(youtubeService *services.YouTubeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		categories, err := youtubeService.GetAllCategories()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get YouTube categories"})
+			return
+		}
+
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.JSON(http.StatusOK, gin.H{
+			"categories": categories,
+			"count":      len(categories),
+		})
+	}
+}
+
+// getYouTubeTags returns all available video tags
+func getYouTubeTags(youtubeService *services.YouTubeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tags, err := youtubeService.GetAllTags()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get YouTube tags"})
+			return
+		}
+
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.JSON(http.StatusOK, gin.H{
+			"tags":  tags,
+			"count": len(tags),
+		})
 	}
 }

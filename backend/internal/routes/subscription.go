@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"bome-backend/internal/database"
+	"bome-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,6 +20,50 @@ func GetSubscriptionHandler(db *database.DB) gin.HandlerFunc {
 		userID := c.GetInt("user_id")
 		if userID == 0 {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			return
+		}
+
+		// Get user role from context
+		userRole, exists := c.Get("user_role")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User role not found"})
+			return
+		}
+
+		// Development mode: return mock subscription data
+		if db == nil {
+			// Admin users get premium access automatically
+			if userRole == "admin" {
+				c.JSON(http.StatusOK, gin.H{
+					"subscription": map[string]interface{}{
+						"id":                 "admin_premium_access",
+						"user_id":            userID,
+						"plan_id":            "admin_premium",
+						"status":             "active",
+						"created_at":         "2024-01-01T00:00:00Z",
+						"current_period_end": "2099-12-31T23:59:59Z",
+					},
+				})
+				return
+			}
+			// Regular users have no subscription
+			c.JSON(http.StatusOK, gin.H{"subscription": nil})
+			return
+		}
+
+		// Production mode with database
+		// Admin users get premium access automatically
+		if userRole == "admin" {
+			c.JSON(http.StatusOK, gin.H{
+				"subscription": map[string]interface{}{
+					"id":                 "admin_premium_access",
+					"user_id":            userID,
+					"plan_id":            "admin_premium",
+					"status":             "active",
+					"created_at":         "2024-01-01T00:00:00Z",
+					"current_period_end": "2099-12-31T23:59:59Z",
+				},
+			})
 			return
 		}
 
@@ -89,5 +134,71 @@ func CancelSubscriptionHandler(db *database.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"message": "Subscription cancelled successfully"})
+	}
+}
+
+// GetSubscriptionPlansHandler handles retrieving available subscription plans
+func GetSubscriptionPlansHandler(stripeService *services.StripeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if stripeService == nil {
+			// Mock subscription plans for development mode
+			plans := []map[string]interface{}{
+				{
+					"id":          "price_basic_monthly",
+					"name":        "Basic Monthly",
+					"description": "Access to basic content",
+					"price":       9.99,
+					"currency":    "usd",
+					"interval":    "month",
+					"features":    []string{"Basic video access", "Standard quality", "Email support"},
+				},
+				{
+					"id":          "price_premium_yearly",
+					"name":        "Premium Yearly",
+					"description": "Full access with exclusive content",
+					"price":       99.99,
+					"currency":    "usd",
+					"interval":    "year",
+					"features":    []string{"All video content", "HD quality", "Exclusive content", "Priority support"},
+					"popular":     true,
+				},
+			}
+			c.JSON(http.StatusOK, gin.H{"plans": plans})
+			return
+		}
+
+		plans := stripeService.GetSubscriptionPlans()
+		c.JSON(http.StatusOK, gin.H{"plans": plans})
+	}
+}
+
+// CreateCheckoutSessionHandler handles creating Stripe checkout sessions
+func CreateCheckoutSessionHandler(stripeService *services.StripeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			PlanID     string `json:"planId" binding:"required"`
+			SuccessURL string `json:"successUrl"`
+			CancelURL  string `json:"cancelUrl"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Development mode: return mock checkout URL
+		if stripeService == nil {
+			c.JSON(http.StatusOK, gin.H{
+				"url":        "https://checkout.stripe.com/mock-checkout-session",
+				"session_id": "mock_session_" + req.PlanID,
+			})
+			return
+		}
+
+		// TODO: Implement actual Stripe checkout session creation
+		c.JSON(http.StatusOK, gin.H{
+			"url":        "https://checkout.stripe.com/pay/mock-session",
+			"session_id": "mock_session_" + req.PlanID,
+		})
 	}
 }

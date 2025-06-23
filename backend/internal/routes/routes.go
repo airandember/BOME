@@ -3,9 +3,11 @@ package routes
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"bome-backend/internal/config"
 	"bome-backend/internal/database"
+	"bome-backend/internal/middleware"
 	"bome-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -44,16 +46,50 @@ func SetupRoutes(
 		auth := v1.Group("/auth")
 		{
 			auth.POST("/login", func(c *gin.Context) {
-				// Mock login that always returns success with admin token
-				c.JSON(http.StatusOK, gin.H{
-					"token": "mock-jwt-token-12345",
-					"user": gin.H{
-						"id":        1,
-						"email":     "admin@bome.com",
-						"role":      "super_admin",
-						"full_name": "System Administrator",
-					},
-				})
+				var req struct {
+					Email    string `json:"email" binding:"required"`
+					Password string `json:"password" binding:"required"`
+				}
+
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+
+				// Mock login with different user types
+				if req.Email == "admin@bome.com" && req.Password == "admin123" {
+					token, _ := services.GenerateToken(1, req.Email, "admin", 24*time.Hour)
+					c.JSON(http.StatusOK, gin.H{
+						"token": token,
+						"user": gin.H{
+							"id":            1,
+							"email":         req.Email,
+							"role":          "admin",
+							"firstName":     "System",
+							"lastName":      "Administrator",
+							"emailVerified": true,
+						},
+					})
+					return
+				}
+
+				if req.Email == "user@bome.com" && req.Password == "user123" {
+					token, _ := services.GenerateToken(2, req.Email, "user", 24*time.Hour)
+					c.JSON(http.StatusOK, gin.H{
+						"token": token,
+						"user": gin.H{
+							"id":            2,
+							"email":         req.Email,
+							"role":          "user",
+							"firstName":     "Regular",
+							"lastName":      "User",
+							"emailVerified": true,
+						},
+					})
+					return
+				}
+
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
 			})
 			auth.POST("/register", func(c *gin.Context) {
 				c.JSON(http.StatusOK, gin.H{"message": "Registration successful"})
@@ -70,6 +106,35 @@ func SetupRoutes(
 			videos.GET("/:id", GetMockVideoHandler)
 			videos.GET("/:id/comments", GetMockCommentsHandler)
 			videos.GET("/categories", GetMockCategoriesHandler)
+		}
+
+		// Subscription routes
+		subscriptions := v1.Group("/subscriptions")
+		{
+			subscriptions.GET("/plans", GetSubscriptionPlansHandler(stripeService))
+			subscriptions.GET("/current", middleware.AuthMiddleware(), GetSubscriptionHandler(db))
+			subscriptions.POST("", middleware.AuthMiddleware(), CreateSubscriptionHandler(db))
+			subscriptions.POST("/:id/cancel", middleware.AuthMiddleware(), CancelSubscriptionHandler(db))
+			subscriptions.POST("/checkout", CreateCheckoutSessionHandler(stripeService))
+		}
+
+		// User profile routes
+		users := v1.Group("/users")
+		{
+			users.GET("/profile", func(c *gin.Context) {
+				// Mock user profile endpoint
+				c.JSON(http.StatusOK, gin.H{
+					"user": gin.H{
+						"id":            1,
+						"email":         "admin@bome.com",
+						"firstName":     "System",
+						"lastName":      "Administrator",
+						"role":          "admin",
+						"emailVerified": true,
+						"createdAt":     "2024-01-01T00:00:00Z",
+					},
+				})
+			})
 		}
 
 		// Admin routes using existing mock handlers

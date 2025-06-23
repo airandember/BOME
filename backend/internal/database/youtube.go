@@ -18,6 +18,8 @@ type YouTubeVideo struct {
 	EmbedURL     string    `json:"embed_url" db:"embed_url"`
 	Duration     string    `json:"duration" db:"duration"`
 	ViewCount    int64     `json:"view_count" db:"view_count"`
+	Tags         []string  `json:"tags"`
+	Category     string    `json:"category"`
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 }
 

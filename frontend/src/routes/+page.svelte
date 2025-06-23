@@ -163,7 +163,7 @@
 	<section class="zoom-section book-section active" data-section="0">
 		<div class="zoom-content">
 			<div class="book-container">
-				<img src="/src/lib/HOMEPAGE_TEST_ASSETS/book_of_mormon_close_up.png" alt="Book of Mormon Close-up" class="book-image" />
+				<img src="/src/lib/HOMEPAGE_TEST_ASSETS/book_of_mormon_close_up.webp" alt="Book of Mormon Close-up" class="book-image" />
 				<div class="book-glow"></div>
 			</div>
 			
@@ -445,6 +445,7 @@
 		border-radius: 0;
 		box-shadow: none;
 		filter: drop-shadow(0 0 30px rgba(255, 215, 0, 0.3));
+		filter: blur(6px);
 	}
 
 	.book-glow {
