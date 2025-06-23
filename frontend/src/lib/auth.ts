@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { browser } from '$app/environment';
 import type { Role } from './types/roles';
 
 export interface User {
@@ -54,8 +55,10 @@ const createAuthStore = () => {
 					};
 
 					const mockToken = 'mock-admin-token-' + Date.now();
-					localStorage.setItem('token', mockToken);
-					localStorage.setItem('userData', JSON.stringify(user));
+					if (browser) {
+						localStorage.setItem('token', mockToken);
+						localStorage.setItem('userData', JSON.stringify(user));
+					}
 
 					set({
 						user,
@@ -79,8 +82,10 @@ const createAuthStore = () => {
 					};
 
 					const mockToken = 'mock-user-token-' + Date.now();
-					localStorage.setItem('token', mockToken);
-					localStorage.setItem('userData', JSON.stringify(user));
+					if (browser) {
+						localStorage.setItem('token', mockToken);
+						localStorage.setItem('userData', JSON.stringify(user));
+					}
 
 					set({
 						user,
@@ -104,8 +109,10 @@ const createAuthStore = () => {
 					};
 
 					const mockToken = 'mock-advertiser-token-' + Date.now();
-					localStorage.setItem('token', mockToken);
-					localStorage.setItem('userData', JSON.stringify(user));
+					if (browser) {
+						localStorage.setItem('token', mockToken);
+						localStorage.setItem('userData', JSON.stringify(user));
+					}
 
 					set({
 						user,
@@ -129,8 +136,10 @@ const createAuthStore = () => {
 					};
 
 					const mockToken = 'mock-advertiser-token-' + Date.now();
-					localStorage.setItem('token', mockToken);
-					localStorage.setItem('userData', JSON.stringify(user));
+					if (browser) {
+						localStorage.setItem('token', mockToken);
+						localStorage.setItem('userData', JSON.stringify(user));
+					}
 
 					set({
 						user,
@@ -167,8 +176,10 @@ const createAuthStore = () => {
 				};
 
 				// Store token and user data in localStorage
-				localStorage.setItem('token', data.token);
-				localStorage.setItem('userData', JSON.stringify(user));
+				if (browser) {
+					localStorage.setItem('token', data.token);
+					localStorage.setItem('userData', JSON.stringify(user));
+				}
 
 				set({
 					user,
@@ -204,9 +215,11 @@ const createAuthStore = () => {
 		},
 
 		logout: async () => {
-			// Clear localStorage first
-			localStorage.removeItem('token');
-			localStorage.removeItem('userData');
+			// Clear localStorage first (only in browser)
+			if (browser) {
+				localStorage.removeItem('token');
+				localStorage.removeItem('userData');
+			}
 			
 			// Clear the store state
 			set({
@@ -220,6 +233,8 @@ const createAuthStore = () => {
 		},
 
 		initialize: async () => {
+			if (!browser) return; // Skip initialization during SSR
+			
 			const token = localStorage.getItem('token');
 			if (token) {
 				// Check if it's a mock admin token
@@ -379,7 +394,7 @@ export const auth = createAuthStore();
 // API helper with authentication
 export const api = {
 	get: async (url: string) => {
-		const token = localStorage.getItem('token');
+		const token = browser ? localStorage.getItem('token') : null;
 		const response = await fetch(url, {
 			headers: {
 				'Authorization': token ? `Bearer ${token}` : '',
@@ -390,7 +405,7 @@ export const api = {
 	},
 
 	post: async (url: string, data: any) => {
-		const token = localStorage.getItem('token');
+		const token = browser ? localStorage.getItem('token') : null;
 		const response = await fetch(url, {
 			method: 'POST',
 			headers: {
@@ -403,7 +418,7 @@ export const api = {
 	},
 
 	put: async (url: string, data: any) => {
-		const token = localStorage.getItem('token');
+		const token = browser ? localStorage.getItem('token') : null;
 		const response = await fetch(url, {
 			method: 'PUT',
 			headers: {
@@ -416,7 +431,7 @@ export const api = {
 	},
 
 	delete: async (url: string) => {
-		const token = localStorage.getItem('token');
+		const token = browser ? localStorage.getItem('token') : null;
 		const response = await fetch(url, {
 			method: 'DELETE',
 			headers: {

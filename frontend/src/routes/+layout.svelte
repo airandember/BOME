@@ -3,12 +3,16 @@
 	import { auth } from '$lib/auth';
 	import { onMount } from 'svelte';
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
+	import { initializeSecurity } from '$lib/utils/security';
+	import { authStore } from '$lib/stores/api';
 
 	let mounted = false;
 
 	onMount(() => {
 		mounted = true;
 		auth.initialize();
+		initializeSecurity();
+		authStore.init();
 	});
 </script>
 

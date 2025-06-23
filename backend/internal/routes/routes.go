@@ -6,7 +6,6 @@ import (
 
 	"bome-backend/internal/config"
 	"bome-backend/internal/database"
-	"bome-backend/internal/middleware"
 	"bome-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -33,93 +32,67 @@ func SetupRoutes(
 
 	// API v1 routes
 	v1 := router.Group("/api/v1")
+
+	// Setup all mock data routes for development/testing
+	SetupMockDataRoutes(v1)
+	SetupArticlesRoutes(v1)
+	SetupRolesRoutes(v1)
+	SetupYouTubeRoutes(v1, db)
+
 	{
-		// Public routes
-		public := v1.Group("")
+		// Mock authentication routes (for development)
+		auth := v1.Group("/auth")
 		{
-			// Authentication routes
-			auth := public.Group("/auth")
-			{
-				auth.POST("/register", RegisterHandler(db))
-				auth.POST("/login", LoginHandler(db))
-				auth.POST("/logout", handleLogout())
-				auth.POST("/refresh", handleRefreshToken(db, cfg))
-				auth.POST("/forgot-password", ForgotPasswordHandler(db, emailService))
-				auth.POST("/reset-password", ResetPasswordHandler(db))
-				auth.POST("/verify-email", VerifyEmailHandler(db))
-			}
-
-			// Video routes (public)
-			videos := public.Group("/videos")
-			{
-				videos.GET("", GetVideosHandler(db))
-				videos.GET("/:id", GetVideoHandler(db))
-				videos.GET("/:id/stream", StreamVideoHandler(db, bunnyService))
-				videos.GET("/categories", GetCategoriesHandler(db))
-				videos.GET("/search", SearchVideosHandler(db))
-			}
-
-			// Subscription routes
-			subscriptions := public.Group("/subscriptions")
-			{
-				subscriptions.GET("/plans", handleGetSubscriptionPlans(stripeService))
-				subscriptions.POST("/create", handleCreateSubscription(db, stripeService))
-			}
-
-			// Stripe webhook
-			public.POST("/webhooks/stripe", handleStripeWebhook(db, stripeService, emailService))
+			auth.POST("/login", func(c *gin.Context) {
+				// Mock login that always returns success with admin token
+				c.JSON(http.StatusOK, gin.H{
+					"token": "mock-jwt-token-12345",
+					"user": gin.H{
+						"id":        1,
+						"email":     "admin@bome.com",
+						"role":      "super_admin",
+						"full_name": "System Administrator",
+					},
+				})
+			})
+			auth.POST("/register", func(c *gin.Context) {
+				c.JSON(http.StatusOK, gin.H{"message": "Registration successful"})
+			})
+			auth.POST("/logout", func(c *gin.Context) {
+				c.JSON(http.StatusOK, gin.H{"message": "Logout successful"})
+			})
 		}
 
-		// Protected routes (require authentication)
-		protected := v1.Group("")
-		protected.Use(middleware.AuthMiddleware())
+		// Video routes using existing handlers
+		videos := v1.Group("/videos")
 		{
-			// User routes
-			users := protected.Group("/users")
-			{
-				users.GET("/profile", handleGetProfile(db))
-				users.PUT("/profile", handleUpdateProfile(db))
-				users.GET("/activity", handleGetUserActivity(db))
-				users.GET("/favorites", GetFavoritesHandler(db))
-			}
-
-			// Video interaction routes
-			videoInteractions := protected.Group("/videos")
-			{
-				videoInteractions.POST("/:id/like", LikeVideoHandler(db))
-				videoInteractions.DELETE("/:id/like", UnlikeVideoHandler(db))
-				videoInteractions.POST("/:id/favorite", FavoriteVideoHandler(db))
-				videoInteractions.DELETE("/:id/favorite", UnfavoriteVideoHandler(db))
-				videoInteractions.POST("/:id/comment", AddCommentHandler(db))
-				videoInteractions.GET("/:id/comments", GetCommentsHandler(db))
-			}
-
-			// Subscription management
-			subscriptions := protected.Group("/subscriptions")
-			{
-				subscriptions.GET("", GetSubscriptionHandler(db))
-				subscriptions.POST("", CreateSubscriptionHandler(db))
-				subscriptions.DELETE("", CancelSubscriptionHandler(db))
-			}
-
-			// Billing management
-			billing := protected.Group("/billing")
-			{
-				billing.GET("/history", handleGetBillingHistory(db, stripeService))
-				billing.GET("/invoices/:id", handleGetInvoice(db, stripeService))
-				billing.GET("/invoices/:id/download", handleDownloadInvoice(db, stripeService))
-				billing.GET("/refunds", handleGetRefunds(db, stripeService))
-				billing.GET("/refunds/:id", handleGetRefund(db, stripeService))
-				billing.POST("/refunds", handleCreateRefund(db, stripeService))
-			}
+			videos.GET("", GetMockVideosHandler)
+			videos.GET("/:id", GetMockVideoHandler)
+			videos.GET("/:id/comments", GetMockCommentsHandler)
+			videos.GET("/categories", GetMockCategoriesHandler)
 		}
 
-		// Admin routes (require admin authentication)
+		// Admin routes using existing mock handlers
 		admin := v1.Group("/admin")
-		admin.Use(middleware.AuthMiddleware(), middleware.AdminMiddleware())
 		{
-			// Set up all admin routes from admin.go
-			SetupAdminRoutes(admin, db)
+			admin.GET("/analytics", GetAdminAnalyticsHandler)
+			admin.GET("/users", GetAdminUsersHandler)
+			admin.GET("/videos", GetAdminVideosHandler(db))
+			admin.GET("/advertisers", GetAdvertiserAccountsHandler)
+			admin.GET("/advertisers/:id", GetAdvertiserAccountHandler)
+			admin.GET("/campaigns", GetAdCampaignsHandler)
+			admin.GET("/campaigns/:id", GetAdCampaignHandler)
+		}
+
+		// User dashboard
+		v1.GET("/dashboard", GetDashboardDataHandler)
+
+		// Advertisement routes for public ad serving
+		ads := v1.Group("/ads")
+		{
+			ads.GET("/serve/:placement", func(c *gin.Context) {
+				c.JSON(http.StatusOK, gin.H{"message": "Ad serving endpoint (mock)"})
+			})
 		}
 	}
 }

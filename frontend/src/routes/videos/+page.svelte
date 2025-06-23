@@ -5,7 +5,7 @@
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import Navigation from '$lib/components/Navigation.svelte';
 	import Footer from '$lib/components/Footer.svelte';
-	import { toasts } from '$lib/stores/toast';
+	import { toastStore } from '$lib/stores/toast';
 	import AdDisplay from '$lib/components/AdDisplay.svelte';
 
 	let videos: Video[] = [];
@@ -35,7 +35,7 @@
 			await loadVideos();
 		} catch (err) {
 			error = 'Failed to load videos';
-			toasts.error('Failed to load videos. Please try again.');
+			toastStore.error('Failed to load videos. Please try again.');
 			console.error('Error loading videos:', err);
 		} finally {
 			loading = false;
@@ -67,7 +67,7 @@
 			hasMore = newVideos.length === 20;
 		} catch (err) {
 			error = 'Failed to load videos';
-			toasts.error('Failed to load videos. Please try again.');
+			toastStore.error('Failed to load videos. Please try again.');
 			console.error('Error loading videos:', err);
 		}
 	}

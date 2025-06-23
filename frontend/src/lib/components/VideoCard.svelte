@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { videoUtils } from '$lib/video';
 	import type { Video } from '$lib/video';
+	import LazyImage from './LazyImage.svelte';
 
 	export let video: Video;
 	export let showCategory: boolean = true;
@@ -14,10 +15,15 @@
 
 <div class="video-card" on:click={handleClick}>
 	<div class="thumbnail-container">
-		<img 
-			src={video.thumbnailUrl || '/placeholder-thumbnail.jpg'} 
+		<LazyImage
+			src={video.thumbnailUrl || '/placeholder-thumbnail.jpg'}
 			alt={video.title}
-			class="thumbnail"
+			className="thumbnail"
+			width="100%"
+			height="100%"
+			quality="medium"
+			cacheKey={`video-thumb-${video.id}`}
+			fallback="/placeholder-thumbnail.jpg"
 		/>
 		<div class="duration-badge">
 			{videoUtils.formatDuration(video.duration)}
