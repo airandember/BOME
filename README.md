@@ -9,79 +9,74 @@ Welcome to the comprehensive documentation for the Book of Mormon Evidences (BOM
 ## 📚 Documentation Structure
 
 ### Technical Documentation
-- **[API Documentation](./api/README.md)** - Complete REST API reference and integration guides
-- **[Deployment Guide](./deployment/README.md)** - Step-by-step deployment and infrastructure setup
-- **[Troubleshooting Guide](./troubleshooting/README.md)** - Common issues and solutions
-- **[Code Documentation](./code/README.md)** - Code structure, patterns, and development guidelines
-- **[Architecture Documentation](./architecture/README.md)** - System architecture and design decisions
-- **[Security Documentation](./security/README.md)** - Security implementation and best practices
-- **[Database Schema](./database/README.md)** - Database design and schema documentation
+- **[API Documentation](./docs/api/README.md)** - Complete REST API reference and integration guides
+- **[Deployment Guide](./docs/deployment/README.md)** - Step-by-step deployment and infrastructure setup
+- **[Code Documentation](./docs/code/README.md)** - Code structure, patterns, and development guidelines
+- **[Security Documentation](./docs/security/README.md)** - Security implementation and best practices
+- **[Database Schema](./docs/database/README.md)** - Database design and schema documentation
+- **[Third-Party Integrations](./docs/third-party-integrations.md)** - External service integrations
 
 ### User Documentation
-- **[User Guide](./user/README.md)** - Complete user manual for the BOME platform
-- **[Admin Documentation](./admin/README.md)** - Administrator guide and dashboard usage
-- **[FAQ](./faq/README.md)** - Frequently asked questions and answers
-- **[User Troubleshooting](./user-troubleshooting/README.md)** - User-facing troubleshooting guide
-- **[Video Tutorials](./tutorials/README.md)** - Video guides and tutorials
-- **[Help Center](./help/README.md)** - Comprehensive help center content
-- **[Onboarding](./onboarding/README.md)** - New user onboarding materials
+- **[User Guide](./docs/user/README.md)** - Complete user manual for the BOME platform
+- **[Admin Documentation](./docs/admin/README.md)** - Administrator guide and dashboard usage
+- **[FAQ](./docs/faq/README.md)** - Frequently asked questions and answers
+- **[Support Documentation](./docs/support/README.md)** - Support procedures and help resources
 
-### Training & Support
-- **[Admin Training](./training/admin/README.md)** - Administrator training materials
-- **[Support Procedures](./support/README.md)** - Customer support procedures and workflows
-- **[Escalation Procedures](./escalation/README.md)** - Issue escalation and resolution procedures
-- **[Maintenance Procedures](./maintenance/README.md)** - System maintenance and operational procedures
-- **[Backup Procedures](./backup/README.md)** - Data backup and recovery procedures
-- **[Security Procedures](./security-procedures/README.md)** - Security incident response and procedures
-- **[Incident Response](./incident-response/README.md)** - Emergency response and incident management
+### Development Resources
+- **[Project Structure](./PROJECT_STRUCTURE.md)** - Complete project organization and structure
+- **[Infrastructure Setup](./docs/INFRASTRUCTURE_SETUP.md)** - Development environment setup
+- **[IDE Setup](./docs/IDE_SETUP.md)** - IDE configuration and development tools
+- **[Git Workflow](./GIT_WORKFLOW.md)** - Version control and collaboration guidelines
 
 ## 🚀 Quick Start
 
 ### For Developers
-1. Start with the [Architecture Documentation](./architecture/README.md) to understand the system design
-2. Review the [Code Documentation](./code/README.md) for development guidelines
-3. Use the [API Documentation](./api/README.md) for integration work
-4. Follow the [Deployment Guide](./deployment/README.md) for environment setup
+1. Review the [Code Documentation](./docs/code/README.md) for development guidelines and patterns
+2. Follow the [Infrastructure Setup](./docs/INFRASTRUCTURE_SETUP.md) for environment configuration
+3. Check the [Project Structure](./PROJECT_STRUCTURE.md) to understand the codebase organization
+4. Use the [API Documentation](./docs/api/README.md) for integration work
+5. Follow the [Git Workflow](./GIT_WORKFLOW.md) for contribution guidelines
 
 ### For Administrators
-1. Begin with the [Admin Documentation](./admin/README.md) to understand the dashboard
-2. Review [Admin Training](./training/admin/README.md) materials
-3. Familiarize yourself with [Support Procedures](./support/README.md)
-4. Understand [Security Procedures](./security-procedures/README.md)
+1. Begin with the [Admin Documentation](./docs/admin/README.md) to understand the dashboard
+2. Review the [Deployment Guide](./docs/deployment/README.md) for production setup
+3. Familiarize yourself with [Support Procedures](./docs/support/README.md)
+4. Understand [Security Documentation](./docs/security/README.md)
 
 ### For Users
-1. Start with the [User Guide](./user/README.md) for platform basics
-2. Check the [FAQ](./faq/README.md) for common questions
-3. Use [Video Tutorials](./tutorials/README.md) for visual learning
-4. Visit the [Help Center](./help/README.md) for comprehensive assistance
+1. Start with the [User Guide](./docs/user/README.md) for platform basics
+2. Check the [FAQ](./docs/faq/README.md) for common questions
+3. Visit the [Support Documentation](./docs/support/README.md) for assistance
 
 ### For Support Staff
-1. Review [Support Procedures](./support/README.md) for handling user issues
-2. Understand [Escalation Procedures](./escalation/README.md) for complex problems
-3. Use [User Troubleshooting](./user-troubleshooting/README.md) for common user issues
-4. Know [Incident Response](./incident-response/README.md) procedures for emergencies
+1. Review [Support Procedures](./docs/support/README.md) for handling user issues
+2. Use the [Admin Documentation](./docs/admin/README.md) for administrative tasks
+3. Reference the [FAQ](./docs/faq/README.md) for common user questions
 
 ## 🔧 Platform Overview
 
 **BOME** is a comprehensive streaming platform built with modern technologies:
 
 ### Technology Stack
-- **Frontend**: Svelte/SvelteKit with neumorphic design
+- **Frontend**: Svelte/SvelteKit with custom CSS design system
 - **Backend**: Go with RESTful APIs
 - **Database**: PostgreSQL with Redis caching
 - **Video Streaming**: Bunny.net CDN
 - **Payments**: Stripe integration
 - **Infrastructure**: Digital Ocean with Docker containers
-- **Monitoring**: Prometheus, Grafana, ELK stack
+- **Monitoring**: Comprehensive logging and analytics
 
 ### Key Features
 - 🎥 High-quality video streaming with adaptive bitrates
 - 💳 Subscription-based access with multiple tiers
 - 👥 User account management and profiles
-- 📊 Comprehensive admin dashboard
+- 📊 Comprehensive admin dashboard with advertising system
 - 🔒 Enterprise-grade security and compliance
 - 📱 Responsive design for all devices
 - 🚀 Production-ready deployment infrastructure
+- 📺 YouTube integration with webhook system
+- 📰 Complete articles and blog system
+- 🎯 Advanced advertising management platform
 
 ## 📋 Documentation Standards
 
@@ -96,19 +91,19 @@ All documentation follows these standards:
 ## 🆘 Getting Help
 
 ### For Technical Issues
-- Check the [Troubleshooting Guide](./troubleshooting/README.md)
-- Review [API Documentation](./api/README.md) for integration issues
-- Consult [Code Documentation](./code/README.md) for development questions
+- Check the [Code Documentation](./docs/code/README.md) for development patterns
+- Review [API Documentation](./docs/api/README.md) for integration issues
+- Consult [Infrastructure Setup](./docs/INFRASTRUCTURE_SETUP.md) for environment problems
 
 ### For User Issues
-- Start with the [FAQ](./faq/README.md)
-- Use the [User Troubleshooting](./user-troubleshooting/README.md) guide
-- Check [Video Tutorials](./tutorials/README.md) for visual guidance
+- Start with the [FAQ](./docs/faq/README.md)
+- Check the [User Guide](./docs/user/README.md)
+- Contact [Support](./docs/support/README.md)
 
 ### For Administrative Issues
-- Review [Admin Documentation](./admin/README.md)
-- Check [Support Procedures](./support/README.md)
-- Use [Escalation Procedures](./escalation/README.md) if needed
+- Review [Admin Documentation](./docs/admin/README.md)
+- Check [Deployment Guide](./docs/deployment/README.md)
+- Reference [Security Documentation](./docs/security/README.md)
 
 ## 📝 Contributing to Documentation
 
@@ -119,15 +114,44 @@ To improve this documentation:
 4. Keep content current with platform updates
 5. Use clear, concise language
 
+## 🏗️ Development Environment
+
+### Quick Setup
+```bash
+# Clone the repository
+git clone https://github.com/your-org/BOME.git
+cd BOME
+
+# Backend setup
+cd backend
+cp env.example .env
+# Configure your .env file
+go mod tidy
+go run main.go
+
+# Frontend setup (new terminal)
+cd frontend
+npm install
+npm run dev
+```
+
+### Prerequisites
+- **Go 1.21+** for backend development
+- **Node.js 18+** for frontend development
+- **PostgreSQL 15+** for database (optional for development)
+- **Redis 7+** for caching (optional for development)
+
 ## 📊 Documentation Metrics
 
-- **Total Documents**: 21 major sections
+- **Total Documents**: 15+ major sections
 - **Coverage**: Complete platform coverage
 - **Maintenance**: Updated with each release
 - **Accessibility**: Multi-level content for all users
 
 ---
 
-**Last Updated**: July 2025 
-**Version**: 1.0.0  
-**Maintained By**: BOME Development Team 
+**Last Updated**: December 2024 
+**Version**: 2.0.0  
+**Maintained By**: BOME Development Team
+
+For development questions, start with the [Code Documentation](./docs/code/README.md). 

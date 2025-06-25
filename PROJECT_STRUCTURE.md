@@ -1,14 +1,22 @@
 # BOME Project Structure
 
-## Overview
-BOME is a comprehensive streaming platform with multiple components:
-- **Backend**: Go API server
-- **Frontend**: Svelte web application
-- **Admin Dashboard**: Admin management interface
-- **Roku App**: TV streaming application
-- **Documentation**: Project documentation
+**Comprehensive Project Organization and Architecture Guide**
 
-## Directory Structure
+## Overview
+
+BOME (Book of Mormon Evidences) is a modern, full-stack streaming platform designed for scalability, maintainability, and performance. The project follows a modular architecture with clear separation of concerns and modern development practices.
+
+### Core Components
+- **Backend**: Go API server with microservices architecture
+- **Frontend**: SvelteKit web application with custom design system
+- **Database**: PostgreSQL with Redis caching layer
+- **CDN**: Bunny.net for video streaming and static assets
+- **Infrastructure**: Containerized deployment on Digital Ocean
+- **Documentation**: Comprehensive technical and user documentation
+
+---
+
+## 🏗️ Directory Structure
 
 ```
 BOME/
