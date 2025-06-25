@@ -1,3 +1,13 @@
+/*
+ * BOME - Book of Mormon Evidence Hub
+ * Copyright © 2024 BOME Development Team. All Rights Reserved.
+ *
+ * PROPRIETARY AND CONFIDENTIAL
+ * This software is the exclusive property of the copyright holder.
+ * Unauthorized use, reproduction, or distribution is strictly prohibited.
+ * See LICENSE file for full terms and conditions.
+ */
+
 package main
 
 import (
@@ -34,37 +44,31 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// Initialize database (try PostgreSQL, fallback to development mode)
+	// Initialize database (SQLite for development)
 	var db *database.DB
 	var err error
 
-	if cfg.DBHost != "" && cfg.DBPassword != "" {
-		db, err = database.New(cfg)
-		if err != nil {
-			log.Printf("Failed to connect to PostgreSQL: %v", err)
-			log.Println("Continuing in development mode without database...")
-			db = nil
-		} else {
-			defer db.Close()
-		}
-	} else {
-		log.Println("PostgreSQL not configured, continuing in development mode without database...")
+	log.Println("Attempting to initialize database...")
+	db, err = database.New(cfg)
+	if err != nil {
+		log.Printf("Failed to connect to SQLite database: %v", err)
+		log.Println("Continuing without database...")
 		db = nil
+	} else {
+		log.Println("Database connection successful")
+		defer db.Close()
+		// Run migrations
+		if err := db.RunMigrations(); err != nil {
+			log.Printf("Failed to run migrations: %v", err)
+		} else {
+			log.Println("Database migrations completed successfully")
+		}
 	}
 
-	// Initialize Redis (skip if not configured for development)
+	// Skip Redis for development (not needed for basic functionality)
 	var redis *database.Redis
-	if cfg.RedisHost != "" {
-		redis, err = database.NewRedis(cfg)
-		if err != nil {
-			log.Printf("Failed to connect to Redis: %v", err)
-			log.Println("Continuing without Redis for development...")
-		} else {
-			defer redis.Close()
-		}
-	} else {
-		log.Println("Redis not configured, continuing without Redis for development...")
-	}
+	log.Println("Skipping Redis for development...")
+	redis = nil
 
 	// Initialize services
 	bunnyService := services.NewBunnyService()
@@ -87,7 +91,9 @@ func main() {
 	router.Use(middleware.RateLimit(cfg))
 
 	// Setup routes
+	log.Println("Setting up routes...")
 	routes.SetupRoutes(router, cfg, db, redis, bunnyService, stripeService, spacesService, emailService)
+	log.Println("Routes setup completed successfully")
 
 	// Create HTTP server
 	server := &http.Server{

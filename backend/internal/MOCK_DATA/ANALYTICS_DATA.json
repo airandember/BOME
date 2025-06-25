@@ -1,0 +1,124 @@
+{
+  "metadata": {
+    "last_updated": "2024-01-01T00:00:00Z",
+    "version": "1.0.0"
+  },
+  "real_time": {
+    "current_active_users": 0,
+    "page_views_last_minute": 0,
+    "current_streams": 0,
+    "server_load": 0.0,
+    "bandwidth_usage": "0 MB/s",
+    "recent_signups": 0,
+    "recent_subscriptions": 0,
+    "error_rate": 0.0,
+    "response_time": 0.0,
+    "events_last_minute": [],
+    "live_events": [],
+    "top_content_now": []
+  },
+  "users": {
+    "total": 0,
+    "new_today": 0,
+    "new_week": 0,
+    "new_month": 0,
+    "active_today": 0,
+    "growth_rate": 0.0,
+    "churn_rate": 0.0,
+    "retention_rate": 0.0,
+    "daily_active": {},
+    "weekly_active": {},
+    "monthly_active": {}
+  },
+  "videos": {
+    "total": 0,
+    "published": 0,
+    "pending": 0,
+    "draft": 0,
+    "total_views": 0,
+    "total_likes": 0,
+    "total_comments": 0,
+    "total_shares": 0,
+    "avg_rating": 0.0,
+    "views": {},
+    "engagement": {},
+    "completion_rates": {},
+    "top_categories": []
+  },
+  "subscriptions": {
+    "active": 0,
+    "new_today": 0,
+    "new_week": 0,
+    "new_month": 0,
+    "cancelled": 0,
+    "revenue_today": 0.0,
+    "revenue_week": 0.0,
+    "revenue_month": 0.0,
+    "revenue_year": 0.0,
+    "mrr": 0.0,
+    "arr": 0.0,
+    "ltv": 0.0,
+    "plans": [],
+    "history": {}
+  },
+  "engagement": {
+    "avg_watch_time": "0s",
+    "completion_rate": 0.0,
+    "like_ratio": 0.0,
+    "comment_rate": 0.0,
+    "share_count": 0,
+    "bounce_rate": 0.0,
+    "session_duration": "0s",
+    "pages_per_session": 0.0,
+    "daily_stats": {},
+    "hourly_stats": {}
+  },
+  "system_health": {
+    "uptime": "0s",
+    "response_time": "0ms",
+    "error_rate": "0%",
+    "storage_used": "0 MB",
+    "bandwidth_used": "0 MB/s",
+    "cdn_hits": "0",
+    "database_size": "0 MB",
+    "active_sessions": 0,
+    "last_write": "2024-01-01T00:00:00Z",
+    "total_events_tracked": 0
+  },
+  "geographic": {
+    "top_countries": [],
+    "top_states": [],
+    "daily_distribution": {}
+  },
+  "devices": {
+    "desktop": {
+      "users": 0,
+      "percentage": 0.0,
+      "avg_session": "0s"
+    },
+    "mobile": {
+      "users": 0,
+      "percentage": 0.0,
+      "avg_session": "0s"
+    },
+    "tablet": {
+      "users": 0,
+      "percentage": 0.0,
+      "avg_session": "0s"
+    },
+    "browsers": []
+  },
+  "time_series": {
+    "users": [],
+    "revenue": [],
+    "engagement": []
+  },
+  "conversion": {
+    "funnel": [],
+    "cohort_analysis": [],
+    "daily_conversion": {}
+  },
+  "events": [],
+  "page_views": {},
+  "user_interactions": {}
+} 

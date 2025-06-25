@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -24,6 +25,9 @@ func SetupRoutes(
 	spacesService *services.SpacesService,
 	emailService *services.EmailService,
 ) {
+	// Debug logging
+	fmt.Printf("Setting up routes...\n")
+
 	// Health check endpoint
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -31,134 +35,130 @@ func SetupRoutes(
 			"service": "bome-streaming-backend",
 		})
 	})
+	fmt.Printf("Registered health check endpoint\n")
 
 	// API v1 routes
 	v1 := router.Group("/api/v1")
+	fmt.Printf("Created v1 route group with base path: %s\n", v1.BasePath())
+
+	// Admin routes
+	admin := v1.Group("/admin")
+	SetupAdminRoutes(admin, db)
+	SetupAnalyticsRoutes(admin)
+	fmt.Printf("Admin routes setup complete\n")
 
 	// Setup all mock data routes for development/testing
+	fmt.Printf("Setting up mock data routes...\n")
 	SetupMockDataRoutes(v1)
 	SetupArticlesRoutes(v1)
 	SetupRolesRoutes(v1)
 	SetupYouTubeRoutes(v1, db)
+	fmt.Printf("Mock data routes setup complete\n")
 
+	// Mock authentication routes (for development)
+	auth := v1.Group("/auth")
 	{
-		// Mock authentication routes (for development)
-		auth := v1.Group("/auth")
-		{
-			auth.POST("/login", func(c *gin.Context) {
-				var req struct {
-					Email    string `json:"email" binding:"required"`
-					Password string `json:"password" binding:"required"`
-				}
+		auth.POST("/login", func(c *gin.Context) {
+			var req struct {
+				Email    string `json:"email" binding:"required"`
+				Password string `json:"password" binding:"required"`
+			}
 
-				if err := c.ShouldBindJSON(&req); err != nil {
-					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-					return
-				}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
 
-				// Mock login with different user types
-				if req.Email == "admin@bome.com" && req.Password == "admin123" {
-					token, _ := services.GenerateToken(1, req.Email, "admin", 24*time.Hour)
-					c.JSON(http.StatusOK, gin.H{
-						"token": token,
-						"user": gin.H{
-							"id":            1,
-							"email":         req.Email,
-							"role":          "admin",
-							"firstName":     "System",
-							"lastName":      "Administrator",
-							"emailVerified": true,
-						},
-					})
-					return
-				}
-
-				if req.Email == "user@bome.com" && req.Password == "user123" {
-					token, _ := services.GenerateToken(2, req.Email, "user", 24*time.Hour)
-					c.JSON(http.StatusOK, gin.H{
-						"token": token,
-						"user": gin.H{
-							"id":            2,
-							"email":         req.Email,
-							"role":          "user",
-							"firstName":     "Regular",
-							"lastName":      "User",
-							"emailVerified": true,
-						},
-					})
-					return
-				}
-
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
-			})
-			auth.POST("/register", func(c *gin.Context) {
-				c.JSON(http.StatusOK, gin.H{"message": "Registration successful"})
-			})
-			auth.POST("/logout", func(c *gin.Context) {
-				c.JSON(http.StatusOK, gin.H{"message": "Logout successful"})
-			})
-		}
-
-		// Video routes using existing handlers
-		videos := v1.Group("/videos")
-		{
-			videos.GET("", GetMockVideosHandler)
-			videos.GET("/:id", GetMockVideoHandler)
-			videos.GET("/:id/comments", GetMockCommentsHandler)
-			videos.GET("/categories", GetMockCategoriesHandler)
-		}
-
-		// Subscription routes
-		subscriptions := v1.Group("/subscriptions")
-		{
-			subscriptions.GET("/plans", GetSubscriptionPlansHandler(stripeService))
-			subscriptions.GET("/current", middleware.AuthMiddleware(), GetSubscriptionHandler(db))
-			subscriptions.POST("", middleware.AuthMiddleware(), CreateSubscriptionHandler(db))
-			subscriptions.POST("/:id/cancel", middleware.AuthMiddleware(), CancelSubscriptionHandler(db))
-			subscriptions.POST("/checkout", CreateCheckoutSessionHandler(stripeService))
-		}
-
-		// User profile routes
-		users := v1.Group("/users")
-		{
-			users.GET("/profile", func(c *gin.Context) {
-				// Mock user profile endpoint
+			// Mock login with different user types
+			if req.Email == "admin@bome.com" && req.Password == "admin123" {
+				token, _ := services.GenerateToken(1, req.Email, "admin", 24*time.Hour)
 				c.JSON(http.StatusOK, gin.H{
+					"token": token,
 					"user": gin.H{
 						"id":            1,
-						"email":         "admin@bome.com",
+						"email":         req.Email,
+						"role":          "admin",
 						"firstName":     "System",
 						"lastName":      "Administrator",
-						"role":          "admin",
 						"emailVerified": true,
-						"createdAt":     "2024-01-01T00:00:00Z",
 					},
 				})
+				return
+			}
+
+			if req.Email == "user@bome.com" && req.Password == "user123" {
+				token, _ := services.GenerateToken(2, req.Email, "user", 24*time.Hour)
+				c.JSON(http.StatusOK, gin.H{
+					"token": token,
+					"user": gin.H{
+						"id":            2,
+						"email":         req.Email,
+						"role":          "user",
+						"firstName":     "Regular",
+						"lastName":      "User",
+						"emailVerified": true,
+					},
+				})
+				return
+			}
+
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
+		})
+		auth.POST("/register", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"message": "Registration successful"})
+		})
+		auth.POST("/logout", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"message": "Logout successful"})
+		})
+	}
+
+	// Video routes using existing handlers
+	videos := v1.Group("/videos")
+	{
+		videos.GET("", GetMockVideosHandler)
+		videos.GET("/:id", GetMockVideoHandler)
+		videos.GET("/:id/comments", GetMockCommentsHandler)
+		videos.GET("/categories", GetMockCategoriesHandler)
+	}
+
+	// Subscription routes
+	subscriptions := v1.Group("/subscriptions")
+	{
+		subscriptions.GET("/plans", GetSubscriptionPlansHandler(stripeService))
+		subscriptions.GET("/current", middleware.AuthMiddleware(), GetSubscriptionHandler(db))
+		subscriptions.POST("", middleware.AuthMiddleware(), CreateSubscriptionHandler(db))
+		subscriptions.POST("/:id/cancel", middleware.AuthMiddleware(), CancelSubscriptionHandler(db))
+		subscriptions.POST("/checkout", CreateCheckoutSessionHandler(stripeService))
+	}
+
+	// User profile routes
+	users := v1.Group("/users")
+	{
+		users.GET("/profile", func(c *gin.Context) {
+			// Mock user profile endpoint
+			c.JSON(http.StatusOK, gin.H{
+				"user": gin.H{
+					"id":            1,
+					"email":         "admin@bome.com",
+					"firstName":     "System",
+					"lastName":      "Administrator",
+					"role":          "admin",
+					"emailVerified": true,
+					"createdAt":     "2024-01-01T00:00:00Z",
+				},
 			})
-		}
+		})
+	}
 
-		// Admin routes using existing mock handlers
-		admin := v1.Group("/admin")
-		{
-			admin.GET("/analytics", GetAdminAnalyticsHandler)
-			admin.GET("/users", GetAdminUsersHandler)
-			admin.GET("/videos", GetAdminVideosHandler(db))
-			admin.GET("/advertisers", GetAdvertiserAccountsHandler)
-			admin.GET("/advertisers/:id", GetAdvertiserAccountHandler)
-			admin.GET("/campaigns", GetAdCampaignsHandler)
-			admin.GET("/campaigns/:id", GetAdCampaignHandler)
-		}
+	// User dashboard
+	v1.GET("/dashboard", GetDashboardDataHandler)
 
-		// User dashboard
-		v1.GET("/dashboard", GetDashboardDataHandler)
-
-		// Advertisement routes for public ad serving
-		ads := v1.Group("/ads")
-		{
-			ads.GET("/serve/:placement", func(c *gin.Context) {
-				c.JSON(http.StatusOK, gin.H{"message": "Ad serving endpoint (mock)"})
-			})
-		}
+	// Advertisement routes for public ad serving
+	ads := v1.Group("/ads")
+	{
+		ads.GET("/serve/:placement", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"message": "Ad serving endpoint (mock)"})
+		})
 	}
 }
 
@@ -473,210 +473,44 @@ func handleDownloadInvoice(db *database.DB, stripeService *services.StripeServic
 	}
 }
 
-// Admin handlers
-func handleAdminGetUsers(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin get users endpoint - TODO"})
-	}
-}
-
-func handleAdminGetUser(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin get user endpoint - TODO"})
-	}
-}
-
-func handleAdminUpdateUser(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin update user endpoint - TODO"})
-	}
-}
-
-func handleAdminDeleteUser(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin delete user endpoint - TODO"})
-	}
-}
-
-func handleAdminUploadVideo(db *database.DB, bunnyService *services.BunnyService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Parse multipart form
-		file, err := c.FormFile("video")
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "No video file provided"})
-			return
-		}
-
-		title := c.PostForm("title")
-		description := c.PostForm("description")
-		category := c.PostForm("category")
-
-		if title == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Title is required"})
-			return
-		}
-
-		adminID := c.GetInt("user_id")
-
-		// Upload to Bunny.net
-		uploadResp, err := bunnyService.UploadVideo(file, title, description)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to upload video"})
-			return
-		}
-
-		// Create video record in database
-		video, err := db.CreateVideo(title, description, uploadResp.VideoID, "", category, 0, file.Size, []string{}, adminID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create video record"})
-			return
-		}
-
-		// Log admin action
-		go db.CreateAdminLog(&adminID, "video_uploaded", "video", &video.ID, map[string]interface{}{"title": title}, c.ClientIP(), c.GetHeader("User-Agent"))
-
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Video uploaded successfully",
-			"video":   video,
-		})
-	}
-}
-
-func handleAdminUpdateVideo(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin update video endpoint - TODO"})
-	}
-}
-
-func handleAdminDeleteVideo(db *database.DB, bunnyService *services.BunnyService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin delete video endpoint - TODO"})
-	}
-}
-
-func handleAdminGetPendingVideos(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Mock pending videos for development mode
-		if db == nil {
-			pendingVideos := []map[string]interface{}{
-				{
-					"id":          2,
-					"title":       "DNA and the Book of Mormon",
-					"description": "Scientific perspectives on DNA evidence and Book of Mormon populations",
-					"duration":    "22:15",
-					"thumbnail":   "https://example.com/thumb2.jpg",
-					"status":      "pending",
-					"category":    "Science",
-					"uploaded_by": map[string]interface{}{
-						"id":    3,
-						"name":  "Dr. Sarah Johnson",
-						"email": "sarah.johnson@byu.edu",
-					},
-					"upload_date": "2024-01-18T14:20:00Z",
-					"file_size":   "298.4 MB",
-					"resolution":  "1080p",
-					"tags":        []string{"dna", "science", "genetics"},
-				},
-			}
-
-			c.JSON(http.StatusOK, gin.H{"videos": pendingVideos})
-			return
-		}
-
-		// Real database implementation
-		videos, err := db.GetVideos(100, 0, "", "pending")
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get pending videos"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"videos": videos})
-	}
-}
-
-func handleAdminApproveVideo(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		videoID, err := strconv.Atoi(c.Param("id"))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid video ID"})
-			return
-		}
-
-		adminID := c.GetInt("user_id")
-
-		// Update video status to published
-		if err := db.UpdateVideoStatus(videoID, "published"); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to approve video"})
-			return
-		}
-
-		// Log admin action
-		go db.CreateAdminLog(&adminID, "video_approved", "video", &videoID, nil, c.ClientIP(), c.GetHeader("User-Agent"))
-
-		c.JSON(http.StatusOK, gin.H{"message": "Video approved successfully"})
-	}
-}
-
-func handleAdminRejectVideo(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		videoID, err := strconv.Atoi(c.Param("id"))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid video ID"})
-			return
-		}
-
-		adminID := c.GetInt("user_id")
-
-		// Update video status to rejected
-		if err := db.UpdateVideoStatus(videoID, "rejected"); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reject video"})
-			return
-		}
-
-		// Log admin action
-		go db.CreateAdminLog(&adminID, "video_rejected", "video", &videoID, nil, c.ClientIP(), c.GetHeader("User-Agent"))
-
-		c.JSON(http.StatusOK, gin.H{"message": "Video rejected successfully"})
-	}
-}
-
+// Admin analytics handlers
 func handleAdminGetAnalytics(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin get analytics endpoint - TODO"})
+		c.JSON(http.StatusOK, gin.H{"message": "Admin analytics endpoint - TODO"})
 	}
 }
 
 func handleAdminGetUserAnalytics(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin get user analytics endpoint - TODO"})
+		c.JSON(http.StatusOK, gin.H{"message": "Admin user analytics endpoint - TODO"})
 	}
 }
 
 func handleAdminGetVideoAnalytics(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin get video analytics endpoint - TODO"})
+		c.JSON(http.StatusOK, gin.H{"message": "Admin video analytics endpoint - TODO"})
 	}
 }
 
-func handleAdminGetRevenueAnalytics(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
+func handleAdminGetRevenueAnalytics(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin get revenue analytics endpoint - TODO"})
+		c.JSON(http.StatusOK, gin.H{"message": "Admin revenue analytics endpoint - TODO"})
 	}
 }
 
-func handleAdminGetSystemHealth(db *database.DB, redis *database.Redis) gin.HandlerFunc {
+func handleAdminGetSystemHealth(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin get system health endpoint - TODO"})
+		c.JSON(http.StatusOK, gin.H{"message": "Admin system health endpoint - TODO"})
 	}
 }
 
-func handleAdminCreateBackup(db *database.DB, spacesService *services.SpacesService) gin.HandlerFunc {
+func handleAdminCreateBackup(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "Admin create backup endpoint - TODO"})
 	}
 }
 
-func handleAdminGetLogs() gin.HandlerFunc {
+func handleAdminGetLogs(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "Admin get logs endpoint - TODO"})
 	}

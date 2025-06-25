@@ -1,12 +1,14 @@
 package routes
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"bome-backend/internal/database"
+	"bome-backend/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -765,6 +767,77 @@ func GetAdminVideosHandler(db *database.DB) gin.HandlerFunc {
 	}
 }
 
+// GetAdminVideoHandler handles retrieving a single video for admin
+func GetAdminVideoHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		videoID, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid video ID"})
+			return
+		}
+
+		// Mock video data for development mode
+		if db == nil {
+			video := map[string]interface{}{
+				"id":          videoID,
+				"title":       "Archaeological Evidence in Mesoamerica",
+				"description": "Detailed analysis of archaeological findings in Mesoamerica",
+				"duration":    "45:12",
+				"thumbnail":   "https://example.com/thumb1.jpg",
+				"status":      "published",
+				"category":    "Archaeology",
+				"uploaded_by": map[string]interface{}{
+					"id":    1,
+					"name":  "Dr. John Smith",
+					"email": "john.smith@byu.edu",
+				},
+				"upload_date": time.Now().AddDate(0, 0, -7).Format(time.RFC3339),
+				"views":       1234,
+				"likes":       89,
+				"comments":    23,
+				"file_size":   "256.4 MB",
+				"resolution":  "1080p",
+				"tags":        []string{"archaeology", "mesoamerica", "evidence"},
+				"analytics": map[string]interface{}{
+					"avg_watch_time":  "12:34",
+					"completion_rate": 0.78,
+					"engagement_rate": 0.45,
+					"shares":          12,
+					"unique_viewers":  987,
+					"peak_viewers":    156,
+					"demographics": map[string]interface{}{
+						"age_groups": []map[string]interface{}{
+							{"range": "18-24", "percentage": 15},
+							{"range": "25-34", "percentage": 35},
+							{"range": "35-44", "percentage": 25},
+							{"range": "45-54", "percentage": 15},
+							{"range": "55+", "percentage": 10},
+						},
+						"countries": []map[string]interface{}{
+							{"name": "United States", "percentage": 45},
+							{"name": "Mexico", "percentage": 20},
+							{"name": "Canada", "percentage": 15},
+							{"name": "United Kingdom", "percentage": 10},
+							{"name": "Other", "percentage": 10},
+						},
+					},
+				},
+			}
+			c.JSON(http.StatusOK, gin.H{"video": video})
+			return
+		}
+
+		// Real database implementation
+		video, err := db.GetVideoByID(videoID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Video not found"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"video": video})
+	}
+}
+
 // UpdateVideoHandler handles updating video details for admin
 func UpdateVideoHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -1126,23 +1199,462 @@ func GetScheduledVideosHandler(db *database.DB) gin.HandlerFunc {
 	}
 }
 
-// SetupAdminRoutes sets up all admin routes
-func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
-	router.GET("/users", GetUsersHandler(db))
-	router.GET("/analytics", GetAnalyticsHandler(db))
-	router.GET("/analytics/overview", GetAnalyticsHandler(db))
-	router.GET("/system/health", GetSystemHealthHandler(db))
+// Advertisement Placement Handlers
+func GetAdPlacementsHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Mock ad placement data for development
+		placements := []map[string]interface{}{
+			{
+				"id":          1,
+				"name":        "Homepage Banner",
+				"description": "Main banner on homepage",
+				"type":        "banner",
+				"size":        "728x90",
+				"active":      true,
+				"position":    "header",
+				"page":        "homepage",
+				"created_at":  "2024-01-15T10:00:00Z",
+				"updated_at":  "2024-06-15T10:00:00Z",
+			},
+			{
+				"id":          2,
+				"name":        "Video Player Pre-roll",
+				"description": "Advertisement before video content",
+				"type":        "video",
+				"size":        "1920x1080",
+				"active":      true,
+				"position":    "pre-roll",
+				"page":        "video-player",
+				"created_at":  "2024-01-15T10:00:00Z",
+				"updated_at":  "2024-06-15T10:00:00Z",
+			},
+			{
+				"id":          3,
+				"name":        "Sidebar Rectangle",
+				"description": "Medium rectangle ad in sidebar",
+				"type":        "banner",
+				"size":        "300x250",
+				"active":      true,
+				"position":    "sidebar",
+				"page":        "article",
+				"created_at":  "2024-01-15T10:00:00Z",
+				"updated_at":  "2024-06-15T10:00:00Z",
+			},
+			{
+				"id":          4,
+				"name":        "Mobile Banner",
+				"description": "Mobile-optimized banner",
+				"type":        "banner",
+				"size":        "320x50",
+				"active":      false,
+				"position":    "bottom",
+				"page":        "all",
+				"created_at":  "2024-01-15T10:00:00Z",
+				"updated_at":  "2024-06-15T10:00:00Z",
+			},
+		}
 
-	// Additional admin endpoints can be added here
-	router.PUT("/users/:id", UpdateUserHandler(db))
-	router.DELETE("/users/:id", DeleteUserHandler(db))
-	router.GET("/videos", GetAdminVideosHandler(db))
-	router.PUT("/videos/:id", UpdateVideoHandler(db))
-	router.DELETE("/videos/:id", DeleteVideoHandler(db))
-	router.POST("/videos/bulk", BulkVideoOperationHandler(db))
-	router.GET("/videos/stats", GetVideoStatsHandler(db))
-	router.GET("/videos/categories", GetVideoCategoriesHandler(db))
-	router.POST("/videos/:id/schedule", ScheduleVideoHandler(db))
-	router.DELETE("/videos/:id/schedule", UnscheduleVideoHandler(db))
-	router.GET("/videos/scheduled", GetScheduledVideosHandler(db))
+		c.JSON(http.StatusOK, gin.H{
+			"success":    true,
+			"placements": placements,
+			"total":      len(placements),
+		})
+	}
+}
+
+func GetAdPlacementsPerformanceHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Mock placement performance data
+		performance := map[string]interface{}{
+			"total_impressions": 125430,
+			"total_clicks":      3627,
+			"total_revenue":     2847.65,
+			"average_ctr":       2.89,
+			"average_cpm":       22.70,
+			"placements": []map[string]interface{}{
+				{
+					"id":          1,
+					"name":        "Homepage Banner",
+					"impressions": 45230,
+					"clicks":      1205,
+					"revenue":     1024.50,
+					"ctr":         2.66,
+					"cpm":         22.65,
+					"fill_rate":   89.5,
+				},
+				{
+					"id":          2,
+					"name":        "Video Player Pre-roll",
+					"impressions": 38920,
+					"clicks":      1384,
+					"revenue":     1186.20,
+					"ctr":         3.56,
+					"cpm":         30.47,
+					"fill_rate":   94.2,
+				},
+				{
+					"id":          3,
+					"name":        "Sidebar Rectangle",
+					"impressions": 32840,
+					"clicks":      892,
+					"revenue":     564.75,
+					"ctr":         2.72,
+					"cpm":         17.19,
+					"fill_rate":   78.3,
+				},
+				{
+					"id":          4,
+					"name":        "Mobile Banner",
+					"impressions": 8440,
+					"clicks":      146,
+					"revenue":     72.20,
+					"ctr":         1.73,
+					"cpm":         8.55,
+					"fill_rate":   65.8,
+				},
+			},
+			"daily_performance": []map[string]interface{}{
+				{"date": "2024-06-17", "impressions": 8923, "clicks": 267, "revenue": 203.45, "ctr": 2.99},
+				{"date": "2024-06-18", "impressions": 9104, "clicks": 284, "revenue": 218.30, "ctr": 3.12},
+				{"date": "2024-06-19", "impressions": 8756, "clicks": 251, "revenue": 195.80, "ctr": 2.87},
+				{"date": "2024-06-20", "impressions": 9287, "clicks": 298, "revenue": 224.15, "ctr": 3.21},
+				{"date": "2024-06-21", "impressions": 8834, "clicks": 265, "revenue": 201.25, "ctr": 3.00},
+				{"date": "2024-06-22", "impressions": 9145, "clicks": 289, "revenue": 216.90, "ctr": 3.16},
+				{"date": "2024-06-23", "impressions": 8967, "clicks": 272, "revenue": 204.85, "ctr": 3.03},
+			},
+			"top_performers": []map[string]interface{}{
+				{
+					"placement_id":   2,
+					"placement_name": "Video Player Pre-roll",
+					"metric":         "highest_ctr",
+					"value":          3.56,
+				},
+				{
+					"placement_id":   2,
+					"placement_name": "Video Player Pre-roll",
+					"metric":         "highest_cpm",
+					"value":          30.47,
+				},
+				{
+					"placement_id":   1,
+					"placement_name": "Homepage Banner",
+					"metric":         "most_impressions",
+					"value":          45230,
+				},
+			},
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data":    performance,
+		})
+	}
+}
+
+func CreateAdPlacementHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			Name        string `json:"name" binding:"required"`
+			Description string `json:"description"`
+			Type        string `json:"type" binding:"required"`
+			Size        string `json:"size" binding:"required"`
+			Position    string `json:"position" binding:"required"`
+			Page        string `json:"page" binding:"required"`
+			Active      bool   `json:"active"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Mock creation response
+		placement := map[string]interface{}{
+			"id":          5, // Mock new ID
+			"name":        req.Name,
+			"description": req.Description,
+			"type":        req.Type,
+			"size":        req.Size,
+			"position":    req.Position,
+			"page":        req.Page,
+			"active":      req.Active,
+			"created_at":  "2024-06-23T14:00:00Z",
+			"updated_at":  "2024-06-23T14:00:00Z",
+		}
+
+		c.JSON(http.StatusCreated, gin.H{
+			"success":   true,
+			"placement": placement,
+			"message":   "Ad placement created successfully",
+		})
+	}
+}
+
+func UpdateAdPlacementHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		placementID := c.Param("id")
+
+		var req struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Type        string `json:"type"`
+			Size        string `json:"size"`
+			Position    string `json:"position"`
+			Page        string `json:"page"`
+			Active      *bool  `json:"active"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Mock update response
+		placement := map[string]interface{}{
+			"id":          placementID,
+			"name":        req.Name,
+			"description": req.Description,
+			"type":        req.Type,
+			"size":        req.Size,
+			"position":    req.Position,
+			"page":        req.Page,
+			"active":      req.Active,
+			"updated_at":  "2024-06-23T14:00:00Z",
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":   true,
+			"placement": placement,
+			"message":   "Ad placement updated successfully",
+		})
+	}
+}
+
+// SetupAdminRoutes configures admin-related routes
+func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
+	// Users
+	router.GET("/users", middleware.AuthMiddleware(), GetUsersHandler(db))
+	router.GET("/users/:id", middleware.AuthMiddleware(), GetUserHandler(db))
+	router.PUT("/users/:id", middleware.AuthMiddleware(), UpdateUserHandler(db))
+	router.DELETE("/users/:id", middleware.AuthMiddleware(), DeleteUserHandler(db))
+
+	// Videos
+	router.GET("/videos", middleware.AuthMiddleware(), GetAdminVideosHandler(db))
+	router.GET("/videos/:id", middleware.AuthMiddleware(), GetAdminVideoHandler(db))
+	router.PUT("/videos/:id", middleware.AuthMiddleware(), UpdateVideoHandler(db))
+	router.DELETE("/videos/:id", middleware.AuthMiddleware(), DeleteVideoHandler(db))
+	router.POST("/videos/bulk", middleware.AuthMiddleware(), BulkVideoOperationHandler(db))
+	router.GET("/videos/:id/stats", middleware.AuthMiddleware(), GetVideoStatsHandler(db))
+	router.GET("/videos/categories", middleware.AuthMiddleware(), GetVideoCategoriesHandler(db))
+	router.POST("/videos/:id/schedule", middleware.AuthMiddleware(), ScheduleVideoHandler(db))
+	router.POST("/videos/:id/unschedule", middleware.AuthMiddleware(), UnscheduleVideoHandler(db))
+	router.GET("/videos/scheduled", middleware.AuthMiddleware(), GetScheduledVideosHandler(db))
+
+	// Ad Placements
+	router.GET("/placements", middleware.AuthMiddleware(), GetAdPlacementsHandler(db))
+	router.GET("/placements/performance", middleware.AuthMiddleware(), GetAdPlacementsPerformanceHandler(db))
+	router.POST("/placements", middleware.AuthMiddleware(), CreateAdPlacementHandler(db))
+	router.PUT("/placements/:id", middleware.AuthMiddleware(), UpdateAdPlacementHandler(db))
+
+	// Design System Routes
+	if db != nil && db.GormDB != nil {
+		log.Println("Registering design system routes...")
+		DesignSystemRoutes(router, db.GormDB)
+		log.Println("Design system routes registered successfully")
+	} else {
+		log.Println("Registering mock design system routes...")
+		SetupMockDesignSystemRoutes(router)
+		log.Println("Mock design system routes registered successfully")
+	}
+}
+
+// SetupMockDesignSystemRoutes sets up mock design system routes for development
+func SetupMockDesignSystemRoutes(router *gin.RouterGroup) {
+	designSystem := router.Group("/design-system")
+	{
+		// Theme management
+		designSystem.GET("/themes", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"themes": []gin.H{},
+				"count":  0,
+			})
+		})
+
+		designSystem.POST("/themes", func(c *gin.Context) {
+			c.JSON(http.StatusCreated, gin.H{
+				"message": "Theme created successfully (mock)",
+				"theme": gin.H{
+					"id":          1,
+					"name":        "Mock Theme",
+					"description": "Mock theme for development",
+					"isActive":    false,
+					"tokens":      []gin.H{},
+					"createdAt":   time.Now(),
+					"updatedAt":   time.Now(),
+				},
+			})
+		})
+
+		designSystem.PUT("/themes/:id", func(c *gin.Context) {
+			themeID := c.Param("id")
+			c.JSON(http.StatusOK, gin.H{
+				"message": "Theme updated successfully (mock)",
+				"theme": gin.H{
+					"id":          themeID,
+					"name":        "Updated Mock Theme",
+					"description": "Updated mock theme",
+					"isActive":    true,
+					"tokens":      []gin.H{},
+					"updatedAt":   time.Now(),
+				},
+			})
+		})
+
+		designSystem.DELETE("/themes/:id", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "Theme deleted successfully (mock)",
+			})
+		})
+
+		designSystem.POST("/themes/activate", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "Theme activated successfully (mock)",
+				"theme": gin.H{
+					"id":          1,
+					"name":        "Active Mock Theme",
+					"description": "Activated mock theme",
+					"isActive":    true,
+					"tokens":      []gin.H{},
+					"updatedAt":   time.Now(),
+				},
+			})
+		})
+
+		designSystem.GET("/active", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"theme":   nil,
+				"message": "No active theme found (mock)",
+			})
+		})
+
+		// Figma integration
+		designSystem.POST("/figma/import", func(c *gin.Context) {
+			c.JSON(http.StatusCreated, gin.H{
+				"message": "Theme created from Figma successfully (mock)",
+				"theme": gin.H{
+					"id":          1,
+					"name":        "Figma Import Mock",
+					"description": "Mock theme imported from Figma",
+					"isActive":    false,
+					"figmaFileId": "mock-file-id",
+					"figmaNodeId": "mock-node-id",
+					"tokens":      []gin.H{},
+					"createdAt":   time.Now(),
+					"updatedAt":   time.Now(),
+				},
+			})
+		})
+
+		designSystem.POST("/figma/sync/:id", func(c *gin.Context) {
+			themeID := c.Param("id")
+			c.JSON(http.StatusOK, gin.H{
+				"message": "Theme updated from Figma successfully (mock)",
+				"theme": gin.H{
+					"id":          themeID,
+					"name":        "Synced Mock Theme",
+					"description": "Mock theme synced with Figma",
+					"tokens":      []gin.H{},
+					"updatedAt":   time.Now(),
+				},
+			})
+		})
+
+		designSystem.GET("/figma/preview", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"tokens":  []gin.H{},
+				"count":   0,
+				"preview": true,
+			})
+		})
+
+		// Theme operations
+		designSystem.POST("/themes/import", func(c *gin.Context) {
+			c.JSON(http.StatusCreated, gin.H{
+				"message": "Theme imported successfully (mock)",
+				"theme": gin.H{
+					"id":          1,
+					"name":        "Imported Mock Theme",
+					"description": "Mock imported theme",
+					"tokens":      []gin.H{},
+					"createdAt":   time.Now(),
+				},
+			})
+		})
+
+		designSystem.GET("/themes/:id/export", func(c *gin.Context) {
+			mockTheme := gin.H{
+				"id":          c.Param("id"),
+				"name":        "Mock Export Theme",
+				"description": "Mock theme for export",
+				"tokens":      []gin.H{},
+				"createdAt":   time.Now(),
+			}
+
+			c.Header("Content-Type", "application/json")
+			c.Header("Content-Disposition", "attachment; filename=theme-mock.json")
+			c.JSON(http.StatusOK, mockTheme)
+		})
+
+		designSystem.GET("/themes/:id/tokens", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"tokens": []gin.H{},
+				"count":  0,
+			})
+		})
+
+		// Token management
+		designSystem.GET("/tokens", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"tokens": []gin.H{},
+				"count":  0,
+			})
+		})
+
+		designSystem.POST("/tokens", func(c *gin.Context) {
+			c.JSON(http.StatusCreated, gin.H{
+				"message": "Token created successfully (mock)",
+				"token": gin.H{
+					"id":          1,
+					"name":        "mock-token",
+					"value":       "#ffffff",
+					"type":        "color",
+					"category":    "primary",
+					"description": "Mock color token",
+					"createdAt":   time.Now(),
+				},
+			})
+		})
+
+		designSystem.PUT("/tokens/:id", func(c *gin.Context) {
+			tokenID := c.Param("id")
+			c.JSON(http.StatusOK, gin.H{
+				"message": "Token updated successfully (mock)",
+				"token": gin.H{
+					"id":          tokenID,
+					"name":        "updated-mock-token",
+					"value":       "#000000",
+					"type":        "color",
+					"category":    "primary",
+					"description": "Updated mock color token",
+					"updatedAt":   time.Now(),
+				},
+			})
+		})
+
+		designSystem.DELETE("/tokens/:id", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "Token deleted successfully (mock)",
+			})
+		})
+	}
 }

@@ -4,41 +4,57 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"time"
+	"os"
+	"path/filepath"
 
 	"bome-backend/internal/config"
 
-	_ "github.com/lib/pq"
+	_ "github.com/mattn/go-sqlite3"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 // DB wraps the database connection
 type DB struct {
 	*sql.DB
+	GormDB *gorm.DB // Add GORM support for design system features
 }
 
 // New creates a new database connection
 func New(cfg *config.Config) (*DB, error) {
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSSLMode)
+	// Use SQLite for development
+	dbPath := "./data/bome.db"
 
-	db, err := sql.Open("postgres", dsn)
+	// Create data directory if it doesn't exist
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		return nil, fmt.Errorf("failed to create data directory: %w", err)
+	}
+
+	db, err := sql.Open("sqlite3", dbPath+"?_foreign_keys=on&_journal_mode=WAL")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Configure connection pool
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
+	// Configure connection pool for SQLite
+	db.SetMaxOpenConns(1) // SQLite works best with single connection
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0) // No connection lifetime limit for SQLite
 
 	// Test the connection
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	log.Println("Database connection established")
+	// Initialize GORM with the same database file
+	gormDB, err := gorm.Open(sqlite.Open(dbPath+"?_foreign_keys=on&_journal_mode=WAL"), &gorm.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize GORM: %w", err)
+	}
 
-	return &DB{db}, nil
+	log.Printf("SQLite database connection established: %s", dbPath)
+	log.Printf("GORM database connection established successfully")
+
+	return &DB{DB: db, GormDB: gormDB}, nil
 }
 
 // Close closes the database connection
@@ -53,9 +69,9 @@ func (db *DB) RunMigrations() error {
 	// Create migrations table if it doesn't exist
 	createMigrationsTable := `
 		CREATE TABLE IF NOT EXISTS migrations (
-			id SERIAL PRIMARY KEY,
-			name VARCHAR(255) NOT NULL UNIQUE,
-			applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 	`
 
@@ -91,7 +107,7 @@ func (db *DB) RunMigrations() error {
 
 		// Check if migration already applied
 		var count int
-		err := db.QueryRow("SELECT COUNT(*) FROM migrations WHERE name = $1", migrationName).Scan(&count)
+		err := db.QueryRow("SELECT COUNT(*) FROM migrations WHERE name = ?", migrationName).Scan(&count)
 		if err != nil {
 			return fmt.Errorf("failed to check migration status: %w", err)
 		}
@@ -103,7 +119,7 @@ func (db *DB) RunMigrations() error {
 			}
 
 			// Record migration
-			if _, err := db.Exec("INSERT INTO migrations (name) VALUES ($1)", migrationName); err != nil {
+			if _, err := db.Exec("INSERT INTO migrations (name) VALUES (?)", migrationName); err != nil {
 				return fmt.Errorf("failed to record migration: %w", err)
 			}
 
@@ -123,110 +139,110 @@ func (db *DB) RunMigrations() error {
 // Migration SQL statements
 const createUsersTable = `
 CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    first_name VARCHAR(100),
-    last_name VARCHAR(100),
-    role VARCHAR(50) DEFAULT 'user',
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    first_name TEXT,
+    last_name TEXT,
+    role TEXT DEFAULT 'user',
     email_verified BOOLEAN DEFAULT FALSE,
-    stripe_customer_id VARCHAR(255),
-    reset_token VARCHAR(255),
-    reset_token_expiry TIMESTAMP,
-    verification_token VARCHAR(255),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    stripe_customer_id TEXT,
+    reset_token TEXT,
+    reset_token_expiry DATETIME,
+    verification_token TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 
 const createVideosTable = `
 CREATE TABLE IF NOT EXISTS videos (
-    id SERIAL PRIMARY KEY,
-    title VARCHAR(255) NOT NULL,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
     description TEXT,
-    bunny_video_id VARCHAR(255) UNIQUE NOT NULL,
-    thumbnail_url VARCHAR(500),
+    bunny_video_id TEXT UNIQUE NOT NULL,
+    thumbnail_url TEXT,
     duration INTEGER,
-    file_size BIGINT,
-    status VARCHAR(50) DEFAULT 'processing',
-    category VARCHAR(100),
-    tags TEXT[],
+    file_size INTEGER,
+    status TEXT DEFAULT 'processing',
+    category TEXT,
+    tags TEXT,
     view_count INTEGER DEFAULT 0,
     like_count INTEGER DEFAULT 0,
     created_by INTEGER REFERENCES users(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 
 const createSubscriptionsTable = `
 CREATE TABLE IF NOT EXISTS subscriptions (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    stripe_subscription_id VARCHAR(255) UNIQUE NOT NULL,
-    stripe_price_id VARCHAR(255) NOT NULL,
-    status VARCHAR(50) NOT NULL,
-    current_period_start TIMESTAMP,
-    current_period_end TIMESTAMP,
+    stripe_subscription_id TEXT UNIQUE NOT NULL,
+    stripe_price_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    current_period_start DATETIME,
+    current_period_end DATETIME,
     cancel_at_period_end BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 
 const createCommentsTable = `
 CREATE TABLE IF NOT EXISTS comments (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
     parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 
 const createLikesTable = `
 CREATE TABLE IF NOT EXISTS likes (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, video_id)
 );
 `
 
 const createFavoritesTable = `
 CREATE TABLE IF NOT EXISTS favorites (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, video_id)
 );
 `
 
 const createUserActivityTable = `
 CREATE TABLE IF NOT EXISTS user_activity (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    activity_type VARCHAR(50) NOT NULL,
+    activity_type TEXT NOT NULL,
     video_id INTEGER REFERENCES videos(id) ON DELETE SET NULL,
-    metadata JSONB,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    metadata TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 
 const createAdminLogsTable = `
 CREATE TABLE IF NOT EXISTS admin_logs (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     admin_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    action VARCHAR(100) NOT NULL,
-    resource_type VARCHAR(50),
+    action TEXT NOT NULL,
+    resource_type TEXT,
     resource_id INTEGER,
-    details JSONB,
-    ip_address INET,
+    details TEXT,
+    ip_address TEXT,
     user_agent TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `

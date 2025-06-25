@@ -115,6 +115,7 @@
 						id="password"
 						bind:value={password}
 						placeholder="Enter your password"
+						autocomplete="new-password"
 						required
 					/>
 				</div>
@@ -126,6 +127,7 @@
 						id="confirmPassword"
 						bind:value={confirmPassword}
 						placeholder="Confirm your password"
+						autocomplete="new-password"
 						required
 					/>
 				</div>
