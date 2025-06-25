@@ -1,291 +1,157 @@
-# BOME - Book of Mormon Evidence Hub
-**A Comprehensive Streaming Platform for Book of Mormon Research and Education**
+# BOME
+Book of Mormon Evidence Streaming Site
 
-[![License: All Rights Reserved](https://img.shields.io/badge/License-All%20Rights%20Reserved-red.svg)](./LICENSE)
-[![Go Version](https://img.shields.io/badge/Go-1.24.3-blue.svg)](https://golang.org/)
-[![Svelte](https://img.shields.io/badge/Svelte-5.0-orange.svg)](https://svelte.dev/)
-[![Status](https://img.shields.io/badge/Status-Development-green.svg)](https://github.com/yourusername/bome)
 
-## 🎯 Project Overview
+# BOME Documentation
 
-BOME (Book of Mormon Evidences) is a sophisticated full-stack streaming platform designed as a comprehensive hub for Book of Mormon research, education, and community engagement. The platform features three integrated subsites providing diverse content and services for scholars, researchers, and the general public.
+Welcome to the comprehensive documentation for the Book of Mormon Evidences (BOME) streaming platform. This documentation covers all aspects of the platform including technical implementation, user guides, and operational procedures.
 
-### 🏛️ Three Core Subsites
+## 📚 Documentation Structure
 
-#### 📚 Articles Hub (`/articles`)
-- **Purpose**: Comprehensive research articles and scholarly content
-- **Features**: 18 curated articles, 8 categories, 25 research tags, 6 expert authors
-- **Content**: Archaeological evidence, linguistic analysis, historical research, scientific studies
-- **Status**: ✅ **COMPLETE** - Fully functional with search, filtering, and author profiles
+### Technical Documentation
+- **[API Documentation](./docs/api/README.md)** - Complete REST API reference and integration guides
+- **[Deployment Guide](./docs/deployment/README.md)** - Step-by-step deployment and infrastructure setup
+- **[Code Documentation](./docs/code/README.md)** - Code structure, patterns, and development guidelines
+- **[Security Documentation](./docs/security/README.md)** - Security implementation and best practices
+- **[Database Schema](./docs/database/README.md)** - Database design and schema documentation
+- **[Third-Party Integrations](./docs/third-party-integrations.md)** - External service integrations
 
-#### 🎥 Streaming Platform (`/videos` & `/youtube`)
-- **Purpose**: Educational video content and live streaming
-- **Features**: Bunny.net CDN integration, YouTube channel integration, advanced video player
-- **Content**: 25+ videos with HLS streaming, categories, comments, analytics
-- **Status**: ✅ **COMPLETE** - Production-ready with seamless API transition path
+### User Documentation
+- **[User Guide](./docs/user/README.md)** - Complete user manual for the BOME platform
+- **[Admin Documentation](./docs/admin/README.md)** - Administrator guide and dashboard usage
+- **[FAQ](./docs/faq/README.md)** - Frequently asked questions and answers
+- **[Support Documentation](./docs/support/README.md)** - Support procedures and help resources
 
-#### 🎪 Events & Tours (`/events`)
-- **Purpose**: Educational events, conferences, and guided tours
-- **Features**: Event registration, ticketing, venue management, speaker coordination
-- **Content**: Academic conferences, site tours, workshops, lectures
-- **Status**: 🔄 **PLANNED** - UI complete, backend integration pending
-
-### 🎯 Target Audience
-- **Academic Researchers**: Scholars studying Book of Mormon historicity
-- **Educational Institutions**: Universities, seminaries, and religious schools
-- **General Public**: Individuals interested in Book of Mormon evidence and research
-- **Content Creators**: Researchers and educators contributing original content
-
-## 🛠️ Technology Stack
-
-### Frontend Architecture
-- **Framework**: SvelteKit 2.16.0 with TypeScript
-- **Styling**: Custom CSS design system with glass morphism effects
-- **State Management**: Svelte stores with intelligent caching
-- **Build Tool**: Vite 6.2.6 with optimized bundling
-- **Testing**: Vitest 3.2.4 with comprehensive test coverage
-
-### Backend Architecture
-- **Language**: Go 1.24.3 with modern patterns
-- **Framework**: Gin web framework with middleware
-- **Database**: SQLite (development) / PostgreSQL (production)
-- **Caching**: Redis with intelligent cache management
-- **Authentication**: JWT with role-based access control
-
-### Infrastructure & Services
-- **Video Streaming**: Bunny.net CDN with HLS support
-- **Payments**: Stripe integration for subscriptions
-- **Cloud Storage**: Digital Ocean Spaces for backups
-- **Email Service**: SendGrid for notifications
-- **Analytics**: Custom analytics system with real-time tracking
-- **Deployment**: Docker containers with Nginx reverse proxy
-
-### Third-Party Integrations
-- **YouTube Data API v3**: Production-ready integration path
-- **Stripe Payments**: Subscription management and billing
-- **Bunny.net**: Video streaming and CDN services
-- **Digital Ocean**: Cloud infrastructure and storage
-
-## 📁 Project Structure
-
-```
-BOME/
-├── frontend/                    # Svelte frontend application
-│   ├── src/
-│   │   ├── routes/
-│   │   │   ├── articles/       # Articles subsite (COMPLETE)
-│   │   │   ├── videos/         # Streaming subsite (COMPLETE)
-│   │   │   ├── youtube/        # YouTube integration (COMPLETE)
-│   │   │   ├── events/         # Events subsite (UI COMPLETE)
-│   │   │   ├── admin/          # Admin dashboard (95% complete)
-│   │   │   └── dashboard/      # User dashboard
-│   │   ├── lib/
-│   │   │   ├── components/     # Reusable UI components
-│   │   │   ├── services/       # API services and integrations
-│   │   │   ├── stores/         # State management
-│   │   │   └── types/          # TypeScript definitions
-│   │   └── app.css            # Custom design system
-│   └── package.json
-├── backend/                     # Go backend application
-│   ├── internal/
-│   │   ├── routes/             # API route handlers
-│   │   ├── services/           # Business logic services
-│   │   ├── database/           # Database models and migrations
-│   │   ├── middleware/         # HTTP middleware
-│   │   ├── config/             # Configuration management
-│   │   └── MOCK_DATA/          # Development mock data
-│   ├── go.mod                  # Go dependencies
-│   └── main.go                 # Application entry point
-├── docs/                        # Comprehensive documentation
-├── deployment/                  # Docker and deployment configs
-├── scripts/                     # Build and utility scripts
-└── docker-compose.yml          # Multi-service orchestration
-```
+### Development Resources
+- **[Project Structure](./PROJECT_STRUCTURE.md)** - Complete project organization and structure
+- **[Infrastructure Setup](./docs/INFRASTRUCTURE_SETUP.md)** - Development environment setup
+- **[IDE Setup](./docs/IDE_SETUP.md)** - IDE configuration and development tools
+- **[Git Workflow](./GIT_WORKFLOW.md)** - Version control and collaboration guidelines
 
 ## 🚀 Quick Start
 
+### For Developers
+1. Review the [Code Documentation](./docs/code/README.md) for development guidelines and patterns
+2. Follow the [Infrastructure Setup](./docs/INFRASTRUCTURE_SETUP.md) for environment configuration
+3. Check the [Project Structure](./PROJECT_STRUCTURE.md) to understand the codebase organization
+4. Use the [API Documentation](./docs/api/README.md) for integration work
+5. Follow the [Git Workflow](./GIT_WORKFLOW.md) for contribution guidelines
+
+### For Administrators
+1. Begin with the [Admin Documentation](./docs/admin/README.md) to understand the dashboard
+2. Review the [Deployment Guide](./docs/deployment/README.md) for production setup
+3. Familiarize yourself with [Support Procedures](./docs/support/README.md)
+4. Understand [Security Documentation](./docs/security/README.md)
+
+### For Users
+1. Start with the [User Guide](./docs/user/README.md) for platform basics
+2. Check the [FAQ](./docs/faq/README.md) for common questions
+3. Visit the [Support Documentation](./docs/support/README.md) for assistance
+
+### For Support Staff
+1. Review [Support Procedures](./docs/support/README.md) for handling user issues
+2. Use the [Admin Documentation](./docs/admin/README.md) for administrative tasks
+3. Reference the [FAQ](./docs/faq/README.md) for common user questions
+
+## 🔧 Platform Overview
+
+**BOME** is a comprehensive streaming platform built with modern technologies:
+
+### Technology Stack
+- **Frontend**: Svelte/SvelteKit with custom CSS design system
+- **Backend**: Go with RESTful APIs
+- **Database**: PostgreSQL with Redis caching
+- **Video Streaming**: Bunny.net CDN
+- **Payments**: Stripe integration
+- **Infrastructure**: Digital Ocean with Docker containers
+- **Monitoring**: Comprehensive logging and analytics
+
+### Key Features
+- 🎥 High-quality video streaming with adaptive bitrates
+- 💳 Subscription-based access with multiple tiers
+- 👥 User account management and profiles
+- 📊 Comprehensive admin dashboard with advertising system
+- 🔒 Enterprise-grade security and compliance
+- 📱 Responsive design for all devices
+- 🚀 Production-ready deployment infrastructure
+- 📺 YouTube integration with webhook system
+- 📰 Complete articles and blog system
+- 🎯 Advanced advertising management platform
+
+## 📋 Documentation Standards
+
+All documentation follows these standards:
+- **Clear Structure**: Logical organization with proper headings
+- **Step-by-Step Instructions**: Detailed procedures with examples
+- **Visual Aids**: Screenshots, diagrams, and code examples
+- **Regular Updates**: Documentation updated with each release
+- **Accessibility**: Content accessible to all skill levels
+- **Searchable**: Properly indexed and cross-referenced
+
+## 🆘 Getting Help
+
+### For Technical Issues
+- Check the [Code Documentation](./docs/code/README.md) for development patterns
+- Review [API Documentation](./docs/api/README.md) for integration issues
+- Consult [Infrastructure Setup](./docs/INFRASTRUCTURE_SETUP.md) for environment problems
+
+### For User Issues
+- Start with the [FAQ](./docs/faq/README.md)
+- Check the [User Guide](./docs/user/README.md)
+- Contact [Support](./docs/support/README.md)
+
+### For Administrative Issues
+- Review [Admin Documentation](./docs/admin/README.md)
+- Check [Deployment Guide](./docs/deployment/README.md)
+- Reference [Security Documentation](./docs/security/README.md)
+
+## 📝 Contributing to Documentation
+
+To improve this documentation:
+1. Follow the existing structure and style
+2. Include practical examples and screenshots
+3. Test all procedures before documenting
+4. Keep content current with platform updates
+5. Use clear, concise language
+
+## 🏗️ Development Environment
+
+### Quick Setup
+```bash
+# Clone the repository
+git clone https://github.com/your-org/BOME.git
+cd BOME
+
+# Backend setup
+cd backend
+cp env.example .env
+# Configure your .env file
+go mod tidy
+go run main.go
+
+# Frontend setup (new terminal)
+cd frontend
+npm install
+npm run dev
+```
+
 ### Prerequisites
-- **Go 1.24.3+** for backend development
+- **Go 1.21+** for backend development
 - **Node.js 18+** for frontend development
-- **Docker & Docker Compose** for containerized deployment
-- **Git** for version control
+- **PostgreSQL 15+** for database (optional for development)
+- **Redis 7+** for caching (optional for development)
 
-### Development Setup
+## 📊 Documentation Metrics
 
-1. **Clone the Repository**
-   ```bash
-   git clone https://github.com/yourusername/bome.git
-   cd bome
-   ```
-
-2. **Backend Setup**
-   ```bash
-   cd backend
-   cp env.example .env          # Configure environment variables
-   go mod download              # Install Go dependencies
-   go run main.go              # Start backend server (port 8080)
-   ```
-
-3. **Frontend Setup**
-   ```bash
-   cd frontend
-   npm install                  # Install Node dependencies
-   npm run dev                 # Start development server (port 5173)
-   ```
-
-4. **Access the Application**
-   - **Frontend**: http://localhost:5173
-   - **Backend API**: http://localhost:8080
-   - **Admin Dashboard**: http://localhost:5173/admin
-
-### Production Deployment
-
-1. **Docker Compose (Recommended)**
-   ```bash
-   cp .env.example .env         # Configure production environment
-   docker-compose up -d         # Start all services
-   ```
-
-2. **Manual Deployment**
-   ```bash
-   # Backend
-   cd backend && go build -o bome-backend
-   ./bome-backend
-
-   # Frontend
-   cd frontend && npm run build
-   # Serve dist/ with your preferred web server
-   ```
-
-## 🎨 Design System
-
-BOME features a modern, custom CSS design system with:
-
-- **Glass Morphism Effects**: Subtle transparency and backdrop blur
-- **Neumorphic Elements**: Soft shadows and depth
-- **Responsive Grid Layouts**: Mobile-first design approach
-- **Custom CSS Properties**: Consistent theming and spacing
-- **Smooth Animations**: 0.4s cubic-bezier transitions
-- **Accessibility**: WCAG 2.1 AA compliance
-
-### Color Palette
-- **Primary**: Glass morphism with transparency
-- **Secondary**: Subtle accent colors
-- **Success**: #43E97B (Green)
-- **Warning**: #FFAB00 (Amber)
-- **Error**: #FF5630 (Red)
-
-## 📊 Current Development Status
-
-### Overall Completion: **85%**
-
-#### ✅ Completed Systems
-- **Articles Subsite**: 100% complete with 18 articles, search, filtering
-- **Streaming Platform**: 100% complete with Bunny.net integration
-- **YouTube Integration**: 100% complete with production-ready API path
-- **Admin Dashboard**: 95% complete with comprehensive management
-- **Analytics System**: 95% complete with real-time tracking
-- **Role Management**: 100% complete with 18 roles and permissions
-- **Advertisement System**: 95% complete with campaign management
-
-#### 🔄 In Progress
-- **Events Subsite**: UI complete, backend integration pending
-- **API Integration**: Replacing mock data with live endpoints
-- **Analytics Optimization**: Performance enhancements
-
-#### 📋 Planned Features
-- **Roku App**: Cross-platform streaming application
-- **Mobile Apps**: iOS and Android applications
-- **Advanced Search**: AI-powered content discovery
-- **Community Features**: User forums and discussions
-
-## 🔧 Key Features
-
-### Content Management
-- **Rich Text Editor**: Advanced article creation and editing
-- **Video Upload**: Direct integration with Bunny.net CDN
-- **Media Library**: Centralized asset management
-- **SEO Optimization**: Meta tags and structured data
-
-### User Experience
-- **Responsive Design**: Optimized for all devices
-- **Progressive Web App**: Offline functionality
-- **Real-time Updates**: WebSocket integration
-- **Advanced Search**: Multi-faceted content discovery
-
-### Administration
-- **Role-Based Access**: 18 predefined roles with granular permissions
-- **Analytics Dashboard**: Comprehensive usage and performance metrics
-- **Content Moderation**: Review and approval workflows
-- **System Monitoring**: Health checks and performance tracking
-
-### Security & Performance
-- **JWT Authentication**: Secure token-based authentication
-- **Rate Limiting**: API protection and abuse prevention
-- **Caching Strategy**: Multi-layer caching for optimal performance
-- **Data Encryption**: Secure data storage and transmission
-
-## 📚 Documentation
-
-### Technical Documentation
-- **[API Reference](./docs/api/README.md)** - Complete REST API documentation
-- **[Architecture Guide](./docs/architecture/README.md)** - System design and patterns
-- **[Deployment Guide](./docs/deployment/README.md)** - Production deployment instructions
-- **[Development Guide](./docs/development/README.md)** - Development setup and guidelines
-
-### User Documentation
-- **[User Manual](./docs/user/README.md)** - Complete platform usage guide
-- **[Admin Guide](./docs/admin/README.md)** - Administrative dashboard manual
-- **[Content Creator Guide](./docs/creator/README.md)** - Content creation and management
-
-## 🤝 Contributing
-
-We welcome contributions from the community! Please see our [Contributing Guidelines](./CONTRIBUTING.md) for details on:
-
-- Code style and standards
-- Pull request process
-- Issue reporting
-- Development workflow
-
-### Development Workflow
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project and all its contents are proprietary and confidential. All rights are reserved by the copyright holder.
-
-**Copyright © 2024 BOME Development Team. All Rights Reserved.**
-
-No part of this software, including but not limited to source code, documentation, assets, or any other materials, may be:
-- Used, copied, modified, or distributed without explicit written permission
-- Reverse engineered, decompiled, or disassembled
-- Used for commercial or non-commercial purposes
-- Incorporated into other projects or derivative works
-
-For licensing inquiries, please contact: licensing@bome.example.com
-
-## 🔗 Links
-
-- **Live Demo**: [https://bome.example.com](https://bome.example.com)
-- **Documentation**: [https://docs.bome.example.com](https://docs.bome.example.com)
-- **API Reference**: [https://api.bome.example.com/docs](https://api.bome.example.com/docs)
-- **Issue Tracker**: [GitHub Issues](https://github.com/yourusername/bome/issues)
-
-## 📞 Support
-
-For support and questions:
-
-- **Email**: support@bome.example.com
-- **Documentation**: Check our comprehensive docs
-- **GitHub Issues**: Report bugs and feature requests
-- **Community**: Join our discussion forums
+- **Total Documents**: 15+ major sections
+- **Coverage**: Complete platform coverage
+- **Maintenance**: Updated with each release
+- **Accessibility**: Multi-level content for all users
 
 ---
 
-**BOME** - Advancing Book of Mormon research through technology and scholarship.
+**Last Updated**: December 2024 
+**Version**: 2.0.0  
+**Maintained By**: BOME Development Team
 
-*Last Updated: December 2024 | Version: 1.0.0 | Maintained by: BOME Development Team*
+For development questions, start with the [Code Documentation](./docs/code/README.md). 
