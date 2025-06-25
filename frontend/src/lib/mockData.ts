@@ -561,8 +561,8 @@ export const MOCK_USERS = [
 	{
 		id: 1,
 		email: "admin@bome.com",
-		firstName: "Admin",
-		lastName: "User",
+		firstName: "Aaron",
+		lastName: "Gusa",
 		role: "admin",
 		emailVerified: true,
 		createdAt: "2024-01-01T00:00:00Z",

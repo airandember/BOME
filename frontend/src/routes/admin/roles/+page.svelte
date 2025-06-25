@@ -781,6 +781,10 @@
 		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 	}
 
+	option {
+		color: var(--gray-900);
+	}
+
 	/* Tab Content */
 	.tab-content {
 		background: var(--bg-glass);

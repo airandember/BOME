@@ -3,8 +3,28 @@
 	import { api } from '$lib/auth';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import { analyticsService } from '$lib/services/analytics';
+	import type { AnalyticsResponse, RealTimeMetrics, SystemHealth } from '$lib/services/analytics';
 
 	interface Analytics {
+		metadata: {
+			last_updated: string;
+			version: string;
+		};
+		real_time: {
+			current_active_users: number;
+			page_views_last_minute: number;
+			current_streams: number;
+			server_load: number;
+			bandwidth_usage: string;
+			recent_signups: number;
+			recent_subscriptions: number;
+			error_rate: number;
+			response_time: number;
+			events_last_minute: any[];
+			live_events: any[];
+			top_content_now: any[];
+		};
 		users: {
 			total: number;
 			new_today: number;
@@ -14,6 +34,9 @@
 			growth_rate: number;
 			churn_rate: number;
 			retention_rate: number;
+			daily_active: Record<string, number>;
+			weekly_active: Record<string, number>;
+			monthly_active: Record<string, number>;
 		};
 		videos: {
 			total: number;
@@ -25,6 +48,9 @@
 			total_comments: number;
 			total_shares: number;
 			avg_rating: number;
+			views: Record<string, any>;
+			engagement: Record<string, any>;
+			completion_rates: Record<string, any>;
 			top_categories: Array<{
 				name: string;
 				count: number;
@@ -49,6 +75,7 @@
 				count: number;
 				revenue: number;
 			}>;
+			history: Record<string, any>;
 		};
 		engagement: {
 			avg_watch_time: string;
@@ -59,8 +86,10 @@
 			bounce_rate: number;
 			session_duration: string;
 			pages_per_session: number;
+			daily_stats: Record<string, any>;
+			hourly_stats: Record<string, any>;
 		};
-		system: {
+		system_health: {
 			uptime: string;
 			response_time: string;
 			error_rate: string;
@@ -69,6 +98,8 @@
 			cdn_hits: string;
 			database_size: string;
 			active_sessions: number;
+			last_write: string;
+			total_events_tracked: number;
 		};
 		geographic: {
 			top_countries: Array<{
@@ -81,6 +112,7 @@
 				users: number;
 				percentage: number;
 			}>;
+			daily_distribution: Record<string, any>;
 		};
 		devices: {
 			desktop: {
@@ -137,7 +169,11 @@
 				retention_30d: number;
 				retention_90d: number;
 			}>;
+			daily_conversion: Record<string, any>;
 		};
+		events: any[];
+		page_views: Record<string, any>;
+		user_interactions: Record<string, any>;
 	}
 
 	interface RealTimeData {
@@ -160,35 +196,109 @@
 		}>;
 	}
 
-	let analytics: Analytics | null = null;
-	let realTimeData: RealTimeData | null = null;
+	let analytics: AnalyticsResponse = {
+		metadata: {
+			last_updated: new Date().toISOString(),
+			version: '1.0'
+		},
+		real_time: {
+			active_users: 0,
+			current_active_users: 0,
+			page_views_last_minute: 0,
+			current_streams: 0,
+			server_load: 0,
+			bandwidth_usage: '0 MB/s',
+			recent_signups: 0,
+			recent_subscriptions: 0,
+			error_rate: 0,
+			response_time: 0,
+			events_last_minute: [],
+			live_events: [],
+			top_content_now: []
+		},
+		system_health: {
+			uptime: '0 minutes',
+			response_time: '0ms',
+			error_rate: '0%',
+			storage_used: '0 GB',
+			bandwidth_used: '0 MB/s',
+			cdn_hits: '0',
+			database_size: '0 GB',
+			active_sessions: 0,
+			last_write: new Date().toISOString(),
+			total_events_tracked: 0
+		}
+	} as AnalyticsResponse;
+
+	let realTimeData: RealTimeMetrics | null = null;
 	let loading = true;
 	let selectedPeriod = '7d';
 	let selectedView = 'overview';
-	let realTimeInterval: number;
+	let realTimeInterval: NodeJS.Timeout;
 
 	// Chart data
 	let chartData: any = null;
 
 	onMount(() => {
 		loadAnalytics();
-		loadRealTimeData();
 		
-		// Update real-time data every 30 seconds
-		realTimeInterval = setInterval(loadRealTimeData, 30000);
-	});
+		// Subscribe to real-time metrics
+		analyticsService.subscribeToMetrics([
+			'active_users',
+			'current_streams',
+			'server_load',
+			'bandwidth_usage',
+			'recent_signups',
+			'recent_subscriptions',
+			'error_rate',
+			'response_time',
+			'events_last_minute',
+			'live_events',
+			'top_content_now'
+		]);
 
-	onDestroy(() => {
-		if (realTimeInterval) {
-			clearInterval(realTimeInterval);
-		}
+		const handleAnalyticsUpdate = (event: CustomEvent<RealTimeMetrics>) => {
+			analytics.real_time = {
+				...analytics.real_time,
+				...event.detail
+			};
+		};
+
+		const handleSystemHealthUpdate = (event: CustomEvent<SystemHealth>) => {
+			analytics.system_health = {
+				...analytics.system_health,
+				...event.detail
+			};
+		};
+
+		// Listen for real-time updates
+		window.addEventListener('analytics-update', handleAnalyticsUpdate as EventListener);
+		window.addEventListener('system-health-update', handleSystemHealthUpdate as EventListener);
+
+		return () => {
+			// Cleanup
+			analyticsService.unsubscribeFromMetrics([
+				'active_users',
+				'current_streams',
+				'server_load',
+				'bandwidth_usage',
+				'recent_signups',
+				'recent_subscriptions',
+				'error_rate',
+				'response_time',
+				'events_last_minute',
+				'live_events',
+				'top_content_now'
+			]);
+			window.removeEventListener('analytics-update', handleAnalyticsUpdate as EventListener);
+			window.removeEventListener('system-health-update', handleSystemHealthUpdate as EventListener);
+		};
 	});
 
 	async function loadAnalytics() {
 		try {
 			loading = true;
-			const response = await api.get(`/api/v1/admin/analytics/overview?period=${selectedPeriod}`);
-			analytics = response.analytics;
+			analytics = await analyticsService.getAnalytics(selectedPeriod);
 			
 			// Process data for charts
 			if (analytics?.time_series) {
@@ -206,37 +316,18 @@
 		}
 	}
 
-	async function loadRealTimeData() {
-		try {
-			const response = await api.get('/api/v1/admin/analytics/realtime');
-			realTimeData = response.real_time;
-		} catch (error) {
-			console.error('Error loading real-time data:', error);
-		}
-	}
-
 	async function exportData(format: 'csv' | 'json') {
 		try {
-			const response = await fetch(`/api/v1/admin/analytics/export?format=${format}&period=${selectedPeriod}`, {
-				headers: {
-					'Authorization': `Bearer ${localStorage.getItem('token')}`
-				}
-			});
-			
-			if (response.ok) {
-				const blob = await response.blob();
-				const url = window.URL.createObjectURL(blob);
-				const a = document.createElement('a');
-				a.href = url;
-				a.download = `analytics_export.${format}`;
-				document.body.appendChild(a);
-				a.click();
-				window.URL.revokeObjectURL(url);
-				document.body.removeChild(a);
-				showToast(`Analytics exported as ${format.toUpperCase()}`, 'success');
-			} else {
-				showToast('Failed to export analytics', 'error');
-			}
+			const blob = await analyticsService.exportAnalytics(format, selectedPeriod);
+			const url = window.URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `analytics_export.${format}`;
+			document.body.appendChild(a);
+			a.click();
+			window.URL.revokeObjectURL(url);
+			document.body.removeChild(a);
+			showToast(`Analytics exported as ${format.toUpperCase()}`, 'success');
 		} catch (error) {
 			showToast('Failed to export analytics', 'error');
 			console.error('Error exporting analytics:', error);
@@ -381,29 +472,32 @@
 						</svg>
 					</div>
 					<div class="metric-content">
-						<h3>Current Streams</h3>
+						<h3>Live Streams</h3>
 						<div class="metric-value">{formatNumber(realTimeData.current_streams)}</div>
 					</div>
 				</div>
 				
 				<div class="realtime-card glass">
-					<div class="metric-icon server-load">
+					<div class="metric-icon server">
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-							<line x1="8" y1="21" x2="16" y2="21"></line>
-							<line x1="12" y1="17" x2="12" y2="21"></line>
+							<rect x="2" y="3" width="20" height="4" rx="1" ry="1"></rect>
+							<rect x="2" y="9" width="20" height="4" rx="1" ry="1"></rect>
+							<rect x="2" y="15" width="20" height="4" rx="1" ry="1"></rect>
+							<line x1="6" y1="5" x2="6.01" y2="5"></line>
+							<line x1="6" y1="11" x2="6.01" y2="11"></line>
+							<line x1="6" y1="17" x2="6.01" y2="17"></line>
 						</svg>
 					</div>
 					<div class="metric-content">
 						<h3>Server Load</h3>
-						<div class="metric-value">{formatPercentage(realTimeData.server_load)}</div>
+						<div class="metric-value">{(realTimeData.server_load * 100).toFixed(1)}%</div>
 					</div>
 				</div>
 				
 				<div class="realtime-card glass">
 					<div class="metric-icon bandwidth">
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-2.3M22 12.5a10 10 0 0 1-18.8 2.3"></path>
+							<polyline points="22,12 18,12 15,21 9,3 6,12 2,12"></polyline>
 						</svg>
 					</div>
 					<div class="metric-content">
@@ -413,33 +507,32 @@
 				</div>
 			</div>
 			
-			<!-- Live Events Feed -->
-			<div class="live-events-section">
-				<div class="live-events glass">
-					<h3>Live Events</h3>
-					<div class="events-list">
-						{#each realTimeData.live_events as event}
-							<div class="event-item">
-								<div class="event-time">{formatTime(event.time)}</div>
-								<div class="event-content">
-									<div class="event-type">{event.event}</div>
-									<div class="event-details">{event.details}</div>
-								</div>
+			<!-- Live Events -->
+			<div class="live-events glass">
+				<h3>Live Activity</h3>
+				<div class="events-list">
+					{#each realTimeData.live_events as event (event.time)}
+						<div class="event-item">
+							<div class="event-time">{formatTime(event.time)}</div>
+							<div class="event-details">
+								<div class="event-type">{event.event}</div>
+								<div class="event-description">{event.details}</div>
 							</div>
-						{/each}
-					</div>
+						</div>
+					{/each}
 				</div>
-				
-				<div class="top-content glass">
-					<h3>Top Content Right Now</h3>
-					<div class="content-list">
-						{#each realTimeData.top_content_now as content}
-							<div class="content-item">
-								<div class="content-title">{content.title}</div>
-								<div class="content-viewers">{content.viewers} viewers</div>
-							</div>
-						{/each}
-					</div>
+			</div>
+			
+			<!-- Top Content Now -->
+			<div class="top-content glass">
+				<h3>Trending Content</h3>
+				<div class="content-list">
+					{#each realTimeData.top_content_now as content (content.title)}
+						<div class="content-item">
+							<div class="content-title">{content.title}</div>
+							<div class="content-viewers">{content.viewers} viewers</div>
+						</div>
+					{/each}
 				</div>
 			</div>
 		</div>
@@ -597,11 +690,12 @@
 			</div>
 		</div>
 	{:else if analytics}
-		<!-- Overview Analytics View (existing content) -->
-		<div class="metrics-grid">
-			<!-- User Metrics -->
-			<div class="metric-card glass">
-				<div class="metric-header">
+		<!-- Overview Analytics View -->
+		<div class="overview-dashboard">
+			<!-- Top Metrics Cards -->
+			<div class="metrics-grid">
+				<!-- User Metrics -->
+				<div class="metric-card glass user-metrics">
 					<div class="metric-icon users">
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 							<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -610,65 +704,66 @@
 							<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
 						</svg>
 					</div>
-					<h3>Total Users</h3>
+					<div class="metric-content">
+						<h3>Total Users</h3>
+						<div class="metric-value">{formatNumber(analytics.users?.total || 0)}</div>
+						<div class="metric-label">
+							{analytics.users?.new_today || 0} new today
+						</div>
+					</div>
 				</div>
-				<div class="metric-value">{formatNumber(analytics.users.total)}</div>
-				<div class="metric-details">
-					<span class="metric-sub">+{analytics.users.new_today} today</span>
-					<span class="metric-trend positive">+{analytics.users.new_week} this week</span>
-				</div>
-			</div>
 
-			<!-- Video Metrics -->
-			<div class="metric-card glass">
-				<div class="metric-header">
+				<!-- Video Metrics -->
+				<div class="metric-card glass video-metrics">
 					<div class="metric-icon videos">
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 							<polygon points="23,7 16,12 23,17 23,7"></polygon>
 							<rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
 						</svg>
 					</div>
-					<h3>Total Videos</h3>
+					<div class="metric-content">
+						<h3>Total Videos</h3>
+						<div class="metric-value">{formatNumber(analytics.videos?.total || 0)}</div>
+						<div class="metric-label">
+							{formatNumber(analytics.videos?.total_views || 0)} total views
+						</div>
+					</div>
 				</div>
-				<div class="metric-value">{formatNumber(analytics.videos.total)}</div>
-				<div class="metric-details">
-					<span class="metric-sub">{analytics.videos.published} published</span>
-					<span class="metric-sub">{analytics.videos.pending} pending</span>
-				</div>
-			</div>
 
-			<!-- Revenue Metrics -->
-			<div class="metric-card glass">
-				<div class="metric-header">
+				<!-- Subscription Metrics -->
+				<div class="metric-card glass subscription-metrics">
+					<div class="metric-icon subscriptions">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+							<line x1="16" y1="2" x2="16" y2="6"></line>
+							<line x1="8" y1="2" x2="8" y2="6"></line>
+							<line x1="3" y1="10" x2="21" y2="10"></line>
+						</svg>
+					</div>
+					<div class="metric-content">
+						<h3>Active Subscriptions</h3>
+						<div class="metric-value">{formatNumber(analytics.subscriptions?.active || 0)}</div>
+						<div class="metric-label">
+							{formatCurrency(analytics.subscriptions?.revenue_month || 0)} this month
+						</div>
+					</div>
+				</div>
+
+				<!-- Revenue Metrics -->
+				<div class="metric-card glass revenue-metrics">
 					<div class="metric-icon revenue">
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 							<line x1="12" y1="1" x2="12" y2="23"></line>
 							<path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
 						</svg>
 					</div>
-					<h3>Monthly Revenue</h3>
-				</div>
-				<div class="metric-value">{formatCurrency(analytics.subscriptions.revenue_month)}</div>
-				<div class="metric-details">
-					<span class="metric-sub">{formatCurrency(analytics.subscriptions.revenue_today)} today</span>
-					<span class="metric-trend positive">+{analytics.subscriptions.new_month} subs</span>
-				</div>
-			</div>
-
-			<!-- Engagement Metrics -->
-			<div class="metric-card glass">
-				<div class="metric-header">
-					<div class="metric-icon engagement">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
-						</svg>
+					<div class="metric-content">
+						<h3>Monthly Revenue</h3>
+						<div class="metric-value">{formatCurrency(analytics.subscriptions?.revenue_month || 0)}</div>
+						<div class="metric-label">
+							MRR: {formatCurrency(analytics.subscriptions?.mrr || 0)}
+						</div>
 					</div>
-					<h3>Avg. Watch Time</h3>
-				</div>
-				<div class="metric-value">{analytics.engagement.avg_watch_time}</div>
-				<div class="metric-details">
-					<span class="metric-sub">{formatPercentage(analytics.engagement.completion_rate)} completion</span>
-					<span class="metric-trend positive">{formatPercentage(analytics.engagement.like_ratio)} like ratio</span>
 				</div>
 			</div>
 		</div>
@@ -692,7 +787,7 @@
 				</div>
 				<div class="chart-placeholder">
 					<div class="chart-bars">
-						{#each Array(7) as _, i}
+						{#each Array(7) as _, i (i)}
 							<div class="chart-bar">
 								<div class="bar active" style="height: {Math.random() * 80 + 20}%"></div>
 								<div class="bar new" style="height: {Math.random() * 40 + 10}%"></div>
@@ -719,22 +814,22 @@
 				<div class="performance-stats">
 					<div class="stat-item">
 						<div class="stat-label">Total Views</div>
-						<div class="stat-value">{formatNumber(analytics.videos.total_views)}</div>
+						<div class="stat-value">{formatNumber(analytics.videos?.total_views || 0)}</div>
 						<div class="stat-change positive">+12.5%</div>
 					</div>
 					<div class="stat-item">
 						<div class="stat-label">Total Likes</div>
-						<div class="stat-value">{formatNumber(analytics.videos.total_likes)}</div>
+						<div class="stat-value">{formatNumber(analytics.videos?.total_likes || 0)}</div>
 						<div class="stat-change positive">+8.3%</div>
 					</div>
 					<div class="stat-item">
 						<div class="stat-label">Comments</div>
-						<div class="stat-value">{formatNumber(analytics.videos.total_comments)}</div>
+						<div class="stat-value">{formatNumber(analytics.videos?.total_comments || 0)}</div>
 						<div class="stat-change positive">+15.7%</div>
 					</div>
 					<div class="stat-item">
 						<div class="stat-label">Shares</div>
-						<div class="stat-value">{formatNumber(analytics.engagement.share_count)}</div>
+						<div class="stat-value">{formatNumber(analytics.engagement?.share_count || 0)}</div>
 						<div class="stat-change positive">+22.1%</div>
 					</div>
 				</div>
@@ -756,7 +851,7 @@
 							</svg>
 						</div>
 						<div class="subscription-details">
-							<div class="subscription-value">{formatNumber(analytics.subscriptions.active)}</div>
+							<div class="subscription-value">{formatNumber(analytics.subscriptions?.active || 0)}</div>
 							<div class="subscription-label">Active Subscriptions</div>
 						</div>
 					</div>
@@ -768,7 +863,7 @@
 							</svg>
 						</div>
 						<div class="subscription-details">
-							<div class="subscription-value">{formatCurrency(analytics.subscriptions.revenue_week)}</div>
+							<div class="subscription-value">{formatCurrency(analytics.subscriptions?.revenue_week || 0)}</div>
 							<div class="subscription-label">Weekly Revenue</div>
 						</div>
 					</div>
@@ -780,7 +875,7 @@
 							</svg>
 						</div>
 						<div class="subscription-details">
-							<div class="subscription-value">{analytics.subscriptions.new_week}</div>
+							<div class="subscription-value">{analytics.subscriptions?.new_week || 0}</div>
 							<div class="subscription-label">New This Week</div>
 						</div>
 					</div>
@@ -791,27 +886,27 @@
 			<div class="system-card glass">
 				<div class="system-header">
 					<h3>System Health</h3>
-					<div class="system-status healthy">
+					<div class="system-status {analytics?.system_health?.error_rate === 'N/A' ? 'warning' : 'healthy'}">
 						<div class="status-indicator"></div>
-						Healthy
+						{analytics?.system_health?.error_rate === 'N/A' ? 'Limited Data' : 'Healthy'}
 					</div>
 				</div>
 				<div class="system-metrics">
 					<div class="system-metric">
 						<div class="system-label">Uptime</div>
-						<div class="system-value">{analytics.system.uptime}</div>
+						<div class="system-value">{analytics?.system_health?.uptime || 'N/A'}</div>
 					</div>
 					<div class="system-metric">
 						<div class="system-label">Response Time</div>
-						<div class="system-value">{analytics.system.response_time}</div>
+						<div class="system-value">{analytics?.system_health?.response_time || 'N/A'}</div>
 					</div>
 					<div class="system-metric">
 						<div class="system-label">Error Rate</div>
-						<div class="system-value">{analytics.system.error_rate}</div>
+						<div class="system-value">{analytics?.system_health?.error_rate || 'N/A'}</div>
 					</div>
 					<div class="system-metric">
 						<div class="system-label">Storage Used</div>
-						<div class="system-value">{analytics.system.storage_used}</div>
+						<div class="system-value">{analytics?.system_health?.storage_used || 'N/A'}</div>
 					</div>
 				</div>
 			</div>
@@ -1024,7 +1119,7 @@
 		background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
 	}
 
-	.realtime-card .metric-icon.server-load {
+	.realtime-card .metric-icon.server {
 		background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
 	}
 
@@ -1941,5 +2036,13 @@
 		.view-btn {
 			text-align: center;
 		}
+	}
+
+	.system-status.warning {
+		color: var(--warning);
+	}
+
+	.system-status.warning .status-indicator {
+		background: var(--warning);
 	}
 </style> 

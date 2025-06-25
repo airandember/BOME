@@ -8,7 +8,16 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
+var jwtSecret []byte
+
+func init() {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		// Use a default secret for development mode
+		secret = "bome-development-secret-key-change-in-production"
+	}
+	jwtSecret = []byte(secret)
+}
 
 // Claims represents the JWT claims
 type Claims struct {

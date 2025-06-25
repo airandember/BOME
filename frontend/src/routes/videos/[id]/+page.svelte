@@ -5,6 +5,7 @@
 	import VideoPlayer from '$lib/components/VideoPlayer.svelte';
 	import VideoCard from '$lib/components/VideoCard.svelte';
 	import { auth } from '$lib/auth';
+	import SubscriptionCheck from '$lib/components/SubscriptionCheck.svelte';
 
 	let video: Video | null = null;
 	let relatedVideos: Video[] = [];
@@ -138,137 +139,139 @@
 	<meta name="description" content={video?.description || 'Watch Book of Mormon evidence videos'} />
 </svelte:head>
 
-<div class="video-page">
-	<div class="container">
-		{#if loading}
-			<div class="loading">
-				<div class="loading-spinner"></div>
-				<p>Loading video...</p>
-			</div>
-		{:else if error}
-			<div class="error-message">
-				{error}
-			</div>
-		{:else if video}
-			<div class="video-content">
-				<div class="video-main">
-					<div class="video-player-container">
-						<VideoPlayer 
-							videoUrl={video.videoUrl}
-							poster={video.thumbnailUrl}
-							width="100%"
-							height="600px"
-						/>
-					</div>
-
-					<div class="video-info">
-						<h1 class="video-title">{video.title}</h1>
-						
-						<div class="video-stats">
-							<span class="stat">
-								👁️ {video.viewCount.toLocaleString()} views
-							</span>
-							<span class="stat">
-								❤️ {video.likeCount.toLocaleString()} likes
-							</span>
-							<span class="stat">
-								📅 {formatDate(video.createdAt)}
-							</span>
-						</div>
-
-						<div class="video-actions">
-							<button 
-								class="action-btn {isLiked ? 'liked' : ''}"
-								on:click={handleLike}
-							>
-								{isLiked ? '❤️' : '🤍'} {isLiked ? 'Liked' : 'Like'}
-							</button>
-							<button 
-								class="action-btn {isFavorited ? 'favorited' : ''}"
-								on:click={handleFavorite}
-							>
-								{isFavorited ? '⭐' : '☆'} {isFavorited ? 'Favorited' : 'Favorite'}
-							</button>
-							<button class="action-btn">
-								📤 Share
-							</button>
-						</div>
-
-						<div class="video-description">
-							<h3>Description</h3>
-							<p>{video.description}</p>
-						</div>
-
-						{#if video.tags && video.tags.length > 0}
-							<div class="video-tags">
-								<h3>Tags</h3>
-								<div class="tags">
-									{#each video.tags as tag}
-										<span class="tag">{tag}</span>
-									{/each}
-								</div>
-							</div>
-						{/if}
-					</div>
+<SubscriptionCheck redirectTo="/login" requireSubscription={true}>
+	<div class="video-page">
+		<div class="container">
+			{#if loading}
+				<div class="loading">
+					<div class="loading-spinner"></div>
+					<p>Loading video...</p>
 				</div>
+			{:else if error}
+				<div class="error-message">
+					{error}
+				</div>
+			{:else if video}
+				<div class="video-content">
+					<div class="video-main">
+						<div class="video-player-container">
+							<VideoPlayer 
+								videoUrl={video.videoUrl}
+								poster={video.thumbnailUrl}
+								width="100%"
+								height="600px"
+							/>
+						</div>
 
-				<div class="video-sidebar">
-					<div class="comments-section">
-						<h3>Comments ({comments.length})</h3>
-						
-						{#if isAuthenticated}
-							<div class="comment-form">
-								<textarea
-									bind:value={newComment}
-									placeholder="Add a comment..."
-									rows="3"
-								></textarea>
+						<div class="video-info">
+							<h1 class="video-title">{video.title}</h1>
+							
+							<div class="video-stats">
+								<span class="stat">
+									👁️ {video.viewCount.toLocaleString()} views
+								</span>
+								<span class="stat">
+									❤️ {video.likeCount.toLocaleString()} likes
+								</span>
+								<span class="stat">
+									📅 {formatDate(video.createdAt)}
+								</span>
+							</div>
+
+							<div class="video-actions">
 								<button 
-									class="btn-primary"
-									on:click={handleComment}
-									disabled={submittingComment || !newComment.trim()}
+									class="action-btn {isLiked ? 'liked' : ''}"
+									on:click={handleLike}
 								>
-									{submittingComment ? 'Posting...' : 'Post Comment'}
+									{isLiked ? '❤️' : '🤍'} {isLiked ? 'Liked' : 'Like'}
+								</button>
+								<button 
+									class="action-btn {isFavorited ? 'favorited' : ''}"
+									on:click={handleFavorite}
+								>
+									{isFavorited ? '⭐' : '☆'} {isFavorited ? 'Favorited' : 'Favorite'}
+								</button>
+								<button class="action-btn">
+									📤 Share
 								</button>
 							</div>
-						{:else}
-							<div class="login-prompt">
-								<p>Please <a href="/login">login</a> to add a comment.</p>
-							</div>
-						{/if}
 
-						<div class="comments-list">
-							{#each comments as comment (comment.id)}
-								<div class="comment">
-									<div class="comment-header">
-										<span class="comment-author">{comment.userName}</span>
-										<span class="comment-date">{formatDate(comment.createdAt)}</span>
-									</div>
-									<div class="comment-content">
-										{comment.content}
+							<div class="video-description">
+								<h3>Description</h3>
+								<p>{video.description}</p>
+							</div>
+
+							{#if video.tags && video.tags.length > 0}
+								<div class="video-tags">
+									<h3>Tags</h3>
+									<div class="tags">
+										{#each video.tags as tag}
+											<span class="tag">{tag}</span>
+										{/each}
 									</div>
 								</div>
-							{/each}
+							{/if}
 						</div>
 					</div>
 
-					<div class="related-videos">
-						<h3>Related Videos</h3>
-						<div class="related-grid">
-							{#each relatedVideos as relatedVideo (relatedVideo.id)}
-								<VideoCard 
-									video={relatedVideo} 
-									showCategory={false}
-									showStats={false}
-								/>
-							{/each}
+					<div class="video-sidebar">
+						<div class="comments-section">
+							<h3>Comments ({comments.length})</h3>
+							
+							{#if isAuthenticated}
+								<div class="comment-form">
+									<textarea
+										bind:value={newComment}
+										placeholder="Add a comment..."
+										rows="3"
+									></textarea>
+									<button 
+										class="btn-primary"
+										on:click={handleComment}
+										disabled={submittingComment || !newComment.trim()}
+									>
+										{submittingComment ? 'Posting...' : 'Post Comment'}
+									</button>
+								</div>
+							{:else}
+								<div class="login-prompt">
+									<p>Please <a href="/login">login</a> to add a comment.</p>
+								</div>
+							{/if}
+
+							<div class="comments-list">
+								{#each comments as comment (comment.id)}
+									<div class="comment">
+										<div class="comment-header">
+											<span class="comment-author">{comment.userName}</span>
+											<span class="comment-date">{formatDate(comment.createdAt)}</span>
+										</div>
+										<div class="comment-content">
+											{comment.content}
+										</div>
+									</div>
+								{/each}
+							</div>
+						</div>
+
+						<div class="related-videos">
+							<h3>Related Videos</h3>
+							<div class="related-grid">
+								{#each relatedVideos as relatedVideo (relatedVideo.id)}
+									<VideoCard 
+										video={relatedVideo} 
+										showCategory={false}
+										showStats={false}
+									/>
+								{/each}
+							</div>
 						</div>
 					</div>
 				</div>
-			</div>
-		{/if}
+			{/if}
+		</div>
 	</div>
-</div>
+</SubscriptionCheck>
 
 <style>
 	.video-page {

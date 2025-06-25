@@ -172,176 +172,175 @@ type AdAuditLog struct {
 // Advertisement database migration SQL statements
 const createAdvertiserAccountsTable = `
 CREATE TABLE IF NOT EXISTS advertiser_accounts (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    company_name VARCHAR(255) NOT NULL,
-    business_email VARCHAR(255) UNIQUE NOT NULL,
-    contact_name VARCHAR(255) NOT NULL,
-    contact_phone VARCHAR(50),
+    company_name TEXT NOT NULL,
+    business_email TEXT UNIQUE NOT NULL,
+    contact_name TEXT NOT NULL,
+    contact_phone TEXT,
     business_address TEXT,
-    tax_id VARCHAR(100),
-    website VARCHAR(255),
-    industry VARCHAR(100),
-    status VARCHAR(50) DEFAULT 'pending',
+    tax_id TEXT,
+    website TEXT,
+    industry TEXT,
+    status TEXT DEFAULT 'pending',
     verification_notes TEXT,
-    stripe_customer_id VARCHAR(255),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    stripe_customer_id TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 
 const createAdCampaignsTable = `
 CREATE TABLE IF NOT EXISTS ad_campaigns (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     advertiser_id INTEGER REFERENCES advertiser_accounts(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
+    name TEXT NOT NULL,
     description TEXT,
-    status VARCHAR(50) DEFAULT 'draft',
-    start_date TIMESTAMP NOT NULL,
-    end_date TIMESTAMP NOT NULL,
-    budget DECIMAL(10,2) NOT NULL,
-    spent_amount DECIMAL(10,2) DEFAULT 0,
+    status TEXT DEFAULT 'draft',
+    start_date DATETIME NOT NULL,
+    end_date DATETIME NOT NULL,
+    budget REAL NOT NULL,
+    spent_amount REAL DEFAULT 0,
     target_audience TEXT,
-    billing_type VARCHAR(50) DEFAULT 'weekly',
-    billing_rate DECIMAL(10,2) NOT NULL,
+    billing_type TEXT DEFAULT 'weekly',
+    billing_rate REAL NOT NULL,
     approval_notes TEXT,
-    approved_by INTEGER REFERENCES users(id),
-    approved_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    approved_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 
 const createAdvertisementsTable = `
 CREATE TABLE IF NOT EXISTS advertisements (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     campaign_id INTEGER REFERENCES ad_campaigns(id) ON DELETE CASCADE,
-    title VARCHAR(255) NOT NULL,
+    title TEXT NOT NULL,
     content TEXT,
-    image_url VARCHAR(500),
-    click_url VARCHAR(500) NOT NULL,
-    ad_type VARCHAR(50) NOT NULL,
-    width INTEGER NOT NULL,
-    height INTEGER NOT NULL,
+    image_url TEXT,
+    click_url TEXT NOT NULL,
+    ad_type TEXT DEFAULT 'banner',
+    width INTEGER DEFAULT 728,
+    height INTEGER DEFAULT 90,
     priority INTEGER DEFAULT 1,
-    status VARCHAR(50) DEFAULT 'active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    status TEXT DEFAULT 'active',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 
 const createAdPlacementsTable = `
 CREATE TABLE IF NOT EXISTS ad_placements (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
     description TEXT,
-    location VARCHAR(100) NOT NULL,
-    ad_type VARCHAR(50) NOT NULL,
-    max_width INTEGER NOT NULL,
-    max_height INTEGER NOT NULL,
-    base_rate DECIMAL(10,2) NOT NULL,
+    location TEXT NOT NULL,
+    ad_type TEXT DEFAULT 'banner',
+    max_width INTEGER DEFAULT 728,
+    max_height INTEGER DEFAULT 90,
+    base_rate REAL DEFAULT 100.00,
     is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 
 const createAdSchedulesTable = `
 CREATE TABLE IF NOT EXISTS ad_schedules (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     ad_id INTEGER REFERENCES advertisements(id) ON DELETE CASCADE,
     placement_id INTEGER REFERENCES ad_placements(id) ON DELETE CASCADE,
-    start_date TIMESTAMP NOT NULL,
-    end_date TIMESTAMP NOT NULL,
-    days_of_week VARCHAR(20),
-    start_time VARCHAR(10),
-    end_time VARCHAR(10),
+    start_date DATETIME NOT NULL,
+    end_date DATETIME NOT NULL,
+    days_of_week TEXT,
+    start_time TEXT,
+    end_time TEXT,
     weight INTEGER DEFAULT 1,
     is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 
 const createAdAnalyticsTable = `
 CREATE TABLE IF NOT EXISTS ad_analytics (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     ad_id INTEGER REFERENCES advertisements(id) ON DELETE CASCADE,
-    date DATE NOT NULL,
-    impressions BIGINT DEFAULT 0,
-    clicks BIGINT DEFAULT 0,
-    unique_views BIGINT DEFAULT 0,
-    view_duration BIGINT DEFAULT 0,
-    revenue DECIMAL(10,2) DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(ad_id, date)
+    date DATETIME NOT NULL,
+    impressions INTEGER DEFAULT 0,
+    clicks INTEGER DEFAULT 0,
+    unique_views INTEGER DEFAULT 0,
+    view_duration INTEGER DEFAULT 0,
+    revenue REAL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 
 const createAdClicksTable = `
 CREATE TABLE IF NOT EXISTS ad_clicks (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     ad_id INTEGER REFERENCES advertisements(id) ON DELETE CASCADE,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    ip_address INET NOT NULL,
+    ip_address TEXT,
     user_agent TEXT,
-    referrer VARCHAR(500),
-    clicked_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    referrer TEXT,
+    clicked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 
 const createAdImpressionsTable = `
 CREATE TABLE IF NOT EXISTS ad_impressions (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     ad_id INTEGER REFERENCES advertisements(id) ON DELETE CASCADE,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    ip_address INET NOT NULL,
+    ip_address TEXT,
     user_agent TEXT,
     view_duration INTEGER DEFAULT 0,
-    viewed_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    viewed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 
 const createAdBillingTable = `
 CREATE TABLE IF NOT EXISTS ad_billing (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     campaign_id INTEGER REFERENCES ad_campaigns(id) ON DELETE CASCADE,
     advertiser_id INTEGER REFERENCES advertiser_accounts(id) ON DELETE CASCADE,
-    billing_period VARCHAR(50) NOT NULL,
-    period_start TIMESTAMP NOT NULL,
-    period_end TIMESTAMP NOT NULL,
-    amount DECIMAL(10,2) NOT NULL,
-    tax_amount DECIMAL(10,2) DEFAULT 0,
-    total_amount DECIMAL(10,2) NOT NULL,
-    status VARCHAR(50) DEFAULT 'pending',
-    stripe_invoice_id VARCHAR(255),
-    payment_intent_id VARCHAR(255),
-    paid_at TIMESTAMP,
-    due_date TIMESTAMP NOT NULL,
-    invoice_url VARCHAR(500),
+    billing_period TEXT NOT NULL,
+    period_start DATETIME NOT NULL,
+    period_end DATETIME NOT NULL,
+    amount REAL NOT NULL,
+    tax_amount REAL DEFAULT 0,
+    total_amount REAL NOT NULL,
+    status TEXT DEFAULT 'pending',
+    stripe_invoice_id TEXT,
+    payment_intent_id TEXT,
+    paid_at DATETIME,
+    due_date DATETIME NOT NULL,
+    invoice_url TEXT,
     notes TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 
 const createAdAuditLogTable = `
 CREATE TABLE IF NOT EXISTS ad_audit_log (
-    id SERIAL PRIMARY KEY,
-    entity_type VARCHAR(50) NOT NULL,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
     entity_id INTEGER NOT NULL,
-    action VARCHAR(100) NOT NULL,
-    actor_id INTEGER REFERENCES users(id),
-    actor_type VARCHAR(50) NOT NULL,
-    old_values JSONB,
-    new_values JSONB,
-    ip_address INET,
+    action TEXT NOT NULL,
+    actor_id INTEGER NOT NULL,
+    actor_type TEXT DEFAULT 'user',
+    old_values TEXT,
+    new_values TEXT,
+    ip_address TEXT,
     user_agent TEXT,
     description TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 

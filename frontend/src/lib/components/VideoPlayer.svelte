@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, createEventDispatcher } from 'svelte';
 	import { videoUtils } from '$lib/video';
+	import { analytics } from '$lib/services/analytics';
 
 	export let videoUrl: string;
 	export let poster: string = '';
@@ -19,6 +20,10 @@
 	let isMuted = false;
 	let showControls = true;
 	let controlsTimeout: number;
+	let videoId: string;
+	let quarterWatched = false;
+	let halfWatched = false;
+	let threeQuartersWatched = false;
 
 	onMount(() => {
 		if (videoElement) {
@@ -37,20 +42,56 @@
 
 	function handleTimeUpdate() {
 		currentTime = videoElement.currentTime;
+		const progress = Math.round((currentTime / duration) * 100);
+		
+		// Track progress at 25%, 50%, 75%
+		if (progress >= 25 && !quarterWatched) {
+			quarterWatched = true;
+			analytics.trackVideoEvent(videoId, 'progress', {
+				milestone: '25%',
+				currentTime,
+				duration
+			});
+		} else if (progress >= 50 && !halfWatched) {
+			halfWatched = true;
+			analytics.trackVideoEvent(videoId, 'progress', {
+				milestone: '50%',
+				currentTime,
+				duration
+			});
+		} else if (progress >= 75 && !threeQuartersWatched) {
+			threeQuartersWatched = true;
+			analytics.trackVideoEvent(videoId, 'progress', {
+				milestone: '75%',
+				currentTime,
+				duration
+			});
+		}
 		dispatch('timeupdate', { currentTime, duration });
 	}
 
 	function handleEnded() {
+		analytics.trackVideoEvent(videoId, 'complete', {
+			duration: videoElement.duration || 0
+		});
 		isPlaying = false;
 		dispatch('ended');
 	}
 
 	function handlePlay() {
+		analytics.trackVideoEvent(videoId, 'play', {
+			currentTime: videoElement.currentTime || 0,
+			duration: videoElement.duration || 0
+		});
 		isPlaying = true;
 		dispatch('play');
 	}
 
 	function handlePause() {
+		analytics.trackVideoEvent(videoId, 'pause', {
+			currentTime: videoElement.currentTime || 0,
+			duration: videoElement.duration || 0
+		});
 		isPlaying = false;
 		dispatch('pause');
 	}

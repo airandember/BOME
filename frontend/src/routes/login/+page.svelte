@@ -73,6 +73,7 @@
 					id="password"
 					bind:value={password}
 					placeholder="Enter your password"
+					autocomplete="current-password"
 					required
 				/>
 			</div>
