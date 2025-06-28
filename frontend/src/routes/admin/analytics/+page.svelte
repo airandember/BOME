@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { browser } from '$app/environment';
 	import { api } from '$lib/auth';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
@@ -227,75 +228,171 @@
 			active_sessions: 0,
 			last_write: new Date().toISOString(),
 			total_events_tracked: 0
-		}
-	} as AnalyticsResponse;
+		},
+		users: {
+			total: 0,
+			new_today: 0,
+			new_week: 0,
+			new_month: 0,
+			active_today: 0,
+			growth_rate: 0,
+			churn_rate: 0,
+			retention_rate: 0,
+			daily_active: {},
+			weekly_active: {},
+			monthly_active: {}
+		},
+		videos: {
+			total: 0,
+			published: 0,
+			pending: 0,
+			draft: 0,
+			total_views: 0,
+			total_likes: 0,
+			total_comments: 0,
+			total_shares: 0,
+			avg_rating: 0,
+			views: {},
+			engagement: {},
+			completion_rates: {},
+			top_categories: []
+		},
+		subscriptions: {
+			active: 0,
+			new_today: 0,
+			new_week: 0,
+			new_month: 0,
+			cancelled: 0,
+			revenue_today: 0,
+			revenue_week: 0,
+			revenue_month: 0,
+			revenue_year: 0,
+			mrr: 0,
+			arr: 0,
+			ltv: 0,
+			plans: [],
+			history: {}
+		},
+		engagement: {
+			avg_watch_time: '0m',
+			completion_rate: 0,
+			like_ratio: 0,
+			comment_rate: 0,
+			share_count: 0,
+			bounce_rate: 0,
+			session_duration: '0m',
+			pages_per_session: 0,
+			daily_stats: {},
+			hourly_stats: {}
+		},
+		geographic: {
+			top_countries: [],
+			top_states: [],
+			daily_distribution: {}
+		},
+		devices: {
+			desktop: { users: 0, percentage: 0, avg_session: '0m' },
+			mobile: { users: 0, percentage: 0, avg_session: '0m' },
+			tablet: { users: 0, percentage: 0, avg_session: '0m' },
+			browsers: []
+		},
+		time_series: {
+			users: [],
+			revenue: [],
+			engagement: []
+		},
+		conversion: {
+			funnel: [],
+			cohort_analysis: [],
+			daily_conversion: {}
+		},
+		events: [],
+		page_views: {},
+		user_interactions: {}
+	};
 
 	let realTimeData: RealTimeMetrics | null = null;
 	let loading = true;
 	let selectedPeriod = '7d';
 	let selectedView = 'overview';
-	let realTimeInterval: NodeJS.Timeout;
+	let realTimeInterval: NodeJS.Timeout | undefined;
 
 	// Chart data
 	let chartData: any = null;
 
 	onMount(() => {
-		loadAnalytics();
-		
-		// Subscribe to real-time metrics
-		analyticsService.subscribeToMetrics([
-			'active_users',
-			'current_streams',
-			'server_load',
-			'bandwidth_usage',
-			'recent_signups',
-			'recent_subscriptions',
-			'error_rate',
-			'response_time',
-			'events_last_minute',
-			'live_events',
-			'top_content_now'
-		]);
+		// Only run analytics in browser environment
+		if (browser) {
+			loadAnalytics();
+			
+			// Subscribe to real-time metrics only in browser
+			try {
+				analyticsService.subscribeToMetrics([
+					'active_users',
+					'current_streams',
+					'server_load',
+					'bandwidth_usage',
+					'recent_signups',
+					'recent_subscriptions',
+					'error_rate',
+					'response_time',
+					'events_last_minute',
+					'live_events',
+					'top_content_now'
+				]);
 
-		const handleAnalyticsUpdate = (event: CustomEvent<RealTimeMetrics>) => {
-			analytics.real_time = {
-				...analytics.real_time,
-				...event.detail
-			};
-		};
+				// Set up event listeners for real-time updates
+				const handleAnalyticsUpdate = (event: CustomEvent) => {
+					if (event.detail) {
+						realTimeData = event.detail;
+					}
+				};
 
-		const handleSystemHealthUpdate = (event: CustomEvent<SystemHealth>) => {
-			analytics.system_health = {
-				...analytics.system_health,
-				...event.detail
-			};
-		};
+				const handleSystemHealthUpdate = (event: CustomEvent) => {
+					if (event.detail) {
+						analytics.system_health = { ...analytics.system_health, ...event.detail };
+					}
+				};
 
-		// Listen for real-time updates
-		window.addEventListener('analytics-update', handleAnalyticsUpdate as EventListener);
-		window.addEventListener('system-health-update', handleSystemHealthUpdate as EventListener);
+				window.addEventListener('analytics-update', handleAnalyticsUpdate as EventListener);
+				window.addEventListener('system-health-update', handleSystemHealthUpdate as EventListener);
 
-		return () => {
-			// Cleanup
-			analyticsService.unsubscribeFromMetrics([
-				'active_users',
-				'current_streams',
-				'server_load',
-				'bandwidth_usage',
-				'recent_signups',
-				'recent_subscriptions',
-				'error_rate',
-				'response_time',
-				'events_last_minute',
-				'live_events',
-				'top_content_now'
-			]);
-			window.removeEventListener('analytics-update', handleAnalyticsUpdate as EventListener);
-			window.removeEventListener('system-health-update', handleSystemHealthUpdate as EventListener);
-		};
+				// Cleanup function
+				return () => {
+					analyticsService.unsubscribeFromMetrics([
+						'active_users',
+						'current_streams',
+						'server_load',
+						'bandwidth_usage',
+						'recent_signups',
+						'recent_subscriptions',
+						'error_rate',
+						'response_time',
+						'events_last_minute',
+						'live_events',
+						'top_content_now'
+					]);
+					window.removeEventListener('analytics-update', handleAnalyticsUpdate as EventListener);
+					window.removeEventListener('system-health-update', handleSystemHealthUpdate as EventListener);
+				};
+			} catch (error) {
+				console.error('Failed to set up analytics subscriptions:', error);
+			}
+		} else {
+			// For SSR, just set loading to false
+			loading = false;
+		}
+	});
+
+	onDestroy(() => {
+		if (browser && realTimeInterval) {
+			clearInterval(realTimeInterval);
+		}
 	});
 
 	async function loadAnalytics() {
+		if (!browser) return;
+		
 		try {
 			loading = true;
 			analytics = await analyticsService.getAnalytics(selectedPeriod);
@@ -317,6 +414,8 @@
 	}
 
 	async function exportData(format: 'csv' | 'json') {
+		if (!browser) return;
+		
 		try {
 			const blob = await analyticsService.exportAnalytics(format, selectedPeriod);
 			const url = window.URL.createObjectURL(blob);
