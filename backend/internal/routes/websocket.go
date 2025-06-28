@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,12 +48,29 @@ var (
 // WebSocketHandler handles WebSocket connections for real-time analytics
 func WebSocketHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Check for authentication token in query parameters
+		token := c.Query("token")
+		if token != "" {
+			// For now, just verify it's not empty - in production, validate against user database
+			// This is mock authentication matching the frontend's mock token system
+			if token != "mock-admin-token-1750747949368" && !strings.HasPrefix(token, "mock-admin-token") {
+				log.Printf("WebSocket authentication failed for token: %s", token[:10]+"...")
+				c.JSON(401, gin.H{"error": "Unauthorized"})
+				return
+			}
+			log.Printf("WebSocket authenticated with token: %s", token[:10]+"...")
+		} else {
+			log.Printf("WebSocket connection without authentication token")
+		}
+
 		// Upgrade HTTP connection to WebSocket
 		ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
 			log.Printf("Failed to upgrade connection: %v", err)
 			return
 		}
+
+		log.Printf("WebSocket connection established from %s", c.ClientIP())
 
 		// Initialize connection
 		connMutex.Lock()
@@ -87,6 +105,7 @@ func WebSocketHandler() gin.HandlerFunc {
 
 		// Clean up on disconnect
 		defer func() {
+			log.Printf("WebSocket connection closed from %s", c.ClientIP())
 			connMutex.Lock()
 			delete(connections, ws)
 			connMutex.Unlock()

@@ -1457,15 +1457,10 @@ func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
 	router.PUT("/placements/:id", middleware.AuthMiddleware(), UpdateAdPlacementHandler(db))
 
 	// Design System Routes
-	if db != nil && db.GormDB != nil {
-		log.Println("Registering design system routes...")
-		DesignSystemRoutes(router, db.GormDB)
-		log.Println("Design system routes registered successfully")
-	} else {
-		log.Println("Registering mock design system routes...")
-		SetupMockDesignSystemRoutes(router)
-		log.Println("Mock design system routes registered successfully")
-	}
+	// Temporarily disabled for debugging
+	log.Println("Skipping design system routes for debugging...")
+	// SetupMockDesignSystemRoutes(router)
+	log.Println("Design system routes skipped")
 }
 
 // SetupMockDesignSystemRoutes sets up mock design system routes for development
