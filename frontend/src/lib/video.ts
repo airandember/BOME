@@ -1,4 +1,4 @@
-import { api } from './auth';
+import { apiRequest } from './auth';
 import { 
 	MOCK_VIDEOS, 
 	MOCK_CATEGORIES, 
@@ -55,7 +55,7 @@ export const videoService = {
 			if (category) params.append('category', category);
 			if (search) params.append('search', search);
 			
-			const response = await api.get(`/api/v1/videos?${params.toString()}`);
+			const response = await apiRequest(`/videos?${params.toString()}`);
 			return response;
 		} catch (error) {
 			console.warn('API call failed, using mock data:', error);
@@ -66,7 +66,7 @@ export const videoService = {
 	// Get a single video by ID
 	getVideo: async (id: number) => {
 		try {
-			const response = await api.get(`/api/v1/videos/${id}`);
+			const response = await apiRequest(`/videos/${id}`);
 			return response;
 		} catch (error) {
 			console.warn('API call failed, using mock data:', error);
@@ -77,7 +77,7 @@ export const videoService = {
 	// Get video stream URL
 	getVideoStream: async (id: number) => {
 		try {
-			const response = await api.get(`/api/v1/videos/${id}/stream`);
+			const response = await apiRequest(`/videos/${id}/stream`);
 			return response;
 		} catch (error) {
 			console.warn('API call failed, using mock data:', error);
@@ -119,7 +119,7 @@ export const videoService = {
 	// Get video categories
 	getCategories: async () => {
 		try {
-			const response = await api.get('/api/v1/videos/categories');
+			const response = await apiRequest('/videos/categories');
 			return response;
 		} catch (error) {
 			console.warn('API call failed, using mock data:', error);
@@ -136,7 +136,7 @@ export const videoService = {
 				limit: limit.toString()
 			});
 			
-			const response = await api.get(`/api/v1/videos/search?${params.toString()}`);
+			const response = await apiRequest(`/videos/search?${params.toString()}`);
 			return response;
 		} catch (error) {
 			console.warn('API call failed, using mock data:', error);
@@ -147,7 +147,10 @@ export const videoService = {
 	// Like a video
 	likeVideo: async (id: number) => {
 		try {
-			const response = await api.post(`/api/v1/videos/${id}/like`, {});
+			const response = await apiRequest(`/videos/${id}/like`, {
+				method: 'POST',
+				body: JSON.stringify({})
+			});
 			return response;
 		} catch (error) {
 			console.warn('API call failed, using mock response:', error);
@@ -158,7 +161,9 @@ export const videoService = {
 	// Unlike a video
 	unlikeVideo: async (id: number) => {
 		try {
-			const response = await api.delete(`/api/v1/videos/${id}/like`);
+			const response = await apiRequest(`/videos/${id}/like`, {
+				method: 'DELETE'
+			});
 			return response;
 		} catch (error) {
 			console.warn('API call failed, using mock response:', error);
@@ -169,7 +174,10 @@ export const videoService = {
 	// Add to favorites
 	favoriteVideo: async (id: number) => {
 		try {
-			const response = await api.post(`/api/v1/videos/${id}/favorite`, {});
+			const response = await apiRequest(`/videos/${id}/favorite`, {
+				method: 'POST',
+				body: JSON.stringify({})
+			});
 			return response;
 		} catch (error) {
 			console.warn('API call failed, using mock response:', error);
@@ -180,7 +188,9 @@ export const videoService = {
 	// Remove from favorites
 	unfavoriteVideo: async (id: number) => {
 		try {
-			const response = await api.delete(`/api/v1/videos/${id}/favorite`);
+			const response = await apiRequest(`/videos/${id}/favorite`, {
+				method: 'DELETE'
+			});
 			return response;
 		} catch (error) {
 			console.warn('API call failed, using mock response:', error);
@@ -196,7 +206,7 @@ export const videoService = {
 				limit: limit.toString()
 			});
 			
-			const response = await api.get(`/api/v1/videos/${id}/comments?${params.toString()}`);
+			const response = await apiRequest(`/videos/${id}/comments?${params.toString()}`);
 			return response;
 		} catch (error) {
 			console.warn('API call failed, using mock data:', error);
@@ -204,27 +214,21 @@ export const videoService = {
 		}
 	},
 
-	// Add a comment
+	// Add a comment to a video
 	addComment: async (id: number, content: string) => {
 		try {
-			const response = await api.post(`/api/v1/videos/${id}/comment`, { content });
+			const response = await apiRequest(`/videos/${id}/comment`, {
+				method: 'POST',
+				body: JSON.stringify({ content })
+			});
 			return response;
 		} catch (error) {
 			console.warn('API call failed, using mock response:', error);
-			const newComment: VideoComment = {
-				id: Date.now(),
-				videoId: id,
-				userId: 1,
-				userName: 'Current User',
-				content,
-				createdAt: new Date().toISOString()
-			};
-			MOCK_COMMENTS.unshift(newComment);
-			return createMockResponse({ success: true, comment: newComment }, 300);
+			return createMockResponse({ success: true, message: 'Comment added' }, 200);
 		}
 	},
 
-	// Get user favorites
+	// Get user's favorite videos
 	getFavorites: async (page = 1, limit = 20) => {
 		try {
 			const params = new URLSearchParams({
@@ -232,21 +236,11 @@ export const videoService = {
 				limit: limit.toString()
 			});
 			
-			const response = await api.get(`/api/v1/users/favorites?${params.toString()}`);
+			const response = await apiRequest(`/users/favorites?${params.toString()}`);
 			return response;
 		} catch (error) {
 			console.warn('API call failed, using mock data:', error);
-			// Return first 5 videos as favorites for demo
-			const favoriteVideos = MOCK_VIDEOS.slice(0, 5);
-			return createMockResponse({
-				videos: favoriteVideos,
-				pagination: {
-					page,
-					limit,
-					total: favoriteVideos.length,
-					totalPages: 1
-				}
-			});
+			return createMockResponse(getMockVideos(page, limit));
 		}
 	},
 
@@ -272,7 +266,7 @@ export const videoService = {
 				if (filters.sort) params.append('sort', filters.sort);
 				if (filters.order) params.append('order', filters.order);
 				
-				const response = await api.get(`/api/v1/admin/videos?${params.toString()}`);
+				const response = await apiRequest(`/admin/videos?${params.toString()}`);
 				return response;
 			} catch (error) {
 				console.warn('API call failed, using mock data:', error);
@@ -283,7 +277,7 @@ export const videoService = {
 		// Get video statistics
 		getStats: async () => {
 			try {
-				const response = await api.get('/api/v1/admin/videos/stats');
+				const response = await apiRequest('/admin/videos/stats');
 				return response;
 			} catch (error) {
 				console.warn('API call failed, using mock data:', error);
@@ -294,7 +288,7 @@ export const videoService = {
 		// Get video categories for admin
 		getCategories: async () => {
 			try {
-				const response = await api.get('/api/v1/admin/videos/categories');
+				const response = await apiRequest('/admin/videos/categories');
 				return response;
 			} catch (error) {
 				console.warn('API call failed, using mock data:', error);
@@ -305,7 +299,7 @@ export const videoService = {
 		// Get pending videos
 		getPendingVideos: async () => {
 			try {
-				const response = await api.get('/api/v1/admin/videos/pending');
+				const response = await apiRequest('/admin/videos/pending');
 				return response;
 			} catch (error) {
 				console.warn('API call failed, using mock data:', error);
@@ -357,7 +351,10 @@ export const videoService = {
 			tags?: string[];
 		}) => {
 			try {
-				const response = await api.put(`/api/v1/admin/videos/${id}`, data);
+				const response = await apiRequest(`/admin/videos/${id}`, {
+					method: 'PUT',
+					body: JSON.stringify(data)
+				});
 				return response;
 			} catch (error) {
 				console.warn('API call failed, using mock response:', error);
@@ -368,7 +365,9 @@ export const videoService = {
 		// Delete a video
 		deleteVideo: async (id: number) => {
 			try {
-				const response = await api.delete(`/api/v1/admin/videos/${id}`);
+				const response = await apiRequest(`/admin/videos/${id}`, {
+					method: 'DELETE'
+				});
 				return response;
 			} catch (error) {
 				console.warn('API call failed, using mock response:', error);
@@ -379,7 +378,10 @@ export const videoService = {
 		// Approve a video
 		approveVideo: async (id: number) => {
 			try {
-				const response = await api.post(`/api/v1/admin/videos/${id}/approve`, {});
+				const response = await apiRequest(`/admin/videos/${id}/approve`, {
+					method: 'POST',
+					body: JSON.stringify({})
+				});
 				return response;
 			} catch (error) {
 				console.warn('API call failed, using mock response:', error);
@@ -390,7 +392,10 @@ export const videoService = {
 		// Reject a video
 		rejectVideo: async (id: number) => {
 			try {
-				const response = await api.post(`/api/v1/admin/videos/${id}/reject`, {});
+				const response = await apiRequest(`/admin/videos/${id}/reject`, {
+					method: 'POST',
+					body: JSON.stringify({})
+				});
 				return response;
 			} catch (error) {
 				console.warn('API call failed, using mock response:', error);
@@ -401,9 +406,12 @@ export const videoService = {
 		// Bulk operations
 		bulkOperation: async (operation: 'publish' | 'unpublish' | 'delete', videoIds: number[]) => {
 			try {
-				const response = await api.post('/api/v1/admin/videos/bulk', {
-					operation,
-					video_ids: videoIds
+				const response = await apiRequest(`/admin/videos/bulk`, {
+					method: 'POST',
+					body: JSON.stringify({
+						operation,
+						video_ids: videoIds
+					})
 				});
 				return response;
 			} catch (error) {
@@ -418,8 +426,11 @@ export const videoService = {
 		// Content scheduling
 		scheduleVideo: async (id: number, publishDate: string) => {
 			try {
-				const response = await api.post(`/api/v1/admin/videos/${id}/schedule`, {
-					publish_date: publishDate
+				const response = await apiRequest(`/admin/videos/${id}/schedule`, {
+					method: 'POST',
+					body: JSON.stringify({
+						publish_date: publishDate
+					})
 				});
 				return response;
 			} catch (error) {
@@ -431,7 +442,9 @@ export const videoService = {
 		// Unschedule video
 		unscheduleVideo: async (id: number) => {
 			try {
-				const response = await api.delete(`/api/v1/admin/videos/${id}/schedule`);
+				const response = await apiRequest(`/admin/videos/${id}/schedule`, {
+					method: 'DELETE'
+				});
 				return response;
 			} catch (error) {
 				console.warn('API call failed, using mock response:', error);
@@ -442,7 +455,7 @@ export const videoService = {
 		// Get scheduled videos
 		getScheduledVideos: async () => {
 			try {
-				const response = await api.get('/api/v1/admin/videos/scheduled');
+				const response = await apiRequest('/admin/videos/scheduled');
 				return response;
 			} catch (error) {
 				console.warn('API call failed, using mock data:', error);

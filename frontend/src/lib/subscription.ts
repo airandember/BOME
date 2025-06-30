@@ -1,4 +1,4 @@
-import { api } from './auth';
+import { apiRequest } from './auth';
 
 export interface SubscriptionPlan {
 	id: string;
@@ -62,59 +62,89 @@ export interface Refund {
 export const subscriptionService = {
 	// Get available subscription plans
 	getPlans: async () => {
-		return api.get('/api/v1/subscriptions/plans');
+		const response = await apiRequest('/subscriptions/plans');
+		return response.json();
 	},
 
 	// Get current user's subscription
 	getCurrentSubscription: async () => {
-		return api.get('/api/v1/subscriptions/current');
+		const response = await apiRequest('/subscriptions/current');
+		return response.json();
 	},
 
 	// Create a new subscription
 	createSubscription: async (planId: string, paymentMethodId: string) => {
-		return api.post('/api/v1/subscriptions', {
-			planId,
-			paymentMethodId
+		const response = await apiRequest('/subscriptions', {
+			method: 'POST',
+			body: JSON.stringify({
+				planId,
+				paymentMethodId
+			})
 		});
+		return response.json();
 	},
 
 	// Cancel subscription
 	cancelSubscription: async (subscriptionId: string, cancelAtPeriodEnd: boolean = true) => {
-		return api.post(`/api/v1/subscriptions/${subscriptionId}/cancel`, {
-			cancelAtPeriodEnd
+		const response = await apiRequest(`/subscriptions/${subscriptionId}/cancel`, {
+			method: 'POST',
+			body: JSON.stringify({
+				cancelAtPeriodEnd
+			})
 		});
+		return response.json();
 	},
 
 	// Reactivate subscription
 	reactivateSubscription: async (subscriptionId: string) => {
-		return api.post(`/api/v1/subscriptions/${subscriptionId}/reactivate`, {});
+		const response = await apiRequest(`/subscriptions/${subscriptionId}/reactivate`, {
+			method: 'POST',
+			body: JSON.stringify({})
+		});
+		return response.json();
 	},
 
 	// Update subscription (change plan)
 	updateSubscription: async (subscriptionId: string, planId: string) => {
-		return api.put(`/api/v1/subscriptions/${subscriptionId}`, {
-			planId
+		const response = await apiRequest(`/subscriptions/${subscriptionId}`, {
+			method: 'PUT',
+			body: JSON.stringify({
+				planId
+			})
 		});
+		return response.json();
 	},
 
 	// Get payment methods
 	getPaymentMethods: async () => {
-		return api.get('/api/v1/payment-methods');
+		const response = await apiRequest('/payment-methods');
+		return response.json();
 	},
 
 	// Add payment method
 	addPaymentMethod: async (paymentMethodData: any) => {
-		return api.post('/api/v1/payment-methods', paymentMethodData);
+		const response = await apiRequest('/payment-methods', {
+			method: 'POST',
+			body: JSON.stringify(paymentMethodData)
+		});
+		return response.json();
 	},
 
 	// Remove payment method
 	removePaymentMethod: async (paymentMethodId: string) => {
-		return api.delete(`/api/v1/payment-methods/${paymentMethodId}`);
+		const response = await apiRequest(`/payment-methods/${paymentMethodId}`, {
+			method: 'DELETE'
+		});
+		return response.json();
 	},
 
 	// Set default payment method
 	setDefaultPaymentMethod: async (paymentMethodId: string) => {
-		return api.post(`/api/v1/payment-methods/${paymentMethodId}/default`, {});
+		const response = await apiRequest(`/payment-methods/${paymentMethodId}/default`, {
+			method: 'POST',
+			body: JSON.stringify({})
+		});
+		return response.json();
 	},
 
 	// Get billing history
@@ -124,33 +154,44 @@ export const subscriptionService = {
 			limit: limit.toString()
 		});
 		
-		return api.get(`/api/v1/billing/history?${params.toString()}`);
+		const response = await apiRequest(`/billing/history?${params.toString()}`);
+		return response.json();
 	},
 
 	// Get specific invoice
 	getInvoice: async (invoiceId: string) => {
-		return api.get(`/api/v1/billing/invoices/${invoiceId}`);
+		const response = await apiRequest(`/billing/invoices/${invoiceId}`);
+		return response.json();
 	},
 
 	// Download invoice
 	downloadInvoice: async (invoiceId: string) => {
-		return api.get(`/api/v1/billing/invoices/${invoiceId}/download`);
+		const response = await apiRequest(`/billing/invoices/${invoiceId}/download`);
+		return response.json();
 	},
 
 	// Create checkout session for Stripe
 	createCheckoutSession: async (planId: string, successUrl: string, cancelUrl: string) => {
-		return api.post('/api/v1/subscriptions/checkout', {
-			planId,
-			successUrl,
-			cancelUrl
+		const response = await apiRequest('/subscriptions/checkout', {
+			method: 'POST',
+			body: JSON.stringify({
+				planId,
+				successUrl,
+				cancelUrl
+			})
 		});
+		return response.json();
 	},
 
 	// Create customer portal session
 	createCustomerPortalSession: async (returnUrl: string) => {
-		return api.post('/api/v1/subscriptions/portal', {
-			returnUrl
+		const response = await apiRequest('/subscriptions/portal', {
+			method: 'POST',
+			body: JSON.stringify({
+				returnUrl
+			})
 		});
+		return response.json();
 	},
 
 	// Get customer refunds
@@ -159,21 +200,27 @@ export const subscriptionService = {
 			limit: limit.toString()
 		});
 		
-		return api.get(`/api/v1/billing/refunds?${params.toString()}`);
+		const response = await apiRequest(`/billing/refunds?${params.toString()}`);
+		return response.json();
 	},
 
 	// Get specific refund
 	getRefund: async (refundId: string) => {
-		return api.get(`/api/v1/billing/refunds/${refundId}`);
+		const response = await apiRequest(`/billing/refunds/${refundId}`);
+		return response.json();
 	},
 
 	// Create refund
 	createRefund: async (paymentIntentId: string, amount?: number, reason?: string) => {
-		return api.post('/api/v1/billing/refunds', {
-			payment_intent_id: paymentIntentId,
-			amount: amount,
-			reason: reason || 'requested_by_customer'
+		const response = await apiRequest('/billing/refunds', {
+			method: 'POST',
+			body: JSON.stringify({
+				payment_intent_id: paymentIntentId,
+				amount: amount,
+				reason: reason || 'requested_by_customer'
+			})
 		});
+		return response.json();
 	}
 };
 

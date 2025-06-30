@@ -40,7 +40,12 @@
 		loading = true;
 		error = '';
 
-		const result = await auth.register(email, password, firstName, lastName);
+		const result = await auth.register({
+			email,
+			password,
+			first_name: firstName,
+			last_name: lastName
+		});
 		
 		if (result.success) {
 			success = true;

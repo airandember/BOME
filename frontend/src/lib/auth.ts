@@ -1,444 +1,623 @@
-import { writable } from 'svelte/store';
+import { writable, derived } from 'svelte/store';
 import { browser } from '$app/environment';
+import { goto } from '$app/navigation';
+import { page } from '$app/stores';
 import type { Role } from './types/roles';
 
 export interface User {
 	id: number;
 	email: string;
-	firstName: string;
-	lastName: string;
 	role: string;
-	roles?: Role[];
-	emailVerified: boolean;
+	first_name: string;
+	last_name: string;
+	email_verified: boolean;
 }
 
-export interface AuthState {
-	user: User | null;
-	token: string | null;
-	isAuthenticated: boolean;
+export interface AuthTokens {
+	access_token: string;
+	refresh_token: string;
+	expires_in: number;
+	token_type: string;
 }
 
-// Create auth store
-const createAuthStore = () => {
-	const { subscribe, set, update } = writable<AuthState>({
-		user: null,
-		token: null,
-		isAuthenticated: false
+export interface LoginCredentials {
+	email: string;
+	password: string;
+}
+
+export interface RegisterData {
+	email: string;
+	password: string;
+	first_name: string;
+	last_name: string;
+}
+
+export interface AuthError {
+	message: string;
+	code?: string;
+}
+
+// Configuration
+const API_BASE_URL = browser ? (import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1') : '';
+const TOKEN_STORAGE_KEY = 'bome_auth_tokens';
+const USER_STORAGE_KEY = 'bome_user_data';
+
+// Stores
+export const authTokens = writable<AuthTokens | null>(null);
+export const currentUser = writable<User | null>(null);
+export const isAuthenticated = derived(
+	[authTokens, currentUser], 
+	([$tokens, $user]) => !!$tokens && !!$user
+);
+export const isLoading = writable(false);
+export const authError = writable<AuthError | null>(null);
+
+// Create the auth store with methods
+function createAuthStore() {
+	const { subscribe, set, update } = writable({
+		isAuthenticated: false,
+		user: null as User | null,
+		token: null as string | null,
+		loading: false,
+		error: null as string | null
 	});
 
 	return {
 		subscribe,
-		// Computed property for isAuthenticated
-		get isAuthenticated() {
-			let authenticated = false;
-			subscribe(state => {
-				authenticated = state.isAuthenticated;
-			})();
-			return authenticated;
-		},
-		login: async (email: string, password: string) => {
+		set,
+		update,
+		
+		// Authentication methods
+		async login(email: string, password: string) {
 			try {
-				// Mock admin login for testing - support both admin@bome.com and admin@bome.test
-				if ((email === 'admin@bome.com' || email === 'admin@bome.test') && password === 'admin123') {
-					// Import role data for super admin assignment
-					const { MOCK_ROLES } = await import('./mockData/roles');
-					const superAdminRole = MOCK_ROLES.find(r => r.id === 'super-administrator');
-					
-					const user: User = {
-						id: 1,
-						email: email, // Use the provided email
-						firstName: 'Super',
-						lastName: 'Administrator',
-						role: 'admin', // Legacy role field
-						roles: superAdminRole ? [superAdminRole] : [], // New role management system
-						emailVerified: true
-					};
-
-					const mockToken = 'mock-admin-token-' + Date.now();
-					if (browser) {
-						localStorage.setItem('token', mockToken);
-						localStorage.setItem('userData', JSON.stringify(user));
-					}
-
-					set({
-						user,
-						token: mockToken,
-						isAuthenticated: true
-					});
-
-					return { success: true, user };
-				}
-
-				// Mock regular user login for testing
-				if ((email === 'user@bome.com' || email === 'user@bome.test') && password === 'user123') {
-					const user: User = {
-						id: 2,
-						email: email, // Use the provided email
-						firstName: 'User',
-						lastName: 'Account',
-						role: 'user', // Regular user role
-						roles: [], // No special roles for regular user
-						emailVerified: true
-					};
-
-					const mockToken = 'mock-user-token-' + Date.now();
-					if (browser) {
-						localStorage.setItem('token', mockToken);
-						localStorage.setItem('userData', JSON.stringify(user));
-					}
-
-					set({
-						user,
-						token: mockToken,
-						isAuthenticated: true
-					});
-
-					return { success: true, user };
-				}
-
-				// Mock advertiser login for testing - multiple patterns supported
-				if ((email === 'advertiser@bome.com' || email === 'advertiser@bome.test') && password === 'advertiser123') {
-					const user: User = {
-						id: 3,
-						email: email, // Use the provided email
-						firstName: 'Business',
-						lastName: 'Advertiser',
-						role: 'advertiser', // Advertiser role
-						roles: [], // No special roles for regular advertiser
-						emailVerified: true
-					};
-
-					const mockToken = 'mock-advertiser-token-' + Date.now();
-					if (browser) {
-						localStorage.setItem('token', mockToken);
-						localStorage.setItem('userData', JSON.stringify(user));
-					}
-
-					set({
-						user,
-						token: mockToken,
-						isAuthenticated: true
-					});
-
-					return { success: true, user };
-				}
-
-				// Mock business advertiser login - flexible password support
-				if (email === 'business@bome.test' && (password === 'business123' || password === 'advertiser123' || password === 'password123')) {
-					const user: User = {
-						id: 4,
-						email: email, // Use the provided email
-						firstName: 'Business',
-						lastName: 'Owner',
-						role: 'advertiser', // Advertiser role
-						roles: [], // No special roles for regular advertiser
-						emailVerified: true
-					};
-
-					const mockToken = 'mock-advertiser-token-' + Date.now();
-					if (browser) {
-						localStorage.setItem('token', mockToken);
-						localStorage.setItem('userData', JSON.stringify(user));
-					}
-
-					set({
-						user,
-						token: mockToken,
-						isAuthenticated: true
-					});
-
-					return { success: true, user };
-				}
-
-				// Regular API call for other users
-				const response = await fetch('/api/v1/auth/login', {
+				console.log('Auth: Starting login process for:', email);
+				update(state => ({ ...state, loading: true, error: null }));
+				isLoading.set(true);
+				authError.set(null);
+				
+				const response = await apiRequest('/auth/login', {
 					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify({ email, password })
+					body: JSON.stringify({ email, password }),
 				});
-
+				
+				console.log('Auth: Login response status:', response.status);
+				
 				if (!response.ok) {
 					const error = await response.json();
+					console.log('Auth: Login failed with error:', error);
 					throw new Error(error.error || 'Login failed');
 				}
-
+				
 				const data = await response.json();
+				console.log('Auth: Login response data:', data);
+				
+				const tokens: AuthTokens = {
+					access_token: data.access_token,
+					refresh_token: data.refresh_token,
+					expires_in: data.expires_in,
+					token_type: data.token_type
+				};
+				
 				const user: User = {
 					id: data.user.id,
 					email: data.user.email,
-					firstName: data.user.firstName || '',
-					lastName: data.user.lastName || '',
 					role: data.user.role,
-					roles: data.user.roles,
-					emailVerified: data.user.emailVerified || false
+					first_name: data.user.first_name,
+					last_name: data.user.last_name,
+					email_verified: data.user.email_verified
 				};
-
-				// Store token and user data in localStorage
-				if (browser) {
-					localStorage.setItem('token', data.token);
-					localStorage.setItem('userData', JSON.stringify(user));
-				}
-
-				set({
-					user,
-					token: data.token,
-					isAuthenticated: true
-				});
-
+				
+				console.log('Auth: Parsed tokens and user:', { tokens, user });
+				storeAuthData(tokens, user);
+				console.log('Auth: Login successful, returning result');
 				return { success: true, user };
 			} catch (error) {
-				return { success: false, error: (error as Error).message };
+				console.error('Login error:', error);
+				const errorMessage = error instanceof Error ? error.message : 'Login failed';
+				authError.set({
+					message: errorMessage,
+					code: 'LOGIN_FAILED'
+				});
+				update(state => ({ ...state, loading: false, error: errorMessage }));
+				return { success: false, error: errorMessage };
+			} finally {
+				isLoading.set(false);
 			}
 		},
 
-		register: async (email: string, password: string, firstName: string, lastName: string) => {
+		async register(data: RegisterData) {
 			try {
-				const response = await fetch('/api/v1/auth/register', {
+				update(state => ({ ...state, loading: true, error: null }));
+				isLoading.set(true);
+				authError.set(null);
+				
+				const response = await apiRequest('/auth/register', {
 					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify({ email, password, firstName, lastName })
+					body: JSON.stringify(data),
 				});
-
+				
 				if (!response.ok) {
 					const error = await response.json();
 					throw new Error(error.error || 'Registration failed');
 				}
-
+				
 				return { success: true };
 			} catch (error) {
-				return { success: false, error: (error as Error).message };
+				console.error('Registration error:', error);
+				const errorMessage = error instanceof Error ? error.message : 'Registration failed';
+				authError.set({
+					message: errorMessage,
+					code: 'REGISTRATION_FAILED'
+				});
+				update(state => ({ ...state, loading: false, error: errorMessage }));
+				return { success: false, error: errorMessage };
+			} finally {
+				isLoading.set(false);
 			}
 		},
 
-		logout: async () => {
-			// Clear localStorage first (only in browser)
-			if (browser) {
-				localStorage.removeItem('token');
-				localStorage.removeItem('userData');
-			}
-			
-			// Clear the store state
-			set({
-				user: null,
-				token: null,
-				isAuthenticated: false
-			});
-			
-			// Small delay to ensure state is updated
-			await new Promise(resolve => setTimeout(resolve, 100));
-		},
-
-		initialize: async () => {
-			if (!browser) return; // Skip initialization during SSR
-			
-			const token = localStorage.getItem('token');
-			if (token) {
-				// Check if it's a mock admin token
-				if (token.startsWith('mock-admin-token-')) {
-					// Import role data for super admin assignment
-					const { MOCK_ROLES } = await import('./mockData/roles');
-					const superAdminRole = MOCK_ROLES.find(r => r.id === 'super-administrator');
-					
-					// Get stored user data to preserve the email
-					const storedUserData = localStorage.getItem('userData');
-					let email = 'admin@bome.com'; // default
-					
-					if (storedUserData) {
-						try {
-							const userData = JSON.parse(storedUserData);
-							if (userData.email) {
-								email = userData.email;
-							}
-						} catch (error) {
-							console.error('Failed to parse stored user data:', error);
-						}
-					}
-
-					const mockUser: User = {
-						id: 1,
-						email: email,
-						firstName: 'Super',
-						lastName: 'Administrator',
-						role: 'admin',
-						roles: superAdminRole ? [superAdminRole] : [],
-						emailVerified: true
-					};
-
-					set({
-						user: mockUser,
-						token,
-						isAuthenticated: true
+		async logout() {
+			try {
+				const tokens = getCurrentTokens();
+				if (tokens) {
+					await apiRequest('/auth/logout', {
+						method: 'POST',
+						body: JSON.stringify({ refresh_token: tokens.refresh_token }),
+					}).catch(() => {
+						// Ignore errors on logout
 					});
-				} else if (token.startsWith('mock-user-token-')) {
-					// Handle mock regular user token
-					const storedUserData = localStorage.getItem('userData');
-					let email = 'user@bome.com'; // default
-					
-					if (storedUserData) {
-						try {
-							const userData = JSON.parse(storedUserData);
-							if (userData.email) {
-								email = userData.email;
-							}
-						} catch (error) {
-							console.error('Failed to parse stored user data:', error);
-						}
-					}
-
-					const mockUser: User = {
-						id: 2,
-						email: email,
-						firstName: 'User',
-						lastName: 'Account',
-						role: 'user',
-						roles: [],
-						emailVerified: true
-					};
-
-					set({
-						user: mockUser,
-						token,
-						isAuthenticated: true
-					});
-				} else if (token.startsWith('mock-advertiser-token-')) {
-					// Handle mock advertiser token
-					const storedUserData = localStorage.getItem('userData');
-					let email = 'advertiser@bome.com'; // default
-					
-					if (storedUserData) {
-						try {
-							const userData = JSON.parse(storedUserData);
-							if (userData.email) {
-								email = userData.email;
-							}
-						} catch (error) {
-							console.error('Failed to parse stored user data:', error);
-						}
-					}
-
-					const mockUser: User = {
-						id: 3,
-						email: email,
-						firstName: 'Business',
-						lastName: 'Advertiser',
-						role: 'advertiser',
-						roles: [],
-						emailVerified: true
-					};
-
-					set({
-						user: mockUser,
-						token,
-						isAuthenticated: true
-					});
-				} else {
-					// For real tokens, we should validate with backend
-					// For development, check if we have any stored user data
-					const storedUserData = localStorage.getItem('userData');
-					
-					if (storedUserData) {
-						try {
-							const userData = JSON.parse(storedUserData);
-							// Validate the stored user data structure
-							if (userData.id && userData.email && userData.role) {
-								set({
-									user: userData,
-									token,
-									isAuthenticated: true
-								});
-								return;
-							}
-						} catch (error) {
-							console.error('Failed to parse stored user data:', error);
-						}
-					}
-					
-					// If no valid stored data, validate token with backend
-					// For now, clear the session to force re-login
-					localStorage.removeItem('token');
-					localStorage.removeItem('userData');
-					set({
-						user: null,
-						token: null,
-						isAuthenticated: false
-					});
-					
-					console.log('No valid user data found, session cleared');
+				}
+			} catch (error) {
+				console.error('Logout error:', error);
+			} finally {
+				clearAuthData();
+				if (browser) {
+					goto('/login');
 				}
 			}
 		},
 
-		getCurrentUser: () => {
-			let currentUser = null;
-			subscribe(state => {
-				currentUser = state.user;
-			})();
-			return currentUser;
+		async forgotPassword(email: string) {
+			try {
+				update(state => ({ ...state, loading: true, error: null }));
+				isLoading.set(true);
+				authError.set(null);
+				
+				const response = await apiRequest('/auth/forgot-password', {
+					method: 'POST',
+					body: JSON.stringify({ email }),
+				});
+				
+				if (!response.ok) {
+					const error = await response.json();
+					throw new Error(error.error || 'Failed to send reset email');
+				}
+				
+				return { success: true };
+			} catch (error) {
+				console.error('Forgot password error:', error);
+				const errorMessage = error instanceof Error ? error.message : 'Failed to send reset email';
+				authError.set({
+					message: errorMessage,
+					code: 'FORGOT_PASSWORD_FAILED'
+				});
+				update(state => ({ ...state, loading: false, error: errorMessage }));
+				return { success: false, error: errorMessage };
+			} finally {
+				isLoading.set(false);
+			}
 		},
 
-		updateUser: (updatedUser: Partial<User>) => {
-			update(state => ({
-				...state,
-				user: state.user ? { ...state.user, ...updatedUser } : null
-			}));
+		async resetPassword(token: string, password: string) {
+			try {
+				update(state => ({ ...state, loading: true, error: null }));
+				isLoading.set(true);
+				authError.set(null);
+				
+				const response = await apiRequest('/auth/reset-password', {
+					method: 'POST',
+					body: JSON.stringify({ token, password }),
+				});
+				
+				if (!response.ok) {
+					const error = await response.json();
+					throw new Error(error.error || 'Password reset failed');
+				}
+				
+				return { success: true };
+			} catch (error) {
+				console.error('Reset password error:', error);
+				const errorMessage = error instanceof Error ? error.message : 'Password reset failed';
+				authError.set({
+					message: errorMessage,
+					code: 'RESET_PASSWORD_FAILED'
+				});
+				update(state => ({ ...state, loading: false, error: errorMessage }));
+				return { success: false, error: errorMessage };
+			} finally {
+				isLoading.set(false);
+			}
+		},
+
+		async verifyEmail(token: string) {
+			try {
+				update(state => ({ ...state, loading: true, error: null }));
+				isLoading.set(true);
+				authError.set(null);
+				
+				const response = await apiRequest('/auth/verify-email', {
+					method: 'POST',
+					body: JSON.stringify({ token }),
+				});
+				
+				if (!response.ok) {
+					const error = await response.json();
+					throw new Error(error.error || 'Email verification failed');
+				}
+				
+				// Update user's email verification status
+				const user = getCurrentUser();
+				if (user) {
+					user.email_verified = true;
+					currentUser.set(user);
+					update(state => ({
+						...state,
+						user,
+						loading: false
+					}));
+					if (browser) {
+						localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+					}
+				}
+				
+				return { success: true };
+			} catch (error) {
+				console.error('Email verification error:', error);
+				const errorMessage = error instanceof Error ? error.message : 'Email verification failed';
+				authError.set({
+					message: errorMessage,
+					code: 'EMAIL_VERIFICATION_FAILED'
+				});
+				update(state => ({ ...state, loading: false, error: errorMessage }));
+				return { success: false, error: errorMessage };
+			} finally {
+				isLoading.set(false);
+			}
+		},
+
+		async changePassword(currentPassword: string, newPassword: string) {
+			try {
+				update(state => ({ ...state, loading: true, error: null }));
+				isLoading.set(true);
+				authError.set(null);
+				
+				const response = await apiRequest('/auth/change-password', {
+					method: 'POST',
+					body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+				});
+				
+				if (!response.ok) {
+					const error = await response.json();
+					throw new Error(error.error || 'Password change failed');
+				}
+				
+				return { success: true };
+			} catch (error) {
+				console.error('Change password error:', error);
+				const errorMessage = error instanceof Error ? error.message : 'Password change failed';
+				authError.set({
+					message: errorMessage,
+					code: 'CHANGE_PASSWORD_FAILED'
+				});
+				update(state => ({ ...state, loading: false, error: errorMessage }));
+				return { success: false, error: errorMessage };
+			} finally {
+				isLoading.set(false);
+			}
+		},
+
+		clearError() {
+			authError.set(null);
+			update(state => ({ ...state, error: null }));
 		}
 	};
-};
+}
 
+// Create the auth store
 export const auth = createAuthStore();
 
-// API helper with authentication
-export const api = {
-	get: async (url: string) => {
-		const token = browser ? localStorage.getItem('token') : null;
-		const response = await fetch(url, {
-			headers: {
-				'Authorization': token ? `Bearer ${token}` : '',
-				'Content-Type': 'application/json'
-			}
-		});
-		return response.json();
-	},
+// Initialize auth state from storage
+if (browser) {
+	initializeAuth();
+}
 
-	post: async (url: string, data: any) => {
-		const token = browser ? localStorage.getItem('token') : null;
-		const response = await fetch(url, {
-			method: 'POST',
-			headers: {
-				'Authorization': token ? `Bearer ${token}` : '',
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify(data)
-		});
-		return response.json();
-	},
-
-	put: async (url: string, data: any) => {
-		const token = browser ? localStorage.getItem('token') : null;
-		const response = await fetch(url, {
-			method: 'PUT',
-			headers: {
-				'Authorization': token ? `Bearer ${token}` : '',
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify(data)
-		});
-		return response.json();
-	},
-
-	delete: async (url: string) => {
-		const token = browser ? localStorage.getItem('token') : null;
-		const response = await fetch(url, {
-			method: 'DELETE',
-			headers: {
-				'Authorization': token ? `Bearer ${token}` : '',
-				'Content-Type': 'application/json'
-			}
-		});
-		return response.json();
+// Test function to check backend connectivity
+export async function testBackendConnectivity() {
+	try {
+		console.log('Auth: Testing backend connectivity...');
+		// Health endpoint is at root, not under /api/v1
+		const healthUrl = API_BASE_URL.replace('/api/v1', '') + '/health';
+		console.log('Auth: Health check URL:', healthUrl);
+		const response = await fetch(healthUrl);
+		console.log('Auth: Backend health check response:', { status: response.status, ok: response.ok });
+		return response.ok;
+	} catch (error) {
+		console.error('Auth: Backend connectivity test failed:', error);
+		return false;
 	}
-}; 
+}
+
+export function initializeAuth() {
+	try {
+		console.log('Auth: Starting initialization...');
+		const storedTokens = localStorage.getItem(TOKEN_STORAGE_KEY);
+		const storedUser = localStorage.getItem(USER_STORAGE_KEY);
+		
+		console.log('Auth: Stored tokens:', storedTokens ? 'Found' : 'Not found');
+		console.log('Auth: Stored user:', storedUser ? 'Found' : 'Not found');
+		
+		if (storedTokens && storedUser) {
+			const tokens: AuthTokens = JSON.parse(storedTokens);
+			const user: User = JSON.parse(storedUser);
+			
+			console.log('Auth: Parsed tokens:', tokens);
+			console.log('Auth: Parsed user:', user);
+			
+			// Check if tokens are still valid (basic check)
+			if (isTokenValid(tokens)) {
+				console.log('Auth: Tokens are valid, setting auth state');
+				authTokens.set(tokens);
+				currentUser.set(user);
+				auth.set({
+					isAuthenticated: true,
+					user,
+					token: tokens.access_token,
+					loading: false,
+					error: null
+				});
+				
+				// Schedule token refresh
+				scheduleTokenRefresh(tokens);
+				console.log('Auth: Auth state set successfully');
+			} else {
+				console.log('Auth: Tokens are invalid, clearing auth data');
+				// Tokens expired, clear storage
+				clearAuthData();
+			}
+		} else {
+			console.log('Auth: No stored tokens or user found');
+		}
+	} catch (error) {
+		console.error('Failed to initialize auth from storage:', error);
+		clearAuthData();
+	}
+}
+
+function isTokenValid(tokens: AuthTokens): boolean {
+	// This is a basic check - in production you might want to decode the JWT
+	// and check the actual expiration time
+	const isValid = !!tokens.access_token && !!tokens.refresh_token;
+	console.log('Auth: Token validation check:', {
+		hasAccessToken: !!tokens.access_token,
+		hasRefreshToken: !!tokens.refresh_token,
+		isValid
+	});
+	return isValid;
+}
+
+function clearAuthData() {
+	if (browser) {
+		localStorage.removeItem(TOKEN_STORAGE_KEY);
+		localStorage.removeItem(USER_STORAGE_KEY);
+	}
+	authTokens.set(null);
+	currentUser.set(null);
+	auth.set({
+		isAuthenticated: false,
+		user: null,
+		token: null,
+		loading: false,
+		error: null
+	});
+	authError.set(null);
+}
+
+function storeAuthData(tokens: AuthTokens, user: User) {
+	console.log('Auth: Storing auth data:', { tokens, user });
+	if (browser) {
+		localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
+		localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+		console.log('Auth: Data stored in localStorage');
+	}
+	authTokens.set(tokens);
+	currentUser.set(user);
+	auth.set({
+		isAuthenticated: true,
+		user,
+		token: tokens.access_token,
+		loading: false,
+		error: null
+	});
+	
+	// Schedule token refresh
+	scheduleTokenRefresh(tokens);
+	console.log('Auth: Auth state updated in stores');
+}
+
+// Token refresh scheduling
+let refreshTimeout: number | null = null;
+
+function scheduleTokenRefresh(tokens: AuthTokens) {
+	if (refreshTimeout) {
+		clearTimeout(refreshTimeout);
+	}
+	
+	// Refresh 1 minute before expiration
+	const refreshTime = (tokens.expires_in - 60) * 1000;
+	
+	if (refreshTime > 0) {
+		refreshTimeout = setTimeout(() => {
+			refreshTokens();
+		}, refreshTime);
+	}
+}
+
+// API helper function
+export async function apiRequest(endpoint: string, options: RequestInit = {}): Promise<Response> {
+	const url = `${API_BASE_URL}${endpoint}`;
+	console.log('Auth: Making API request to:', url);
+	console.log('Auth: API_BASE_URL:', API_BASE_URL);
+	
+	const config: RequestInit = {
+		headers: {
+			'Content-Type': 'application/json',
+			...options.headers,
+		},
+		...options,
+	};
+	
+	// Add auth header if we have tokens
+	const tokens = getCurrentTokens();
+	if (tokens && !endpoint.includes('/auth/')) {
+		config.headers = {
+			...config.headers,
+			'Authorization': `Bearer ${tokens.access_token}`,
+		};
+	}
+	
+	console.log('Auth: Request config:', { method: config.method, headers: config.headers, body: config.body });
+	
+	try {
+		const response = await fetch(url, config);
+		console.log('Auth: Response received:', { status: response.status, ok: response.ok, statusText: response.statusText });
+		
+		// Handle 401 - token expired
+		if (response.status === 401 && tokens && !endpoint.includes('/auth/')) {
+			// Try to refresh tokens
+			const refreshed = await refreshTokens();
+			if (refreshed) {
+				// Retry the original request with new token
+				config.headers = {
+					...config.headers,
+					'Authorization': `Bearer ${getCurrentTokens()?.access_token}`,
+				};
+				return fetch(url, config);
+			} else {
+				// Refresh failed, redirect to login
+				await auth.logout();
+				throw new Error('Authentication required');
+			}
+		}
+		
+		return response;
+	} catch (error) {
+		console.error('Auth: Network error during API request:', error);
+		throw error;
+	}
+}
+
+function getCurrentTokens(): AuthTokens | null {
+	let tokens: AuthTokens | null = null;
+	authTokens.subscribe(value => tokens = value)();
+	return tokens;
+}
+
+function getCurrentUser(): User | null {
+	let user: User | null = null;
+	currentUser.subscribe(value => user = value)();
+	return user;
+}
+
+export async function refreshTokens(): Promise<boolean> {
+	try {
+		const tokens = getCurrentTokens();
+		if (!tokens) {
+			return false;
+		}
+		
+		const response = await apiRequest('/auth/refresh', {
+			method: 'POST',
+			body: JSON.stringify({ refresh_token: tokens.refresh_token }),
+		});
+		
+		if (!response.ok) {
+			return false;
+		}
+		
+		const data = await response.json();
+		const newTokens: AuthTokens = {
+			access_token: data.access_token,
+			refresh_token: data.refresh_token,
+			expires_in: data.expires_in,
+			token_type: data.token_type
+		};
+		
+		// Update tokens in store
+		authTokens.set(newTokens);
+		
+		// Update auth store
+		auth.update(state => ({
+			...state,
+			token: newTokens.access_token
+		}));
+		
+		// Update storage
+		if (browser) {
+			localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(newTokens));
+		}
+		
+		// Schedule next refresh
+		scheduleTokenRefresh(newTokens);
+		
+		return true;
+	} catch (error) {
+		console.error('Token refresh error:', error);
+		return false;
+	}
+}
+
+// Utility functions
+export function requireAuth() {
+	if (browser) {
+		const user = getCurrentUser();
+		if (!user) {
+			goto('/login');
+		}
+	}
+}
+
+export function requireRole(allowedRoles: string[]) {
+	if (browser) {
+		const user = getCurrentUser();
+		if (!user || !allowedRoles.includes(user.role)) {
+			goto('/unauthorized');
+		}
+	}
+}
+
+export function requireEmailVerification() {
+	if (browser) {
+		const user = getCurrentUser();
+		if (!user || !user.email_verified) {
+			goto('/verify-email');
+		}
+	}
+}
+
+export function hasRole(role: string): boolean {
+	const user = getCurrentUser();
+	return user?.role === role;
+}
+
+export function isAdmin(): boolean {
+	return hasRole('admin');
+}
+
+export function isAdvertiser(): boolean {
+	return hasRole('advertiser') || hasRole('admin');
+}
+
+export function isEmailVerified(): boolean {
+	const user = getCurrentUser();
+	return user?.email_verified || false;
+} 

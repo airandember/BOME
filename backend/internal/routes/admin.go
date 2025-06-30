@@ -1433,28 +1433,28 @@ func UpdateAdPlacementHandler(db *database.DB) gin.HandlerFunc {
 // SetupAdminRoutes configures admin-related routes
 func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
 	// Users
-	router.GET("/users", middleware.AuthMiddleware(), GetUsersHandler(db))
-	router.GET("/users/:id", middleware.AuthMiddleware(), GetUserHandler(db))
-	router.PUT("/users/:id", middleware.AuthMiddleware(), UpdateUserHandler(db))
-	router.DELETE("/users/:id", middleware.AuthMiddleware(), DeleteUserHandler(db))
+	router.GET("/users", middleware.AuthRequired(), GetUsersHandler(db))
+	router.GET("/users/:id", middleware.AuthRequired(), GetUserHandler(db))
+	router.PUT("/users/:id", middleware.AuthRequired(), UpdateUserHandler(db))
+	router.DELETE("/users/:id", middleware.AuthRequired(), DeleteUserHandler(db))
 
 	// Videos
-	router.GET("/videos", middleware.AuthMiddleware(), GetAdminVideosHandler(db))
-	router.GET("/videos/:id", middleware.AuthMiddleware(), GetAdminVideoHandler(db))
-	router.PUT("/videos/:id", middleware.AuthMiddleware(), UpdateVideoHandler(db))
-	router.DELETE("/videos/:id", middleware.AuthMiddleware(), DeleteVideoHandler(db))
-	router.POST("/videos/bulk", middleware.AuthMiddleware(), BulkVideoOperationHandler(db))
-	router.GET("/videos/:id/stats", middleware.AuthMiddleware(), GetVideoStatsHandler(db))
-	router.GET("/videos/categories", middleware.AuthMiddleware(), GetVideoCategoriesHandler(db))
-	router.POST("/videos/:id/schedule", middleware.AuthMiddleware(), ScheduleVideoHandler(db))
-	router.POST("/videos/:id/unschedule", middleware.AuthMiddleware(), UnscheduleVideoHandler(db))
-	router.GET("/videos/scheduled", middleware.AuthMiddleware(), GetScheduledVideosHandler(db))
+	router.GET("/videos", middleware.AuthRequired(), GetAdminVideosHandler(db))
+	router.GET("/videos/:id", middleware.AuthRequired(), GetAdminVideoHandler(db))
+	router.PUT("/videos/:id", middleware.AuthRequired(), UpdateVideoHandler(db))
+	router.DELETE("/videos/:id", middleware.AuthRequired(), DeleteVideoHandler(db))
+	router.POST("/videos/bulk", middleware.AuthRequired(), BulkVideoOperationHandler(db))
+	router.GET("/videos/:id/stats", middleware.AuthRequired(), GetVideoStatsHandler(db))
+	router.GET("/videos/categories", middleware.AuthRequired(), GetVideoCategoriesHandler(db))
+	router.POST("/videos/:id/schedule", middleware.AuthRequired(), ScheduleVideoHandler(db))
+	router.POST("/videos/:id/unschedule", middleware.AuthRequired(), UnscheduleVideoHandler(db))
+	router.GET("/videos/scheduled", middleware.AuthRequired(), GetScheduledVideosHandler(db))
 
 	// Ad Placements
-	router.GET("/placements", middleware.AuthMiddleware(), GetAdPlacementsHandler(db))
-	router.GET("/placements/performance", middleware.AuthMiddleware(), GetAdPlacementsPerformanceHandler(db))
-	router.POST("/placements", middleware.AuthMiddleware(), CreateAdPlacementHandler(db))
-	router.PUT("/placements/:id", middleware.AuthMiddleware(), UpdateAdPlacementHandler(db))
+	router.GET("/placements", middleware.AuthRequired(), GetAdPlacementsHandler(db))
+	router.GET("/placements/performance", middleware.AuthRequired(), GetAdPlacementsPerformanceHandler(db))
+	router.POST("/placements", middleware.AuthRequired(), CreateAdPlacementHandler(db))
+	router.PUT("/placements/:id", middleware.AuthRequired(), UpdateAdPlacementHandler(db))
 
 	// Design System Routes
 	// Temporarily disabled for debugging

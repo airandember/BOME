@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/auth';
-	import { api } from '$lib/auth';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 
@@ -14,7 +13,8 @@
 
 	// Form data
 	let formData = {
-		name: '',
+		first_name: '',
+		last_name: '',
 		email: '',
 		bio: '',
 		location: '',
@@ -31,7 +31,8 @@
 		user = state.user;
 		if (user) {
 			formData = {
-				name: user.name || '',
+				first_name: user.first_name || '',
+				last_name: user.last_name || '',
 				email: user.email || '',
 				bio: user.bio || '',
 				location: user.location || '',
@@ -54,18 +55,24 @@
 	const loadProfile = async () => {
 		try {
 			loading = true;
-			const response = await api.get('/api/v1/users/profile');
+			const response = await apiRequest('/users/profile');
 			
-			if (response.user) {
-				formData = {
-					name: response.user.name || '',
-					email: response.user.email || '',
-					bio: response.user.bio || '',
-					location: response.user.location || '',
-					website: response.user.website || '',
-					phone: response.user.phone || ''
-				};
-				originalData = { ...formData };
+			if (response.ok) {
+				const data = await response.json();
+				if (data.user) {
+					formData = {
+						first_name: data.user.first_name || '',
+						last_name: data.user.last_name || '',
+						email: data.user.email || '',
+						bio: data.user.bio || '',
+						location: data.user.location || '',
+						website: data.user.website || '',
+						phone: data.user.phone || ''
+					};
+					originalData = { ...formData };
+				}
+			} else {
+				error = 'Failed to load profile';
 			}
 		} catch (err) {
 			error = 'Failed to load profile';
@@ -84,15 +91,20 @@
 
 		try {
 			saving = true;
-			const response = await api.put('/api/v1/users/profile', formData);
+			const response = await apiRequest('/users/profile', {
+				method: 'PUT',
+				body: JSON.stringify(formData)
+			});
 			
-			if (response.success) {
-				originalData = { ...formData };
-				hasChanges = false;
-				showToast('Profile updated successfully', 'success');
-				
-				// Update auth store with new user data
-				auth.updateUser(response.user);
+			if (response.ok) {
+				const data = await response.json();
+				if (data.success) {
+					originalData = { ...formData };
+					hasChanges = false;
+					showToast('Profile updated successfully', 'success');
+				} else {
+					showToast('Failed to update profile', 'error');
+				}
 			} else {
 				showToast('Failed to update profile', 'error');
 			}
@@ -136,10 +148,37 @@
 		}
 	};
 
-	$: isFormValid = formData.name.trim() && 
+	$: isFormValid = formData.first_name.trim() && 
+					 formData.last_name.trim() && 
 					 formData.email.trim() && 
 					 isValidEmail(formData.email) && 
 					 isValidWebsite(formData.website);
+
+	// Import apiRequest from auth module
+	async function apiRequest(endpoint: string, options: RequestInit = {}): Promise<Response> {
+		const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1';
+		const url = `${baseURL}${endpoint}`;
+		
+		const defaultHeaders: Record<string, string> = {
+			'Content-Type': 'application/json',
+		};
+		
+		// Add auth token if available
+		const tokens = JSON.parse(localStorage.getItem('bome_auth_tokens') || 'null');
+		if (tokens?.access_token) {
+			defaultHeaders['Authorization'] = `Bearer ${tokens.access_token}`;
+		}
+		
+		const response = await fetch(url, {
+			...options,
+			headers: {
+				...defaultHeaders,
+				...options.headers,
+			},
+		});
+		
+		return response;
+	}
 </script>
 
 <svelte:head>
@@ -182,31 +221,43 @@
 						
 						<div class="form-row">
 							<div class="form-group">
-								<label for="name">Full Name *</label>
+								<label for="first_name">First Name *</label>
 								<input
-									id="name"
+									id="first_name"
 									type="text"
-									bind:value={formData.name}
+									bind:value={formData.first_name}
 									on:input={handleInputChange}
-									placeholder="Enter your full name"
+									placeholder="Enter your first name"
 									required
 								/>
 							</div>
 							
 							<div class="form-group">
-								<label for="email">Email Address *</label>
+								<label for="last_name">Last Name *</label>
 								<input
-									id="email"
-									type="email"
-									bind:value={formData.email}
+									id="last_name"
+									type="text"
+									bind:value={formData.last_name}
 									on:input={handleInputChange}
-									placeholder="Enter your email address"
+									placeholder="Enter your last name"
 									required
 								/>
-								{#if formData.email && !isValidEmail(formData.email)}
-									<span class="field-error">Please enter a valid email address</span>
-								{/if}
 							</div>
+						</div>
+
+						<div class="form-group">
+							<label for="email">Email Address *</label>
+							<input
+								id="email"
+								type="email"
+								bind:value={formData.email}
+								on:input={handleInputChange}
+								placeholder="Enter your email address"
+								required
+							/>
+							{#if formData.email && !isValidEmail(formData.email)}
+								<span class="field-error">Please enter a valid email address</span>
+							{/if}
 						</div>
 					</div>
 
@@ -271,7 +322,8 @@
 						<div class="avatar-section">
 							<div class="current-avatar">
 								<div class="avatar-placeholder">
-									{formData.name.charAt(0)?.toUpperCase() || 'U'}
+									{formData.first_name.charAt(0)?.toUpperCase() || 'U'}
+									{formData.last_name.charAt(0)?.toUpperCase() || 'U'}
 								</div>
 							</div>
 							<div class="avatar-info">

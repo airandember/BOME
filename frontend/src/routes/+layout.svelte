@@ -10,7 +10,6 @@
 
 	onMount(() => {
 		mounted = true;
-		auth.initialize();
 		initializeSecurity();
 		authStore.init();
 	});

@@ -18,7 +18,7 @@ func SetupAdvertisementRoutes(
 ) {
 	// Advertiser routes (require advertiser role)
 	advertiser := router.Group("/advertiser")
-	advertiser.Use(middleware.AuthMiddleware(), middleware.AdvertiserMiddleware())
+	advertiser.Use(middleware.AuthRequired(), RoleRequired("advertiser", "admin"))
 	{
 		// Advertiser account management
 		advertiser.POST("/account", createAdvertiserAccountHandler(adService))
@@ -40,7 +40,7 @@ func SetupAdvertisementRoutes(
 
 	// Admin routes (require admin authentication)
 	admin := router.Group("/admin/ads")
-	admin.Use(middleware.AuthMiddleware(), middleware.AdminMiddleware())
+	admin.Use(middleware.AuthRequired(), middleware.AdminRequired())
 	{
 		// Advertiser account management
 		admin.GET("/advertisers", getAdvertisersHandler(adService))

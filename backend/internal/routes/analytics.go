@@ -16,7 +16,7 @@ func SetupAnalyticsRoutes(router *gin.RouterGroup) {
 
 	// Create analytics group with authentication
 	analytics := router.Group("/dashboard/analytics")
-	analytics.Use(middleware.AuthMiddleware())
+	analytics.Use(middleware.AuthRequired())
 
 	// Main analytics dashboard endpoint
 	analytics.GET("", func(c *gin.Context) {

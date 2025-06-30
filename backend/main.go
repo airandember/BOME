@@ -44,14 +44,14 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// Initialize database (SQLite for development)
+	// Initialize database (PostgreSQL)
 	var db *database.DB
 	var err error
 
-	log.Println("Attempting to initialize database...")
+	log.Println("Attempting to initialize PostgreSQL database...")
 	db, err = database.New(cfg)
 	if err != nil {
-		log.Printf("Failed to connect to SQLite database: %v", err)
+		log.Printf("Failed to connect to PostgreSQL database: %v", err)
 		log.Println("Continuing without database...")
 		db = nil
 	} else {
@@ -85,10 +85,10 @@ func main() {
 	router := gin.New()
 
 	// Add middleware
-	router.Use(middleware.Logger())
-	router.Use(middleware.CORS(cfg))
-	router.Use(middleware.Recovery())
-	router.Use(middleware.RateLimit(cfg))
+	router.Use(middleware.RecoveryWithLogging())
+	router.Use(middleware.SecurityHeaders())
+	router.Use(middleware.CORS())
+	router.Use(middleware.RateLimiting())
 
 	// Setup routes
 	log.Println("Setting up routes...")

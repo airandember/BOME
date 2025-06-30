@@ -55,61 +55,12 @@ func SetupRoutes(
 	SetupYouTubeRoutes(v1, db)
 	fmt.Printf("Mock data routes setup complete\n")
 
-	// Mock authentication routes (for development)
+	// Real authentication routes
 	auth := v1.Group("/auth")
 	{
-		auth.POST("/login", func(c *gin.Context) {
-			var req struct {
-				Email    string `json:"email" binding:"required"`
-				Password string `json:"password" binding:"required"`
-			}
-
-			if err := c.ShouldBindJSON(&req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-
-			// Mock login with different user types
-			if req.Email == "admin@bome.com" && req.Password == "admin123" {
-				token, _ := services.GenerateToken(1, req.Email, "admin", 24*time.Hour)
-				c.JSON(http.StatusOK, gin.H{
-					"token": token,
-					"user": gin.H{
-						"id":            1,
-						"email":         req.Email,
-						"role":          "admin",
-						"firstName":     "System",
-						"lastName":      "Administrator",
-						"emailVerified": true,
-					},
-				})
-				return
-			}
-
-			if req.Email == "user@bome.com" && req.Password == "user123" {
-				token, _ := services.GenerateToken(2, req.Email, "user", 24*time.Hour)
-				c.JSON(http.StatusOK, gin.H{
-					"token": token,
-					"user": gin.H{
-						"id":            2,
-						"email":         req.Email,
-						"role":          "user",
-						"firstName":     "Regular",
-						"lastName":      "User",
-						"emailVerified": true,
-					},
-				})
-				return
-			}
-
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
-		})
-		auth.POST("/register", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"message": "Registration successful"})
-		})
-		auth.POST("/logout", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"message": "Logout successful"})
-		})
+		auth.POST("/login", LoginHandler(db))
+		auth.POST("/register", RegisterHandler(db, emailService))
+		auth.POST("/logout", LogoutHandler())
 	}
 
 	// Video routes using existing handlers
@@ -125,29 +76,17 @@ func SetupRoutes(
 	subscriptions := v1.Group("/subscriptions")
 	{
 		subscriptions.GET("/plans", GetSubscriptionPlansHandler(stripeService))
-		subscriptions.GET("/current", middleware.AuthMiddleware(), GetSubscriptionHandler(db))
-		subscriptions.POST("", middleware.AuthMiddleware(), CreateSubscriptionHandler(db))
-		subscriptions.POST("/:id/cancel", middleware.AuthMiddleware(), CancelSubscriptionHandler(db))
+		subscriptions.GET("/current", middleware.AuthRequired(), GetSubscriptionHandler(db))
+		subscriptions.POST("", middleware.AuthRequired(), CreateSubscriptionHandler(db))
+		subscriptions.POST("/:id/cancel", middleware.AuthRequired(), CancelSubscriptionHandler(db))
 		subscriptions.POST("/checkout", CreateCheckoutSessionHandler(stripeService))
 	}
 
 	// User profile routes
 	users := v1.Group("/users")
 	{
-		users.GET("/profile", func(c *gin.Context) {
-			// Mock user profile endpoint
-			c.JSON(http.StatusOK, gin.H{
-				"user": gin.H{
-					"id":            1,
-					"email":         "admin@bome.com",
-					"firstName":     "System",
-					"lastName":      "Administrator",
-					"role":          "admin",
-					"emailVerified": true,
-					"createdAt":     "2024-01-01T00:00:00Z",
-				},
-			})
-		})
+		users.GET("/profile", middleware.AuthRequired(), GetProfileHandler(db))
+		users.PUT("/profile", middleware.AuthRequired(), UpdateProfileHandler(db))
 	}
 
 	// User dashboard
@@ -253,15 +192,73 @@ func handleStripeWebhook(db *database.DB, stripeService *services.StripeService,
 	}
 }
 
-func handleGetProfile(db *database.DB) gin.HandlerFunc {
+// GetProfileHandler handles retrieving user profile
+func GetProfileHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Get profile endpoint - TODO"})
+		userID := c.GetInt("user_id")
+		if userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			return
+		}
+
+		profile, err := db.GetUserProfile(userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get profile"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"user": profile})
 	}
 }
 
-func handleUpdateProfile(db *database.DB) gin.HandlerFunc {
+// UpdateProfileHandler handles updating user profile
+func UpdateProfileHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Update profile endpoint - TODO"})
+		userID := c.GetInt("user_id")
+		if userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			return
+		}
+
+		var updates map[string]interface{}
+		if err := c.ShouldBindJSON(&updates); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+			return
+		}
+
+		// Validate required fields
+		if firstName, exists := updates["first_name"]; exists {
+			if firstNameStr, ok := firstName.(string); !ok || firstNameStr == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "First name is required"})
+				return
+			}
+		}
+
+		if email, exists := updates["email"]; exists {
+			if emailStr, ok := email.(string); !ok || emailStr == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Email is required"})
+				return
+			}
+		}
+
+		// Update profile
+		if err := db.UpdateUserProfile(userID, updates); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update profile"})
+			return
+		}
+
+		// Get updated profile
+		profile, err := db.GetUserProfile(userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get updated profile"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Profile updated successfully",
+			"user":    profile,
+		})
 	}
 }
 
@@ -655,5 +652,40 @@ func handleCreateRefund(db *database.DB, stripeService *services.StripeService) 
 		}
 
 		c.JSON(http.StatusCreated, gin.H{"refund": refund})
+	}
+}
+
+// RoleRequired middleware that requires specific roles
+func RoleRequired(allowedRoles ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userRole, exists := c.Get("user_role")
+		if !exists {
+			c.JSON(401, gin.H{"error": "Authentication required"})
+			c.Abort()
+			return
+		}
+
+		roleStr := userRole.(string)
+		for _, role := range allowedRoles {
+			if roleStr == role {
+				c.Next()
+				return
+			}
+		}
+
+		c.JSON(403, gin.H{"error": "Insufficient permissions"})
+		c.Abort()
+	}
+}
+
+// HealthHandler returns the health status of the API
+func HealthHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"status":    "healthy",
+			"service":   "bome-backend",
+			"version":   "1.0.0",
+			"timestamp": time.Now(),
+		})
 	}
 }
