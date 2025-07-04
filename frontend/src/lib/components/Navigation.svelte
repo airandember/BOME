@@ -128,9 +128,9 @@
 				<div class="user-menu">
 					<button class="user-button glass" on:click={toggleMenu}>
 						<div class="user-avatar">
-							{user?.firstName?.charAt(0) || 'U'}
+							{user?.first_name?.charAt(0) || 'U'}
 						</div>
-						<span class="user-name">{user?.firstName || 'User'}</span>
+						<span class="user-name">{user?.first_name || 'User'}</span>
 						<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 							<polyline points="6,9 12,15 18,9"></polyline>
 						</svg>
@@ -178,7 +178,7 @@
 							</a>
 							<div class="dropdown-divider"></div>
 						{/if}
-						<a href="/account" class="dropdown-item" on:click={closeMenu}>
+						<a href="/dashboard?tab=profile" class="dropdown-item" on:click={closeMenu}>
 							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
 								<circle cx="12" cy="7" r="4"></circle>

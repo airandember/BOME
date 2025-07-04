@@ -63,9 +63,9 @@
 				<ul>
 					{#if isAuthenticated}
 						<li><a href="/dashboard">Dashboard</a></li>
-						<li><a href="/account">My Account</a></li>
-						<li><a href="/subscription">Subscription</a></li>
-						<li><a href="/account/billing">Billing</a></li>
+										<li><a href="/dashboard?tab=profile">My Account</a></li>
+				<li><a href="/subscription">Subscription</a></li>
+				<li><a href="/account/billing">Billing</a></li>
 					{:else}
 						<li><a href="/login">Login</a></li>
 						<li><a href="/register">Sign Up</a></li>

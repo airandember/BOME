@@ -11,15 +11,29 @@
 	let loading = true;
 	let error = '';
 
-	// Tab state
-	let activeTab: 'dashboard' | 'advertiser' = 'dashboard';
+	// Tab state - now includes profile
+	let activeTab: 'dashboard' | 'profile' | 'advertiser' = 'dashboard';
 
 	onMount(() => {
 		let unsubscribe: any = null;
 
+		// Removed page store subscription to prevent multiple initializations
+
 		async function initializeDashboard() {
 			try {
 				console.log('Dashboard: Starting initialization');
+				
+				// Debug localStorage
+				if (typeof window !== 'undefined') {
+					const storedTokens = localStorage.getItem('bome_auth_tokens');
+					const storedUser = localStorage.getItem('bome_user_data');
+					console.log('Dashboard: localStorage check:', {
+						hasTokens: !!storedTokens,
+						hasUser: !!storedUser,
+						tokens: storedTokens ? JSON.parse(storedTokens) : null,
+						user: storedUser ? JSON.parse(storedUser) : null
+					});
+				}
 				
 				// Test backend connectivity first
 				const backendReachable = await testBackendConnectivity();
@@ -29,12 +43,23 @@
 				await initializeAuth();
 				console.log('Dashboard: Auth initialization completed');
 				
+				// Check auth state after initialization
+				auth.subscribe((state) => {
+					console.log('Dashboard: Auth state after initialization:', {
+						isAuthenticated: state.isAuthenticated,
+						user: state.user ? 'User exists' : 'No user',
+						loading: state.loading,
+						token: state.token ? 'Token exists' : 'No token'
+					});
+				})();
+				
 				// Subscribe to auth state changes after initialization
 				unsubscribe = auth.subscribe((state) => {
 					console.log('Dashboard: Auth state changed:', {
 						isAuthenticated: state.isAuthenticated,
 						user: state.user ? 'User exists' : 'No user',
-						loading: state.loading
+						loading: state.loading,
+						token: state.token ? 'Token exists' : 'No token'
 					});
 					
 					user = state.user;
@@ -42,6 +67,12 @@
 					
 					// Only proceed if we have a definitive auth state (not loading)
 					if (!state.loading) {
+						console.log('Dashboard: Auth state not loading, checking authentication:', {
+							isAuthenticated: state.isAuthenticated,
+							hasUser: !!state.user,
+							user: state.user
+						});
+						
 						if (state.isAuthenticated && state.user) {
 							// User is authenticated, proceed with dashboard setup
 							console.log('Dashboard: User authenticated, setting up dashboard');
@@ -52,7 +83,9 @@
 							
 							console.log('Dashboard: URL params:', $page.url.search, 'tab param:', tabParam);
 							
-							if (tabParam === 'advertiser') {
+							if (tabParam === 'profile') {
+								activeTab = 'profile';
+							} else if (tabParam === 'advertiser') {
 								activeTab = 'advertiser';
 							} else {
 								activeTab = 'dashboard';
@@ -64,14 +97,16 @@
 							setTimeout(() => {
 								if (urlParams.has('tab') || urlParams.has('from')) {
 									console.log('Dashboard: Cleaning up URL parameters');
-									replaceState($page.url.pathname, {});
+									// Temporarily disable URL cleanup to prevent redirects
+									// replaceState($page.url.pathname, {});
+									console.log('Dashboard: URL parameters cleaned up (disabled)');
 								}
 							}, 100);
 							
 							// Set loading to false since we have user data
 							loading = false;
-						} else if (state.isAuthenticated === false) {
-							// User is explicitly not authenticated, redirect to login
+						} else if (state.isAuthenticated === false && !state.loading) {
+							// User is explicitly not authenticated and not loading, redirect to login
 							console.log('Dashboard: User not authenticated, redirecting to login');
 							goto('/login');
 							return;
@@ -86,6 +121,18 @@
 						loading = false;
 					}
 				}, 3000);
+				
+				// Add a delay to allow auth initialization to complete
+				setTimeout(() => {
+					console.log('Dashboard: Checking auth state after delay');
+					auth.subscribe((state) => {
+						console.log('Dashboard: Delayed auth check:', {
+							isAuthenticated: state.isAuthenticated,
+							hasUser: !!state.user,
+							loading: state.loading
+						});
+					})();
+				}, 500);
 				
 			} catch (err) {
 				console.error('Error loading dashboard:', err);
@@ -105,7 +152,7 @@
 		};
 	});
 
-	function switchTab(tab: 'dashboard' | 'advertiser') {
+	function switchTab(tab: 'dashboard' | 'profile' | 'advertiser') {
 		activeTab = tab;
 	}
 </script>
@@ -130,20 +177,20 @@
 				on:click={() => switchTab('dashboard')}
 			>
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-					<circle cx="12" cy="7" r="4"/>
+					<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+					<polyline points="9,22 9,12 15,12 15,22"/>
 				</svg>
 				Dashboard
 			</button>
 			<button 
-				class="tab-button"
-				on:click={() => goto('/account')}
+				class="tab-button {activeTab === 'profile' ? 'active' : ''}"
+				on:click={() => switchTab('profile')}
 			>
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
 					<circle cx="12" cy="7" r="4"/>
 				</svg>
-				Account
+				Profile
 			</button>
 			<button 
 				class="tab-button {activeTab === 'advertiser' ? 'active' : ''}"
@@ -164,6 +211,69 @@
 					<div class="welcome-content">
 						<h1>Welcome back, {user?.first_name || 'User'}!</h1>
 						<p>Continue your journey exploring Book of Mormon evidences</p>
+					</div>
+					
+					<!-- Quick Profile Summary -->
+					<div class="profile-summary">
+						<div class="profile-card">
+							<div class="profile-avatar">
+								<span>{user?.first_name?.[0] || 'U'}</span>
+							</div>
+							<div class="profile-details">
+								<h3>{user?.first_name} {user?.last_name}</h3>
+								<p>{user?.email}</p>
+								<span class="role-badge">{user?.role}</span>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		{:else if activeTab === 'profile'}
+			<!-- Profile Tab Content -->
+			<div class="tab-content">
+				<div class="profile-section glass">
+					<h1>Your Profile</h1>
+					<p>Manage your account information and settings</p>
+					
+					<div class="profile-info">
+						<div class="info-row">
+							<label>First Name:</label>
+							<span>{user?.first_name || 'Not set'}</span>
+						</div>
+						<div class="info-row">
+							<label>Last Name:</label>
+							<span>{user?.last_name || 'Not set'}</span>
+						</div>
+						<div class="info-row">
+							<label>Email:</label>
+							<span>{user?.email}</span>
+						</div>
+						<div class="info-row">
+							<label>Role:</label>
+							<span class="role-badge">{user?.role}</span>
+						</div>
+						<div class="info-row">
+							<label>Email Verified:</label>
+							<span class="verification-status {user?.email_verified ? 'verified' : 'unverified'}">
+								{user?.email_verified ? '✓ Verified' : '✗ Unverified'}
+							</span>
+						</div>
+					</div>
+					
+					<div class="profile-actions">
+						<button class="btn btn-primary" on:click={() => goto('/subscription')}>
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+							</svg>
+							Manage Subscription
+						</button>
+						<button class="btn btn-secondary" on:click={() => goto('/dashboard?tab=advertiser')}>
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+								<circle cx="12" cy="12" r="3"/>
+							</svg>
+							Advertiser Portal
+						</button>
 					</div>
 				</div>
 			</div>
@@ -251,7 +361,8 @@
 
 	.welcome-section,
 	.account-section,
-	.advertiser-section {
+	.advertiser-section,
+	.profile-section {
 		background: var(--card-bg);
 		border-radius: 20px;
 		padding: 2rem;
@@ -262,7 +373,8 @@
 
 	.welcome-content h1,
 	.account-section h1,
-	.advertiser-section h1 {
+	.advertiser-section h1,
+	.profile-section h1 {
 		font-size: 2.5rem;
 		font-weight: 700;
 		color: var(--text-primary);
@@ -271,10 +383,143 @@
 
 	.welcome-content p,
 	.account-section p,
-	.advertiser-section p {
+	.advertiser-section p,
+	.profile-section p {
 		font-size: 1.1rem;
 		color: var(--text-secondary);
 		margin-bottom: 2rem;
+	}
+
+	/* Profile Summary Styles */
+	.profile-summary {
+		margin-top: 2rem;
+		display: flex;
+		justify-content: center;
+	}
+
+	.profile-card {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		background: var(--bg-secondary);
+		padding: 1.5rem;
+		border-radius: 16px;
+		border: 1px solid var(--border-color);
+		max-width: 400px;
+		width: 100%;
+	}
+
+	.profile-avatar {
+		width: 60px;
+		height: 60px;
+		border-radius: 50%;
+		background: var(--primary-color);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: white;
+		font-size: 1.5rem;
+		font-weight: 700;
+		flex-shrink: 0;
+	}
+
+	.profile-details {
+		flex: 1;
+		text-align: left;
+	}
+
+	.profile-details h3 {
+		margin: 0 0 0.25rem 0;
+		color: var(--text-primary);
+		font-size: 1.25rem;
+		font-weight: 600;
+	}
+
+	.profile-details p {
+		margin: 0 0 0.5rem 0;
+		color: var(--text-secondary);
+		font-size: 0.875rem;
+	}
+
+	/* Profile Info Styles */
+	.profile-info {
+		text-align: left;
+		max-width: 500px;
+		margin: 0 auto 2rem auto;
+		background: var(--bg-secondary);
+		padding: 1.5rem;
+		border-radius: 12px;
+		border: 1px solid var(--border-color);
+	}
+
+	.info-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.75rem 0;
+		border-bottom: 1px solid var(--border-color);
+	}
+
+	.info-row:last-child {
+		border-bottom: none;
+	}
+
+	.info-row label {
+		font-weight: 600;
+		color: var(--text-primary);
+		font-size: 0.875rem;
+	}
+
+	.info-row span {
+		color: var(--text-secondary);
+		font-size: 0.875rem;
+	}
+
+	.role-badge {
+		background: var(--primary-color);
+		color: white;
+		padding: 0.25rem 0.75rem;
+		border-radius: 20px;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+	}
+
+	.verification-status {
+		padding: 0.25rem 0.75rem;
+		border-radius: 20px;
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
+
+	.verification-status.verified {
+		background: #10b981;
+		color: white;
+	}
+
+	.verification-status.unverified {
+		background: #ef4444;
+		color: white;
+	}
+
+	/* Profile Actions */
+	.profile-actions {
+		display: flex;
+		justify-content: center;
+		gap: 1rem;
+		margin-top: 2rem;
+		flex-wrap: wrap;
+	}
+
+	.btn-secondary {
+		background: var(--bg-secondary);
+		color: var(--text-primary);
+		border: 1px solid var(--border-color);
+	}
+
+	.btn-secondary:hover {
+		background: var(--border-color);
+		transform: translateY(-2px);
 	}
 
 	.account-info {

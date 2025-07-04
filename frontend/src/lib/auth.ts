@@ -52,6 +52,9 @@ export const isAuthenticated = derived(
 export const isLoading = writable(false);
 export const authError = writable<AuthError | null>(null);
 
+// Token refresh scheduling
+let refreshTimeout: number | null = null;
+
 // Create the auth store with methods
 function createAuthStore() {
 	const { subscribe, set, update } = writable({
@@ -443,9 +446,6 @@ function storeAuthData(tokens: AuthTokens, user: User) {
 	scheduleTokenRefresh(tokens);
 	console.log('Auth: Auth state updated in stores');
 }
-
-// Token refresh scheduling
-let refreshTimeout: number | null = null;
 
 function scheduleTokenRefresh(tokens: AuthTokens) {
 	if (refreshTimeout) {
