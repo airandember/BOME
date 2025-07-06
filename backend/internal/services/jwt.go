@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -12,6 +13,62 @@ import (
 var jwtSecret []byte
 var jwtRefreshSecret []byte
 var secretsInitialized bool
+
+// TokenBlacklist manages blacklisted tokens
+type TokenBlacklist struct {
+	tokens map[string]time.Time
+	mutex  sync.RWMutex
+}
+
+// Global token blacklist instance
+var tokenBlacklist = &TokenBlacklist{
+	tokens: make(map[string]time.Time),
+}
+
+// BlacklistToken adds a token to the blacklist
+func (tb *TokenBlacklist) BlacklistToken(tokenID string, expiry time.Time) {
+	tb.mutex.Lock()
+	defer tb.mutex.Unlock()
+	tb.tokens[tokenID] = expiry
+}
+
+// IsBlacklisted checks if a token is blacklisted
+func (tb *TokenBlacklist) IsBlacklisted(tokenID string) bool {
+	tb.mutex.RLock()
+	defer tb.mutex.RUnlock()
+	if expiry, exists := tb.tokens[tokenID]; exists {
+		if time.Now().Before(expiry) {
+			return true
+		}
+		// Clean up expired token
+		tb.mutex.RUnlock()
+		tb.mutex.Lock()
+		delete(tb.tokens, tokenID)
+		tb.mutex.Unlock()
+		tb.mutex.RLock()
+	}
+	return false
+}
+
+// CleanupExpiredTokens removes expired tokens from blacklist
+func (tb *TokenBlacklist) CleanupExpiredTokens() {
+	tb.mutex.Lock()
+	defer tb.mutex.Unlock()
+
+	now := time.Now()
+	for tokenID, expiry := range tb.tokens {
+		if now.After(expiry) {
+			delete(tb.tokens, tokenID)
+		}
+	}
+}
+
+// GetBlacklistSize returns the number of blacklisted tokens
+func (tb *TokenBlacklist) GetBlacklistSize() int {
+	tb.mutex.RLock()
+	defer tb.mutex.RUnlock()
+	return len(tb.tokens)
+}
 
 // initializeSecrets ensures JWT secrets are loaded from environment variables
 func initializeSecrets() error {
@@ -42,6 +99,7 @@ type Claims struct {
 	Role          string `json:"role"`
 	EmailVerified bool   `json:"email_verified"`
 	TokenType     string `json:"token_type"` // "access" or "refresh"
+	TokenID       string `json:"token_id"`   // Unique token identifier for blacklisting
 	jwt.RegisteredClaims
 }
 
@@ -59,14 +117,18 @@ func GenerateTokenPair(userID int, email, role string, emailVerified bool) (*Tok
 		return nil, fmt.Errorf("failed to initialize JWT secrets: %w", err)
 	}
 
+	// Generate unique token IDs
+	accessTokenID := fmt.Sprintf("access_%d_%s", userID, time.Now().Format("20060102150405"))
+	refreshTokenID := fmt.Sprintf("refresh_%d_%s", userID, time.Now().Format("20060102150405"))
+
 	// Generate access token (short-lived: 15 minutes)
-	accessToken, err := generateToken(userID, email, role, emailVerified, "access", 15*time.Minute, jwtSecret)
+	accessToken, err := generateToken(userID, email, role, emailVerified, "access", 15*time.Minute, jwtSecret, accessTokenID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
 	}
 
 	// Generate refresh token (long-lived: 7 days)
-	refreshToken, err := generateToken(userID, email, role, emailVerified, "refresh", 7*24*time.Hour, jwtRefreshSecret)
+	refreshToken, err := generateToken(userID, email, role, emailVerified, "refresh", 7*24*time.Hour, jwtRefreshSecret, refreshTokenID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
 	}
@@ -84,11 +146,12 @@ func GenerateToken(userID int, email, role string, expiry time.Duration) (string
 	if err := initializeSecrets(); err != nil {
 		return "", fmt.Errorf("failed to initialize JWT secrets: %w", err)
 	}
-	return generateToken(userID, email, role, true, "access", expiry, jwtSecret)
+	tokenID := fmt.Sprintf("legacy_%d_%s", userID, time.Now().Format("20060102150405"))
+	return generateToken(userID, email, role, true, "access", expiry, jwtSecret, tokenID)
 }
 
 // generateToken internal helper to generate tokens
-func generateToken(userID int, email, role string, emailVerified bool, tokenType string, expiry time.Duration, secret []byte) (string, error) {
+func generateToken(userID int, email, role string, emailVerified bool, tokenType string, expiry time.Duration, secret []byte, tokenID string) (string, error) {
 	now := time.Now()
 	claims := &Claims{
 		UserID:        userID,
@@ -96,13 +159,14 @@ func generateToken(userID int, email, role string, emailVerified bool, tokenType
 		Role:          role,
 		EmailVerified: emailVerified,
 		TokenType:     tokenType,
+		TokenID:       tokenID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(expiry)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			Issuer:    "bome-backend",
 			Subject:   fmt.Sprintf("user:%d", userID),
-			ID:        fmt.Sprintf("%d_%s_%d", userID, tokenType, now.Unix()),
+			ID:        tokenID,
 		},
 	}
 
@@ -147,6 +211,11 @@ func ParseToken(tokenString string) (*Claims, error) {
 		return nil, errors.New("invalid token issuer")
 	}
 
+	// Check if token is blacklisted
+	if tokenBlacklist.IsBlacklisted(claims.TokenID) {
+		return nil, errors.New("token has been revoked")
+	}
+
 	return claims, nil
 }
 
@@ -186,6 +255,11 @@ func ParseRefreshToken(tokenString string) (*Claims, error) {
 		return nil, errors.New("invalid token issuer")
 	}
 
+	// Check if token is blacklisted
+	if tokenBlacklist.IsBlacklisted(claims.TokenID) {
+		return nil, errors.New("refresh token has been revoked")
+	}
+
 	return claims, nil
 }
 
@@ -196,8 +270,32 @@ func RefreshTokenPair(refreshToken string) (*TokenPair, error) {
 		return nil, err
 	}
 
+	// Blacklist the old refresh token
+	if claims.TokenID != "" {
+		tokenBlacklist.BlacklistToken(claims.TokenID, claims.ExpiresAt.Time)
+	}
+
 	// Generate new token pair
 	return GenerateTokenPair(claims.UserID, claims.Email, claims.Role, claims.EmailVerified)
+}
+
+// BlacklistToken adds a token to the blacklist
+func BlacklistToken(tokenString string) error {
+	// Try to parse as access token first
+	claims, err := ParseToken(tokenString)
+	if err != nil {
+		// Try as refresh token
+		claims, err = ParseRefreshToken(tokenString)
+		if err != nil {
+			return fmt.Errorf("invalid token: %w", err)
+		}
+	}
+
+	if claims.TokenID != "" {
+		tokenBlacklist.BlacklistToken(claims.TokenID, claims.ExpiresAt.Time)
+	}
+
+	return nil
 }
 
 // ValidateTokenClaims performs additional validation on token claims
@@ -225,4 +323,16 @@ func ValidateTokenClaims(claims *Claims) error {
 	}
 
 	return nil
+}
+
+// StartTokenBlacklistCleanup starts a background goroutine to clean up expired tokens
+func StartTokenBlacklistCleanup() {
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour) // Clean up every hour
+		defer ticker.Stop()
+
+		for range ticker.C {
+			tokenBlacklist.CleanupExpiredTokens()
+		}
+	}()
 }

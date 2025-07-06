@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { auth } from '$lib/auth';
+	import { auth, isAdmin as checkIsAdmin } from '$lib/auth';
 	import { goto } from '$app/navigation';
 	import { theme } from '$lib/theme';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
@@ -19,7 +19,7 @@
 	const unsubscribe = auth.subscribe(state => {
 		isAuthenticated = state.isAuthenticated;
 		user = state.user;
-		isAdmin = user?.role === 'admin';
+		isAdmin = checkIsAdmin();
 		
 		// Only check auth after we have a definitive state
 		if (!authChecked) {
@@ -28,10 +28,10 @@
 	});
 
 	onMount(() => {
-		// Small delay to ensure auth store is initialized
+		// Longer delay to ensure auth store is properly initialized
 		setTimeout(() => {
 			checkAuth();
-		}, 50);
+		}, 200);
 
 		return () => {
 			unsubscribe();
@@ -41,21 +41,29 @@
 	function checkAuth() {
 		authChecked = true;
 		
-		// Check admin access
-		if (!isAuthenticated) {
-			goto('/login');
+		// Check admin access with more graceful handling
+		if (!isAuthenticated && !isAdmin) {
+			// Don't redirect immediately, show loading state longer
+			setTimeout(() => {
+				if (!isAuthenticated) {
+					goto('/login');
+				}
+			}, 1000);
 			return;
 		}
 
-		if (!isAdmin) {
-			goto('/');
+		if (isAuthenticated && !isAdmin) {
+			// Show a message instead of immediate redirect
+			setTimeout(() => {
+				goto('/');
+			}, 2000);
 			return;
 		}
 
 		// All checks passed, show the admin interface
 		setTimeout(() => {
 			isLoaded = true;
-		}, 100);
+		}, 300);
 	}
 
 	const toggleSidebar = () => {

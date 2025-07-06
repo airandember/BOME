@@ -2,7 +2,7 @@
 <script lang="ts">
 	import { onMount, createEventDispatcher } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/auth';
+	import { auth, isAdmin } from '$lib/auth';
 	import { subscriptionService, type Subscription } from '$lib/subscription';
 	import LoadingSpinner from './LoadingSpinner.svelte';
 
@@ -37,7 +37,7 @@
 			}
 
 			// Admin users always have access
-			if (user && user.role === 'admin') {
+			if (isAdmin()) {
 				hasAccess = true;
 				dispatch('accessGranted');
 				return;

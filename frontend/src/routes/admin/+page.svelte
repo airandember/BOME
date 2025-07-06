@@ -3,9 +3,9 @@
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/auth';
+	import { auth, isAdmin } from '$lib/auth';
 	import type { AdminAnalytics } from '$lib/types/advertising';
-	import { MOCK_USERS_WITH_ROLES, MOCK_ROLES } from '$lib/mockData/roles';
+	import { MOCK_USERS_WITH_ROLES, MOCK_STANDARDIZED_ROLES } from '$lib/mockData/roles';
 
 	interface Activity {
 		type: 'user_signup' | 'video_upload' | 'subscription' | 'payment' | 'comment';
@@ -41,7 +41,7 @@
 		}
 
 		const user = $auth.user;
-		if (!user || user.role !== 'admin') {
+		if (!user || !isAdmin()) {
 			goto('/');
 			return;
 		}

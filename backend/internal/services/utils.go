@@ -2,9 +2,12 @@ package services
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net"
+	"net/http"
 	"net/mail"
 	"regexp"
 	"strings"
@@ -56,10 +59,10 @@ func ValidateEmail(email string) error {
 	return nil
 }
 
-// ValidatePassword validates password strength
+// ValidatePassword validates password strength with enhanced security
 func ValidatePassword(password string) error {
-	if len(password) < 8 {
-		return fmt.Errorf("password must be at least 8 characters long")
+	if len(password) < 12 {
+		return fmt.Errorf("password must be at least 12 characters long")
 	}
 
 	if len(password) > 128 {
@@ -67,8 +70,10 @@ func ValidatePassword(password string) error {
 	}
 
 	var hasUpper, hasLower, hasNumber, hasSpecial bool
+	uniqueChars := make(map[rune]bool)
 
 	for _, char := range password {
+		uniqueChars[char] = true
 		switch {
 		case 'A' <= char && char <= 'Z':
 			hasUpper = true
@@ -79,6 +84,21 @@ func ValidatePassword(password string) error {
 		case strings.ContainsRune("!@#$%^&*()_+-=[]{}|;:,.<>?", char):
 			hasSpecial = true
 		}
+	}
+
+	// Check for minimum unique characters
+	if len(uniqueChars) < 8 {
+		return fmt.Errorf("password must contain at least 8 unique characters")
+	}
+
+	// Check for repeating patterns
+	if hasRepeatingPatterns(password) {
+		return fmt.Errorf("password contains repeating patterns")
+	}
+
+	// Check against common passwords
+	if isCommonPassword(password) {
+		return fmt.Errorf("password is too common, please choose a stronger password")
 	}
 
 	if !hasUpper {
@@ -98,6 +118,61 @@ func ValidatePassword(password string) error {
 	}
 
 	return nil
+}
+
+// hasRepeatingPatterns checks for repeating character patterns
+func hasRepeatingPatterns(password string) bool {
+	if len(password) < 4 {
+		return false
+	}
+
+	// Check for repeating sequences
+	for i := 0; i < len(password)-3; i++ {
+		pattern := password[i : i+2]
+		if strings.Count(password, pattern) > 2 {
+			return true
+		}
+	}
+
+	// Check for keyboard patterns
+	keyboardPatterns := []string{
+		"qwerty", "asdfgh", "zxcvbn",
+		"123456", "abcdef", "password",
+		"admin", "user", "test",
+	}
+
+	lowerPassword := strings.ToLower(password)
+	for _, pattern := range keyboardPatterns {
+		if strings.Contains(lowerPassword, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// isCommonPassword checks against common weak passwords
+func isCommonPassword(password string) bool {
+	commonPasswords := []string{
+		"password", "123456", "123456789", "qwerty", "abc123",
+		"password123", "admin", "letmein", "welcome", "monkey",
+		"dragon", "master", "hello", "freedom", "whatever",
+		"qwerty123", "trustno1", "jordan", "harley", "ranger",
+		"iwantu", "jennifer", "joshua", "maggie", "password1",
+		"robert", "daniel", "heather", "michelle", "charlie",
+		"andrew", "matthew", "abigail", "david", "sophia",
+		"james", "elizabeth", "olivia", "emma", "noah",
+		"william", "ava", "isabella", "mason", "sophia",
+	}
+
+	lowerPassword := strings.ToLower(password)
+	for _, common := range commonPasswords {
+		if lowerPassword == common {
+			return true
+		}
+	}
+
+	return false
 }
 
 // ValidateName validates first/last name
@@ -246,3 +321,171 @@ var (
 	RegisterRateLimiter = NewRateLimiter(10, 1*time.Hour)   // 10 registrations per hour (increased for development)
 	PasswordRateLimiter = NewRateLimiter(3, 1*time.Hour)    // 3 password resets per hour
 )
+
+// EnhancedRateLimiter provides advanced rate limiting with account lockout
+type EnhancedRateLimiter struct {
+	loginAttempts  map[string][]time.Time
+	failedAttempts map[string]int
+	lockoutUntil   map[string]time.Time
+	mutex          sync.RWMutex
+	window         time.Duration
+	maxAttempts    int
+	lockoutTime    time.Duration
+}
+
+// NewEnhancedRateLimiter creates a new enhanced rate limiter
+func NewEnhancedRateLimiter(maxAttempts int, window, lockoutTime time.Duration) *EnhancedRateLimiter {
+	limiter := &EnhancedRateLimiter{
+		loginAttempts:  make(map[string][]time.Time),
+		failedAttempts: make(map[string]int),
+		lockoutUntil:   make(map[string]time.Time),
+		window:         window,
+		maxAttempts:    maxAttempts,
+		lockoutTime:    lockoutTime,
+	}
+
+	// Start cleanup goroutine
+	go limiter.cleanup()
+
+	return limiter
+}
+
+// CheckLoginAttempt checks if a login attempt is allowed
+func (rl *EnhancedRateLimiter) CheckLoginAttempt(email, ip string) bool {
+	rl.mutex.Lock()
+	defer rl.mutex.Unlock()
+
+	// Check if account is locked out
+	if lockoutTime, exists := rl.lockoutUntil[email]; exists && time.Now().Before(lockoutTime) {
+		return false
+	}
+
+	// Check failed attempts
+	if failed := rl.failedAttempts[email]; failed >= rl.maxAttempts {
+		rl.lockoutUntil[email] = time.Now().Add(rl.lockoutTime)
+		return false
+	}
+
+	return true
+}
+
+// RecordFailedAttempt records a failed login attempt
+func (rl *EnhancedRateLimiter) RecordFailedAttempt(email, ip string) {
+	rl.mutex.Lock()
+	defer rl.mutex.Unlock()
+
+	now := time.Now()
+	rl.failedAttempts[email]++
+
+	// Record attempt with timestamp
+	if rl.loginAttempts[email] == nil {
+		rl.loginAttempts[email] = make([]time.Time, 0)
+	}
+	rl.loginAttempts[email] = append(rl.loginAttempts[email], now)
+
+	// If max attempts reached, set lockout
+	if rl.failedAttempts[email] >= rl.maxAttempts {
+		rl.lockoutUntil[email] = now.Add(rl.lockoutTime)
+		log.Printf("Account locked out: %s from %s for %v", email, ip, rl.lockoutTime)
+	}
+}
+
+// RecordSuccessfulAttempt resets failed attempts for successful login
+func (rl *EnhancedRateLimiter) RecordSuccessfulAttempt(email string) {
+	rl.mutex.Lock()
+	defer rl.mutex.Unlock()
+
+	rl.failedAttempts[email] = 0
+	delete(rl.lockoutUntil, email)
+
+	// Clear old attempts
+	if attempts, exists := rl.loginAttempts[email]; exists {
+		cutoff := time.Now().Add(-rl.window)
+		var validAttempts []time.Time
+		for _, attempt := range attempts {
+			if attempt.After(cutoff) {
+				validAttempts = append(validAttempts, attempt)
+			}
+		}
+		rl.loginAttempts[email] = validAttempts
+	}
+}
+
+// GetRemainingLockoutTime returns remaining lockout time for an account
+func (rl *EnhancedRateLimiter) GetRemainingLockoutTime(email string) time.Duration {
+	rl.mutex.RLock()
+	defer rl.mutex.RUnlock()
+
+	if lockoutTime, exists := rl.lockoutUntil[email]; exists {
+		if remaining := time.Until(lockoutTime); remaining > 0 {
+			return remaining
+		}
+	}
+	return 0
+}
+
+// GetFailedAttempts returns the number of failed attempts for an account
+func (rl *EnhancedRateLimiter) GetFailedAttempts(email string) int {
+	rl.mutex.RLock()
+	defer rl.mutex.RUnlock()
+	return rl.failedAttempts[email]
+}
+
+// cleanup removes old entries periodically
+func (rl *EnhancedRateLimiter) cleanup() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		rl.mutex.Lock()
+		cutoff := time.Now().Add(-rl.window * 2)
+
+		// Clean up expired lockouts
+		for email, lockoutTime := range rl.lockoutUntil {
+			if lockoutTime.Before(cutoff) {
+				delete(rl.lockoutUntil, email)
+				delete(rl.failedAttempts, email)
+				delete(rl.loginAttempts, email)
+			}
+		}
+
+		// Clean up old attempts
+		for email, attempts := range rl.loginAttempts {
+			var validAttempts []time.Time
+			for _, attempt := range attempts {
+				if attempt.After(cutoff) {
+					validAttempts = append(validAttempts, attempt)
+				}
+			}
+			if len(validAttempts) == 0 {
+				delete(rl.loginAttempts, email)
+			} else {
+				rl.loginAttempts[email] = validAttempts
+			}
+		}
+
+		rl.mutex.Unlock()
+	}
+}
+
+// Global enhanced rate limiters
+var (
+	EnhancedLoginRateLimiter    = NewEnhancedRateLimiter(5, 15*time.Minute, 15*time.Minute)
+	EnhancedRegisterRateLimiter = NewEnhancedRateLimiter(3, 1*time.Hour, 1*time.Hour)
+	EnhancedPasswordRateLimiter = NewEnhancedRateLimiter(3, 1*time.Hour, 1*time.Hour)
+)
+
+// GenerateDeviceFingerprint creates a device fingerprint from request headers
+func GenerateDeviceFingerprint(r *http.Request) string {
+	// Create a simple device fingerprint from headers
+	fingerprint := fmt.Sprintf("%s|%s|%s|%s",
+		r.Header.Get("User-Agent"),
+		r.Header.Get("Accept-Language"),
+		r.Header.Get("Accept-Encoding"),
+		r.Header.Get("Accept"),
+	)
+
+	// Hash the fingerprint for consistency
+	hash := sha256.Sum256([]byte(fingerprint))
+	return hex.EncodeToString(hash[:])[:16] // Return first 16 characters
+}

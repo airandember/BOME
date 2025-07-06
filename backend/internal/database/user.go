@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -27,6 +28,8 @@ type User struct {
 	AvatarURL   sql.NullString
 	Preferences sql.NullString
 	LastLogin   sql.NullTime
+	LastLogout  sql.NullTime
+	MaxSessions int
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -50,6 +53,20 @@ type UserProfile struct {
 	UpdatedAt     time.Time              `json:"updated_at"`
 }
 
+// Session represents an active user session
+type Session struct {
+	ID           string    `json:"id"`
+	UserID       int       `json:"user_id"`
+	TokenID      string    `json:"token_id"`
+	DeviceInfo   string    `json:"device_info"`
+	IPAddress    string    `json:"ip_address"`
+	UserAgent    string    `json:"user_agent"`
+	LastActivity time.Time `json:"last_activity"`
+	IsActive     bool      `json:"is_active"`
+	CreatedAt    time.Time `json:"created_at"`
+	ExpiresAt    time.Time `json:"expires_at"`
+}
+
 // CreateUser inserts a new user into the database
 func (db *DB) CreateUser(email, passwordHash, firstName, lastName, role string) (*User, error) {
 	var id int
@@ -67,9 +84,9 @@ func (db *DB) CreateUser(email, passwordHash, firstName, lastName, role string) 
 func (db *DB) GetUserByID(id int) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
-		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, created_at, updated_at FROM users WHERE id = $1`,
+		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at FROM users WHERE id = $1`,
 		id,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -80,9 +97,9 @@ func (db *DB) GetUserByID(id int) (*User, error) {
 func (db *DB) GetUserByEmail(email string) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
-		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, created_at, updated_at FROM users WHERE email = $1`,
+		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at FROM users WHERE email = $1`,
 		email,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -188,6 +205,12 @@ func (db *DB) UpdateLastLogin(userID int) error {
 	return err
 }
 
+// UpdateLastLogout updates the last logout timestamp for a user
+func (db *DB) UpdateLastLogout(userID int) error {
+	_, err := db.Exec(`UPDATE users SET last_logout = NOW(), updated_at = NOW() WHERE id = $1`, userID)
+	return err
+}
+
 // CheckUserExists checks if a user exists by email
 func (db *DB) CheckUserExists(email string) (bool, error) {
 	var count int
@@ -235,17 +258,17 @@ func (db *DB) ClearPasswordResetToken(userID int) error {
 	return err
 }
 
-// SetVerificationToken sets an email verification token for a user
+// SetVerificationToken sets an email verification token for a user with expiration
 func (db *DB) SetVerificationToken(userID int, token string) error {
 	_, err := db.Exec(`UPDATE users SET verification_token = $1, updated_at = NOW() WHERE id = $2`, token, userID)
 	return err
 }
 
-// GetUserByVerificationToken retrieves a user by verification token
+// GetUserByVerificationToken retrieves a user by verification token (with expiration check)
 func (db *DB) GetUserByVerificationToken(token string) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
-		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, created_at, updated_at FROM users WHERE verification_token = $1`,
+		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, created_at, updated_at FROM users WHERE verification_token = $1 AND updated_at > NOW() - INTERVAL '24 hours'`,
 		token,
 	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
@@ -263,5 +286,117 @@ func (db *DB) ClearVerificationToken(userID int) error {
 // UpdateUserStripeCustomerID updates a user's Stripe customer ID
 func (db *DB) UpdateUserStripeCustomerID(userID int, stripeCustomerID string) error {
 	_, err := db.Exec(`UPDATE users SET stripe_customer_id = $1, updated_at = NOW() WHERE id = $2`, stripeCustomerID, userID)
+	return err
+}
+
+// CreateSession creates a new user session
+func (db *DB) CreateSession(userID int, tokenID, deviceInfo, ipAddress, userAgent string, expiresAt time.Time) (*Session, error) {
+	sessionID := fmt.Sprintf("sess_%d_%s", userID, time.Now().Format("20060102150405"))
+
+	_, err := db.Exec(`
+		INSERT INTO user_sessions (session_id, user_id, token_id, device_info, ip_address, user_agent, last_activity, is_active, created_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW(), TRUE, NOW(), $7)
+	`, sessionID, userID, tokenID, deviceInfo, ipAddress, userAgent, expiresAt)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &Session{
+		ID:           sessionID,
+		UserID:       userID,
+		TokenID:      tokenID,
+		DeviceInfo:   deviceInfo,
+		IPAddress:    ipAddress,
+		UserAgent:    userAgent,
+		LastActivity: time.Now(),
+		IsActive:     true,
+		CreatedAt:    time.Now(),
+		ExpiresAt:    expiresAt,
+	}, nil
+}
+
+// GetActiveSessions retrieves all active sessions for a user
+func (db *DB) GetActiveSessions(userID int) ([]*Session, error) {
+	rows, err := db.Query(`
+		SELECT session_id, user_id, token_id, device_info, ip_address, user_agent, last_activity, is_active, created_at, expires_at
+		FROM user_sessions 
+		WHERE user_id = $1 AND is_active = TRUE AND expires_at > NOW()
+		ORDER BY last_activity DESC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []*Session
+	for rows.Next() {
+		session := &Session{}
+		err := rows.Scan(&session.ID, &session.UserID, &session.TokenID, &session.DeviceInfo, &session.IPAddress, &session.UserAgent, &session.LastActivity, &session.IsActive, &session.CreatedAt, &session.ExpiresAt)
+		if err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, session)
+	}
+
+	return sessions, nil
+}
+
+// DeactivateSession deactivates a specific session
+func (db *DB) DeactivateSession(sessionID string) error {
+	_, err := db.Exec(`UPDATE user_sessions SET is_active = FALSE WHERE session_id = $1`, sessionID)
+	return err
+}
+
+// DeactivateAllUserSessions deactivates all sessions for a user
+func (db *DB) DeactivateAllUserSessions(userID int) error {
+	_, err := db.Exec(`UPDATE user_sessions SET is_active = FALSE WHERE user_id = $1`, userID)
+	return err
+}
+
+// UpdateSessionActivity updates the last activity time for a session
+func (db *DB) UpdateSessionActivity(sessionID string) error {
+	_, err := db.Exec(`UPDATE user_sessions SET last_activity = NOW() WHERE session_id = $1`, sessionID)
+	return err
+}
+
+// UpdateSessionActivityByTokenID updates the last activity time for a session by token ID
+func (db *DB) UpdateSessionActivityByTokenID(tokenID string) error {
+	_, err := db.Exec(`UPDATE user_sessions SET last_activity = NOW() WHERE token_id = $1 AND is_active = TRUE AND expires_at > NOW()`, tokenID)
+	return err
+}
+
+// CleanupExpiredSessions removes expired sessions
+func (db *DB) CleanupExpiredSessions() error {
+	_, err := db.Exec(`DELETE FROM user_sessions WHERE expires_at < NOW()`)
+	return err
+}
+
+// GetSessionCount returns the number of active sessions for a user
+func (db *DB) GetSessionCount(userID int) (int, error) {
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM user_sessions WHERE user_id = $1 AND is_active = TRUE AND expires_at > NOW()`, userID).Scan(&count)
+	return count, err
+}
+
+// CheckSessionLimit checks if user has reached maximum allowed sessions
+func (db *DB) CheckSessionLimit(userID int, maxSessions int) (bool, error) {
+	count, err := db.GetSessionCount(userID)
+	if err != nil {
+		return false, err
+	}
+	return count < maxSessions, nil
+}
+
+// CleanupExpiredTokens removes expired verification and reset tokens
+func (db *DB) CleanupExpiredTokens() error {
+	// Clean up expired verification tokens (older than 24 hours)
+	_, err := db.Exec(`UPDATE users SET verification_token = NULL WHERE updated_at < NOW() - INTERVAL '24 hours' AND verification_token IS NOT NULL`)
+	if err != nil {
+		return err
+	}
+
+	// Clean up expired reset tokens (older than 1 hour)
+	_, err = db.Exec(`UPDATE users SET reset_token = NULL, reset_token_expiry = NULL WHERE reset_token_expiry < NOW() AND reset_token IS NOT NULL`)
 	return err
 }

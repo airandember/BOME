@@ -31,10 +31,12 @@ func New(cfg *config.Config) (*DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Configure connection pool for PostgreSQL
-	db.SetMaxOpenConns(25)                 // Maximum number of open connections
-	db.SetMaxIdleConns(5)                  // Maximum number of idle connections
-	db.SetConnMaxLifetime(5 * time.Minute) // Maximum connection lifetime
+	// Configure connection pool for production
+	// These settings are optimized for production load
+	db.SetMaxOpenConns(50)                  // Maximum number of open connections (increased for production)
+	db.SetMaxIdleConns(10)                  // Maximum number of idle connections (increased for production)
+	db.SetConnMaxLifetime(10 * time.Minute) // Maximum connection lifetime (increased for production)
+	db.SetConnMaxIdleTime(5 * time.Minute)  // Maximum idle time for connections
 
 	// Test the connection
 	if err := db.Ping(); err != nil {
@@ -49,6 +51,7 @@ func New(cfg *config.Config) (*DB, error) {
 
 	log.Printf("PostgreSQL database connection established: %s:%s/%s", cfg.DBHost, cfg.DBPort, cfg.DBName)
 	log.Printf("GORM database connection established successfully")
+	log.Printf("Database pool configured: MaxOpen=%d, MaxIdle=%d, MaxLifetime=%v", 50, 10, 10*time.Minute)
 
 	return &DB{DB: db, GormDB: gormDB}, nil
 }
@@ -63,40 +66,26 @@ func (db *DB) RunMigrations() error {
 	log.Println("Running database migrations...")
 
 	// Create migrations table if it doesn't exist
-	createMigrationsTable := `
+	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS migrations (
 			id SERIAL PRIMARY KEY,
-			name VARCHAR(255) NOT NULL UNIQUE,
+			name VARCHAR(255) UNIQUE NOT NULL,
 			applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
-	`
-
-	if _, err := db.Exec(createMigrationsTable); err != nil {
+		)
+	`)
+	if err != nil {
 		return fmt.Errorf("failed to create migrations table: %w", err)
 	}
 
-	// Run migrations in order
+	// Define migrations in order
 	migrations := []string{
 		createUsersTable,
 		createVideosTable,
 		createSubscriptionsTable,
-		createCommentsTable,
-		createLikesTable,
-		createFavoritesTable,
-		createUserActivityTable,
-		createAdminLogsTable,
-		createDatabaseIndexes,
-		// Add profile fields migration
-		`ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;
-		 ALTER TABLE users ADD COLUMN IF NOT EXISTS location VARCHAR(255);
-		 ALTER TABLE users ADD COLUMN IF NOT EXISTS website VARCHAR(500);
-		 ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
-		 ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500);
-		 ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB DEFAULT '{}';
-		 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;
-		 CREATE INDEX IF NOT EXISTS idx_users_last_login ON users(last_login);
-		 CREATE INDEX IF NOT EXISTS idx_users_location ON users(location);
-		 UPDATE users SET preferences = '{}' WHERE preferences IS NULL;`,
+		createAdvertisementsTable,
+		createYouTubeVideosTable,
+		createUserSessionsTable,
+		createAuditLogsTable,
 	}
 
 	for i, migration := range migrations {
@@ -195,54 +184,40 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 );
 `
 
-const createCommentsTable = `
-CREATE TABLE IF NOT EXISTS comments (
+const createYouTubeVideosTable = `
+CREATE TABLE IF NOT EXISTS youtube_videos (
     id SERIAL PRIMARY KEY,
-    video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    content TEXT NOT NULL,
-    parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    video_id VARCHAR(255) UNIQUE NOT NULL,
+    thumbnail_url VARCHAR(500),
+    duration INTEGER,
+    file_size BIGINT,
+    status VARCHAR(50) DEFAULT 'processing',
+    category VARCHAR(100),
+    tags TEXT,
+    view_count INTEGER DEFAULT 0,
+    like_count INTEGER DEFAULT 0,
+    created_by INTEGER REFERENCES users(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 `
 
-const createLikesTable = `
-CREATE TABLE IF NOT EXISTS likes (
+const createUserSessionsTable = `
+CREATE TABLE IF NOT EXISTS user_sessions (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
+    session_id VARCHAR(255) UNIQUE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, video_id)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 `
 
-const createFavoritesTable = `
-CREATE TABLE IF NOT EXISTS favorites (
+const createAuditLogsTable = `
+CREATE TABLE IF NOT EXISTS audit_logs (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, video_id)
-);
-`
-
-const createUserActivityTable = `
-CREATE TABLE IF NOT EXISTS user_activity (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    activity_type VARCHAR(50) NOT NULL,
-    activity_data JSONB,
-    ip_address INET,
-    user_agent TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-`
-
-const createAdminLogsTable = `
-CREATE TABLE IF NOT EXISTS admin_logs (
-    id SERIAL PRIMARY KEY,
-    admin_user_id INTEGER REFERENCES users(id),
+    user_id INTEGER REFERENCES users(id),
     action VARCHAR(100) NOT NULL,
     target_type VARCHAR(50),
     target_id INTEGER,
@@ -250,25 +225,4 @@ CREATE TABLE IF NOT EXISTS admin_logs (
     ip_address INET,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-`
-
-const createDatabaseIndexes = `
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
-CREATE INDEX IF NOT EXISTS idx_videos_status ON videos(status);
-CREATE INDEX IF NOT EXISTS idx_videos_category ON videos(category);
-CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(created_at);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
-CREATE INDEX IF NOT EXISTS idx_comments_video_id ON comments(video_id);
-CREATE INDEX IF NOT EXISTS idx_comments_user_id ON comments(user_id);
-CREATE INDEX IF NOT EXISTS idx_likes_user_id ON likes(user_id);
-CREATE INDEX IF NOT EXISTS idx_likes_video_id ON likes(video_id);
-CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON favorites(user_id);
-CREATE INDEX IF NOT EXISTS idx_favorites_video_id ON favorites(video_id);
-CREATE INDEX IF NOT EXISTS idx_user_activity_user_id ON user_activity(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_activity_type ON user_activity(activity_type);
-CREATE INDEX IF NOT EXISTS idx_user_activity_created_at ON user_activity(created_at);
-CREATE INDEX IF NOT EXISTS idx_admin_logs_admin_user_id ON admin_logs(admin_user_id);
-CREATE INDEX IF NOT EXISTS idx_admin_logs_created_at ON admin_logs(created_at);
 `

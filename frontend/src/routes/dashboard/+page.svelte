@@ -17,41 +17,13 @@
 	onMount(() => {
 		let unsubscribe: any = null;
 
-		// Removed page store subscription to prevent multiple initializations
-
 		async function initializeDashboard() {
 			try {
 				console.log('Dashboard: Starting initialization');
 				
-				// Debug localStorage
-				if (typeof window !== 'undefined') {
-					const storedTokens = localStorage.getItem('bome_auth_tokens');
-					const storedUser = localStorage.getItem('bome_user_data');
-					console.log('Dashboard: localStorage check:', {
-						hasTokens: !!storedTokens,
-						hasUser: !!storedUser,
-						tokens: storedTokens ? JSON.parse(storedTokens) : null,
-						user: storedUser ? JSON.parse(storedUser) : null
-					});
-				}
-				
-				// Test backend connectivity first
-				const backendReachable = await testBackendConnectivity();
-				console.log('Dashboard: Backend reachable:', backendReachable);
-				
-				// Initialize auth first
+				// Initialize auth first and wait for it to complete
 				await initializeAuth();
 				console.log('Dashboard: Auth initialization completed');
-				
-				// Check auth state after initialization
-				auth.subscribe((state) => {
-					console.log('Dashboard: Auth state after initialization:', {
-						isAuthenticated: state.isAuthenticated,
-						user: state.user ? 'User exists' : 'No user',
-						loading: state.loading,
-						token: state.token ? 'Token exists' : 'No token'
-					});
-				})();
 				
 				// Subscribe to auth state changes after initialization
 				unsubscribe = auth.subscribe((state) => {
@@ -93,46 +65,26 @@
 							
 							console.log('Dashboard: Active tab set to:', activeTab);
 							
-							// Clean up URL parameters after a delay to ensure tab is set
-							setTimeout(() => {
-								if (urlParams.has('tab') || urlParams.has('from')) {
-									console.log('Dashboard: Cleaning up URL parameters');
-									// Temporarily disable URL cleanup to prevent redirects
-									// replaceState($page.url.pathname, {});
-									console.log('Dashboard: URL parameters cleaned up (disabled)');
-								}
-							}, 100);
-							
 							// Set loading to false since we have user data
 							loading = false;
 						} else if (state.isAuthenticated === false && !state.loading) {
-							// User is explicitly not authenticated and not loading, redirect to login
-							console.log('Dashboard: User not authenticated, redirecting to login');
-							goto('/login');
-							return;
+							// User is explicitly not authenticated and not loading
+							// Instead of immediate redirect, show a message and provide login option
+							console.log('Dashboard: User not authenticated, showing login prompt');
+							loading = false;
+							error = 'Please log in to access your dashboard';
 						}
 					}
 				});
 				
-				// Set a timeout to prevent infinite loading
+				// Set a longer timeout to prevent infinite loading (increased from 3s to 10s)
 				setTimeout(() => {
 					if (loading) {
 						console.log('Dashboard: Loading timeout reached, checking auth state');
 						loading = false;
+						error = 'Loading took longer than expected. Please refresh the page.';
 					}
-				}, 3000);
-				
-				// Add a delay to allow auth initialization to complete
-				setTimeout(() => {
-					console.log('Dashboard: Checking auth state after delay');
-					auth.subscribe((state) => {
-						console.log('Dashboard: Delayed auth check:', {
-							isAuthenticated: state.isAuthenticated,
-							hasUser: !!state.user,
-							loading: state.loading
-						});
-					})();
-				}, 500);
+				}, 10000);
 				
 			} catch (err) {
 				console.error('Error loading dashboard:', err);
@@ -167,6 +119,25 @@
 	<div class="loading-container">
 		<LoadingSpinner size="large" color="primary" />
 		<p>Loading your dashboard...</p>
+	</div>
+{:else if error}
+	<div class="error-container">
+		<div class="error-content glass">
+			<div class="error-icon">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<circle cx="12" cy="12" r="10"></circle>
+					<line x1="15" y1="9" x2="9" y2="15"></line>
+					<line x1="9" y1="9" x2="15" y2="15"></line>
+				</svg>
+			</div>
+			<h2>Access Required</h2>
+			<p>{error}</p>
+			<div class="error-actions">
+				<a href="/login" class="btn btn-primary">Log In</a>
+				<a href="/register" class="btn btn-ghost">Create Account</a>
+				<button class="btn btn-outline" on:click={() => window.location.reload()}>Try Again</button>
+			</div>
+		</div>
 	</div>
 {:else}
 	<div class="dashboard">
@@ -302,6 +273,67 @@
 		justify-content: center;
 		min-height: 50vh;
 		gap: 1rem;
+	}
+
+	.error-container {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 50vh;
+		padding: 2rem;
+	}
+
+	.error-content {
+		text-align: center;
+		max-width: 500px;
+		padding: 3rem 2rem;
+		border-radius: 20px;
+		backdrop-filter: blur(10px);
+		border: 1px solid var(--border-color);
+		box-shadow: var(--shadow-lg);
+	}
+
+	.error-icon {
+		width: 64px;
+		height: 64px;
+		margin: 0 auto 1.5rem;
+		color: var(--error);
+	}
+
+	.error-icon svg {
+		width: 100%;
+		height: 100%;
+	}
+
+	.error-content h2 {
+		font-size: 1.5rem;
+		font-weight: 600;
+		margin-bottom: 1rem;
+		color: var(--text-primary);
+	}
+
+	.error-content p {
+		color: var(--text-secondary);
+		margin-bottom: 2rem;
+		line-height: 1.6;
+	}
+
+	.error-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		align-items: center;
+	}
+
+	.error-actions .btn {
+		min-width: 150px;
+	}
+
+	@media (min-width: 640px) {
+		.error-actions {
+			flex-direction: row;
+			justify-content: center;
+		}
 	}
 
 	.dashboard {

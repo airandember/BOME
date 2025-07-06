@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { auth } from '$lib/auth';
+	import { auth, isAdmin as checkIsAdmin } from '$lib/auth';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
@@ -17,7 +17,7 @@
 	auth.subscribe(state => {
 		isAuthenticated = state.isAuthenticated;
 		user = state.user;
-		isAdmin = user?.role === 'admin';
+		isAdmin = checkIsAdmin();
 		isAdvertiser = user?.role === 'advertiser';
 	});
 
@@ -178,6 +178,15 @@
 							</a>
 							<div class="dropdown-divider"></div>
 						{/if}
+						<a href="/dashboard" class="dropdown-item" on:click={closeMenu}>
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<rect x="3" y="3" width="7" height="9"></rect>
+								<rect x="14" y="3" width="7" height="5"></rect>
+								<rect x="14" y="12" width="7" height="9"></rect>
+								<rect x="3" y="16" width="7" height="5"></rect>
+							</svg>
+							<span>Dashboard</span>
+						</a>
 						<a href="/dashboard?tab=profile" class="dropdown-item" on:click={closeMenu}>
 							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>

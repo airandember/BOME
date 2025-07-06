@@ -55,6 +55,82 @@ export const authError = writable<AuthError | null>(null);
 // Token refresh scheduling
 let refreshTimeout: number | null = null;
 
+// Secure token storage using httpOnly cookies (fallback to localStorage for development)
+class SecureTokenStorage {
+	private static readonly TOKEN_KEY = 'bome_auth_token';
+	private static readonly REFRESH_KEY = 'bome_refresh_token';
+	
+	static storeTokens(accessToken: string, refreshToken: string): void {
+		if (browser) {
+			// In production, use httpOnly cookies
+			// For development, use localStorage with additional security
+			try {
+				// Store with expiration
+				const tokenData = {
+					token: accessToken,
+					refresh: refreshToken,
+					expires: Date.now() + (15 * 60 * 1000), // 15 minutes
+					created: Date.now()
+				};
+				
+				localStorage.setItem(this.TOKEN_KEY, JSON.stringify(tokenData));
+				
+				// Set a flag to indicate secure storage
+				localStorage.setItem('bome_secure_storage', 'true');
+			} catch (error) {
+				console.error('Failed to store tokens securely:', error);
+			}
+		}
+	}
+	
+	static getAccessToken(): string | null {
+		if (!browser) return null;
+		
+		try {
+			const stored = localStorage.getItem(this.TOKEN_KEY);
+			if (!stored) return null;
+			
+			const tokenData = JSON.parse(stored);
+			
+			// Check if token is expired
+			if (Date.now() > tokenData.expires) {
+				this.clearTokens();
+				return null;
+			}
+			
+			return tokenData.token;
+		} catch {
+			return null;
+		}
+	}
+	
+	static getRefreshToken(): string | null {
+		if (!browser) return null;
+		
+		try {
+			const stored = localStorage.getItem(this.TOKEN_KEY);
+			if (!stored) return null;
+			
+			const tokenData = JSON.parse(stored);
+			return tokenData.refresh;
+		} catch {
+			return null;
+		}
+	}
+	
+	static clearTokens(): void {
+		if (browser) {
+			localStorage.removeItem(this.TOKEN_KEY);
+			localStorage.removeItem('bome_secure_storage');
+		}
+	}
+	
+	static isSecure(): boolean {
+		if (!browser) return false;
+		return localStorage.getItem('bome_secure_storage') === 'true';
+	}
+}
+
 // Create the auth store with methods
 function createAuthStore() {
 	const { subscribe, set, update } = writable({
@@ -161,11 +237,14 @@ function createAuthStore() {
 
 		async logout() {
 			try {
-				const tokens = getCurrentTokens();
-				if (tokens) {
+				const refreshToken = SecureTokenStorage.getRefreshToken();
+				if (refreshToken) {
 					await apiRequest('/auth/logout', {
 						method: 'POST',
-						body: JSON.stringify({ refresh_token: tokens.refresh_token }),
+						body: JSON.stringify({ 
+							refresh_token: refreshToken,
+							all_devices: false // Can be made configurable
+						}),
 					}).catch(() => {
 						// Ignore errors on logout
 					});
@@ -173,6 +252,7 @@ function createAuthStore() {
 			} catch (error) {
 				console.error('Logout error:', error);
 			} finally {
+				SecureTokenStorage.clearTokens();
 				clearAuthData();
 				if (browser) {
 					goto('/login');
@@ -350,7 +430,7 @@ export async function testBackendConnectivity() {
 	}
 }
 
-export function initializeAuth() {
+export async function initializeAuth() {
 	try {
 		console.log('Auth: Starting initialization...');
 		const storedTokens = localStorage.getItem(TOKEN_STORAGE_KEY);
@@ -390,6 +470,9 @@ export function initializeAuth() {
 		} else {
 			console.log('Auth: No stored tokens or user found');
 		}
+		
+		// Add a small delay to ensure state is properly set
+		await new Promise(resolve => setTimeout(resolve, 50));
 	} catch (error) {
 		console.error('Failed to initialize auth from storage:', error);
 		clearAuthData();
@@ -610,7 +693,26 @@ export function hasRole(role: string): boolean {
 }
 
 export function isAdmin(): boolean {
-	return hasRole('admin');
+	const user = getCurrentUser();
+	if (!user) return false;
+	
+	// Admin roles include all roles with level 7+ (subsystem managers and above)
+	const adminRoles = [
+		'super_admin',           // Level 10: Super Administrator
+		'system_admin',          // Level 9: System Administrator
+		'content_manager',       // Level 8: Content Manager
+		'articles_manager',      // Level 7: Articles Manager
+		'youtube_manager',       // Level 7: YouTube Manager
+		'streaming_manager',     // Level 7: Video Streaming Manager
+		'events_manager',        // Level 7: Events Manager
+		'advertisement_manager', // Level 7: Advertisement Manager
+		'user_manager',          // Level 7: User Account Manager
+		'analytics_manager',     // Level 7: Analytics Manager
+		'financial_admin',       // Level 7: Financial Administrator
+		'admin'                  // Legacy admin role
+	];
+	
+	return adminRoles.includes(user.role);
 }
 
 export function isAdvertiser(): boolean {

@@ -18,7 +18,22 @@ func SetupAdvertisementRoutes(
 ) {
 	// Advertiser routes (require advertiser role)
 	advertiser := router.Group("/advertiser")
-	advertiser.Use(middleware.AuthRequired(), RoleRequired("advertiser", "admin"))
+	advertiser.Use(middleware.AuthRequired(), RoleRequired(
+		"advertiser",            // Level 3: Advertiser
+		"marketing_specialist",  // Level 4: Marketing Specialist
+		"advertisement_manager", // Level 7: Advertisement Manager
+		"super_admin",           // Level 10: Super Administrator
+		"system_admin",          // Level 9: System Administrator
+		"content_manager",       // Level 8: Content Manager
+		"articles_manager",      // Level 7: Articles Manager
+		"youtube_manager",       // Level 7: YouTube Manager
+		"streaming_manager",     // Level 7: Video Streaming Manager
+		"events_manager",        // Level 7: Events Manager
+		"user_manager",          // Level 7: User Account Manager
+		"analytics_manager",     // Level 7: Analytics Manager
+		"financial_admin",       // Level 7: Financial Administrator
+		"admin",                 // Legacy admin role
+	))
 	{
 		// Advertiser account management
 		advertiser.POST("/account", createAdvertiserAccountHandler(adService))

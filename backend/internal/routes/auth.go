@@ -2,6 +2,7 @@ package routes
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -52,6 +53,12 @@ type VerifyEmailRequest struct {
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password" binding:"required"`
 	NewPassword     string `json:"new_password" binding:"required"`
+}
+
+// LogoutRequest represents a logout request
+type LogoutRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+	AllDevices   bool   `json:"all_devices"` // Optional: logout from all devices
 }
 
 // RegisterHandler handles user registration
@@ -170,14 +177,8 @@ func RegisterHandler(db *database.DB, emailService *services.EmailService) gin.H
 // LoginHandler handles user login
 func LoginHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Rate limiting
+		// Enhanced rate limiting
 		clientIP := services.GetClientIP(c.Request.RemoteAddr, c.GetHeader("X-Forwarded-For"), c.GetHeader("X-Real-IP"))
-		if !services.LoginRateLimiter.Allow(clientIP) {
-			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error": "Too many login attempts. Please try again in 15 minutes.",
-			})
-			return
-		}
 
 		var req LoginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -194,6 +195,16 @@ func LoginHandler(db *database.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Check enhanced rate limiting
+		if !services.EnhancedLoginRateLimiter.CheckLoginAttempt(req.Email, clientIP) {
+			remainingTime := services.EnhancedLoginRateLimiter.GetRemainingLockoutTime(req.Email)
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error":             fmt.Sprintf("Account temporarily locked. Please try again in %v", remainingTime),
+				"lockout_remaining": remainingTime.String(),
+			})
+			return
+		}
+
 		// Check if database is available
 		if db == nil {
 			log.Printf("Database not available for login request from %s", clientIP)
@@ -207,6 +218,24 @@ func LoginHandler(db *database.DB) gin.HandlerFunc {
 		user, err := db.GetUserByEmail(req.Email)
 		if err != nil {
 			if err == sql.ErrNoRows {
+				// Record failed attempt
+				services.EnhancedLoginRateLimiter.RecordFailedAttempt(req.Email, clientIP)
+
+				// Log failed login attempt
+				if db != nil {
+					auditLog := &database.AuditLog{
+						UserEmail: &req.Email,
+						Action:    "login",
+						Resource:  "authentication",
+						IPAddress: clientIP,
+						UserAgent: c.GetHeader("User-Agent"),
+						Status:    "failed",
+						Details:   &[]string{"Invalid email or password"}[0],
+						Severity:  "medium",
+					}
+					db.CreateAuditLog(auditLog)
+				}
+
 				// Don't reveal if email exists or not
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
 				return
@@ -220,8 +249,58 @@ func LoginHandler(db *database.DB) gin.HandlerFunc {
 
 		// Verify password
 		if err := services.CheckPassword(user.PasswordHash, req.Password); err != nil {
+			// Record failed attempt
+			services.EnhancedLoginRateLimiter.RecordFailedAttempt(req.Email, clientIP)
+
+			// Log failed login attempt
+			if db != nil {
+				auditLog := &database.AuditLog{
+					UserID:    &user.ID,
+					UserEmail: &user.Email,
+					Action:    "login",
+					Resource:  "authentication",
+					IPAddress: clientIP,
+					UserAgent: c.GetHeader("User-Agent"),
+					Status:    "failed",
+					Details:   &[]string{"Invalid password"}[0],
+					Severity:  "medium",
+				}
+				db.CreateAuditLog(auditLog)
+			}
+
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
 			return
+		}
+
+		// Record successful attempt
+		services.EnhancedLoginRateLimiter.RecordSuccessfulAttempt(req.Email)
+
+		// Check session limit
+		maxSessions := 5 // Default max sessions
+		if user.MaxSessions > 0 {
+			maxSessions = user.MaxSessions
+		}
+
+		canCreateSession, err := db.CheckSessionLimit(user.ID, maxSessions)
+		if err != nil {
+			log.Printf("Error checking session limit: %v", err)
+			// Continue anyway - don't block login for session limit errors
+		} else if !canCreateSession {
+			// Log session limit exceeded
+			if db != nil {
+				auditLog := &database.AuditLog{
+					UserID:    &user.ID,
+					UserEmail: &user.Email,
+					Action:    "login",
+					Resource:  "authentication",
+					IPAddress: clientIP,
+					UserAgent: c.GetHeader("User-Agent"),
+					Status:    "warning",
+					Details:   &[]string{"Session limit exceeded"}[0],
+					Severity:  "medium",
+				}
+				db.CreateAuditLog(auditLog)
+			}
 		}
 
 		// Generate token pair
@@ -234,6 +313,31 @@ func LoginHandler(db *database.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Create session record
+		var session *database.Session
+		if db != nil {
+			deviceInfo := services.GenerateDeviceFingerprint(c.Request)
+			// Extract token ID from refresh token for session tracking
+			refreshClaims, _ := services.ParseRefreshToken(tokenPair.RefreshToken)
+			tokenID := ""
+			if refreshClaims != nil {
+				tokenID = refreshClaims.TokenID
+			}
+
+			session, err = db.CreateSession(
+				user.ID,
+				tokenID,
+				deviceInfo,
+				clientIP,
+				c.GetHeader("User-Agent"),
+				time.Now().Add(7*24*time.Hour), // Session expires with refresh token
+			)
+			if err != nil {
+				log.Printf("Failed to create session: %v", err)
+				// Continue anyway - don't block login for session creation errors
+			}
+		}
+
 		// Update last login timestamp
 		if err := db.UpdateLastLogin(user.ID); err != nil {
 			log.Printf("Failed to update last login: %v", err)
@@ -241,6 +345,25 @@ func LoginHandler(db *database.DB) gin.HandlerFunc {
 		}
 
 		// Log successful login
+		if db != nil {
+			auditLog := &database.AuditLog{
+				UserID:    &user.ID,
+				UserEmail: &user.Email,
+				Action:    "login",
+				Resource:  "authentication",
+				IPAddress: clientIP,
+				UserAgent: c.GetHeader("User-Agent"),
+				Status:    "success",
+				Details:   &[]string{"Login successful"}[0],
+				Severity:  "low",
+				Metadata: map[string]interface{}{
+					"session_id":  session.ID,
+					"device_info": session.DeviceInfo,
+				},
+			}
+			db.CreateAuditLog(auditLog)
+		}
+
 		log.Printf("User logged in successfully: %s (ID: %d) from %s", user.Email, user.ID, clientIP)
 
 		c.JSON(http.StatusOK, gin.H{
@@ -248,6 +371,7 @@ func LoginHandler(db *database.DB) gin.HandlerFunc {
 			"refresh_token": tokenPair.RefreshToken,
 			"expires_in":    tokenPair.ExpiresIn,
 			"token_type":    tokenPair.TokenType,
+			"session_id":    session.ID,
 			"user": gin.H{
 				"id":             user.ID,
 				"email":          user.Email,
@@ -535,16 +659,99 @@ func ChangePasswordHandler(db *database.DB) gin.HandlerFunc {
 	}
 }
 
-// LogoutHandler handles user logout (mainly for logging purposes)
-func LogoutHandler() gin.HandlerFunc {
+// LogoutHandler handles user logout with token blacklisting
+func LogoutHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		var req LogoutRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+			return
+		}
+
 		// Get user from context if available
-		if userID, exists := c.Get("user_id"); exists {
-			if email, exists := c.Get("user_email"); exists {
-				log.Printf("User logged out: %s (ID: %v)", email, userID)
+		userID, userExists := c.Get("user_id")
+		userEmail, emailExists := c.Get("user_email")
+		clientIP := services.GetClientIP(c.Request.RemoteAddr, c.GetHeader("X-Forwarded-For"), c.GetHeader("X-Real-IP"))
+
+		// Blacklist the refresh token
+		if err := services.BlacklistToken(req.RefreshToken); err != nil {
+			log.Printf("Failed to blacklist token: %v", err)
+			// Continue with logout even if blacklisting fails
+		}
+
+		// If user is authenticated, log the logout and manage sessions
+		if userExists && emailExists {
+			userIDInt := userID.(int)
+			userEmailStr := userEmail.(string)
+
+			log.Printf("User logged out: %s (ID: %v) from %s", userEmailStr, userIDInt, clientIP)
+
+			// Update last logout timestamp in database if available
+			if db != nil {
+				if err := db.UpdateLastLogout(userIDInt); err != nil {
+					log.Printf("Failed to update last logout: %v", err)
+				}
+
+				// Log the logout event
+				auditLog := &database.AuditLog{
+					UserID:    &userIDInt,
+					UserEmail: &userEmailStr,
+					Action:    "logout",
+					Resource:  "authentication",
+					IPAddress: clientIP,
+					UserAgent: c.GetHeader("User-Agent"),
+					Status:    "success",
+					Details:   &[]string{"User logged out successfully"}[0],
+					Severity:  "low",
+				}
+				db.CreateAuditLog(auditLog)
+
+				// If all_devices is true, deactivate all user's sessions
+				if req.AllDevices {
+					if err := db.DeactivateAllUserSessions(userIDInt); err != nil {
+						log.Printf("Failed to deactivate all user sessions: %v", err)
+					} else {
+						// Log the all-devices logout
+						auditLog := &database.AuditLog{
+							UserID:    &userIDInt,
+							UserEmail: &userEmailStr,
+							Action:    "logout_all_devices",
+							Resource:  "authentication",
+							IPAddress: clientIP,
+							UserAgent: c.GetHeader("User-Agent"),
+							Status:    "success",
+							Details:   &[]string{"All devices logged out"}[0],
+							Severity:  "medium",
+						}
+						db.CreateAuditLog(auditLog)
+					}
+				} else {
+					// Deactivate specific session if we have the session ID
+					// This would require storing session ID in the token or request
+					// For now, we'll just log the single device logout
+				}
+			}
+		} else {
+			log.Printf("Anonymous logout from %s", clientIP)
+
+			// Log anonymous logout attempt
+			if db != nil {
+				auditLog := &database.AuditLog{
+					Action:    "logout",
+					Resource:  "authentication",
+					IPAddress: clientIP,
+					UserAgent: c.GetHeader("User-Agent"),
+					Status:    "warning",
+					Details:   &[]string{"Anonymous logout attempt"}[0],
+					Severity:  "low",
+				}
+				db.CreateAuditLog(auditLog)
 			}
 		}
 
-		c.JSON(http.StatusOK, gin.H{"message": "Logout successful"})
+		c.JSON(http.StatusOK, gin.H{
+			"message":                "Logout successful",
+			"all_devices_logged_out": req.AllDevices,
+		})
 	}
 }

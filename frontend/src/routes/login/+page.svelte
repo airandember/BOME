@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { auth } from '$lib/auth';
+	import { auth, isAdmin } from '$lib/auth';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 
@@ -9,10 +9,11 @@
 	let error = '';
 
 	onMount(() => {
-		// Redirect if already logged in
+		// Check if already logged in, but don't redirect immediately
 		auth.subscribe((state) => {
-			if (state.isAuthenticated) {
-				goto('/');
+			if (state.isAuthenticated && !state.loading) {
+				// Show a message instead of immediate redirect
+				console.log('User already authenticated');
 			}
 		});
 	});
@@ -30,7 +31,7 @@
 		
 		if (result.success) {
 			// Check user role and redirect accordingly
-			if (result.user?.role === 'admin') {
+			if (isAdmin()) {
 				goto('/admin');
 			} else {
 				goto('/');

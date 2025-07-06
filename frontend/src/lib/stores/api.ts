@@ -591,8 +591,24 @@ export const dashboardStore = createDashboardStore();
 // Derived stores for convenience
 export const isAuthenticated = derived(authStore, $auth => $auth.isAuthenticated);
 export const currentUser = derived(authStore, $auth => $auth.user);
-export const isAdmin = derived(authStore, $auth => 
-	$auth.user?.role === 'super_admin' || 
-	$auth.user?.role === 'admin' || 
-	$auth.user?.role === 'advertisement_manager'
-); 
+export const isAdmin = derived(authStore, $auth => {
+	if (!$auth.user) return false;
+	
+	// Admin roles include all roles with level 7+ (subsystem managers and above)
+	const adminRoles = [
+		'super_admin',           // Level 10: Super Administrator
+		'system_admin',          // Level 9: System Administrator
+		'content_manager',       // Level 8: Content Manager
+		'articles_manager',      // Level 7: Articles Manager
+		'youtube_manager',       // Level 7: YouTube Manager
+		'streaming_manager',     // Level 7: Video Streaming Manager
+		'events_manager',        // Level 7: Events Manager
+		'advertisement_manager', // Level 7: Advertisement Manager
+		'user_manager',          // Level 7: User Account Manager
+		'analytics_manager',     // Level 7: Analytics Manager
+		'financial_admin',       // Level 7: Financial Administrator
+		'admin'                  // Legacy admin role
+	];
+	
+	return adminRoles.includes($auth.user.role);
+}); 

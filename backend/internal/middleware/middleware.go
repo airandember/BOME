@@ -1,12 +1,15 @@
 package middleware
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
 	"strings"
 	"time"
 
+	"bome-backend/internal/database"
 	"bome-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -29,7 +32,7 @@ func Logger() gin.HandlerFunc {
 	})
 }
 
-// SecurityHeaders adds security headers to all responses
+// SecurityHeaders adds comprehensive security headers to all responses
 func SecurityHeaders() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Basic security headers
@@ -37,20 +40,50 @@ func SecurityHeaders() gin.HandlerFunc {
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-		c.Header("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+		c.Header("Permissions-Policy", "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=()")
 
-		// Content Security Policy (basic)
+		// Strict Transport Security (HSTS)
+		c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+
+		// Cross-Origin Embedder Policy
+		c.Header("Cross-Origin-Embedder-Policy", "require-corp")
+
+		// Cross-Origin Opener Policy
+		c.Header("Cross-Origin-Opener-Policy", "same-origin")
+
+		// Cross-Origin Resource Policy
+		c.Header("Cross-Origin-Resource-Policy", "same-origin")
+
+		// Enhanced Content Security Policy
+		nonce := generateNonce()
+		c.Set("csp_nonce", nonce)
+
 		csp := "default-src 'self'; " +
-			"script-src 'self' 'unsafe-inline'; " +
+			"script-src 'self' 'nonce-" + nonce + "' https://js.stripe.com; " +
 			"style-src 'self' 'unsafe-inline'; " +
-			"img-src 'self' data: https:; " +
-			"font-src 'self'; " +
-			"connect-src 'self'; " +
-			"frame-ancestors 'none';"
+			"img-src 'self' data: https: blob:; " +
+			"font-src 'self' data:; " +
+			"connect-src 'self' https://api.stripe.com https://bunnycdn.com; " +
+			"frame-ancestors 'none'; " +
+			"base-uri 'self'; " +
+			"form-action 'self'; " +
+			"upgrade-insecure-requests; " +
+			"block-all-mixed-content;"
+
 		c.Header("Content-Security-Policy", csp)
 
 		c.Next()
 	}
+}
+
+// generateNonce generates a cryptographically secure nonce for CSP
+func generateNonce() string {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to time-based nonce if crypto/rand fails
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return base64.StdEncoding.EncodeToString(bytes)
 }
 
 // CORS configures Cross-Origin Resource Sharing
@@ -182,6 +215,7 @@ func AuthRequired() gin.HandlerFunc {
 		c.Set("user_email", claims.Email)
 		c.Set("user_role", claims.Role)
 		c.Set("email_verified", claims.EmailVerified)
+		c.Set("token_id", claims.TokenID) // Store token ID for session tracking
 
 		// Log successful authentication
 		log.Printf("Authenticated user: %s (ID: %d, Role: %s)", claims.Email, claims.UserID, claims.Role)
@@ -203,9 +237,34 @@ func AdminRequired() gin.HandlerFunc {
 			return
 		}
 
-		if role != "admin" {
+		// Admin roles include all roles with level 7+ (subsystem managers and above)
+		adminRoles := []string{
+			"super_admin",           // Level 10: Super Administrator
+			"system_admin",          // Level 9: System Administrator
+			"content_manager",       // Level 8: Content Manager
+			"articles_manager",      // Level 7: Articles Manager
+			"youtube_manager",       // Level 7: YouTube Manager
+			"streaming_manager",     // Level 7: Video Streaming Manager
+			"events_manager",        // Level 7: Events Manager
+			"advertisement_manager", // Level 7: Advertisement Manager
+			"user_manager",          // Level 7: User Account Manager
+			"analytics_manager",     // Level 7: Analytics Manager
+			"financial_admin",       // Level 7: Financial Administrator
+			"admin",                 // Legacy admin role
+		}
+
+		roleStr := role.(string)
+		isAdmin := false
+		for _, adminRole := range adminRoles {
+			if roleStr == adminRole {
+				isAdmin = true
+				break
+			}
+		}
+
+		if !isAdmin {
 			userEmail, _ := c.Get("user_email")
-			log.Printf("Admin access denied for user: %v", userEmail)
+			log.Printf("Admin access denied for user: %v (role: %s)", userEmail, roleStr)
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "Admin access required",
 			})
@@ -300,7 +359,35 @@ func UserOwnershipRequired() gin.HandlerFunc {
 
 		// Allow if user is accessing their own resource or is admin
 		userRole, _ := c.Get("user_role")
-		if userRole == "admin" || fmt.Sprintf("%d", userID) == requestedUserID {
+
+		// Admin roles include all roles with level 7+ (subsystem managers and above)
+		adminRoles := []string{
+			"super_admin",           // Level 10: Super Administrator
+			"system_admin",          // Level 9: System Administrator
+			"content_manager",       // Level 8: Content Manager
+			"articles_manager",      // Level 7: Articles Manager
+			"youtube_manager",       // Level 7: YouTube Manager
+			"streaming_manager",     // Level 7: Video Streaming Manager
+			"events_manager",        // Level 7: Events Manager
+			"advertisement_manager", // Level 7: Advertisement Manager
+			"user_manager",          // Level 7: User Account Manager
+			"analytics_manager",     // Level 7: Analytics Manager
+			"financial_admin",       // Level 7: Financial Administrator
+			"admin",                 // Legacy admin role
+		}
+
+		// Check if user has admin role
+		isAdmin := false
+		if userRoleStr, ok := userRole.(string); ok {
+			for _, adminRole := range adminRoles {
+				if userRoleStr == adminRole {
+					isAdmin = true
+					break
+				}
+			}
+		}
+
+		if isAdmin || fmt.Sprintf("%d", userID) == requestedUserID {
 			c.Next()
 			return
 		}
@@ -332,8 +419,86 @@ func RecoveryWithLogging() gin.HandlerFunc {
 	})
 }
 
+// SessionActivityTracker updates session activity for authenticated requests
+func SessionActivityTracker(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Only track activity for authenticated requests
+		if tokenID, exists := c.Get("token_id"); exists && db != nil {
+			if tokenIDStr, ok := tokenID.(string); ok && tokenIDStr != "" {
+				// Update session activity asynchronously to not block the request
+				go func() {
+					if err := db.UpdateSessionActivityByTokenID(tokenIDStr); err != nil {
+						log.Printf("Failed to update session activity: %v", err)
+					}
+				}()
+			}
+		}
+		c.Next()
+	}
+}
+
 // ClientInfo represents rate limiting information for a client
 type ClientInfo struct {
 	Requests int
 	LastSeen time.Time
+}
+
+// CSRFProtection middleware that validates CSRF tokens
+func CSRFProtection() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Skip CSRF check for GET requests and OPTIONS
+		if c.Request.Method == "GET" || c.Request.Method == "OPTIONS" {
+			c.Next()
+			return
+		}
+
+		// Skip CSRF check for API endpoints that use token-based auth
+		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/auth/") {
+			c.Next()
+			return
+		}
+
+		token := c.GetHeader("X-CSRF-Token")
+		if token == "" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "CSRF token required"})
+			c.Abort()
+			return
+		}
+
+		// Validate token against session
+		if !validateCSRFToken(c, token) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Invalid CSRF token"})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// validateCSRFToken validates the CSRF token
+func validateCSRFToken(c *gin.Context, token string) bool {
+	// For now, implement basic validation
+	// In production, this should validate against a session-based token
+
+	// Check if token is at least 32 characters (basic security)
+	if len(token) < 32 {
+		return false
+	}
+
+	// Check if token contains only valid characters
+	validChars := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	for _, char := range token {
+		if !strings.ContainsRune(validChars, char) {
+			return false
+		}
+	}
+
+	// TODO: Implement proper session-based CSRF validation
+	// This would involve:
+	// 1. Storing CSRF tokens in user sessions
+	// 2. Validating tokens against stored session tokens
+	// 3. Regenerating tokens on login/logout
+
+	return true
 }

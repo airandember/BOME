@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { writable } from 'svelte/store';
 	import { 
-		MOCK_ROLES, 
+		MOCK_STANDARDIZED_ROLES, 
 		MOCK_USERS_WITH_ROLES, 
 		MOCK_PERMISSIONS, 
 		MOCK_PERMISSION_CATEGORIES,
@@ -51,7 +51,7 @@
 		loading = true;
 		try {
 			// Load mock data
-			roles.set(MOCK_ROLES);
+			roles.set(MOCK_STANDARDIZED_ROLES);
 			users.set(MOCK_USERS_WITH_ROLES);
 			permissions.set(MOCK_PERMISSIONS);
 			permissionCategories.set(MOCK_PERMISSION_CATEGORIES);
@@ -59,7 +59,7 @@
 			analytics.set(MOCK_ROLE_ANALYTICS);
 
 			// Initialize filtered data
-			filteredRoles = MOCK_ROLES;
+			filteredRoles = MOCK_STANDARDIZED_ROLES;
 			filteredUsers = MOCK_USERS_WITH_ROLES;
 		} catch (error) {
 			console.error('Error loading role data:', error);
@@ -70,7 +70,7 @@
 
 	// Filter functions
 	function filterRoles() {
-		let filtered = MOCK_ROLES;
+		let filtered = MOCK_STANDARDIZED_ROLES;
 
 		if (searchQuery.trim()) {
 			filtered = searchRoles(searchQuery);
@@ -131,7 +131,7 @@
 	function handleRoleCreated(event: CustomEvent) {
 		const newRole = event.detail;
 		// Add to mock data (in real app, this would be handled by API)
-		MOCK_ROLES.push(newRole);
+		MOCK_STANDARDIZED_ROLES.push(newRole);
 		filteredRoles = [...filteredRoles, newRole];
 		showToast('Role created successfully', 'success');
 		showCreateRoleModal = false;
@@ -140,9 +140,9 @@
 	function handleRoleUpdated(event: CustomEvent) {
 		const updatedRole = event.detail;
 		// Update mock data (in real app, this would be handled by API)
-		const index = MOCK_ROLES.findIndex(r => r.id === updatedRole.id);
+		const index = MOCK_STANDARDIZED_ROLES.findIndex(r => r.id === updatedRole.id);
 		if (index !== -1) {
-			MOCK_ROLES[index] = updatedRole;
+			MOCK_STANDARDIZED_ROLES[index] = updatedRole;
 			filteredRoles = filteredRoles.map(r => r.id === updatedRole.id ? updatedRole : r);
 		}
 		showToast('Role updated successfully', 'success');
@@ -162,9 +162,9 @@
 
 		if (confirm(`Are you sure you want to delete the role "${role.name}"?`)) {
 			// Remove from mock data (in real app, this would be handled by API)
-			const index = MOCK_ROLES.findIndex(r => r.id === role.id);
+			const index = MOCK_STANDARDIZED_ROLES.findIndex(r => r.id === role.id);
 			if (index !== -1) {
-				MOCK_ROLES.splice(index, 1);
+				MOCK_STANDARDIZED_ROLES.splice(index, 1);
 				filteredRoles = filteredRoles.filter(r => r.id !== role.id);
 			}
 			showToast('Role deleted successfully', 'success');

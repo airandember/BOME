@@ -80,6 +80,30 @@ func main() {
 		spacesService = nil
 	}
 	emailService := services.NewEmailService()
+	services.StartTokenBlacklistCleanup()
+
+	// Start database cleanup tasks if database is available
+	if db != nil {
+		go func() {
+			ticker := time.NewTicker(1 * time.Hour) // Run cleanup every hour
+			defer ticker.Stop()
+
+			for range ticker.C {
+				// Clean up expired sessions
+				if err := db.CleanupExpiredSessions(); err != nil {
+					log.Printf("Failed to cleanup expired sessions: %v", err)
+				}
+
+				// Clean up expired tokens
+				if err := db.CleanupExpiredTokens(); err != nil {
+					log.Printf("Failed to cleanup expired tokens: %v", err)
+				}
+
+				log.Println("Database cleanup completed")
+			}
+		}()
+		log.Println("Database cleanup tasks started")
+	}
 
 	// Create Gin router
 	router := gin.New()

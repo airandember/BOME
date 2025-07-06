@@ -1433,28 +1433,28 @@ func UpdateAdPlacementHandler(db *database.DB) gin.HandlerFunc {
 // SetupAdminRoutes configures admin-related routes
 func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
 	// Users
-	router.GET("/users", middleware.AuthRequired(), GetUsersHandler(db))
-	router.GET("/users/:id", middleware.AuthRequired(), GetUserHandler(db))
-	router.PUT("/users/:id", middleware.AuthRequired(), UpdateUserHandler(db))
-	router.DELETE("/users/:id", middleware.AuthRequired(), DeleteUserHandler(db))
+	router.GET("/users", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUsersHandler(db))
+	router.GET("/users/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUserHandler(db))
+	router.PUT("/users/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), UpdateUserHandler(db))
+	router.DELETE("/users/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), DeleteUserHandler(db))
 
 	// Videos
-	router.GET("/videos", middleware.AuthRequired(), GetAdminVideosHandler(db))
-	router.GET("/videos/:id", middleware.AuthRequired(), GetAdminVideoHandler(db))
-	router.PUT("/videos/:id", middleware.AuthRequired(), UpdateVideoHandler(db))
-	router.DELETE("/videos/:id", middleware.AuthRequired(), DeleteVideoHandler(db))
-	router.POST("/videos/bulk", middleware.AuthRequired(), BulkVideoOperationHandler(db))
-	router.GET("/videos/:id/stats", middleware.AuthRequired(), GetVideoStatsHandler(db))
-	router.GET("/videos/categories", middleware.AuthRequired(), GetVideoCategoriesHandler(db))
-	router.POST("/videos/:id/schedule", middleware.AuthRequired(), ScheduleVideoHandler(db))
-	router.POST("/videos/:id/unschedule", middleware.AuthRequired(), UnscheduleVideoHandler(db))
-	router.GET("/videos/scheduled", middleware.AuthRequired(), GetScheduledVideosHandler(db))
+	router.GET("/videos", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAdminVideosHandler(db))
+	router.GET("/videos/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAdminVideoHandler(db))
+	router.PUT("/videos/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), UpdateVideoHandler(db))
+	router.DELETE("/videos/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), DeleteVideoHandler(db))
+	router.POST("/videos/bulk", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), BulkVideoOperationHandler(db))
+	router.GET("/videos/:id/stats", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetVideoStatsHandler(db))
+	router.GET("/videos/categories", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetVideoCategoriesHandler(db))
+	router.POST("/videos/:id/schedule", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), ScheduleVideoHandler(db))
+	router.POST("/videos/:id/unschedule", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), UnscheduleVideoHandler(db))
+	router.GET("/videos/scheduled", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetScheduledVideosHandler(db))
 
 	// Ad Placements
-	router.GET("/placements", middleware.AuthRequired(), GetAdPlacementsHandler(db))
-	router.GET("/placements/performance", middleware.AuthRequired(), GetAdPlacementsPerformanceHandler(db))
-	router.POST("/placements", middleware.AuthRequired(), CreateAdPlacementHandler(db))
-	router.PUT("/placements/:id", middleware.AuthRequired(), UpdateAdPlacementHandler(db))
+	router.GET("/placements", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAdPlacementsHandler(db))
+	router.GET("/placements/performance", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAdPlacementsPerformanceHandler(db))
+	router.POST("/placements", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), CreateAdPlacementHandler(db))
+	router.PUT("/placements/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), UpdateAdPlacementHandler(db))
 
 	// Design System Routes
 	// Temporarily disabled for debugging

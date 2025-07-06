@@ -100,15 +100,15 @@ export const MOCK_PERMISSIONS: Permission[] = [
 	{ id: 'notifications:manage', resource: 'notifications', action: 'manage', description: 'Manage notification settings', category: 'core' }
 ];
 
-// ROLE DEFINITIONS
-export const MOCK_ROLES: Role[] = [
-	// Core Admin Roles (4.7.1)
+// STANDARDIZED ROLE DEFINITIONS
+export const MOCK_STANDARDIZED_ROLES: Role[] = [
+	// System Administration (Level 10-9)
 	{
-		id: 'super-administrator',
+		id: 'super_admin',
 		name: 'Super Administrator',
 		slug: 'super-administrator',
 		description: 'Full system access and role management capabilities',
-		category: 'core',
+		category: 'system',
 		level: 10,
 		permissions: MOCK_PERMISSIONS.map(p => p.id), // All permissions
 		isSystemRole: true,
@@ -589,7 +589,7 @@ export const MOCK_USERS_WITH_ROLES: UserWithRoles[] = [
 		email: 'super.admin@bome.com',
 		firstName: 'Super',
 		lastName: 'Administrator',
-		roles: [MOCK_ROLES.find(r => r.id === 'super-administrator')!],
+		roles: [MOCK_STANDARDIZED_ROLES.find(r => r.id === 'super_admin')!],
 		permissions: MOCK_PERMISSIONS,
 		lastLogin: '2024-12-20T10:30:00Z',
 		status: 'active',
@@ -601,7 +601,7 @@ export const MOCK_USERS_WITH_ROLES: UserWithRoles[] = [
 		email: 'admin@bome.test',
 		firstName: 'Super',
 		lastName: 'Administrator',
-		roles: [MOCK_ROLES.find(r => r.id === 'super-administrator')!],
+		roles: [MOCK_STANDARDIZED_ROLES.find(r => r.id === 'super_admin')!],
 		permissions: MOCK_PERMISSIONS,
 		lastLogin: '2024-12-20T11:15:00Z',
 		status: 'active',
@@ -613,7 +613,7 @@ export const MOCK_USERS_WITH_ROLES: UserWithRoles[] = [
 		email: 'content.manager@bome.com',
 		firstName: 'Sarah',
 		lastName: 'Johnson',
-		roles: [MOCK_ROLES.find(r => r.id === 'content-manager')!],
+		roles: [MOCK_STANDARDIZED_ROLES.find(r => r.id === 'content-manager')!],
 		permissions: MOCK_PERMISSIONS.filter(p => 
 			['content:create', 'content:read', 'content:update', 'content:delete', 'content:publish', 'content:moderate',
 			 'videos:create', 'videos:read', 'videos:update', 'videos:delete', 'videos:manage',
@@ -630,7 +630,7 @@ export const MOCK_USERS_WITH_ROLES: UserWithRoles[] = [
 		email: 'ad.manager@bome.com',
 		firstName: 'Michael',
 		lastName: 'Chen',
-		roles: [MOCK_ROLES.find(r => r.id === 'advertisement-manager')!],
+		roles: [MOCK_STANDARDIZED_ROLES.find(r => r.id === 'advertisement_manager')!],
 		permissions: MOCK_PERMISSIONS.filter(p => 
 			['advertisements:create', 'advertisements:read', 'advertisements:update', 'advertisements:delete', 'advertisements:approve', 'advertisements:manage',
 			 'analytics:read', 'analytics:export', 'billing:read'].includes(p.id)
@@ -645,7 +645,7 @@ export const MOCK_USERS_WITH_ROLES: UserWithRoles[] = [
 		email: 'events.coordinator@bome.com',
 		firstName: 'Emily',
 		lastName: 'Rodriguez',
-		roles: [MOCK_ROLES.find(r => r.id === 'event-coordinator')!],
+		roles: [MOCK_STANDARDIZED_ROLES.find(r => r.id === 'events_manager')!],
 		permissions: MOCK_PERMISSIONS.filter(p => 
 			['events:create', 'events:read', 'events:update', 'users:read'].includes(p.id)
 		),
@@ -659,7 +659,7 @@ export const MOCK_USERS_WITH_ROLES: UserWithRoles[] = [
 		email: 'article.writer@bome.com',
 		firstName: 'David',
 		lastName: 'Thompson',
-		roles: [MOCK_ROLES.find(r => r.id === 'article-writer')!],
+		roles: [MOCK_STANDARDIZED_ROLES.find(r => r.id === 'content_creator')!],
 		permissions: MOCK_PERMISSIONS.filter(p => 
 			['articles:create', 'articles:read', 'articles:update', 'content:create', 'content:read', 'content:update'].includes(p.id)
 		),
@@ -673,7 +673,7 @@ export const MOCK_USERS_WITH_ROLES: UserWithRoles[] = [
 		email: 'academic.reviewer@bome.com',
 		firstName: 'Dr. Rebecca',
 		lastName: 'Williams',
-		roles: [MOCK_ROLES.find(r => r.id === 'academic-reviewer')!],
+		roles: [MOCK_STANDARDIZED_ROLES.find(r => r.id === 'academic_reviewer')!],
 		permissions: MOCK_PERMISSIONS.filter(p => 
 			['articles:read', 'articles:update', 'content:read', 'content:moderate', 'videos:read'].includes(p.id)
 		),
@@ -718,7 +718,7 @@ export const MOCK_ROLE_TEMPLATES: RoleTemplate[] = [
 // ROLE USAGE ANALYTICS
 export const MOCK_ROLE_ANALYTICS: RoleUsageAnalytics[] = [
 	{
-		roleId: 'super-administrator',
+		roleId: 'super_admin',
 		activeUsers: 1,
 		totalAssignments: 1,
 		averageSessionDuration: 180,
@@ -728,7 +728,7 @@ export const MOCK_ROLE_ANALYTICS: RoleUsageAnalytics[] = [
 		lastActivity: '2024-12-20T10:30:00Z'
 	},
 	{
-		roleId: 'content-manager',
+		roleId: 'content_manager',
 		activeUsers: 1,
 		totalAssignments: 2,
 		averageSessionDuration: 120,
@@ -738,7 +738,7 @@ export const MOCK_ROLE_ANALYTICS: RoleUsageAnalytics[] = [
 		lastActivity: '2024-12-19T15:45:00Z'
 	},
 	{
-		roleId: 'advertisement-manager',
+		roleId: 'advertisement_manager',
 		activeUsers: 1,
 		totalAssignments: 1,
 		averageSessionDuration: 90,
@@ -759,7 +759,7 @@ export const MOCK_ROLE_AUDIT_LOGS: RoleAuditLog[] = [
 		userId: '1',
 		targetUserId: '2',
 		changes: {
-			role: { old: null, new: 'content-manager' }
+			role: { old: null, new: 'content_manager' }
 		},
 		reason: 'Initial role assignment',
 		timestamp: '2024-02-15T10:00:00Z',
@@ -784,7 +784,7 @@ export const MOCK_ROLE_AUDIT_LOGS: RoleAuditLog[] = [
 		id: '3',
 		action: 'permission_change',
 		entityType: 'role',
-		entityId: 'article-writer',
+		entityId: 'content_creator',
 		userId: '1',
 		changes: {
 			permissions: { 
@@ -816,7 +816,7 @@ export function getUserRoles(userId: string): Role[] {
 }
 
 export function getRolesByCategory(category: string): Role[] {
-	return MOCK_ROLES.filter(role => role.category === category);
+	return MOCK_STANDARDIZED_ROLES.filter(role => role.category === category);
 }
 
 export function getPermissionsByCategory(category: string): Permission[] {
@@ -839,7 +839,7 @@ export function getUserDashboardWidgets(userId: string): DashboardWidget[] {
 
 export function searchRoles(query: string): Role[] {
 	const lowerQuery = query.toLowerCase();
-	return MOCK_ROLES.filter(role => 
+	return MOCK_STANDARDIZED_ROLES.filter(role => 
 		role.name.toLowerCase().includes(lowerQuery) ||
 		role.description.toLowerCase().includes(lowerQuery) ||
 		role.category.toLowerCase().includes(lowerQuery)
@@ -857,15 +857,15 @@ export function searchUsers(query: string): UserWithRoles[] {
 }
 
 export function getRoleHierarchy(): Role[] {
-	return MOCK_ROLES.sort((a, b) => b.level - a.level);
+	return MOCK_STANDARDIZED_ROLES.sort((a, b) => b.level - a.level);
 }
 
 export function getSystemRoles(): Role[] {
-	return MOCK_ROLES.filter(role => role.isSystemRole);
+	return MOCK_STANDARDIZED_ROLES.filter(role => role.isSystemRole);
 }
 
 export function getCustomRoles(): Role[] {
-	return MOCK_ROLES.filter(role => !role.isSystemRole);
+	return MOCK_STANDARDIZED_ROLES.filter(role => !role.isSystemRole);
 }
 
 // Mock API Response Helpers
@@ -889,7 +889,7 @@ export function hasUserSuperAdminRole(email: string): boolean {
 	const user = getUserByEmail(email);
 	if (!user) return false;
 	
-	return user.roles.some(role => role.id === 'super-administrator');
+	return user.roles.some(role => role.id === 'super_admin');
 }
 
 export function getUserRoleNames(email: string): string[] {

@@ -52,6 +52,7 @@ func SetupRoutes(
 	SetupMockDataRoutes(v1)
 	SetupArticlesRoutes(v1)
 	SetupRolesRoutes(v1)
+	SetupStandardizedRolesRoutes(v1)
 	SetupYouTubeRoutes(v1, db)
 	fmt.Printf("Mock data routes setup complete\n")
 
@@ -60,7 +61,7 @@ func SetupRoutes(
 	{
 		auth.POST("/login", LoginHandler(db))
 		auth.POST("/register", RegisterHandler(db, emailService))
-		auth.POST("/logout", LogoutHandler())
+		auth.POST("/logout", LogoutHandler(db))
 	}
 
 	// Video routes using existing handlers
@@ -76,17 +77,17 @@ func SetupRoutes(
 	subscriptions := v1.Group("/subscriptions")
 	{
 		subscriptions.GET("/plans", GetSubscriptionPlansHandler(stripeService))
-		subscriptions.GET("/current", middleware.AuthRequired(), GetSubscriptionHandler(db))
-		subscriptions.POST("", middleware.AuthRequired(), CreateSubscriptionHandler(db))
-		subscriptions.POST("/:id/cancel", middleware.AuthRequired(), CancelSubscriptionHandler(db))
+		subscriptions.GET("/current", middleware.AuthRequired(), middleware.SessionActivityTracker(db), GetSubscriptionHandler(db))
+		subscriptions.POST("", middleware.AuthRequired(), middleware.SessionActivityTracker(db), CreateSubscriptionHandler(db))
+		subscriptions.POST("/:id/cancel", middleware.AuthRequired(), middleware.SessionActivityTracker(db), CancelSubscriptionHandler(db))
 		subscriptions.POST("/checkout", CreateCheckoutSessionHandler(stripeService))
 	}
 
 	// User profile routes
 	users := v1.Group("/users")
 	{
-		users.GET("/profile", middleware.AuthRequired(), GetProfileHandler(db))
-		users.PUT("/profile", middleware.AuthRequired(), UpdateProfileHandler(db))
+		users.GET("/profile", middleware.AuthRequired(), middleware.SessionActivityTracker(db), GetProfileHandler(db))
+		users.PUT("/profile", middleware.AuthRequired(), middleware.SessionActivityTracker(db), UpdateProfileHandler(db))
 	}
 
 	// User dashboard

@@ -30,10 +30,35 @@ func GetSubscriptionHandler(db *database.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Admin roles include all roles with level 7+ (subsystem managers and above)
+		adminRoles := []string{
+			"super_admin",           // Level 10: Super Administrator
+			"system_admin",          // Level 9: System Administrator
+			"content_manager",       // Level 8: Content Manager
+			"articles_manager",      // Level 7: Articles Manager
+			"youtube_manager",       // Level 7: YouTube Manager
+			"streaming_manager",     // Level 7: Video Streaming Manager
+			"events_manager",        // Level 7: Events Manager
+			"advertisement_manager", // Level 7: Advertisement Manager
+			"user_manager",          // Level 7: User Account Manager
+			"analytics_manager",     // Level 7: Analytics Manager
+			"financial_admin",       // Level 7: Financial Administrator
+			"admin",                 // Legacy admin role
+		}
+
+		// Check if user has admin role
+		isAdmin := false
+		for _, adminRole := range adminRoles {
+			if userRole == adminRole {
+				isAdmin = true
+				break
+			}
+		}
+
 		// Development mode: return mock subscription data
 		if db == nil {
 			// Admin users get premium access automatically
-			if userRole == "admin" {
+			if isAdmin {
 				c.JSON(http.StatusOK, gin.H{
 					"subscription": map[string]interface{}{
 						"id":                 "admin_premium_access",
@@ -53,7 +78,7 @@ func GetSubscriptionHandler(db *database.DB) gin.HandlerFunc {
 
 		// Production mode with database
 		// Admin users get premium access automatically
-		if userRole == "admin" {
+		if isAdmin {
 			c.JSON(http.StatusOK, gin.H{
 				"subscription": map[string]interface{}{
 					"id":                 "admin_premium_access",

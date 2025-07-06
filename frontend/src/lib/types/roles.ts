@@ -21,7 +21,7 @@ export interface Role {
 	name: string;
 	slug: string;
 	description: string;
-	category: 'core' | 'content' | 'marketing' | 'events' | 'technical' | 'academic';
+	category: 'system' | 'core' | 'content' | 'marketing' | 'events' | 'technical' | 'academic' | 'subsystem' | 'user_management' | 'analytics' | 'financial' | 'security' | 'base';
 	level: number; // 1-10, higher = more privileges
 	permissions: string[]; // Permission IDs
 	isSystemRole: boolean; // Cannot be deleted
