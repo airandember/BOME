@@ -502,3 +502,50 @@ func validateCSRFToken(c *gin.Context, token string) bool {
 
 	return true
 }
+
+// VideoUploadRequired middleware that requires video upload permissions
+func VideoUploadRequired() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Get user role from context (set by AuthRequired)
+		role, exists := c.Get("user_role")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Authentication required",
+			})
+			c.Abort()
+			return
+		}
+
+		// Video upload roles include admin and content management roles
+		uploadRoles := []string{
+			"super_admin",       // Level 10: Super Administrator
+			"system_admin",      // Level 9: System Administrator
+			"content_manager",   // Level 8: Content Manager
+			"youtube_manager",   // Level 7: YouTube Manager
+			"streaming_manager", // Level 7: Video Streaming Manager
+		}
+
+		roleStr := role.(string)
+		canUpload := false
+		for _, uploadRole := range uploadRoles {
+			if roleStr == uploadRole {
+				canUpload = true
+				break
+			}
+		}
+
+		if !canUpload {
+			userEmail, _ := c.Get("user_email")
+			log.Printf("Video upload denied for user: %v (role: %s)", userEmail, roleStr)
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":          "Video upload access required. Only administrators and content managers can upload videos.",
+				"required_roles": uploadRoles,
+				"user_role":      roleStr,
+			})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}

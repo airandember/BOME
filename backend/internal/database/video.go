@@ -1,6 +1,7 @@
 package database
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -28,10 +29,16 @@ type Video struct {
 
 // CreateVideo inserts a new video into the database
 func (db *DB) CreateVideo(title, description, bunnyVideoID, thumbnailURL, category string, duration int, fileSize int64, tags []string, createdBy int) (*Video, error) {
+	// Convert tags to JSON string
+	tagsJSON, err := json.Marshal(tags)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal tags: %v", err)
+	}
+
 	var id int
-	err := db.QueryRow(
+	err = db.QueryRow(
 		`INSERT INTO videos (title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW()) RETURNING id`,
-		title, description, bunnyVideoID, thumbnailURL, duration, fileSize, "processing", category, tags, createdBy,
+		title, description, bunnyVideoID, thumbnailURL, duration, fileSize, "processing", category, string(tagsJSON), createdBy,
 	).Scan(&id)
 	if err != nil {
 		return nil, err
@@ -42,13 +49,22 @@ func (db *DB) CreateVideo(title, description, bunnyVideoID, thumbnailURL, catego
 // GetVideoByID retrieves a video by ID
 func (db *DB) GetVideoByID(id int) (*Video, error) {
 	video := &Video{}
+	var tagsStr string
 	err := db.QueryRow(
 		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at FROM videos WHERE id = $1`,
 		id,
-	).Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &video.Tags, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
+	).Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
+
+	// Parse tags from JSON string
+	if tagsStr != "" {
+		if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
+		}
+	}
+
 	return video, nil
 }
 
@@ -60,18 +76,23 @@ func (db *DB) GetVideos(limit, offset int, category, status string) ([]*Video, e
 
 	if category != "" {
 		argCount++
-		query += ` AND category = $` + string(rune(argCount+'0'))
+		query += fmt.Sprintf(` AND category = $%d`, argCount)
 		args = append(args, category)
 	}
 
 	if status != "" {
 		argCount++
-		query += ` AND status = $` + string(rune(argCount+'0'))
+		query += fmt.Sprintf(` AND status = $%d`, argCount)
 		args = append(args, status)
 	}
 
-	query += ` ORDER BY created_at DESC LIMIT $` + string(rune(argCount+1+'0')) + ` OFFSET $` + string(rune(argCount+2+'0'))
-	args = append(args, limit, offset)
+	argCount++
+	query += fmt.Sprintf(` ORDER BY created_at DESC LIMIT $%d`, argCount)
+	args = append(args, limit)
+
+	argCount++
+	query += fmt.Sprintf(` OFFSET $%d`, argCount)
+	args = append(args, offset)
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -82,9 +103,16 @@ func (db *DB) GetVideos(limit, offset int, category, status string) ([]*Video, e
 	var videos []*Video
 	for rows.Next() {
 		video := &Video{}
-		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &video.Tags, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
+		var tagsStr string
+		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
 		if err != nil {
 			return nil, err
+		}
+		// Parse tags from JSON string
+		if tagsStr != "" {
+			if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
+			}
 		}
 		videos = append(videos, video)
 	}

@@ -8,6 +8,8 @@
 	import { toastStore } from '$lib/stores/toast';
 	import AdDisplay from '$lib/components/AdDisplay.svelte';
 	import SubscriptionCheck from '$lib/components/SubscriptionCheck.svelte';
+	import { isAdmin } from '$lib/auth';
+	import { goto } from '$app/navigation';
 
 	let videos: Video[] = [];
 	let categories: VideoCategory[] = [];

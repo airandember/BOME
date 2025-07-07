@@ -1,9 +1,15 @@
 package routes
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"bome-backend/internal/config"
@@ -13,6 +19,53 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// Helper function to get status message
+func getStatusMessage(statusCode int) string {
+	switch statusCode {
+	case 200:
+		return "Success - API key and library access confirmed"
+	case 401:
+		return "Unauthorized - Check API key and permissions"
+	case 403:
+		return "Forbidden - Insufficient permissions"
+	case 404:
+		return "Not Found - Check library ID"
+	case 429:
+		return "Rate Limited - Too many requests"
+	default:
+		return fmt.Sprintf("HTTP %d - Unexpected response", statusCode)
+	}
+}
+
+// Helper function to get missing fields
+func getMissingFields(cfg *config.Config) []string {
+	var missing []string
+	if cfg.BunnyStreamLibrary == "" {
+		missing = append(missing, "BUNNY_STREAM_LIBRARY_ID")
+	}
+	if cfg.BunnyStreamAPIKey == "" {
+		missing = append(missing, "BUNNY_STREAM_API_KEY")
+	}
+	if cfg.BunnyStorageZone == "" {
+		missing = append(missing, "BUNNY_STORAGE_ZONE")
+	}
+	if cfg.BunnyAPIKey == "" {
+		missing = append(missing, "BUNNY_API_KEY")
+	}
+	if cfg.BunnyPullZone == "" {
+		missing = append(missing, "BUNNY_PULL_ZONE")
+	}
+	return missing
+}
+
+// Helper function for min
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
 
 // SetupRoutes configures all routes for the application
 func SetupRoutes(
@@ -64,13 +117,23 @@ func SetupRoutes(
 		auth.POST("/logout", LogoutHandler(db))
 	}
 
-	// Video routes using existing handlers
+	// Video routes using database handlers with bunny.net integration
 	videos := v1.Group("/videos")
 	{
-		videos.GET("", GetMockVideosHandler)
-		videos.GET("/:id", GetMockVideoHandler)
+		videos.GET("", GetVideosFromDatabaseHandler(db, bunnyService))
+		videos.GET("/:id", GetVideoFromDatabaseHandler(db, bunnyService))
 		videos.GET("/:id/comments", GetMockCommentsHandler)
 		videos.GET("/categories", GetMockCategoriesHandler)
+
+		// Add secure video upload endpoint - RESTRICTED TO ADMINS AND CONTENT MANAGERS
+		videos.POST("/upload",
+			middleware.AuthRequired(),
+			middleware.SessionActivityTracker(db),
+			middleware.VideoUploadRequired(),
+			UploadVideoHandler(db, bunnyService))
+
+		// Add streaming endpoint for frontend
+		videos.GET("/:id/stream", StreamVideoHandler(db, bunnyService))
 	}
 
 	// Subscription routes
@@ -100,6 +163,205 @@ func SetupRoutes(
 			c.JSON(http.StatusOK, gin.H{"message": "Ad serving endpoint (mock)"})
 		})
 	}
+
+	// Bunny.net test endpoint
+	v1.GET("/test/bunny", func(c *gin.Context) {
+		// Enhanced configuration check with more details
+		configStatus := gin.H{
+			"stream_library": gin.H{
+				"value": cfg.BunnyStreamLibrary,
+				"set":   cfg.BunnyStreamLibrary != "",
+				"valid": len(cfg.BunnyStreamLibrary) > 0,
+			},
+			"stream_api_key": gin.H{
+				"set":     cfg.BunnyStreamAPIKey != "",
+				"length":  len(cfg.BunnyStreamAPIKey),
+				"valid":   len(cfg.BunnyStreamAPIKey) >= 40, // Bunny.net API keys are typically long
+				"preview": cfg.BunnyStreamAPIKey[:min(8, len(cfg.BunnyStreamAPIKey))] + "...",
+			},
+			"storage_zone": gin.H{
+				"value": cfg.BunnyStorageZone,
+				"set":   cfg.BunnyStorageZone != "",
+				"valid": len(cfg.BunnyStorageZone) > 0,
+			},
+			"storage_api_key": gin.H{
+				"set":     cfg.BunnyAPIKey != "",
+				"length":  len(cfg.BunnyAPIKey),
+				"valid":   len(cfg.BunnyAPIKey) >= 40,
+				"preview": cfg.BunnyAPIKey[:min(8, len(cfg.BunnyAPIKey))] + "...",
+			},
+			"pull_zone": gin.H{
+				"value": cfg.BunnyPullZone,
+				"set":   cfg.BunnyPullZone != "",
+				"valid": len(cfg.BunnyPullZone) > 0,
+			},
+			"region": gin.H{
+				"value": cfg.BunnyRegion,
+				"set":   cfg.BunnyRegion != "",
+				"valid": len(cfg.BunnyRegion) > 0,
+			},
+			"webhook_secret": gin.H{
+				"set":    cfg.BunnyWebhookSecret != "",
+				"length": len(cfg.BunnyWebhookSecret),
+				"valid":  len(cfg.BunnyWebhookSecret) >= 10,
+			},
+		}
+
+		// Calculate overall configuration status
+		requiredFields := []bool{
+			cfg.BunnyStreamLibrary != "",
+			cfg.BunnyStreamAPIKey != "",
+			cfg.BunnyStorageZone != "",
+			cfg.BunnyAPIKey != "",
+			cfg.BunnyPullZone != "",
+		}
+
+		allConfigured := true
+		for _, field := range requiredFields {
+			if !field {
+				allConfigured = false
+				break
+			}
+		}
+
+		// Test API connectivity if configured
+		var connectivityTest gin.H
+		if allConfigured {
+			// Test Stream API
+			streamURL := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos", cfg.BunnyStreamLibrary)
+			streamReq, streamErr := http.NewRequest("GET", streamURL, nil)
+			if streamErr == nil {
+				streamReq.Header.Set("AccessKey", cfg.BunnyStreamAPIKey)
+				streamReq.Header.Set("Content-Type", "application/json")
+
+				client := &http.Client{Timeout: 5 * time.Second}
+				streamResp, streamRespErr := client.Do(streamReq)
+
+				if streamRespErr == nil {
+					defer streamResp.Body.Close()
+					connectivityTest = gin.H{
+						"stream_api": gin.H{
+							"status":        "tested",
+							"url":           streamURL,
+							"response_code": streamResp.StatusCode,
+							"success":       streamResp.StatusCode == 200,
+							"message":       getStatusMessage(streamResp.StatusCode),
+						},
+					}
+				} else {
+					connectivityTest = gin.H{
+						"stream_api": gin.H{
+							"status":  "error",
+							"url":     streamURL,
+							"error":   streamRespErr.Error(),
+							"success": false,
+						},
+					}
+				}
+			}
+		} else {
+			connectivityTest = gin.H{
+				"stream_api": gin.H{
+					"status":  "skipped",
+					"message": "Configuration incomplete - cannot test connectivity",
+					"success": false,
+				},
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"status":       "configuration_check",
+			"timestamp":    time.Now().Format(time.RFC3339),
+			"config":       configStatus,
+			"connectivity": connectivityTest,
+			"summary": gin.H{
+				"all_configured":    allConfigured,
+				"ready_for_testing": allConfigured,
+				"missing_fields":    getMissingFields(cfg),
+			},
+		})
+	})
+
+	// Bunny.net connection test endpoint
+	v1.GET("/test/bunny/connect", func(c *gin.Context) {
+		if bunnyService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": "Bunny service not configured",
+				"config": gin.H{
+					"streamLibrary": cfg.BunnyStreamLibrary,
+					"streamAPIKey":  cfg.BunnyStreamAPIKey != "",
+					"storageZone":   cfg.BunnyStorageZone,
+					"apiKey":        cfg.BunnyAPIKey != "",
+					"pullZone":      cfg.BunnyPullZone,
+				},
+			})
+			return
+		}
+
+		// Test Bunny Stream library access
+		libraryID := cfg.BunnyStreamLibrary
+		apiKey := cfg.BunnyStreamAPIKey
+
+		if libraryID == "" || apiKey == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Bunny Stream library ID or API key not configured",
+				"config": gin.H{
+					"streamLibrary": libraryID,
+					"streamAPIKey":  apiKey != "",
+				},
+			})
+			return
+		}
+
+		// Make a test request to Bunny Stream API
+		url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos", libraryID)
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to create request",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		req.Header.Set("AccessKey", apiKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to connect to Bunny Stream API",
+				"details": err.Error(),
+				"url":     url,
+			})
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == 200 {
+			c.JSON(http.StatusOK, gin.H{
+				"status":        "success",
+				"message":       "Successfully connected to Bunny Stream library",
+				"library_id":    libraryID,
+				"response_code": resp.StatusCode,
+				"config": gin.H{
+					"streamLibrary": libraryID,
+					"streamAPIKey":  apiKey != "",
+					"storageZone":   cfg.BunnyStorageZone,
+					"apiKey":        cfg.BunnyAPIKey != "",
+					"pullZone":      cfg.BunnyPullZone,
+				},
+			})
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":         "Failed to access Bunny Stream library",
+				"response_code": resp.StatusCode,
+				"library_id":    libraryID,
+				"url":           url,
+			})
+		}
+	})
 }
 
 // Placeholder handler functions - these will be implemented in separate files
@@ -690,3 +952,141 @@ func HealthHandler() gin.HandlerFunc {
 		})
 	}
 }
+
+// UploadVideoHandler handles secure video uploads via backend - ADMIN/CONTENT MANAGER ONLY
+func UploadVideoHandler(db *database.DB, bunnyService *services.BunnyService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Get user ID and role from context
+		userID := c.GetInt("user_id")
+		userRole := c.GetString("user_role")
+
+		if userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			return
+		}
+
+		// Parse multipart form
+		if err := c.Request.ParseMultipartForm(32 << 20); err != nil { // 32MB max
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to parse form"})
+			return
+		}
+
+		// Get video file
+		file, header, err := c.Request.FormFile("video")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No video file provided"})
+			return
+		}
+		defer file.Close()
+
+		// Validate file type
+		if !isValidVideoFile(header.Filename) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid video file type. Allowed: mp4, avi, mov, wmv, flv, webm, mkv"})
+			return
+		}
+
+		// Get metadata from form
+		title := c.PostForm("title")
+		description := c.PostForm("description")
+		category := c.PostForm("category")
+		tagsStr := c.PostForm("tags")
+
+		if title == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Title is required"})
+			return
+		}
+
+		// Parse tags
+		var tags []string
+		if tagsStr != "" {
+			if err := json.Unmarshal([]byte(tagsStr), &tags); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid tags format"})
+				return
+			}
+		}
+
+		// Create a temporary file to pass to Bunny service
+		tempFile, err := os.CreateTemp("", "upload-*.tmp")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create temporary file"})
+			return
+		}
+		defer os.Remove(tempFile.Name())
+		defer tempFile.Close()
+
+		// Copy uploaded file to temp file
+		if _, err := io.Copy(tempFile, file); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save uploaded file"})
+			return
+		}
+
+		// Reset file pointer for reading
+		tempFile.Seek(0, 0)
+
+		// Create multipart file header for Bunny service
+		fileHeader := &multipart.FileHeader{
+			Filename: header.Filename,
+			Header:   header.Header,
+		}
+
+		// Upload to Bunny.net
+		uploadResp, err := bunnyService.UploadVideo(fileHeader, title, description)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to upload video: " + err.Error()})
+			return
+		}
+
+		// Save video metadata to database
+		video, err := db.CreateVideo(
+			title,
+			description,
+			uploadResp.VideoID,
+			"", // thumbnail URL will be set later
+			category,
+			0, // duration will be updated when processing is complete
+			header.Size,
+			tags,
+			userID,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save video metadata"})
+			return
+		}
+
+		// Log the upload action
+		go db.CreateAdminLog(&userID, "video_uploaded", "video", &video.ID, map[string]interface{}{
+			"title":     video.Title,
+			"bunny_id":  video.BunnyVideoID,
+			"file_size": header.Size,
+		}, c.ClientIP(), c.GetHeader("User-Agent"))
+
+		// Return success response
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Video uploaded successfully",
+			"video": gin.H{
+				"id":          video.ID,
+				"title":       video.Title,
+				"bunny_id":    video.BunnyVideoID,
+				"status":      video.Status,
+				"uploaded_at": video.CreatedAt,
+				"uploaded_by": userRole,
+			},
+		})
+	}
+}
+
+// isValidVideoFile checks if the file is a valid video format
+func isValidVideoFile(filename string) bool {
+	ext := strings.ToLower(filepath.Ext(filename))
+	validExtensions := []string{".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv"}
+
+	for _, validExt := range validExtensions {
+		if ext == validExt {
+			return true
+		}
+	}
+	return false
+}
+
+// This StreamVideoHandler is now handled in video.go
