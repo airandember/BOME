@@ -274,3 +274,24 @@ func (db *DB) GetSecurityMetrics() (map[string]interface{}, error) {
 
 	return metrics, nil
 }
+
+// CreateAdminLog creates an admin action log with extended information
+func (db *DB) CreateAdminLog(adminID *int, action, resourceType string, resourceID *int, metadata map[string]interface{}, ipAddress, userAgent string) error {
+	var resourceIDStr *string
+	if resourceID != nil {
+		str := fmt.Sprintf("%d", *resourceID)
+		resourceIDStr = &str
+	}
+
+	return db.CreateAuditLog(&AuditLog{
+		UserID:     adminID,
+		Action:     action,
+		Resource:   resourceType,
+		ResourceID: resourceIDStr, // Convert *int to *string
+		IPAddress:  ipAddress,
+		UserAgent:  userAgent,
+		Status:     "success",
+		Metadata:   metadata,
+		Severity:   "medium",
+	})
+}

@@ -1,9 +1,11 @@
 package routes
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"bome-backend/internal/database"
@@ -11,6 +13,29 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// Add at the top with other imports:
+type BunnyVideoDEF struct {
+	GUID                 string   `json:"guid"`
+	Title                string   `json:"title"`
+	Length               int      `json:"length"`
+	Width                int      `json:"width"`
+	Height               int      `json:"height"`
+	Status               int      `json:"status"`
+	Views                int      `json:"views"`
+	StorageSize          int64    `json:"storageSize"`
+	Framerate            float64  `json:"framerate"`
+	IsPublic             bool     `json:"isPublic"`
+	EncodeProgress       int      `json:"encodeProgress"`
+	AvailableResolutions []string `json:"resolutions"`
+	ThumbnailCount       int      `json:"thumbnailCount"`
+	HasMP4Fallback       bool     `json:"hasMP4Fallback"`
+	CollectionId         string   `json:"collectionId"`
+	AverageWatchTime     int      `json:"averageWatchTime"`
+	TotalWatchTime       int64    `json:"totalWatchTime"`
+	Category             string   `json:"category"`
+	DateUploaded         string   `json:"dateUploaded"` // Changed to string to match BunnyVideo struct
+}
 
 // GetVideosFromBunnyHandler fetches videos directly from Bunny.net library
 func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyService) gin.HandlerFunc {
@@ -157,28 +182,15 @@ func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyServ
 // Helper functions for Bunny.net integration
 
 // extractTagsFromBunnyVideo extracts tags from Bunny.net video metadata
-func extractTagsFromBunnyVideo(bunnyVideo BunnyVideo) []string {
-	var tags []string
+func extractTagsFromBunnyVideo(bunnyVideo BunnyVideoDEF) []string {
+	tags := []string{"bunny", "streaming"}
 
-	// Extract tags from meta tags
-	for _, metaTag := range bunnyVideo.MetaTags {
-		if metaTag.Property == "tag" {
-			tags = append(tags, metaTag.Value)
-		}
+	if bunnyVideo.Title != "" {
+		tags = append(tags, strings.ToLower(bunnyVideo.Title))
 	}
 
-	// If no tags from meta, create some based on the video properties
-	if len(tags) == 0 {
-		tags = []string{"bunny", "streaming"}
-		if bunnyVideo.HasMP4Fallback {
-			tags = append(tags, "mp4")
-		}
-		if bunnyVideo.IsPublic {
-			tags = append(tags, "public")
-		}
-		if bunnyVideo.Category != "" {
-			tags = append(tags, bunnyVideo.Category)
-		}
+	if bunnyVideo.Category != "" {
+		tags = append(tags, strings.ToLower(bunnyVideo.Category))
 	}
 
 	return tags
@@ -200,4 +212,62 @@ func mapBunnyStatus(status int) string {
 	default:
 		return "unknown"
 	}
+}
+
+// Update fetchBunnyVideos to convert API response to our service type
+func fetchBunnyVideos(libraryID, apiKey string) ([]BunnyVideoDEF, error) {
+	client := &http.Client{}
+	req, err := http.NewRequest("GET",
+		fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos", libraryID),
+		nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("AccessKey", apiKey)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var videos []BunnyVideoDEF
+	if err := json.NewDecoder(resp.Body).Decode(&videos); err != nil {
+		return nil, err
+	}
+
+	return videos, nil
+}
+
+// Update syncVideoToDatabase to use the correct bunnyVideo parameter for tag extraction
+func syncVideoToDatabase(db *database.DB, bunnyService *services.BunnyService, bunnyVideo BunnyVideoDEF) error {
+	// Convert to services.BunnyVideo format for database
+	uploadTime, _ := time.Parse(time.RFC3339, bunnyVideo.DateUploaded)
+	serviceVideo := services.BunnyVideo{
+		ID:    bunnyVideo.GUID,
+		Title: bunnyVideo.Title,
+		Description: fmt.Sprintf("Video from Bunny.net library. Duration: %d seconds, Resolution: %dx%d",
+			bunnyVideo.Length, bunnyVideo.Width, bunnyVideo.Height),
+		Status:    mapBunnyStatus(bunnyVideo.Status),
+		CreatedAt: uploadTime,
+		UpdatedAt: uploadTime,
+		Duration:  float64(bunnyVideo.Length),
+		Size:      bunnyVideo.StorageSize,
+		Thumbnail: bunnyService.GetThumbnailURL(bunnyVideo.GUID),
+		Preview:   bunnyService.GetStreamURL(bunnyVideo.GUID),
+		LibraryID: bunnyService.GetStreamLibrary(),
+	}
+
+	_, err := db.CreateVideo(
+		serviceVideo.Title,
+		serviceVideo.Description,
+		serviceVideo.ID,
+		serviceVideo.Thumbnail,
+		bunnyVideo.Category,
+		int(serviceVideo.Duration),
+		serviceVideo.Size,
+		extractTagsFromBunnyVideo(bunnyVideo), // Fixed: Use original bunnyVideo instead of serviceVideo
+		0,                                     // createdBy - system
+	)
+	return err
 }

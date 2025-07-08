@@ -400,3 +400,74 @@ func (db *DB) CleanupExpiredTokens() error {
 	_, err = db.Exec(`UPDATE users SET reset_token = NULL, reset_token_expiry = NULL WHERE reset_token_expiry < NOW() AND reset_token IS NOT NULL`)
 	return err
 }
+
+// GetUsers retrieves a list of users with pagination and filtering
+func (db *DB) GetUsers(limit, offset int, role, search string) ([]*User, error) {
+	query := `SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
+              stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, 
+              location, website, phone, avatar_url, preferences, last_login, last_logout, 
+              max_sessions, created_at, updated_at 
+              FROM users WHERE 1=1`
+
+	args := []interface{}{}
+	argCount := 0
+
+	if role != "" {
+		argCount++
+		query += fmt.Sprintf(" AND role = $%d", argCount)
+		args = append(args, role)
+	}
+
+	if search != "" {
+		argCount++
+		query += fmt.Sprintf(" AND (email ILIKE $%d OR first_name ILIKE $%d OR last_name ILIKE $%d)",
+			argCount, argCount, argCount)
+		searchTerm := "%" + search + "%"
+		args = append(args, searchTerm)
+	}
+
+	query += " ORDER BY created_at DESC LIMIT $%d OFFSET $%d"
+	args = append(args, limit, offset)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*User
+	for rows.Next() {
+		user := &User{}
+		err := rows.Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName,
+			&user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken,
+			&user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location,
+			&user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin,
+			&user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, nil
+}
+
+// UpdateUserRole updates a user's role
+func (db *DB) UpdateUserRole(userID int, newRole string) error {
+	query := `UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2`
+	_, err := db.Exec(query, newRole, userID)
+	return err
+}
+
+// DeleteUser deletes a user from the system
+func (db *DB) DeleteUser(userID int) error {
+	query := `DELETE FROM users WHERE id = $1`
+	_, err := db.Exec(query, userID)
+	return err
+}
+
+// GetUserCount returns the total number of users
+func (db *DB) GetUserCount() (int, error) {
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count)
+	return count, err
+}
