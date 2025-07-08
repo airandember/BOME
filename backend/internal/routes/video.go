@@ -214,7 +214,7 @@ func mapBunnyStatus(status int) string {
 	}
 }
 
-// Update fetchBunnyVideos to convert API response to our service type
+// Update fetchBunnyVideos to handle the paginated response
 func fetchBunnyVideos(libraryID, apiKey string) ([]BunnyVideoDEF, error) {
 	client := &http.Client{}
 	req, err := http.NewRequest("GET",
@@ -231,12 +231,20 @@ func fetchBunnyVideos(libraryID, apiKey string) ([]BunnyVideoDEF, error) {
 	}
 	defer resp.Body.Close()
 
-	var videos []BunnyVideoDEF
-	if err := json.NewDecoder(resp.Body).Decode(&videos); err != nil {
-		return nil, err
+	// Check status code first
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d", resp.StatusCode)
 	}
 
-	return videos, nil
+	// Decode into paginated response structure
+	var response struct {
+		Items []BunnyVideoDEF `json:"items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return response.Items, nil
 }
 
 // Update syncVideoToDatabase to use the correct bunnyVideo parameter for tag extraction
