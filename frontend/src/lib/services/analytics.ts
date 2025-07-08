@@ -1,5 +1,5 @@
 import { browser } from '$app/environment';
-import { api } from '$lib/auth';
+import { apiRequest } from '$lib/auth';
 import type { AdminAnalytics } from '$lib/types/advertising';
 
 interface AnalyticsEvent {
@@ -299,32 +299,24 @@ class AnalyticsService {
         }
     }
 
-    private async makeAuthenticatedRequest(url: string, options: RequestInit = {}): Promise<Response> {
-        if (!browser) {
-            throw new Error('Cannot make authenticated request on server side');
+    private async makeAuthenticatedRequest(endpoint: string, options: RequestInit = {}): Promise<Response> {
+        try {
+            // Remove any double base URLs
+            endpoint = endpoint.replace(/^http[s]?:\/\/[^/]+\/api\/v1/, '');
+            
+            // Make the request using the auth module
+            const response = await apiRequest(endpoint, options);
+            
+            if (!response.ok) {
+                console.error(` Analytics API request failed:`, response.statusText);
+                throw new Error(`Analytics API request failed: ${response.statusText}`);
+            }
+            
+            return response;
+        } catch (error) {
+            console.error(` Analytics API request failed:`, error);
+            throw error;
         }
-
-        const token = localStorage.getItem('token');
-        if (!token) {
-            throw new Error('No authentication token found');
-        }
-
-        const headers = {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            ...options.headers,
-        };
-
-        const response = await fetch(url, {
-            ...options,
-            headers,
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        return response;
     }
 
     public async getAnalytics(period: string = '7d'): Promise<AnalyticsResponse> {
@@ -334,7 +326,7 @@ class AnalyticsService {
 
         try {
             const response = await this.makeAuthenticatedRequest(
-                `http://localhost:8080/api/v1/admin/dashboard/analytics?period=${period}`
+                `/admin/dashboard/analytics?period=${period}`
             );
             const data = await response.json();
             this.setCachedData(cacheKey, data);
@@ -352,7 +344,7 @@ class AnalyticsService {
 
         try {
             const response = await this.makeAuthenticatedRequest(
-                'http://localhost:8080/api/v1/admin/dashboard/analytics/realtime'
+                '/admin/dashboard/analytics/realtime'
             );
             const data = await response.json();
             this.setCachedData(cacheKey, data);
@@ -370,7 +362,7 @@ class AnalyticsService {
 
         try {
             const response = await this.makeAuthenticatedRequest(
-                'http://localhost:8080/api/v1/admin/dashboard/analytics/system-health'
+                '/admin/dashboard/analytics/system-health'
             );
             const data = await response.json();
             this.setCachedData(cacheKey, data);
@@ -384,7 +376,7 @@ class AnalyticsService {
     public async exportAnalytics(format: 'csv' | 'json' = 'csv', period: string = '7d'): Promise<void> {
         try {
             const response = await this.makeAuthenticatedRequest(
-                `http://localhost:8080/api/v1/admin/dashboard/analytics/export?format=${format}&period=${period}`
+                `/admin/dashboard/analytics/export?format=${format}&period=${period}`
             );
 
             const blob = await response.blob();
@@ -427,7 +419,7 @@ class AnalyticsService {
         this.eventQueue = [];
 
         try {
-            await this.makeAuthenticatedRequest('http://localhost:8080/api/v1/admin/dashboard/analytics/batch', {
+            await this.makeAuthenticatedRequest('/admin/dashboard/analytics/batch', {
                 method: 'POST',
                 body: JSON.stringify(events),
             });
@@ -491,6 +483,14 @@ class AnalyticsService {
         this.lastPageViewTime = Date.now();
     }
 
+    public async trackVideoEvent(videoId: string, action: string, data: Record<string, any> = {}): Promise<void> {
+        await this.trackEvent('video', {
+            video_id: videoId,
+            action,
+            ...data
+        });
+    }
+
     public destroy(): void {
         if (this.ws) {
             this.ws.close();
@@ -511,4 +511,5 @@ class AnalyticsService {
     }
 }
 
-export const analyticsService = AnalyticsService.getInstance();
+// Export the singleton instance
+export const analytics = AnalyticsService.getInstance();

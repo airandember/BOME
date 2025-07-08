@@ -19,6 +19,10 @@ export interface Video {
 	updatedAt: string;
 	bunnyVideoId?: string; // Bunny.net GUID
 	encodeProgress?: number; // Bunny.net encoding progress
+	iframeSrc?: string;
+	directPlayUrl?: string;
+	resolutions?: string[];
+	playData?: VideoPlayData;
 }
 
 export interface VideoCategory {
@@ -69,6 +73,25 @@ export interface CollectionsResponse {
 	currentPage: number;
 	itemsPerPage: number;
 	items: BunnyCollection[];
+}
+
+export interface VideoPlayData {
+	videoLibraryId: string;
+	guid: string;
+	title: string;
+	status: number;
+	framerate: number;
+	width: number;
+	height: number;
+	duration: number;
+	thumbnailCount: number;
+	resolutions: string[];
+	thumbnailFileName: string;
+	hasMP4Fallback: boolean;
+	playbackUrl: string;
+	iframeSrc: string;
+	directPlayUrl: string;
+	thumbnailUrl: string;
 }
 
 // Enhanced error handling with retry logic
@@ -242,24 +265,73 @@ export const videoService = {
 		}
 	},
 
-	// Get a single video by ID
-	getVideo: async (id: number): Promise<Video> => {
+	// Get a single video by ID or Bunny GUID
+	getVideo: async (id: number | string): Promise<Video> => {
 		try {
-			const response = await apiRequestWithRetry(`/videos/${id}`);
+			// If the ID is a string and looks like a GUID, use bunny-videos endpoint
+			const isGuid = typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+			const endpoint = isGuid ? `/bunny-videos/${id}` : `/videos/${id}`;
+			
+			console.log(`Fetching video from endpoint: ${endpoint}`);
+			
+			const response = await apiRequestWithRetry(endpoint);
+			console.log(`Response status: ${response.status}`);
+			
+			const responseText = await response.text();
+			console.log(`Response body: ${responseText}`);
 			
 			if (!response.ok) {
-				const data = await response.json().catch(() => ({}));
-				throw parseApiError(response, data);
+				let errorData;
+				try {
+					errorData = JSON.parse(responseText);
+				} catch (e) {
+					errorData = { error: responseText };
+				}
+				
+				const error = parseApiError(response, errorData);
+				console.error('Error fetching video:', error);
+				throw error;
 			}
 			
-			const data = await response.json();
+			let data;
+			try {
+				data = JSON.parse(responseText);
+			} catch (e) {
+				console.error('Failed to parse response as JSON:', responseText);
+				throw new Error('Invalid JSON response from server');
+			}
+			
+			console.log('Parsed video data:', data);
+			
+			if (!data || typeof data !== 'object') {
+				console.error('Invalid response format:', data);
+				throw new Error('Invalid response format from server');
+			}
+
+			// Extract play data
+			const playData = data.play_data || data.playData;
+			const thumbnailUrl = playData?.thumbnailUrl || data.thumbnail_url || getThumbnailUrl(data);
+			const videoUrl = playData?.directPlayUrl || data.direct_play_url || '';
+			
 			return {
 				...data,
-				thumbnailUrl: getThumbnailUrl(data)
+				thumbnailUrl,
+				videoUrl,
+				iframeSrc: playData?.iframeSrc || data.iframe_src,
+				directPlayUrl: playData?.directPlayUrl || data.direct_play_url,
+				resolutions: playData?.resolutions || data.resolutions,
+				playData: {
+					...playData,
+					playbackUrl: playData?.directPlayUrl || playData?.playbackUrl || data.direct_play_url || '',
+					directPlayUrl: playData?.directPlayUrl || data.direct_play_url || '',
+					iframeSrc: playData?.iframeSrc || data.iframe_src || '',
+					thumbnailUrl: thumbnailUrl
+				}
 			};
 		} catch (error) {
-			console.error('Error fetching video:', error);
-			throw error;
+			console.error('Error in getVideo:', error);
+			// Rethrow with more context
+			throw error instanceof Error ? error : new Error('Unknown error occurred while fetching video');
 		}
 	},
 

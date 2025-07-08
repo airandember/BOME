@@ -65,6 +65,26 @@ type BunnyCollectionsResponse struct {
 	Items        []BunnyCollection `json:"items"`
 }
 
+// VideoPlayData represents the response from the video play data endpoint
+type VideoPlayData struct {
+	VideoLibraryID    string   `json:"videoLibraryId"`
+	VideoGUID         string   `json:"guid"`
+	Title             string   `json:"title"`
+	Status            int      `json:"status"`
+	Framerate         float64  `json:"framerate"`
+	Width             int      `json:"width"`
+	Height            int      `json:"height"`
+	Duration          float64  `json:"duration"`
+	ThumbnailCount    int      `json:"thumbnailCount"`
+	ResolutionOptions []string `json:"resolutions"`
+	ThumbnailFileName string   `json:"thumbnailFileName"`
+	HasMP4Fallback    bool     `json:"hasMP4Fallback"`
+	PlaybackURL       string   `json:"playbackUrl"`
+	IframeSrc         string   `json:"iframeSrc"`
+	DirectPlayURL     string   `json:"directPlayUrl"`
+	ThumbnailURL      string   `json:"thumbnailUrl"`
+}
+
 // NewBunnyService creates a new Bunny.net service instance
 func NewBunnyService() *BunnyService {
 	return &BunnyService{
@@ -141,7 +161,17 @@ func (b *BunnyService) UploadVideo(file *multipart.FileHeader, title, descriptio
 
 // GetVideo retrieves video information from Bunny Stream
 func (b *BunnyService) GetVideo(videoID string) (*BunnyVideo, error) {
+	if videoID == "" {
+		return nil, fmt.Errorf("video ID is required")
+	}
+
+	if b.streamLibrary == "" || b.streamAPIKey == "" {
+		return nil, fmt.Errorf("Bunny.net configuration missing (library: %v, key: %v)",
+			b.streamLibrary != "", b.streamAPIKey != "")
+	}
+
 	url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos/%s", b.streamLibrary, videoID)
+	fmt.Printf("Making request to Bunny.net: %s\n", url)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -149,6 +179,7 @@ func (b *BunnyService) GetVideo(videoID string) (*BunnyVideo, error) {
 	}
 
 	req.Header.Set("AccessKey", b.streamAPIKey)
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := b.client.Do(req)
 	if err != nil {
@@ -156,9 +187,39 @@ func (b *BunnyService) GetVideo(videoID string) (*BunnyVideo, error) {
 	}
 	defer resp.Body.Close()
 
+	// Read the response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	fmt.Printf("Bunny.net response status: %d\n", resp.StatusCode)
+	fmt.Printf("Bunny.net response body: %s\n", string(body))
+
+	// Handle different status codes
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// Continue processing
+	case http.StatusUnauthorized:
+		return nil, fmt.Errorf("unauthorized: check API key")
+	case http.StatusForbidden:
+		return nil, fmt.Errorf("forbidden: insufficient permissions")
+	case http.StatusNotFound:
+		return nil, fmt.Errorf("video not found: %s", videoID)
+	case http.StatusTooManyRequests:
+		return nil, fmt.Errorf("rate limited by Bunny.net")
+	default:
+		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+	}
+
 	var video BunnyVideo
-	if err := json.NewDecoder(resp.Body).Decode(&video); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := json.Unmarshal(body, &video); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w (body: %s)", err, string(body))
+	}
+
+	// Validate required fields
+	if video.ID == "" {
+		return nil, fmt.Errorf("invalid response: missing video ID (body: %s)", string(body))
 	}
 
 	return &video, nil
@@ -340,4 +401,70 @@ func (b *BunnyService) GetCollection(collectionID string) (*BunnyCollection, err
 	}
 
 	return &collection, nil
+}
+
+// GetVideoPlayData retrieves video play data from Bunny Stream
+func (b *BunnyService) GetVideoPlayData(videoID string) (*VideoPlayData, error) {
+	if videoID == "" {
+		return nil, fmt.Errorf("video ID is required")
+	}
+
+	fmt.Printf("Fetching play data for video %s\n", videoID)
+
+	url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos/%s", b.streamLibrary, videoID)
+	fmt.Printf("Making request to Bunny.net: %s\n", url)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("AccessKey", b.streamAPIKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	fmt.Printf("Bunny.net response status: %d\n", resp.StatusCode)
+
+	// Read the response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	fmt.Printf("Bunny.net response body: %s\n", string(body))
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+	}
+
+	var playData VideoPlayData
+	if err := json.Unmarshal(body, &playData); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Get CDN hostname based on region
+	cdnHostname := "vz-" + b.pullZone
+	if b.region != "" {
+		cdnHostname += "-" + b.region
+	}
+	cdnHostname += ".b-cdn.net"
+
+	// Construct the streaming URLs
+	playData.DirectPlayURL = fmt.Sprintf("https://%s/%s/playlist.m3u8", cdnHostname, videoID)
+	playData.PlaybackURL = playData.DirectPlayURL // Use the HLS stream URL for playback
+	playData.IframeSrc = fmt.Sprintf("https://iframe.mediadelivery.net/embed/%s/%s", b.streamLibrary, videoID)
+	playData.ThumbnailURL = fmt.Sprintf("https://%s/%s/thumbnail.jpg", cdnHostname, videoID)
+
+	fmt.Printf("Successfully fetched play data for video %s\n", videoID)
+	fmt.Printf("Streaming URLs:\n")
+	fmt.Printf("- HLS Stream: %s\n", playData.PlaybackURL)
+	fmt.Printf("- Iframe: %s\n", playData.IframeSrc)
+	fmt.Printf("- Thumbnail: %s\n", playData.ThumbnailURL)
+
+	return &playData, nil
 }

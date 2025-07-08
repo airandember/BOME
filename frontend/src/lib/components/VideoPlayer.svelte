@@ -3,12 +3,14 @@
 	import { videoUtils } from '$lib/video';
 	import { analytics } from '$lib/services/analytics';
 
-	export let videoUrl: string;
+	export let videoId: string = '';
+	export let title: string = '';
 	export let poster: string = '';
 	export let autoplay: boolean = false;
 	export let controls: boolean = true;
 	export let width: string = '100%';
 	export let height: string = 'auto';
+	export let playbackUrl: string = '';
 
 	const dispatch = createEventDispatcher();
 
@@ -20,10 +22,11 @@
 	let isMuted = false;
 	let showControls = true;
 	let controlsTimeout: number;
-	let videoId: string;
 	let quarterWatched = false;
 	let halfWatched = false;
 	let threeQuartersWatched = false;
+
+	$: videoUrl = videoId ? `https://iframe.mediadelivery.net/embed/${videoId}?autoplay=${autoplay}` : '';
 
 	onMount(() => {
 		if (videoElement) {
@@ -189,116 +192,107 @@
 	on:mousemove={handleMouseMove}
 	on:mouseleave={() => showControls = false}
 >
-	<video
-		bind:this={videoElement}
-		{poster}
-		{autoplay}
-		{controls}
-		preload="metadata"
-		class="video-element"
-	>
-		<source src={videoUrl} type="video/mp4" />
-		Your browser does not support the video tag.
-	</video>
+	{#if videoId && playbackUrl}
+		<video
+			bind:this={videoElement}
+			id="main-video"
+			class="video-element"
+			preload="auto"
+			crossorigin="anonymous"
+			{autoplay}
+			{controls}
+			{poster}
+			playsinline
+			data-plyr-config={{
+				title,
+				controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen']
+			}}
+		>
+			<source src={playbackUrl} type="application/x-mpegURL">
+			Your browser does not support the video tag.
+		</video>
+	{:else}
+		<div class="video-placeholder">
+			<p>Video not available</p>
+		</div>
+	{/if}
 
 	{#if controls && showControls}
-		<div class="video-controls">
+		<div class="video-controls" class:visible={showControls}>
 			<div class="progress-bar">
-				<div 
-					class="progress-fill"
-					style="width: {(currentTime / duration) * 100}%"
-				></div>
 				<input
 					type="range"
 					min="0"
-					max={duration || 0}
+					max={duration}
 					value={currentTime}
 					on:input={(e) => {
 						const target = e.target as HTMLInputElement;
-						if (target) seekTo(parseFloat(target.value));
+						if (target) {
+							seekTo(parseFloat(target.value));
+						}
 					}}
-					class="progress-slider"
 				/>
 			</div>
 
-			<div class="controls-main">
-				<div class="controls-left">
-					<button 
-						class="control-btn"
-						on:click={togglePlay}
-						aria-label={isPlaying ? 'Pause' : 'Play'}
-					>
-						{#if isPlaying}
-							⏸️
-						{:else}
-							▶️
-						{/if}
-					</button>
+			<div class="controls-bottom">
+				<button on:click={togglePlay}>
+					{isPlaying ? '⏸️' : '▶️'}
+				</button>
 
-					<div class="time-display">
-						<span>{videoUtils.formatDuration(currentTime)}</span>
-						<span>/</span>
-						<span>{videoUtils.formatDuration(duration)}</span>
-					</div>
+				<div class="time-display">
+					{videoUtils.formatDuration(currentTime)} / {videoUtils.formatDuration(duration)}
 				</div>
 
-				<div class="controls-right">
-					<div class="volume-control">
-						<button 
-							class="control-btn"
-							on:click={toggleMute}
-							aria-label={isMuted ? 'Unmute' : 'Mute'}
-						>
-							{#if isMuted || volume === 0}
-								🔇
-							{:else if volume < 0.5}
-								🔉
-							{:else}
-								🔊
-							{/if}
-						</button>
-						<input
-							type="range"
-							min="0"
-							max="1"
-							step="0.1"
-							value={isMuted ? 0 : volume}
-							on:input={(e) => {
-								const target = e.target as HTMLInputElement;
-								if (target) setVolume(parseFloat(target.value));
-							}}
-							class="volume-slider"
-						/>
-					</div>
-
-					<button 
-						class="control-btn"
-						on:click={toggleFullscreen}
-						aria-label="Toggle fullscreen"
-					>
-						⛶
+				<div class="volume-control">
+					<button on:click={toggleMute}>
+						{isMuted ? '🔇' : '🔊'}
 					</button>
+					<input
+						type="range"
+						min="0"
+						max="1"
+						step="0.1"
+						value={volume}
+						on:input={(e) => {
+							const target = e.target as HTMLInputElement;
+							if (target) {
+								setVolume(parseFloat(target.value));
+							}
+						}}
+					/>
 				</div>
+
+				<button on:click={toggleFullscreen}>
+					⛶
+				</button>
 			</div>
 		</div>
 	{/if}
 </div>
 
-<style>
+<style lang="postcss">
 	.video-player {
 		position: relative;
-		background: var(--card-bg);
-		border-radius: 16px;
+		background: #000;
 		overflow: hidden;
-		box-shadow: 
-			8px 8px 16px var(--shadow-dark),
-			-8px -8px 16px var(--shadow-light);
+		border-radius: 8px;
 	}
 
 	.video-element {
 		width: 100%;
 		height: 100%;
-		display: block;
+		object-fit: contain;
+	}
+
+	.video-placeholder {
+		width: 100%;
+		height: 100%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: #1a1a1a;
+		color: #fff;
+		min-height: 200px;
 	}
 
 	.video-controls {
@@ -307,118 +301,55 @@
 		left: 0;
 		right: 0;
 		background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
-		padding: 1rem;
-		transition: opacity 0.3s ease;
+		padding: 10px;
+		opacity: 0;
+		transition: opacity 0.3s;
+	}
+
+	.video-controls.visible {
+		opacity: 1;
 	}
 
 	.progress-bar {
-		position: relative;
 		width: 100%;
-		height: 4px;
-		background: rgba(255, 255, 255, 0.3);
-		border-radius: 2px;
-		margin-bottom: 1rem;
-		cursor: pointer;
+		margin-bottom: 10px;
 	}
 
-	.progress-fill {
-		height: 100%;
-		background: var(--accent-color);
-		border-radius: 2px;
-		transition: width 0.1s ease;
-	}
-
-	.progress-slider {
-		position: absolute;
-		top: 0;
-		left: 0;
+	.progress-bar input {
 		width: 100%;
-		height: 100%;
-		opacity: 0;
-		cursor: pointer;
 	}
 
-	.controls-main {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-	}
-
-	.controls-left,
-	.controls-right {
+	.controls-bottom {
 		display: flex;
 		align-items: center;
-		gap: 1rem;
-	}
-
-	.control-btn {
-		background: none;
-		border: none;
-		color: white;
-		font-size: 1.2rem;
-		cursor: pointer;
-		padding: 0.5rem;
-		border-radius: 8px;
-		transition: background-color 0.2s ease;
-	}
-
-	.control-btn:hover {
-		background: rgba(255, 255, 255, 0.1);
+		gap: 10px;
 	}
 
 	.time-display {
 		color: white;
-		font-size: 0.9rem;
-		font-weight: 500;
+		font-size: 14px;
 	}
 
 	.volume-control {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 5px;
 	}
 
-	.volume-slider {
-		width: 60px;
-		height: 4px;
-		background: rgba(255, 255, 255, 0.3);
-		border-radius: 2px;
-		outline: none;
-		cursor: pointer;
-	}
-
-	.volume-slider::-webkit-slider-thumb {
-		appearance: none;
-		width: 12px;
-		height: 12px;
-		background: white;
-		border-radius: 50%;
-		cursor: pointer;
-	}
-
-	.volume-slider::-moz-range-thumb {
-		width: 12px;
-		height: 12px;
-		background: white;
-		border-radius: 50%;
-		cursor: pointer;
+	button {
+		background: none;
 		border: none;
+		color: white;
+		cursor: pointer;
+		padding: 5px;
+		font-size: 18px;
 	}
 
-	@media (max-width: 768px) {
-		.controls-main {
-			flex-direction: column;
-			gap: 1rem;
-		}
+	button:hover {
+		opacity: 0.8;
+	}
 
-		.controls-left,
-		.controls-right {
-			width: 100%;
-			justify-content: center;
-		}
-
-		.volume-control {
-			display: none;
-		}
+	input[type="range"] {
+		cursor: pointer;
 	}
 </style> 

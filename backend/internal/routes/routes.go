@@ -133,8 +133,99 @@ func SetupRoutes(
 
 		videos.GET("/categories", GetMockCategoriesHandler) // Must come before /:id
 		videos.GET("/:id", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"message": "Single video endpoint"})
+			videoID := c.Param("id")
+			if videoID == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Video ID is required"})
+				return
+			}
+
+			fmt.Printf("Fetching video with ID: %s\n", videoID)
+
+			// Try to get video from Bunny.net first if it looks like a GUID
+			if strings.Contains(videoID, "-") {
+				bunnyVideo, err := bunnyService.GetVideo(videoID)
+				if err != nil {
+					c.JSON(http.StatusNotFound, gin.H{
+						"error":   "Video not found",
+						"details": err.Error(),
+					})
+					return
+				}
+
+				// Get video play data
+				playData, err := bunnyService.GetVideoPlayData(videoID)
+				if err != nil {
+					fmt.Printf("Failed to get play data: %v\n", err)
+					// Continue without play data
+				}
+
+				// Create response
+				response := gin.H{
+					"id":            videoID,
+					"title":         bunnyVideo.Title,
+					"description":   bunnyVideo.Description,
+					"status":        bunnyVideo.Status,
+					"created_at":    bunnyVideo.CreatedAt,
+					"updated_at":    bunnyVideo.UpdatedAt,
+					"bunny_id":      videoID,
+					"thumbnail_url": bunnyService.GetThumbnailURL(videoID),
+					"duration":      bunnyVideo.Duration,
+					"size":          bunnyVideo.Size,
+					"preview":       bunnyVideo.Preview,
+					"library_id":    bunnyVideo.LibraryID,
+				}
+
+				if playData != nil {
+					response["play_data"] = playData
+					response["iframe_src"] = playData.IframeSrc
+					response["direct_play_url"] = playData.DirectPlayURL
+					response["resolutions"] = playData.ResolutionOptions
+					response["playback_url"] = playData.DirectPlayURL // Use HLS stream URL for playback
+				}
+
+				c.JSON(http.StatusOK, response)
+				return
+			}
+
+			// If not a GUID, try to get video from database
+			videoIDInt, err := strconv.Atoi(videoID)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "Invalid video ID format",
+				})
+				return
+			}
+
+			// Get video from database
+			video, err := db.GetVideoByID(videoIDInt)
+			if err != nil {
+				c.JSON(http.StatusNotFound, gin.H{
+					"error":   "Video not found",
+					"details": err.Error(),
+				})
+				return
+			}
+
+			// If video has a Bunny.net ID, get the play data
+			if video.BunnyVideoID != "" {
+				playData, err := bunnyService.GetVideoPlayData(video.BunnyVideoID)
+				if err != nil {
+					fmt.Printf("Failed to get play data: %v\n", err)
+					// Continue without play data
+				}
+
+				if playData != nil {
+					video.PlayData = playData
+					video.IframeSrc = playData.IframeSrc
+					video.DirectPlayURL = playData.DirectPlayURL
+					video.PlaybackURL = playData.DirectPlayURL // Use HLS stream URL for playback
+					video.Resolutions = playData.ResolutionOptions
+				}
+			}
+
+			c.JSON(http.StatusOK, video)
 		})
+
 		videos.GET("/:id/comments", GetMockCommentsHandler)
 
 		// Add secure video upload endpoint - RESTRICTED TO ADMINS AND CONTENT MANAGERS
@@ -154,6 +245,98 @@ func SetupRoutes(
 
 	// Bunny.net direct access endpoint (separate from videos to avoid conflicts)
 	v1.GET("/bunny-videos", GetVideosFromBunnyHandler(db, bunnyService))
+
+	// Add single video endpoint
+	v1.GET("/bunny-videos/:id", func(c *gin.Context) {
+		videoID := c.Param("id")
+		if videoID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Video ID is required",
+				"code":  "MISSING_VIDEO_ID",
+			})
+			return
+		}
+
+		// Log the request
+		fmt.Printf("Fetching video with Bunny ID: %s\n", videoID)
+
+		// First try to get from database
+		video, err := db.GetVideoByBunnyID(videoID)
+		if err != nil {
+			fmt.Printf("Database lookup failed for video %s: %v\n", videoID, err)
+
+			// If not in database, try to fetch from Bunny.net
+			fmt.Printf("Attempting to fetch video %s from Bunny.net\n", videoID)
+			bunnyVideo, err := bunnyService.GetVideo(videoID)
+			if err != nil {
+				fmt.Printf("Bunny.net fetch failed for video %s: %v\n", videoID, err)
+				c.JSON(http.StatusNotFound, gin.H{
+					"error":    "Video not found",
+					"code":     "VIDEO_NOT_FOUND",
+					"details":  err.Error(),
+					"bunny_id": videoID,
+				})
+				return
+			}
+
+			fmt.Printf("Successfully fetched video from Bunny.net: %+v\n", bunnyVideo)
+
+			// Create video in database
+			video, err = db.CreateVideo(
+				bunnyVideo.Title,
+				bunnyVideo.Description,
+				bunnyVideo.ID,
+				bunnyService.GetThumbnailURL(bunnyVideo.ID),
+				"", // Category not available in BunnyVideo
+				int(bunnyVideo.Duration),
+				bunnyVideo.Size,
+				[]string{}, // No tags initially
+				1,          // Default admin user
+			)
+			if err != nil {
+				fmt.Printf("Failed to save video %s to database: %v\n", videoID, err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error":    "Failed to save video metadata",
+					"code":     "DATABASE_ERROR",
+					"details":  err.Error(),
+					"bunny_id": videoID,
+				})
+				return
+			}
+
+			fmt.Printf("Successfully created database entry for video %s\n", videoID)
+		} else {
+			fmt.Printf("Found existing video in database: %+v\n", video)
+		}
+
+		// Get video play data
+		playData, err := bunnyService.GetVideoPlayData(videoID)
+		if err != nil {
+			fmt.Printf("Failed to get video play data: %v\n", err)
+			// Don't return error, just continue without play data
+		}
+
+		// Combine video data with play data
+		response := gin.H{
+			"id":          video.ID,
+			"title":       video.Title,
+			"description": video.Description,
+			"bunny_id":    video.BunnyVideoID,
+			"status":      video.Status,
+			"created_at":  video.CreatedAt,
+			"updated_at":  video.UpdatedAt,
+		}
+
+		if playData != nil {
+			response["play_data"] = playData
+			response["iframe_src"] = playData.IframeSrc
+			response["direct_play_url"] = playData.DirectPlayURL
+			response["thumbnail_url"] = playData.ThumbnailURL
+			response["resolutions"] = playData.ResolutionOptions
+		}
+
+		c.JSON(http.StatusOK, response)
+	})
 
 	// Bunny.net collections endpoints
 	v1.GET("/bunny-collections", func(c *gin.Context) {
