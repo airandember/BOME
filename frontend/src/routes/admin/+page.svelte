@@ -33,6 +33,7 @@
 	let analytics: AdminAnalytics | null = null;
 	let loading = true;
 	let error: string | null = null;
+	let syncing = false;
 
 	onMount(async () => {
 		if (!$auth.isAuthenticated) {
@@ -191,6 +192,30 @@
 					<line x1="12" y1="16" x2="12" y2="12"></line>
 					<line x1="12" y1="8" x2="12.01" y2="8"></line>
 				</svg>`;
+		}
+	}
+
+	async function syncBunnyVideos() {
+		syncing = true;
+		try {
+			const response = await fetch('/api/v1/sync-bunny-videos', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				}
+			});
+
+			if (response.ok) {
+				const result = await response.json();
+				showToast(`Sync completed! ${result.synced} videos synced, ${result.skipped} skipped.`, 'success');
+			} else {
+				const error = await response.json();
+				showToast(`Sync failed: ${error.error || 'Unknown error'}`, 'error');
+			}
+		} catch (err) {
+			showToast('Failed to sync videos. Please try again.', 'error');
+		} finally {
+			syncing = false;
 		}
 	}
 </script>
@@ -431,6 +456,24 @@
 						<div class="action-description">Manage roles, permissions, and access control</div>
 					</div>
 				</a>
+
+				<button on:click={syncBunnyVideos} disabled={syncing} class="action-card sync-button">
+					<div class="action-icon">
+						{#if syncing}
+							<LoadingSpinner size="small" />
+						{:else}
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+								<path d="M3 21v-5h5" />
+								<path d="M21 3v5h-5" />
+							</svg>
+						{/if}
+					</div>
+					<div class="action-content">
+						<div class="action-title">{syncing ? 'Syncing...' : 'Sync Bunny Videos'}</div>
+						<div class="action-description">Sync videos from Bunny.net library to database</div>
+					</div>
+				</button>
 			</div>
 		</div>
 	</div>
@@ -769,6 +812,23 @@
 		font-size: var(--text-sm);
 		color: var(--text-secondary);
 		line-height: 1.4;
+	}
+
+	.sync-button {
+		cursor: pointer;
+		border: none;
+		width: 100%;
+		text-align: left;
+	}
+
+	.sync-button:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.sync-button:disabled:hover {
+		transform: none;
+		box-shadow: none;
 	}
 
 	/* Responsive Design */

@@ -11,23 +11,54 @@
 		// Navigate to video page
 		window.location.href = `/videos/${video.id}`;
 	}
+
+	function getStatusColor(status: string): string {
+		switch (status) {
+			case 'ready':
+				return '#4CAF50'; // Green
+			case 'processing':
+				return '#FF9800'; // Orange
+			case 'error':
+				return '#F44336'; // Red
+			default:
+				return '#9E9E9E'; // Gray
+		}
+	}
+
+	function getStatusText(status: string): string {
+		switch (status) {
+			case 'ready':
+				return 'Ready';
+			case 'processing':
+				return 'Processing';
+			case 'error':
+				return 'Error';
+			default:
+				return 'Unknown';
+		}
+	}
 </script>
 
 <div class="video-card" on:click={handleClick}>
 	<div class="thumbnail-container">
 		<LazyImage
-			src={video.thumbnailUrl || '/placeholder-thumbnail.jpg'}
+			src={video.status === 'error' ? '/16X10_Placeholder_IMG.png' : video.thumbnailUrl}
 			alt={video.title}
 			className="thumbnail"
 			width="100%"
 			height="100%"
 			quality="medium"
 			cacheKey={`video-thumb-${video.id}`}
-			fallback="/placeholder-thumbnail.jpg"
+			fallback="/16X10_Placeholder_IMG.png"
 		/>
 		<div class="duration-badge">
 			{videoUtils.formatDuration(video.duration)}
 		</div>
+		{#if video.status && video.status !== 'ready'}
+			<div class="status-badge" style="background-color: {getStatusColor(video.status)}">
+				{getStatusText(video.status)}
+			</div>
+		{/if}
 		<div class="play-overlay">
 			<div class="play-icon">▶️</div>
 		</div>
@@ -110,6 +141,18 @@
 		border-radius: 4px;
 		font-size: 0.8rem;
 		font-weight: 500;
+	}
+
+	.status-badge {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		color: white;
+		padding: 2px 6px;
+		border-radius: 4px;
+		font-size: 0.7rem;
+		font-weight: 500;
+		text-transform: uppercase;
 	}
 
 	.play-overlay {

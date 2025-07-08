@@ -120,10 +120,22 @@ func SetupRoutes(
 	// Video routes using database handlers with bunny.net integration
 	videos := v1.Group("/videos")
 	{
-		videos.GET("", GetVideosFromDatabaseHandler(db, bunnyService))
-		videos.GET("/:id", GetVideoFromDatabaseHandler(db, bunnyService))
+		fmt.Printf("Setting up video routes...\n")
+
+		videos.GET("", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"message": "Videos endpoint - use /bunny for Bunny.net videos"})
+		})
+
+		// Test endpoint to verify route registration
+		videos.GET("/test", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"message": "Video test endpoint working"})
+		})
+
+		videos.GET("/categories", GetMockCategoriesHandler) // Must come before /:id
+		videos.GET("/:id", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"message": "Single video endpoint"})
+		})
 		videos.GET("/:id/comments", GetMockCommentsHandler)
-		videos.GET("/categories", GetMockCategoriesHandler)
 
 		// Add secure video upload endpoint - RESTRICTED TO ADMINS AND CONTENT MANAGERS
 		videos.POST("/upload",
@@ -133,8 +145,49 @@ func SetupRoutes(
 			UploadVideoHandler(db, bunnyService))
 
 		// Add streaming endpoint for frontend
-		videos.GET("/:id/stream", StreamVideoHandler(db, bunnyService))
+		videos.GET("/:id/stream", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"message": "Video streaming endpoint"})
+		})
+
+		fmt.Printf("Video routes setup complete\n")
 	}
+
+	// Bunny.net direct access endpoint (separate from videos to avoid conflicts)
+	v1.GET("/bunny-videos", GetVideosFromBunnyHandler(db, bunnyService))
+
+	// Bunny.net collections endpoints
+	v1.GET("/bunny-collections", func(c *gin.Context) {
+		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+		perPage, _ := strconv.Atoi(c.DefaultQuery("per_page", "20"))
+
+		collections, err := bunnyService.GetCollections(page, perPage)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to fetch collections: %v", err),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, collections)
+	})
+
+	v1.GET("/bunny-collections/:id", func(c *gin.Context) {
+		collectionID := c.Param("id")
+		if collectionID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Collection ID is required"})
+			return
+		}
+
+		collection, err := bunnyService.GetCollection(collectionID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to fetch collection: %v", err),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, collection)
+	})
 
 	// Subscription routes
 	subscriptions := v1.Group("/subscriptions")
@@ -361,6 +414,251 @@ func SetupRoutes(
 				"url":           url,
 			})
 		}
+	})
+
+	// Manual sync endpoint for Bunny.net videos
+	v1.POST("/admin/sync-bunny-videos", middleware.AuthRequired(), func(c *gin.Context) {
+		// Check if user is admin
+		userRole := c.GetString("user_role")
+		if userRole != "admin" && userRole != "super_admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+			return
+		}
+
+		// Fetch videos from Bunny.net
+		videos, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to fetch videos from Bunny.net",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		// Sync videos to database
+		syncedCount := 0
+		skippedCount := 0
+		errorCount := 0
+		var errors []string
+
+		for _, bunnyVideo := range videos {
+			err := syncVideoToDatabase(db, bunnyService, bunnyVideo)
+			if err != nil {
+				if strings.Contains(err.Error(), "already exists") {
+					skippedCount++
+				} else {
+					errorCount++
+					errors = append(errors, fmt.Sprintf("%s: %v", bunnyVideo.Title, err))
+				}
+				continue
+			}
+			syncedCount++
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":       true,
+			"message":       "Sync completed",
+			"total_videos":  len(videos),
+			"synced":        syncedCount,
+			"skipped":       skippedCount,
+			"errors":        errorCount,
+			"error_details": errors,
+		})
+	})
+
+	// Test sync endpoint (no auth required for testing)
+	v1.POST("/test/sync-bunny-videos", func(c *gin.Context) {
+		// Fetch videos from Bunny.net
+		videos, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to fetch videos from Bunny.net",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		// Sync videos to database
+		syncedCount := 0
+		skippedCount := 0
+		errorCount := 0
+		var errors []string
+
+		for _, bunnyVideo := range videos {
+			err := syncVideoToDatabase(db, bunnyService, bunnyVideo)
+			if err != nil {
+				if strings.Contains(err.Error(), "already exists") {
+					skippedCount++
+				} else {
+					errorCount++
+					errors = append(errors, fmt.Sprintf("%s: %v", bunnyVideo.Title, err))
+				}
+				continue
+			}
+			syncedCount++
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":       true,
+			"message":       "Test sync completed",
+			"total_videos":  len(videos),
+			"synced":        syncedCount,
+			"skipped":       skippedCount,
+			"errors":        errorCount,
+			"error_details": errors,
+		})
+	})
+
+	// Simple sync endpoint (no auth or webhook secret required for testing)
+	v1.POST("/sync-bunny-videos", func(c *gin.Context) {
+		// Validate configuration
+		if cfg.BunnyStreamLibrary == "" || cfg.BunnyStreamAPIKey == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Bunny.net configuration missing",
+				"details": gin.H{
+					"library_id_set": cfg.BunnyStreamLibrary != "",
+					"api_key_set":    cfg.BunnyStreamAPIKey != "",
+				},
+			})
+			return
+		}
+
+		// Fetch videos from Bunny.net
+		videos, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey)
+		if err != nil {
+			// Categorize errors for better client handling
+			var statusCode int
+			var errorType string
+
+			switch {
+			case strings.Contains(err.Error(), "unauthorized"):
+				statusCode = http.StatusUnauthorized
+				errorType = "authentication_error"
+			case strings.Contains(err.Error(), "forbidden"):
+				statusCode = http.StatusForbidden
+				errorType = "permission_error"
+			case strings.Contains(err.Error(), "not found"):
+				statusCode = http.StatusNotFound
+				errorType = "resource_not_found"
+			case strings.Contains(err.Error(), "rate limited"):
+				statusCode = http.StatusTooManyRequests
+				errorType = "rate_limit_error"
+			case strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "connection"):
+				statusCode = http.StatusServiceUnavailable
+				errorType = "network_error"
+			default:
+				statusCode = http.StatusInternalServerError
+				errorType = "api_error"
+			}
+
+			c.JSON(statusCode, gin.H{
+				"error":      "Failed to fetch videos from Bunny.net",
+				"error_type": errorType,
+				"details":    err.Error(),
+				"timestamp":  time.Now().Format(time.RFC3339),
+			})
+			return
+		}
+
+		// Sync videos to database with detailed tracking
+		syncedCount := 0
+		skippedCount := 0
+		errorCount := 0
+		var errors []gin.H
+		var skipped []gin.H
+
+		for i, bunnyVideo := range videos {
+			err := syncVideoToDatabase(db, bunnyService, bunnyVideo)
+			if err != nil {
+				if strings.Contains(err.Error(), "already exists") {
+					skippedCount++
+					skipped = append(skipped, gin.H{
+						"title":  bunnyVideo.Title,
+						"guid":   bunnyVideo.GUID,
+						"reason": "already_exists",
+					})
+				} else {
+					errorCount++
+					errors = append(errors, gin.H{
+						"title": bunnyVideo.Title,
+						"guid":  bunnyVideo.GUID,
+						"error": err.Error(),
+						"index": i,
+					})
+				}
+				continue
+			}
+			syncedCount++
+		}
+
+		// Determine overall success status
+		overallSuccess := errorCount == 0 || syncedCount > 0
+		statusCode := http.StatusOK
+		if errorCount > 0 && syncedCount == 0 {
+			statusCode = http.StatusPartialContent
+		}
+
+		c.JSON(statusCode, gin.H{
+			"success":         overallSuccess,
+			"message":         fmt.Sprintf("Sync completed: %d synced, %d skipped, %d errors", syncedCount, skippedCount, errorCount),
+			"total_videos":    len(videos),
+			"synced":          syncedCount,
+			"skipped":         skippedCount,
+			"errors":          errorCount,
+			"error_details":   errors,
+			"skipped_details": skipped,
+			"timestamp":       time.Now().Format(time.RFC3339),
+		})
+	})
+
+	// Webhook endpoint for Bunny.net sync (no auth required)
+	v1.POST("/webhook/bunny-sync", func(c *gin.Context) {
+		// Simple webhook secret validation - allow if no secret is configured
+		webhookSecret := c.GetHeader("X-Webhook-Secret")
+		if cfg.BunnyWebhookSecret != "" && webhookSecret != cfg.BunnyWebhookSecret {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid webhook secret"})
+			return
+		}
+
+		// Fetch videos from Bunny.net
+		videos, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to fetch videos from Bunny.net",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		// Sync videos to database
+		syncedCount := 0
+		skippedCount := 0
+		errorCount := 0
+		var errors []string
+
+		for _, bunnyVideo := range videos {
+			err := syncVideoToDatabase(db, bunnyService, bunnyVideo)
+			if err != nil {
+				if strings.Contains(err.Error(), "already exists") {
+					skippedCount++
+				} else {
+					errorCount++
+					errors = append(errors, fmt.Sprintf("%s: %v", bunnyVideo.Title, err))
+				}
+				continue
+			}
+			syncedCount++
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":       true,
+			"message":       "Webhook sync completed",
+			"total_videos":  len(videos),
+			"synced":        syncedCount,
+			"skipped":       skippedCount,
+			"errors":        errorCount,
+			"error_details": errors,
+		})
 	})
 }
 
@@ -1090,3 +1388,251 @@ func isValidVideoFile(filename string) bool {
 }
 
 // This StreamVideoHandler is now handled in video.go
+
+// BunnyVideo represents a video from Bunny.net API
+type BunnyVideo struct {
+	GUID                 string  `json:"guid"`
+	Title                string  `json:"title"`
+	DateUploaded         string  `json:"dateUploaded"`
+	Views                int     `json:"views"`
+	IsPublic             bool    `json:"isPublic"`
+	Length               int     `json:"length"`
+	Status               int     `json:"status"`
+	Framerate            float64 `json:"framerate"`
+	Rotation             int     `json:"rotation"`
+	Width                int     `json:"width"`
+	Height               int     `json:"height"`
+	AvailableResolutions string  `json:"availableResolutions"`
+	ThumbnailCount       int     `json:"thumbnailCount"`
+	EncodeProgress       int     `json:"encodeProgress"`
+	StorageSize          int64   `json:"storageSize"`
+	HasMP4Fallback       bool    `json:"hasMP4Fallback"`
+	CollectionId         string  `json:"collectionId"`
+	ThumbnailFileName    string  `json:"thumbnailFileName"`
+	AverageWatchTime     int     `json:"averageWatchTime"`
+	TotalWatchTime       int     `json:"totalWatchTime"`
+	Category             string  `json:"category"`
+	Chapters             []struct {
+		Title string `json:"title"`
+		Start int    `json:"start"`
+		End   int    `json:"end"`
+	} `json:"chapters"`
+	Moments []struct {
+		Label     string `json:"label"`
+		Timestamp int    `json:"timestamp"`
+	} `json:"moments"`
+	MetaTags []struct {
+		Property string `json:"property"`
+		Value    string `json:"value"`
+	} `json:"metaTags"`
+	TranscodingMessages []struct {
+		TimeStamp interface{} `json:"timeStamp"` // Can be string or int
+		Level     int         `json:"level"`
+		IssueCode int         `json:"issueCode"`
+		Message   string      `json:"message"`
+	} `json:"transcodingMessages"`
+}
+
+// BunnyVideosResponse represents the API response from Bunny.net
+type BunnyVideosResponse struct {
+	TotalItems   int          `json:"totalItems"`
+	CurrentPage  int          `json:"currentPage"`
+	ItemsPerPage int          `json:"itemsPerPage"`
+	Items        []BunnyVideo `json:"items"`
+}
+
+// fetchBunnyVideos fetches all videos from Bunny.net library with improved error handling
+func fetchBunnyVideos(libraryID, apiKey string) ([]BunnyVideo, error) {
+	// Validate inputs
+	if libraryID == "" {
+		return nil, fmt.Errorf("library ID is required")
+	}
+	if apiKey == "" {
+		return nil, fmt.Errorf("API key is required")
+	}
+
+	url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos", libraryID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("AccessKey", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	// Use a client with timeout and retry logic
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	// Retry logic for network issues
+	var resp *http.Response
+	var lastErr error
+	maxRetries := 3
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		resp, err = client.Do(req)
+		if err == nil {
+			break
+		}
+
+		lastErr = err
+		if attempt < maxRetries {
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request after %d attempts: %w", maxRetries, lastErr)
+	}
+	defer resp.Body.Close()
+
+	// Handle different HTTP status codes
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// Continue processing
+	case http.StatusUnauthorized:
+		return nil, fmt.Errorf("unauthorized: check API key and permissions")
+	case http.StatusForbidden:
+		return nil, fmt.Errorf("forbidden: insufficient permissions for library %s", libraryID)
+	case http.StatusNotFound:
+		return nil, fmt.Errorf("library not found: %s", libraryID)
+	case http.StatusTooManyRequests:
+		return nil, fmt.Errorf("rate limited: too many requests")
+	case http.StatusInternalServerError:
+		return nil, fmt.Errorf("Bunny.net server error")
+	default:
+		return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode)
+	}
+
+	// Read and parse response
+	var response BunnyVideosResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Validate response structure
+	if response.Items == nil {
+		return nil, fmt.Errorf("invalid response: missing items array")
+	}
+
+	return response.Items, nil
+}
+
+// syncVideoToDatabase syncs a Bunny video to the database with improved error handling
+func syncVideoToDatabase(db *database.DB, bunnyService *services.BunnyService, bunnyVideo BunnyVideo) error {
+	// Validate required fields
+	if bunnyVideo.GUID == "" {
+		return fmt.Errorf("video GUID is required")
+	}
+	if bunnyVideo.Title == "" {
+		return fmt.Errorf("video title is required")
+	}
+
+	// Check if video already exists
+	existingVideo, err := db.GetVideoByBunnyID(bunnyVideo.GUID)
+	if err == nil && existingVideo != nil {
+		return fmt.Errorf("video %s already exists in database", bunnyVideo.GUID)
+	}
+
+	// Generate thumbnail URL
+	thumbnailURL := bunnyService.GetThumbnailURL(bunnyVideo.GUID)
+
+	// Determine video status based on Bunny status
+	var status string
+	switch bunnyVideo.Status {
+	case 0:
+		status = "queued"
+	case 1:
+		status = "processing"
+	case 2:
+		status = "encoding"
+	case 3:
+		status = "ready"
+	case 4:
+		status = "error"
+	default:
+		status = "unknown"
+	}
+
+	// Parse category or set default
+	category := bunnyVideo.Category
+	if category == "" {
+		category = "General"
+	}
+
+	// Create tags from meta tags
+	var tags []string
+	for _, metaTag := range bunnyVideo.MetaTags {
+		if metaTag.Property == "tag" {
+			tags = append(tags, metaTag.Value)
+		}
+	}
+
+	// If no tags from meta, create some based on the video properties
+	if len(tags) == 0 {
+		tags = []string{"bunny", "streaming"}
+		if bunnyVideo.HasMP4Fallback {
+			tags = append(tags, "mp4")
+		}
+		if bunnyVideo.IsPublic {
+			tags = append(tags, "public")
+		}
+	}
+
+	// Create video description
+	description := fmt.Sprintf("Video from Bunny.net library. Duration: %d seconds, Resolution: %dx%d",
+		bunnyVideo.Length, bunnyVideo.Width, bunnyVideo.Height)
+
+	if len(bunnyVideo.TranscodingMessages) > 0 {
+		description += "\n\nTranscoding notes:"
+		for _, msg := range bunnyVideo.TranscodingMessages {
+			description += fmt.Sprintf("\n- %s", msg.Message)
+		}
+	}
+
+	// Create video in database with retry logic
+	var video *database.Video
+	maxRetries := 3
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		video, err = db.CreateVideo(
+			bunnyVideo.Title,
+			description,
+			bunnyVideo.GUID,
+			thumbnailURL,
+			category,
+			bunnyVideo.Length,
+			bunnyVideo.StorageSize,
+			tags,
+			1, // Default to admin user ID
+		)
+		if err == nil {
+			break
+		}
+
+		if attempt < maxRetries {
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to create video in database after %d attempts: %w", maxRetries, err)
+	}
+
+	// Update video status
+	err = db.UpdateVideoStatus(video.ID, status)
+	if err != nil {
+		return fmt.Errorf("failed to update video status: %w", err)
+	}
+
+	// Update view count if available
+	if bunnyVideo.Views > 0 {
+		err = db.UpdateVideoViews(video.ID, bunnyVideo.Views)
+		if err != nil {
+			return fmt.Errorf("failed to update video views: %w", err)
+		}
+	}
+
+	return nil
+}

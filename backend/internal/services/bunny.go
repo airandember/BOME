@@ -47,6 +47,24 @@ type BunnyUploadResponse struct {
 	VideoID string `json:"video_id,omitempty"`
 }
 
+// BunnyCollection represents a collection in Bunny Stream
+type BunnyCollection struct {
+	ID         string    `json:"guid"`
+	Name       string    `json:"name"`
+	VideoCount int       `json:"videoCount"`
+	TotalSize  int64     `json:"totalSize"`
+	CreatedAt  time.Time `json:"dateCreated"`
+	UpdatedAt  time.Time `json:"lastUpdated"`
+}
+
+// BunnyCollectionsResponse represents the API response for collections
+type BunnyCollectionsResponse struct {
+	TotalItems   int               `json:"totalItems"`
+	CurrentPage  int               `json:"currentPage"`
+	ItemsPerPage int               `json:"itemsPerPage"`
+	Items        []BunnyCollection `json:"items"`
+}
+
 // NewBunnyService creates a new Bunny.net service instance
 func NewBunnyService() *BunnyService {
 	return &BunnyService{
@@ -156,6 +174,21 @@ func (b *BunnyService) GetThumbnailURL(videoID string) string {
 	return fmt.Sprintf("https://video.bunnycdn.com/%s/%s/thumbnail.jpg", b.streamLibrary, videoID)
 }
 
+// GetStreamLibrary returns the stream library ID
+func (b *BunnyService) GetStreamLibrary() string {
+	return b.streamLibrary
+}
+
+// GetRegion returns the region
+func (b *BunnyService) GetRegion() string {
+	return b.region
+}
+
+// GetStreamAPIKey returns the stream API key
+func (b *BunnyService) GetStreamAPIKey() string {
+	return b.streamAPIKey
+}
+
 // DeleteVideo deletes a video from Bunny Stream
 func (b *BunnyService) DeleteVideo(videoID string) error {
 	url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos/%s", b.streamLibrary, videoID)
@@ -245,4 +278,66 @@ func (b *BunnyService) handleVideoFailed(payload []byte) error {
 	// Handle video encoding failure
 	// Update database with error status
 	return nil
+}
+
+// GetCollections retrieves all collections from Bunny Stream
+func (b *BunnyService) GetCollections(page int, perPage int) (*BunnyCollectionsResponse, error) {
+	url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/collections?page=%d&itemsPerPage=%d",
+		b.streamLibrary, page, perPage)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("AccessKey", b.streamAPIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get collections, status: %d", resp.StatusCode)
+	}
+
+	var collections BunnyCollectionsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&collections); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &collections, nil
+}
+
+// GetCollection retrieves a single collection by ID
+func (b *BunnyService) GetCollection(collectionID string) (*BunnyCollection, error) {
+	url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/collections/%s",
+		b.streamLibrary, collectionID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("AccessKey", b.streamAPIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get collection, status: %d", resp.StatusCode)
+	}
+
+	var collection BunnyCollection
+	if err := json.NewDecoder(resp.Body).Decode(&collection); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &collection, nil
 }

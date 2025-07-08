@@ -68,6 +68,28 @@ func (db *DB) GetVideoByID(id int) (*Video, error) {
 	return video, nil
 }
 
+// GetVideoByBunnyID retrieves a video by Bunny video ID
+func (db *DB) GetVideoByBunnyID(bunnyVideoID string) (*Video, error) {
+	video := &Video{}
+	var tagsStr string
+	err := db.QueryRow(
+		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at FROM videos WHERE bunny_video_id = $1`,
+		bunnyVideoID,
+	).Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse tags from JSON string
+	if tagsStr != "" {
+		if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
+		}
+	}
+
+	return video, nil
+}
+
 // GetVideos retrieves videos with pagination and filtering
 func (db *DB) GetVideos(limit, offset int, category, status string) ([]*Video, error) {
 	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at FROM videos WHERE 1=1`
@@ -123,6 +145,12 @@ func (db *DB) GetVideos(limit, offset int, category, status string) ([]*Video, e
 // UpdateVideoStatus updates a video's status
 func (db *DB) UpdateVideoStatus(videoID int, status string) error {
 	_, err := db.Exec(`UPDATE videos SET status = $1, updated_at = NOW() WHERE id = $2`, status, videoID)
+	return err
+}
+
+// UpdateVideoViews updates a video's view count
+func (db *DB) UpdateVideoViews(videoID int, views int) error {
+	_, err := db.Exec(`UPDATE videos SET view_count = $1, updated_at = NOW() WHERE id = $2`, views, videoID)
 	return err
 }
 

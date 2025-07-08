@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { videoService, type Video, type VideoCategory } from '$lib/video';
+	import { videoService, type Video, type VideoCategory, type VideosResponse, type BunnyCollection } from '$lib/video';
 	import VideoCard from '$lib/components/VideoCard.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import Navigation from '$lib/components/Navigation.svelte';
@@ -12,6 +12,8 @@
 	import { goto } from '$app/navigation';
 
 	let videos: Video[] = [];
+	let latestVideos: Video[] = [];
+	let collections: BunnyCollection[] = [];
 	let categories: VideoCategory[] = [];
 	let loading = false;
 	let error = '';
@@ -21,28 +23,68 @@
 	let hasMore = true;
 	let loadingMore = false;
 	let authChecking = true;
+	let initialDataLoaded = false;
+	let activeTab: 'latest' | 'collections' | 'topics' = 'latest';
 
 	onMount(async () => {
 		await loadInitialData();
 	});
 
 	async function loadInitialData() {
+		if (initialDataLoaded || loading) return;
+
 		try {
 			loading = true;
 			error = '';
 
-			// Load categories
-			const categoriesResponse = await videoService.getCategories();
-			categories = categoriesResponse.categories || [];
+			// Load collections
+			try {
+				const collectionsResponse = await videoService.getCollections();
+				collections = collectionsResponse.items || [];
+			} catch (err) {
+				console.warn('Failed to load collections:', err);
+				collections = [];
+			}
 
-			// Load videos
+			// Load categories
+			try {
+				const categoriesResponse = await videoService.getCategories();
+				categories = categoriesResponse.categories || [];
+			} catch (err) {
+				console.warn('Failed to load categories:', err);
+				categories = [];
+			}
+
+			// Load latest videos
+			try {
+				const response = await videoService.getVideos(1, 6); // Get latest 6 videos
+				latestVideos = response.videos || [];
+			} catch (err) {
+				console.warn('Failed to load latest videos:', err);
+				latestVideos = [];
+			}
+
+			// Load regular videos
 			await loadVideos();
-		} catch (err) {
-			error = 'Failed to load videos';
-			toastStore.error('Failed to load videos. Please try again.');
-			console.error('Error loading videos:', err);
+			initialDataLoaded = true;
+		} catch (err: any) {
+			handleError(err);
 		} finally {
 			loading = false;
+		}
+	}
+
+	function handleError(err: any) {
+		console.error('Error:', err);
+		if (err.error_type === 'authentication_error') {
+			error = 'Authentication required. Please log in.';
+			toastStore.error('Please log in to view videos.');
+		} else if (err.error_type === 'network_error') {
+			error = 'Network error. Please check your connection.';
+			toastStore.error('Network error. Please check your connection and try again.');
+		} else {
+			error = err.message || 'An error occurred';
+			toastStore.error(error);
 		}
 	}
 
@@ -53,34 +95,65 @@
 				videos = [];
 			}
 
-			const response = await videoService.getVideos(
+			console.log('Loading videos - page:', currentPage, 'category:', selectedCategory, 'search:', searchQuery);
+
+			const response: VideosResponse = await videoService.getVideos(
 				currentPage,
 				20,
 				selectedCategory || undefined,
 				searchQuery || undefined
 			);
 
+			console.log('Videos response:', response);
+
 			const newVideos = response.videos || [];
 			
 			if (reset) {
 				videos = newVideos;
 			} else {
-				videos = [...videos, ...newVideos];
+				// Prevent duplicate videos by checking IDs
+				const existingIds = new Set(videos.map(v => v.id));
+				const uniqueNewVideos = newVideos.filter(video => !existingIds.has(video.id));
+				videos = [...videos, ...uniqueNewVideos];
 			}
 
-			hasMore = newVideos.length === 20;
-		} catch (err) {
-			error = 'Failed to load videos';
-			toastStore.error('Failed to load videos. Please try again.');
+			// Update pagination info
+			hasMore = response.pagination?.has_more || false;
+			console.log('Videos loaded:', newVideos.length, 'hasMore:', hasMore);
+			
+			// Clear any previous errors on success
+			error = '';
+		} catch (err: any) {
 			console.error('Error loading videos:', err);
+			
+			// Provide more specific error messages
+			if (err.error_type === 'authentication_error') {
+				error = 'Authentication required. Please log in.';
+				toastStore.error('Please log in to view videos.');
+			} else if (err.error_type === 'network_error') {
+				error = 'Network error. Please check your connection.';
+				toastStore.error('Network error. Please check your connection and try again.');
+			} else if (err.status === 429) {
+				error = 'Too many requests. Please wait a moment.';
+				toastStore.error('Too many requests. Please wait a moment before trying again.');
+			} else {
+				error = err.message || 'Failed to load videos';
+				toastStore.error('Failed to load videos. Please try again.');
+			}
 		}
 	}
 
 	async function handleSearch() {
+		console.log('Searching videos with query:', searchQuery);
+		// Reset the initial data flag when searching
+		initialDataLoaded = false;
 		await loadVideos(true);
 	}
 
 	async function handleCategoryChange() {
+		console.log('Filtering by category:', selectedCategory);
+		// Reset the initial data flag when changing categories
+		initialDataLoaded = false;
 		await loadVideos(true);
 	}
 
@@ -99,6 +172,8 @@
 	function clearFilters() {
 		searchQuery = '';
 		selectedCategory = '';
+		// Reset the initial data flag when clearing filters
+		initialDataLoaded = false;
 		loadVideos(true);
 	}
 
@@ -107,13 +182,25 @@
 	}
 
 	function handleAccessGranted() {
-		loadInitialData();
+		// Only reload if we haven't already loaded data
+		if (!initialDataLoaded && !loading) {
+			loadInitialData();
+		}
+	}
+
+	function switchTab(tab: typeof activeTab) {
+		activeTab = tab;
+		if (tab === 'latest') {
+			searchQuery = '';
+			selectedCategory = '';
+			loadVideos(true);
+		}
 	}
 </script>
 
 <svelte:head>
-	<title>Videos - Book of Mormon Evidences</title>
-	<meta name="description" content="Browse our collection of Book of Mormon evidence videos." />
+	<title>Video Hub - Book of Mormon Evidences</title>
+	<meta name="description" content="Explore our comprehensive collection of Book of Mormon evidence videos, organized by collections, topics, and latest uploads." />
 </svelte:head>
 
 <Navigation />
@@ -129,132 +216,122 @@
 			{#if loading}
 				<div class="loading-container">
 					<LoadingSpinner size="large" />
-					<p>Loading videos...</p>
+					<p>Loading video hub...</p>
 				</div>
 			{:else}
-				<div class="videos-page">
+				<div class="video-hub">
 					<div class="container">
-						<!-- Ad Placement: Header Banner -->
-						<div class="ad-placement">
-							<AdDisplay placement="videos-header" />
-						</div>
-
-						<header class="page-header">
-							<h1>Videos</h1>
-							<p>Explore our collection of Book of Mormon evidence videos</p>
+						<header class="hub-header">
+							<h1>Video Hub</h1>
+							<p>Discover our extensive collection of Book of Mormon evidence videos</p>
 						</header>
 
-						<div class="filters-section">
-							<div class="search-bar">
-								<input
-									type="text"
-									placeholder="Search videos..."
-									bind:value={searchQuery}
-									on:keydown={(e) => e.key === 'Enter' && handleSearch()}
-									aria-label="Search videos"
-								/>
-								<button class="btn-primary" on:click={handleSearch}>
-									🔍 Search
-								</button>
-							</div>
+						<!-- Navigation Tabs -->
+						<div class="hub-tabs">
+							<button 
+								class="tab-button {activeTab === 'latest' ? 'active' : ''}" 
+								on:click={() => switchTab('latest')}
+							>
+								Latest Videos
+							</button>
+							<button 
+								class="tab-button {activeTab === 'collections' ? 'active' : ''}" 
+								on:click={() => switchTab('collections')}
+							>
+								Collections
+							</button>
+							<button 
+								class="tab-button {activeTab === 'topics' ? 'active' : ''}" 
+								on:click={() => switchTab('topics')}
+							>
+								Topics
+							</button>
+						</div>
 
-							<div class="category-filters">
-								<select 
-									bind:value={selectedCategory} 
-									on:change={handleCategoryChange}
-									aria-label="Filter by category"
-								>
-									<option value="">All Categories</option>
-									{#each categories as category}
-										<option value={category.name}>{category.name} ({category.videoCount})</option>
+						<!-- Latest Videos Section -->
+						{#if activeTab === 'latest'}
+							<section class="latest-videos">
+								<h2>Latest Uploads</h2>
+								<div class="video-grid">
+									{#each latestVideos as video (video.id)}
+										<VideoCard {video} />
 									{/each}
-								</select>
+								</div>
 
-								<button class="btn-secondary" on:click={clearFilters}>
-									Clear Filters
-								</button>
-							</div>
-						</div>
+								<div class="filters-section">
+									<div class="search-bar">
+										<input
+											type="text"
+											placeholder="Search videos..."
+											bind:value={searchQuery}
+											on:keydown={(e) => e.key === 'Enter' && handleSearch()}
+										/>
+										<button class="btn-primary" on:click={handleSearch}>
+											🔍 Search
+										</button>
+									</div>
+								</div>
 
-						<!-- Ad Placement: Mid-page -->
-						<div class="ad-placement">
-							<AdDisplay placement="videos-mid" />
-						</div>
+								<div class="video-grid">
+									{#each videos as video (video.id)}
+										<VideoCard {video} />
+									{/each}
+								</div>
+
+								{#if hasMore}
+									<div class="load-more">
+										<button class="btn-secondary" on:click={loadMore} disabled={loadingMore}>
+											{loadingMore ? 'Loading...' : 'Load More'}
+										</button>
+									</div>
+								{/if}
+							</section>
+						{/if}
+
+						<!-- Collections Section -->
+						{#if activeTab === 'collections'}
+							<section class="collections">
+								<h2>Video Collections</h2>
+								<div class="collections-grid">
+									{#each collections as collection (collection.id)}
+										<div class="collection-card">
+											<h3>{collection.name}</h3>
+											<p>{collection.videoCount} videos</p>
+											<button class="btn-primary" on:click={() => goto(`/videos/collections/${collection.id}`)}>
+												View Collection
+											</button>
+										</div>
+									{/each}
+								</div>
+							</section>
+						{/if}
+
+						<!-- Topics Section -->
+						{#if activeTab === 'topics'}
+							<section class="topics">
+								<h2>Browse by Topic</h2>
+								<div class="topics-grid">
+									{#each categories as category (category.id)}
+										<div class="topic-card">
+											<h3>{category.name}</h3>
+											<p>{category.videoCount} videos</p>
+											<p class="description">{category.description}</p>
+											<button class="btn-primary" on:click={() => goto(`/videos/topics/${category.name}`)}>
+												Explore Topic
+											</button>
+										</div>
+									{/each}
+								</div>
+							</section>
+						{/if}
 
 						{#if error}
 							<div class="error-message">
-								{error}
+								<p>{error}</p>
 							</div>
 						{/if}
 
-						{#if videos.length === 0}
-							<div class="empty-state">
-								<div class="empty-icon">📹</div>
-								<h3>No videos found</h3>
-								<p>Try adjusting your search or filters</p>
-								<button class="btn-primary" on:click={clearFilters}>
-									Clear All Filters
-								</button>
-							</div>
-						{:else}
-							<div class="content-with-sidebar">
-								<div class="main-content">
-									<div class="videos-grid">
-										{#each videos as video, index (video.id)}
-											<VideoCard {video} />
-											<!-- Ad between videos every 6 videos -->
-											{#if (index + 1) % 6 === 0 && index < videos.length - 1}
-												<div class="ad-placement between-videos">
-													<AdDisplay placement="videos-between" />
-												</div>
-											{/if}
-										{/each}
-									</div>
-
-									{#if hasMore}
-										<div class="load-more">
-											<button 
-												class="btn-secondary" 
-												on:click={loadMore}
-												disabled={loadingMore}
-											>
-												{loadingMore ? 'Loading...' : 'Load More'}
-											</button>
-										</div>
-									{/if}
-								</div>
-
-								<!-- Sidebar with ads -->
-								<aside class="sidebar">
-									<div class="sidebar-content">
-										<h3>Sponsored</h3>
-										<div class="ad-placement">
-											<AdDisplay placement="videos-sidebar" />
-										</div>
-										
-										<!-- Additional sidebar content can go here -->
-										<div class="sidebar-section">
-											<h4>Popular Categories</h4>
-											<div class="category-list">
-												{#each categories.slice(0, 5) as category}
-													<button 
-														class="category-item"
-														on:click={() => {
-															selectedCategory = category.name;
-															handleCategoryChange();
-														}}
-													>
-														{category.name} ({category.videoCount})
-													</button>
-												{/each}
-											</div>
-										</div>
-									</div>
-								</aside>
-							</div>
-						{/if}
-
-						<!-- Ad Placement: Footer -->
+						<!-- Ad Placement -->
 						<div class="ad-placement">
 							<AdDisplay placement="videos-footer" />
 						</div>
@@ -263,218 +340,124 @@
 			{/if}
 		</SubscriptionCheck>
 	</main>
-	<Footer />
 </div>
 
-<style>
-	.page-wrapper {
-		display: flex;
-		flex-direction: column;
-		min-height: 100vh;
-	}
+<Footer />
 
+<style lang="postcss">
 	.main-content-wrapper {
-		flex: 1 0 auto;
-		width: 100%;
+		margin-top: 50px;
 	}
 
-	.loading-container {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		min-height: 50vh;
-		gap: 1rem;
-	}
-
-	.loading-container p {
-		color: var(--text-color);
-		font-size: 1.1rem;
-	}
-
-	.videos-page {
-		background: var(--bg-color);
+	.video-hub {
 		padding: 2rem 0;
-		width: 100%;
 	}
 
-	.container {
-		max-width: 1200px;
-		margin: 0 auto;
-		padding: 0 2rem;
-	}
-
-	.page-header {
+	.hub-header {
 		text-align: center;
-		margin-bottom: 3rem;
+		margin-bottom: 2rem;
+
+		h1 {
+			font-size: 2.5rem;
+			color: var(--color-primary);
+			margin-bottom: 0.5rem;
+		}
+
+		p {
+			font-size: 1.2rem;
+			color: var(--color-text-muted);
+		}
 	}
 
-	.page-header h1 {
-		font-size: 2.5rem;
-		font-weight: 700;
-		color: var(--text-primary);
-		margin-bottom: 0.5rem;
+	.hub-tabs {
+		display: flex;
+		justify-content: center;
+		gap: 1rem;
+		margin-bottom: 2rem;
+		border-bottom: 1px solid var(--color-border);
+		padding-bottom: 1rem;
 	}
 
-	.page-header p {
+	.tab-button {
+		padding: 0.75rem 1.5rem;
+		border: none;
+		border-radius: 0.5rem;
+		background: transparent;
+		color: var(--color-text);
 		font-size: 1.1rem;
-		color: var(--text-secondary);
-	}
-
-	.filters-section {
-		background: var(--card-bg);
-		padding: 2rem;
-		border-radius: 20px;
-		margin-bottom: 2rem;
-		box-shadow: 
-			8px 8px 16px var(--shadow-dark),
-			-8px -8px 16px var(--shadow-light);
-	}
-
-	.search-bar {
-		display: flex;
-		gap: 1rem;
-		margin-bottom: 1.5rem;
-	}
-
-	.search-bar input {
-		flex: 1;
-		padding: 0.75rem 1rem;
-		border: none;
-		border-radius: 12px;
-		background: var(--input-bg);
-		color: var(--text-primary);
-		font-size: 1rem;
-		box-shadow: 
-			inset 2px 2px 4px var(--shadow-dark),
-			inset -2px -2px 4px var(--shadow-light);
-	}
-
-	.search-bar input:focus {
-		outline: none;
-		box-shadow: 
-			inset 2px 2px 4px var(--shadow-dark),
-			inset -2px -2px 4px var(--shadow-light),
-			0 0 0 2px var(--accent-color);
-	}
-
-	.category-filters {
-		display: flex;
-		gap: 1rem;
-		align-items: center;
-	}
-
-	.category-filters select {
-		padding: 0.75rem 1rem;
-		border: none;
-		border-radius: 12px;
-		background: var(--input-bg);
-		color: var(--text-primary);
-		font-size: 1rem;
-		box-shadow: 
-			inset 2px 2px 4px var(--shadow-dark),
-			inset -2px -2px 4px var(--shadow-light);
 		cursor: pointer;
+		transition: all 0.2s ease;
+
+		&:hover {
+			background: var(--color-bg-hover);
+		}
+
+		&.active {
+			background: var(--color-primary);
+			color: white;
+		}
 	}
 
-	.category-filters select:focus {
-		outline: none;
-		box-shadow: 
-			inset 2px 2px 4px var(--shadow-dark),
-			inset -2px -2px 4px var(--shadow-light),
-			0 0 0 2px var(--accent-color);
-	}
-
-	.content-with-sidebar {
-		display: grid;
-		grid-template-columns: 1fr 300px;
-		gap: 2rem;
-		margin-bottom: 2rem;
-	}
-
-	.main-content {
-		min-width: 0; /* Prevent overflow */
-	}
-
-	.videos-grid {
+	.video-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 		gap: 2rem;
 		margin-bottom: 2rem;
 	}
 
-	.sidebar {
-		position: sticky;
-		top: 2rem;
-		height: fit-content;
+	.collections-grid, .topics-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+		gap: 2rem;
+		margin-bottom: 2rem;
 	}
 
-	.sidebar-content {
-		background: var(--card-bg);
-		border-radius: 20px;
+	.collection-card, .topic-card {
+		background: var(--color-bg-card);
+		border-radius: 1rem;
 		padding: 1.5rem;
-		box-shadow: 
-			8px 8px 16px var(--shadow-dark),
-			-8px -8px 16px var(--shadow-light);
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+		transition: transform 0.2s ease;
+
+		&:hover {
+			transform: translateY(-4px);
+		}
+
+		h3 {
+			font-size: 1.25rem;
+			margin-bottom: 0.5rem;
+			color: var(--color-primary);
+		}
+
+		p {
+			color: var(--color-text-muted);
+			margin-bottom: 1rem;
+
+			&.description {
+				font-size: 0.9rem;
+				line-height: 1.4;
+				margin-bottom: 1.5rem;
+			}
+		}
 	}
 
-	.sidebar h3 {
-		font-size: 1.2rem;
-		font-weight: 600;
-		color: var(--text-primary);
-		margin-bottom: 1rem;
-	}
-
-	.sidebar-section {
-		margin-top: 2rem;
-		padding-top: 2rem;
-		border-top: 1px solid var(--border-color);
-	}
-
-	.sidebar-section h4 {
-		font-size: 1rem;
-		font-weight: 600;
-		color: var(--text-primary);
-		margin-bottom: 1rem;
-	}
-
-	.category-list {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
-	.category-item {
-		background: var(--bg-secondary);
-		border: none;
-		padding: 0.75rem 1rem;
-		border-radius: 10px;
-		color: var(--text-primary);
-		cursor: pointer;
-		transition: all 0.3s ease;
-		text-align: left;
-		font-size: 0.9rem;
-		box-shadow: 
-			2px 2px 4px var(--shadow-dark),
-			-2px -2px 4px var(--shadow-light);
-	}
-
-	.category-item:hover {
-		background: var(--primary-color);
-		color: white;
-		transform: translateY(-1px);
-	}
-
-	/* Ad Placements */
-	.ad-placement {
+	.filters-section {
 		margin: 2rem 0;
-		display: flex;
-		justify-content: center;
 	}
 
-	.ad-placement.between-videos {
-		grid-column: 1 / -1; /* Span full width of grid */
-		margin: 1rem 0;
+	.search-bar {
+		display: flex;
+		gap: 1rem;
+		max-width: 600px;
+		margin: 0 auto;
+
+		input {
+			flex: 1;
+			padding: 0.75rem 1rem;
+			border: 1px solid var(--color-border);
+			border-radius: 0.5rem;
+			font-size: 1rem;
+		}
 	}
 
 	.load-more {
@@ -482,143 +465,31 @@
 		margin-top: 2rem;
 	}
 
-	.empty-state {
-		text-align: center;
-		padding: 4rem 0;
-	}
-
-	.empty-icon {
-		font-size: 4rem;
-		margin-bottom: 1rem;
-	}
-
-	.empty-state h3 {
-		font-size: 1.5rem;
-		color: var(--text-primary);
-		margin-bottom: 0.5rem;
-	}
-
-	.empty-state p {
-		color: var(--text-secondary);
-		margin-bottom: 2rem;
-	}
-
 	.error-message {
-		background: var(--error-bg);
-		color: var(--error-text);
-		padding: 1rem;
-		border-radius: 12px;
 		text-align: center;
-		margin-bottom: 2rem;
+		color: var(--color-error);
+		padding: 1rem;
+		margin: 1rem 0;
+		background: var(--color-error-bg);
+		border-radius: 0.5rem;
 	}
 
-	.btn-primary,
-	.btn-secondary {
-		padding: 0.75rem 1.5rem;
-		border: none;
-		border-radius: 12px;
-		font-size: 1rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 0.2s ease;
-	}
-
-	.btn-primary {
-		background: var(--accent-color);
-		color: white;
-		box-shadow: 
-			4px 4px 8px var(--shadow-dark),
-			-2px -2px 4px var(--shadow-light);
-	}
-
-	.btn-primary:hover {
-		background: var(--accent-hover);
-		transform: translateY(-2px);
-		box-shadow: 
-			6px 6px 12px var(--shadow-dark),
-			-3px -3px 6px var(--shadow-light);
-	}
-
-	.btn-secondary {
-		background: var(--card-bg);
-		color: var(--text-primary);
-		box-shadow: 
-			4px 4px 8px var(--shadow-dark),
-			-2px -2px 4px var(--shadow-light);
-	}
-
-	.btn-secondary:hover:not(:disabled) {
-		transform: translateY(-2px);
-		box-shadow: 
-			6px 6px 12px var(--shadow-dark),
-			-3px -3px 6px var(--shadow-light);
-	}
-
-	.btn-secondary:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-		transform: none;
-	}
-
-	/* Responsive Design */
-	@media (max-width: 1024px) {
-		.content-with-sidebar {
-			grid-template-columns: 1fr 250px;
-		}
+	.ad-placement {
+		margin: 2rem 0;
 	}
 
 	@media (max-width: 768px) {
-		.content-with-sidebar {
+		.hub-tabs {
+			flex-direction: column;
+			gap: 0.5rem;
+		}
+
+		.video-grid, .collections-grid, .topics-grid {
 			grid-template-columns: 1fr;
-			gap: 1rem;
-		}
-
-		.sidebar {
-			position: static;
-			order: -1; /* Show sidebar above content on mobile */
-		}
-
-		.sidebar-content {
-			padding: 1rem;
-		}
-
-		.videos-grid {
-			grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-			gap: 1rem;
-		}
-
-		.filters-section {
-			padding: 1rem;
 		}
 
 		.search-bar {
 			flex-direction: column;
-			gap: 0.5rem;
-		}
-
-		.category-filters {
-			flex-direction: column;
-			gap: 0.5rem;
-		}
-	}
-
-	@media (max-width: 480px) {
-		.videos-grid {
-			grid-template-columns: 1fr;
-		}
-
-		.container {
-			padding: 0 1rem;
-		}
-	}
-
-	/* Touch-friendly improvements */
-	@media (hover: none) and (pointer: coarse) {
-		.search-bar input,
-		.category-filters select,
-		.btn-primary,
-		.btn-secondary {
-			min-height: 44px;
 		}
 	}
 </style> 

@@ -1,8 +1,10 @@
 package routes
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"bome-backend/internal/database"
 	"bome-backend/internal/services"
@@ -10,218 +12,192 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GetVideosHandler handles video listing with pagination and filtering
-func GetVideosHandler(db *database.DB) gin.HandlerFunc {
+// GetVideosFromBunnyHandler fetches videos directly from Bunny.net library
+func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyService) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Parse query parameters
 		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 		offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-		category := c.Query("category")
-		status := c.DefaultQuery("status", "ready")
+		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+		sync := c.DefaultQuery("sync", "false") == "true"
 
+		// Validate and limit parameters
 		if limit > 100 {
 			limit = 100
 		}
+		if limit < 1 {
+			limit = 20
+		}
 
-		videos, err := db.GetVideos(limit, offset, category, status)
+		// Fetch videos directly from Bunny.net
+		videos, err := fetchBunnyVideos(bunnyService.GetStreamLibrary(), bunnyService.GetStreamAPIKey())
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch videos"})
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to fetch videos from Bunny.net",
+				"details": err.Error(),
+			})
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"videos": videos})
-	}
-}
-
-// GetVideoHandler handles single video retrieval
-func GetVideoHandler(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		videoID, err := strconv.Atoi(c.Param("id"))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid video ID"})
-			return
+		// Apply pagination
+		start := offset
+		end := start + limit
+		if start >= len(videos) {
+			start = len(videos)
+		}
+		if end > len(videos) {
+			end = len(videos)
 		}
 
-		video, err := db.GetVideoByID(videoID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Video not found"})
-			return
-		}
+		paginatedVideos := videos[start:end]
 
-		// Increment view count
-		go db.IncrementViewCount(videoID)
-
-		c.JSON(http.StatusOK, gin.H{"video": video})
-	}
-}
-
-// StreamVideoHandler handles video streaming via Bunny.net
-func StreamVideoHandler(db *database.DB, bunnyService *services.BunnyService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		videoID, err := strconv.Atoi(c.Param("id"))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid video ID"})
-			return
-		}
-
-		video, err := db.GetVideoByID(videoID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Video not found"})
-			return
-		}
-
-		if video.Status != "ready" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Video not ready for streaming"})
-			return
-		}
-
-		// Get streaming URL from Bunny.net
-		streamURL := bunnyService.GetStreamURL(video.BunnyVideoID)
-
-		c.JSON(http.StatusOK, gin.H{"stream_url": streamURL})
-	}
-}
-
-// GetCategoriesHandler handles video categories listing
-func GetCategoriesHandler(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		categories, err := db.GetVideoCategories()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch categories"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"categories": categories})
-	}
-}
-
-// SearchVideosHandler handles video search
-func SearchVideosHandler(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		query := c.Query("q")
-		if query == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Search query required"})
-			return
-		}
-
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-		offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-
-		if limit > 100 {
-			limit = 100
-		}
-
-		videos, err := db.SearchVideos(query, limit, offset)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to search videos"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"videos": videos, "query": query})
-	}
-}
-
-// GetVideosFromDatabaseHandler handles video listing from database with bunny.net integration
-func GetVideosFromDatabaseHandler(db *database.DB, bunnyService *services.BunnyService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-		offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-		category := c.Query("category")
-		status := c.DefaultQuery("status", "ready")
-
-		if limit > 100 {
-			limit = 100
-		}
-
-		// Get videos from database
-		videos, err := db.GetVideos(limit, offset, category, status)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch videos"})
-			return
-		}
-
-		// Transform database videos to API response format with bunny.net URLs
+		// Transform Bunny.net videos to API response format
 		var responseVideos []gin.H
-		for _, video := range videos {
-			// Get streaming URL from bunny.net
-			streamURL := bunnyService.GetStreamURL(video.BunnyVideoID)
-			thumbnailURL := video.ThumbnailURL
-			if thumbnailURL == "" {
-				thumbnailURL = bunnyService.GetThumbnailURL(video.BunnyVideoID)
-			}
+		var totalDuration int64
+		var totalSize int64
 
+		for _, bunnyVideo := range paginatedVideos {
+			// Get streaming URL from bunny.net
+			streamURL := bunnyService.GetStreamURL(bunnyVideo.GUID)
+			thumbnailURL := bunnyService.GetThumbnailURL(bunnyVideo.GUID)
+
+			// Enhanced response with Bunny.net data
 			responseVideo := gin.H{
-				"id":           video.ID,
-				"title":        video.Title,
-				"description":  video.Description,
+				"id":           bunnyVideo.GUID,
+				"title":        bunnyVideo.Title,
+				"description":  fmt.Sprintf("Video from Bunny.net library. Duration: %d seconds, Resolution: %dx%d", bunnyVideo.Length, bunnyVideo.Width, bunnyVideo.Height),
 				"thumbnailUrl": thumbnailURL,
 				"videoUrl":     streamURL,
-				"duration":     video.Duration,
-				"viewCount":    video.ViewCount,
-				"likeCount":    video.LikeCount,
-				"category":     video.Category,
-				"tags":         video.Tags,
-				"status":       video.Status,
-				"createdAt":    video.CreatedAt.Format("2006-01-02T15:04:05Z"),
-				"updatedAt":    video.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+				"duration":     bunnyVideo.Length,
+				"viewCount":    bunnyVideo.Views,
+				"likeCount":    0, // Bunny.net doesn't provide like counts
+				"category":     bunnyVideo.Category,
+				"tags":         extractTagsFromBunnyVideo(bunnyVideo),
+				"status":       mapBunnyStatus(bunnyVideo.Status),
+				"createdAt":    bunnyVideo.DateUploaded,
+				"updatedAt":    bunnyVideo.DateUploaded,
+				"bunny": gin.H{
+					"bunny_id":              bunnyVideo.GUID,
+					"bunny_status":          bunnyVideo.Status,
+					"bunny_duration":        bunnyVideo.Length,
+					"bunny_size":            bunnyVideo.StorageSize,
+					"width":                 bunnyVideo.Width,
+					"height":                bunnyVideo.Height,
+					"framerate":             bunnyVideo.Framerate,
+					"views":                 bunnyVideo.Views,
+					"is_public":             bunnyVideo.IsPublic,
+					"encode_progress":       bunnyVideo.EncodeProgress,
+					"available_resolutions": bunnyVideo.AvailableResolutions,
+					"thumbnail_count":       bunnyVideo.ThumbnailCount,
+					"has_mp4_fallback":      bunnyVideo.HasMP4Fallback,
+					"collection_id":         bunnyVideo.CollectionId,
+					"average_watch_time":    bunnyVideo.AverageWatchTime,
+					"total_watch_time":      bunnyVideo.TotalWatchTime,
+				},
+				"metadata": gin.H{
+					"fileSize":   bunnyVideo.StorageSize,
+					"resolution": fmt.Sprintf("%dx%d", bunnyVideo.Width, bunnyVideo.Height),
+					"framerate":  bunnyVideo.Framerate,
+				},
 			}
 			responseVideos = append(responseVideos, responseVideo)
+			totalDuration += int64(bunnyVideo.Length)
+			totalSize += bunnyVideo.StorageSize
 		}
 
-		// For now, use the count of returned videos for pagination
-		// TODO: Add a GetVideoCountWithFilters function to database
+		// Calculate pagination info
+		currentPage := page
+		totalPages := (len(videos) + limit - 1) / limit
+		hasMore := currentPage < totalPages
+
+		// Sync to database if requested
+		if sync {
+			go func() {
+				for _, bunnyVideo := range paginatedVideos {
+					syncVideoToDatabase(db, bunnyService, bunnyVideo)
+				}
+			}()
+		}
+
+		// Enhanced response with bunny.net integration info
 		c.JSON(http.StatusOK, gin.H{
-			"videos": responseVideos,
+			"success": true,
+			"source":  "bunny_net_library",
+			"videos":  responseVideos,
 			"pagination": gin.H{
-				"current_page": (offset / limit) + 1,
+				"current_page": currentPage,
 				"per_page":     limit,
-				"total":        len(responseVideos),
-				"has_more":     len(responseVideos) == limit,
+				"total":        len(videos),
+				"total_pages":  totalPages,
+				"has_more":     hasMore,
+				"offset":       offset,
 			},
+			"summary": gin.H{
+				"total_videos":   len(responseVideos),
+				"total_duration": totalDuration,
+				"total_size":     totalSize,
+				"average_duration": func() float64 {
+					if len(responseVideos) > 0 {
+						return float64(totalDuration) / float64(len(responseVideos))
+					}
+					return 0
+				}(),
+			},
+			"bunny_integration": gin.H{
+				"library_id":   bunnyService.GetStreamLibrary(),
+				"region":       bunnyService.GetRegion(),
+				"cdn_domain":   "iframe.mediadelivery.net",
+				"sync_enabled": sync,
+			},
+			"timestamp": time.Now().Format("2006-01-02T15:04:05Z"),
 		})
 	}
 }
 
-// GetVideoFromDatabaseHandler handles single video retrieval from database
-func GetVideoFromDatabaseHandler(db *database.DB, bunnyService *services.BunnyService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		videoID, err := strconv.Atoi(c.Param("id"))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid video ID"})
-			return
+// Helper functions for Bunny.net integration
+
+// extractTagsFromBunnyVideo extracts tags from Bunny.net video metadata
+func extractTagsFromBunnyVideo(bunnyVideo BunnyVideo) []string {
+	var tags []string
+
+	// Extract tags from meta tags
+	for _, metaTag := range bunnyVideo.MetaTags {
+		if metaTag.Property == "tag" {
+			tags = append(tags, metaTag.Value)
 		}
+	}
 
-		video, err := db.GetVideoByID(videoID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Video not found"})
-			return
+	// If no tags from meta, create some based on the video properties
+	if len(tags) == 0 {
+		tags = []string{"bunny", "streaming"}
+		if bunnyVideo.HasMP4Fallback {
+			tags = append(tags, "mp4")
 		}
-
-		// Get streaming URL from bunny.net
-		streamURL := bunnyService.GetStreamURL(video.BunnyVideoID)
-		thumbnailURL := video.ThumbnailURL
-		if thumbnailURL == "" {
-			thumbnailURL = bunnyService.GetThumbnailURL(video.BunnyVideoID)
+		if bunnyVideo.IsPublic {
+			tags = append(tags, "public")
 		}
-
-		responseVideo := gin.H{
-			"id":           video.ID,
-			"title":        video.Title,
-			"description":  video.Description,
-			"thumbnailUrl": thumbnailURL,
-			"videoUrl":     streamURL,
-			"duration":     video.Duration,
-			"viewCount":    video.ViewCount,
-			"likeCount":    video.LikeCount,
-			"category":     video.Category,
-			"tags":         video.Tags,
-			"status":       video.Status,
-			"createdAt":    video.CreatedAt.Format("2006-01-02T15:04:05Z"),
-			"updatedAt":    video.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		if bunnyVideo.Category != "" {
+			tags = append(tags, bunnyVideo.Category)
 		}
+	}
 
-		// Increment view count
-		go db.IncrementViewCount(videoID)
+	return tags
+}
 
-		c.JSON(http.StatusOK, gin.H{"video": responseVideo})
+// mapBunnyStatus maps Bunny.net status codes to readable status strings
+func mapBunnyStatus(status int) string {
+	switch status {
+	case 0:
+		return "queued"
+	case 1:
+		return "processing"
+	case 2:
+		return "encoding"
+	case 3:
+		return "ready"
+	case 4:
+		return "error"
+	default:
+		return "unknown"
 	}
 }
