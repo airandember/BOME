@@ -3,13 +3,23 @@ package routes
 import (
 	"encoding/json"
 	"log"
-	"net/http"
 	"strings"
-	"sync"
 	"time"
 
+	"bome-backend/internal/websocket"
+
+	gorilla "github.com/gorilla/websocket" // Alias the gorilla websocket package
+
+	"sync"
+
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
+)
+
+var (
+	connections   = make(map[*gorilla.Conn]bool)
+	connMutex     sync.RWMutex
+	subscriptions = make(map[*gorilla.Conn]map[string]bool)
+	subMutex      sync.RWMutex
 )
 
 // SystemHealth represents the system health metrics
@@ -26,26 +36,7 @@ type SystemHealth struct {
 	TotalEventsTracked int       `json:"total_events_tracked"`
 }
 
-var (
-	upgrader = websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		CheckOrigin: func(r *http.Request) bool {
-			// TODO: Add proper origin check for production
-			return true
-		},
-	}
-
-	// Global connection management
-	connections = make(map[*websocket.Conn]bool)
-	connMutex   sync.RWMutex
-
-	// Subscription management
-	subscriptions = make(map[*websocket.Conn]map[string]bool)
-	subMutex      sync.RWMutex
-)
-
-// WebSocketHandler handles WebSocket connections for real-time analytics
+// Remove the local upgrader declaration and use the shared one
 func WebSocketHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Check for authentication token in query parameters
@@ -63,15 +54,13 @@ func WebSocketHandler() gin.HandlerFunc {
 			log.Printf("WebSocket connection without authentication token")
 		}
 
-		// Upgrade HTTP connection to WebSocket with better error handling
-		ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		// Use the shared upgrader
+		ws, err := websocket.Upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
 			log.Printf("Failed to upgrade connection: %v", err)
-			// Send a proper error response if possible
-			if c.Writer.Written() {
-				return
+			if !c.Writer.Written() {
+				c.JSON(500, gin.H{"error": "Failed to establish WebSocket connection"})
 			}
-			c.JSON(500, gin.H{"error": "Failed to establish WebSocket connection"})
 			return
 		}
 
@@ -89,7 +78,7 @@ func WebSocketHandler() gin.HandlerFunc {
 
 		// Set up ping/pong handlers with error handling
 		ws.SetPingHandler(func(data string) error {
-			err := ws.WriteControl(websocket.PongMessage, []byte(data), time.Now().Add(10*time.Second))
+			err := ws.WriteControl(gorilla.PongMessage, []byte(data), time.Now().Add(10*time.Second))
 			if err != nil {
 				log.Printf("Failed to send pong: %v", err)
 			}
@@ -116,7 +105,7 @@ func WebSocketHandler() gin.HandlerFunc {
 		go func() {
 			defer ticker.Stop()
 			for range ticker.C {
-				if err := ws.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second)); err != nil {
+				if err := ws.WriteControl(gorilla.PingMessage, []byte{}, time.Now().Add(10*time.Second)); err != nil {
 					log.Printf("Failed to send ping: %v", err)
 					return
 				}
@@ -135,7 +124,7 @@ func WebSocketHandler() gin.HandlerFunc {
 			subMutex.Unlock()
 
 			// Close connection gracefully
-			ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(5*time.Second))
+			ws.WriteControl(gorilla.CloseMessage, gorilla.FormatCloseMessage(gorilla.CloseNormalClosure, ""), time.Now().Add(5*time.Second))
 			ws.Close()
 			ticker.Stop()
 		}()
@@ -150,9 +139,9 @@ func WebSocketHandler() gin.HandlerFunc {
 		for {
 			messageType, message, err := ws.ReadMessage()
 			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				if gorilla.IsUnexpectedCloseError(err, gorilla.CloseGoingAway, gorilla.CloseAbnormalClosure) {
 					log.Printf("WebSocket error: %v", err)
-				} else if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				} else if gorilla.IsCloseError(err, gorilla.CloseNormalClosure, gorilla.CloseGoingAway) {
 					log.Printf("WebSocket closed normally: %v", err)
 				} else {
 					log.Printf("WebSocket read error: %v", err)
@@ -166,7 +155,7 @@ func WebSocketHandler() gin.HandlerFunc {
 				break
 			}
 
-			if messageType == websocket.TextMessage {
+			if messageType == gorilla.TextMessage {
 				var msg struct {
 					Type    string   `json:"type"`
 					Metrics []string `json:"metrics,omitempty"`
@@ -199,7 +188,7 @@ func WebSocketHandler() gin.HandlerFunc {
 }
 
 // handleSubscribe handles metric subscription requests
-func handleSubscribe(ws *websocket.Conn, metrics []string) {
+func handleSubscribe(ws *gorilla.Conn, metrics []string) {
 	subMutex.Lock()
 	defer subMutex.Unlock()
 
@@ -210,7 +199,7 @@ func handleSubscribe(ws *websocket.Conn, metrics []string) {
 }
 
 // handleUnsubscribe handles metric unsubscription requests
-func handleUnsubscribe(ws *websocket.Conn, metrics []string) {
+func handleUnsubscribe(ws *gorilla.Conn, metrics []string) {
 	subMutex.Lock()
 	defer subMutex.Unlock()
 
@@ -221,7 +210,7 @@ func handleUnsubscribe(ws *websocket.Conn, metrics []string) {
 }
 
 // sendError sends an error message to the client
-func sendError(ws *websocket.Conn, message string) {
+func sendError(ws *gorilla.Conn, message string) {
 	ws.WriteJSON(gin.H{
 		"type":    "error",
 		"message": message,
@@ -244,7 +233,7 @@ func BroadcastAnalyticsUpdate(metric string, data interface{}) {
 	}
 
 	// Track failed connections for cleanup
-	var failedConnections []*websocket.Conn
+	var failedConnections []*gorilla.Conn
 
 	for ws, active := range connections {
 		if !active {
@@ -272,7 +261,7 @@ func BroadcastAnalyticsUpdate(metric string, data interface{}) {
 
 			for _, conn := range failedConnections {
 				// Close connection gracefully
-				conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "Failed to send message"), time.Now().Add(5*time.Second))
+				conn.WriteControl(gorilla.CloseMessage, gorilla.FormatCloseMessage(gorilla.CloseInternalServerErr, "Failed to send message"), time.Now().Add(5*time.Second))
 				conn.Close()
 				delete(connections, conn)
 				delete(subscriptions, conn)
@@ -293,7 +282,7 @@ func BroadcastSystemHealth(data SystemHealth) {
 	}
 
 	// Track failed connections for cleanup
-	var failedConnections []*websocket.Conn
+	var failedConnections []*gorilla.Conn
 
 	for ws, active := range connections {
 		if active {
@@ -315,7 +304,7 @@ func BroadcastSystemHealth(data SystemHealth) {
 
 			for _, conn := range failedConnections {
 				// Close connection gracefully
-				conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "Failed to send message"), time.Now().Add(5*time.Second))
+				conn.WriteControl(gorilla.CloseMessage, gorilla.FormatCloseMessage(gorilla.CloseInternalServerErr, "Failed to send message"), time.Now().Add(5*time.Second))
 				conn.Close()
 				delete(connections, conn)
 				delete(subscriptions, conn)

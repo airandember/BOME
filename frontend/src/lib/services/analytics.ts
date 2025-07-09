@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 import { apiRequest } from '$lib/auth';
 import type { AdminAnalytics } from '$lib/types/advertising';
+import { WS_CONFIG, getWebSocketUrl } from '$lib/config/websocket';
 
 interface AnalyticsEvent {
     type: string;
@@ -184,7 +185,7 @@ export interface AnalyticsResponse {
     user_interactions: Record<string, any>;
 }
 
-class AnalyticsService {
+export class AnalyticsService {
     private static instance: AnalyticsService;
     private cache: Map<string, { data: any; timestamp: number }> = new Map();
     private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -201,8 +202,10 @@ class AnalyticsService {
     private wsReconnectAttempts: number = 0;
     private maxReconnectAttempts: number = 5;
     private realTimeInterval: number | null = null;
+    private isProduction: boolean;
 
     private constructor() {
+        this.isProduction = !browser || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         if (browser) {
             this.startPeriodicFlush();
             this.trackSessionStart();
@@ -220,51 +223,53 @@ class AnalyticsService {
     private initializeWebSocket() {
         if (!browser || this.ws) return;
 
-        // Get token from localStorage
-        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-        if (!token) {
-            console.log('No auth token found, skipping WebSocket connection');
+        const tokens = JSON.parse(localStorage.getItem('bome_auth_tokens') || 'null');
+        if (!tokens?.access_token) {
+            console.debug('No auth token found, skipping WebSocket connection');
             return;
         }
 
-        // Use backend URL instead of frontend URL for WebSocket connection
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        
-        // Determine backend host based on environment
-        let backendHost: string;
-        const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        backendHost = isDevelopment ? 'localhost:8080' : window.location.host;
+        try {
+            this.ws = new WebSocket(getWebSocketUrl(WS_CONFIG.ENDPOINTS.ANALYTICS, tokens.access_token));
 
-        const wsUrl = `${protocol}//${backendHost}/api/v1/admin/dashboard/analytics/ws?token=${encodeURIComponent(token)}`;
-        
-        console.log('Connecting to WebSocket:', wsUrl.replace(/token=[^&]*/, 'token=***'));
-        
-        this.ws = new WebSocket(wsUrl);
+            this.ws.onopen = () => {
+                console.debug('Analytics WebSocket connection established');
+                this.wsReconnectAttempts = 0;
+                this.ws?.send(JSON.stringify({
+                    type: WS_CONFIG.MESSAGE_TYPES.SUBSCRIBE,
+                    metrics: [WS_CONFIG.METRICS.REALTIME]
+                }));
+            };
 
-        this.ws.onopen = () => {
-            console.log('Analytics WebSocket connection established');
-            this.wsReconnectAttempts = 0;
-            this.resubscribeToMetrics();
-        };
+            this.ws.onclose = () => {
+                console.debug('Analytics WebSocket connection closed');
+                this.ws = null;
+                // Only attempt to reconnect if we're still on a page that needs analytics
+                if (document.visibilityState === 'visible') {
+                    this.scheduleReconnect();
+                }
+            };
 
-        this.ws.onclose = () => {
-            console.log('Analytics WebSocket connection closed');
-            this.ws = null;
+            this.ws.onerror = (error) => {
+                console.debug('Analytics WebSocket error:', error);
+                // Don't log the full error in production
+                if (!this.isProduction) {
+                    console.error('WebSocket error details:', error);
+                }
+            };
+
+            this.ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    this.handleWebSocketMessage(data);
+                } catch (error) {
+                    console.error('Failed to parse WebSocket message:', error);
+                }
+            };
+        } catch (error) {
+            console.debug('Failed to initialize WebSocket connection');
             this.scheduleReconnect();
-        };
-
-        this.ws.onerror = (error) => {
-            console.log('Analytics WebSocket error:', error);
-        };
-
-        this.ws.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                this.handleWebSocketMessage(data);
-            } catch (error) {
-                console.error('Failed to parse WebSocket message:', error);
-            }
-        };
+        }
     }
 
     private scheduleReconnect() {

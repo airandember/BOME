@@ -17,7 +17,7 @@
 
 	async function loadVideo() {
 		try {
-			const videoId = parseInt($page.params.id);
+			const videoId = $page.params.id;  // Don't parse as int, let backend handle it
 			const loadedVideo = await videoService.getVideo(videoId);
 			video = loadedVideo;
 			

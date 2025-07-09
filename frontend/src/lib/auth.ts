@@ -53,7 +53,7 @@ export const isLoading = writable(false);
 export const authError = writable<AuthError | null>(null);
 
 // Token refresh scheduling
-let refreshTimeout: number | null = null;
+let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
 
 // Secure token storage using httpOnly cookies (fallback to localStorage for development)
 class SecureTokenStorage {
@@ -149,7 +149,7 @@ function createAuthStore() {
 		// Authentication methods
 		async login(email: string, password: string) {
 			try {
-				console.log('Auth: Starting login process for:', email);
+				// console.log('Auth: Starting login process for:', email);
 				update(state => ({ ...state, loading: true, error: null }));
 				isLoading.set(true);
 				authError.set(null);
@@ -159,16 +159,16 @@ function createAuthStore() {
 					body: JSON.stringify({ email, password }),
 				});
 				
-				console.log('Auth: Login response status:', response.status);
+				// console.log('Auth: Login response status:', response.status);
 				
 				if (!response.ok) {
 					const error = await response.json();
-					console.log('Auth: Login failed with error:', error);
+					// console.log('Auth: Login failed with error:', error);
 					throw new Error(error.error || 'Login failed');
 				}
 				
 				const data = await response.json();
-				console.log('Auth: Login response data:', data);
+				// console.log('Auth: Login response data:', data);
 				
 				const tokens: AuthTokens = {
 					access_token: data.access_token,
@@ -186,9 +186,9 @@ function createAuthStore() {
 					email_verified: data.user.email_verified
 				};
 				
-				console.log('Auth: Parsed tokens and user:', { tokens, user });
+				// console.log('Auth: Parsed tokens and user:', { tokens, user });
 				storeAuthData(tokens, user);
-				console.log('Auth: Login successful, returning result');
+				// console.log('Auth: Login successful, returning result');
 				return { success: true, user };
 			} catch (error) {
 				console.error('Login error:', error);
@@ -417,12 +417,12 @@ if (browser) {
 // Test function to check backend connectivity
 export async function testBackendConnectivity() {
 	try {
-		console.log('Auth: Testing backend connectivity...');
+		// console.log('Auth: Testing backend connectivity...');
 		// Health endpoint is at root, not under /api/v1
 		const healthUrl = API_BASE_URL.replace('/api/v1', '') + '/health';
-		console.log('Auth: Health check URL:', healthUrl);
+		// console.log('Auth: Health check URL:', healthUrl);
 		const response = await fetch(healthUrl);
-		console.log('Auth: Backend health check response:', { status: response.status, ok: response.ok });
+		// console.log('Auth: Backend health check response:', { status: response.status, ok: response.ok });
 		return response.ok;
 	} catch (error) {
 		console.error('Auth: Backend connectivity test failed:', error);
@@ -432,23 +432,23 @@ export async function testBackendConnectivity() {
 
 export async function initializeAuth() {
 	try {
-		console.log('Auth: Starting initialization...');
+		// console.log('Auth: Starting initialization...');
 		const storedTokens = localStorage.getItem(TOKEN_STORAGE_KEY);
 		const storedUser = localStorage.getItem(USER_STORAGE_KEY);
 		
-		console.log('Auth: Stored tokens:', storedTokens ? 'Found' : 'Not found');
-		console.log('Auth: Stored user:', storedUser ? 'Found' : 'Not found');
+		// console.log('Auth: Stored tokens:', storedTokens ? 'Found' : 'Not found');
+		// console.log('Auth: Stored user:', storedUser ? 'Found' : 'Not found');
 		
 		if (storedTokens && storedUser) {
 			const tokens: AuthTokens = JSON.parse(storedTokens);
 			const user: User = JSON.parse(storedUser);
 			
-			console.log('Auth: Parsed tokens:', tokens);
-			console.log('Auth: Parsed user:', user);
+			// console.log('Auth: Parsed tokens:', tokens);
+			// console.log('Auth: Parsed user:', user);
 			
 			// Check if tokens are still valid (basic check)
 			if (isTokenValid(tokens)) {
-				console.log('Auth: Tokens are valid, setting auth state');
+				// console.log('Auth: Tokens are valid, setting auth state');
 				authTokens.set(tokens);
 				currentUser.set(user);
 				auth.set({
@@ -461,14 +461,14 @@ export async function initializeAuth() {
 				
 				// Schedule token refresh
 				scheduleTokenRefresh(tokens);
-				console.log('Auth: Auth state set successfully');
+				// console.log('Auth: Auth state set successfully');
 			} else {
-				console.log('Auth: Tokens are invalid, clearing auth data');
+				// console.log('Auth: Tokens are invalid, clearing auth data');
 				// Tokens expired, clear storage
 				clearAuthData();
 			}
 		} else {
-			console.log('Auth: No stored tokens or user found');
+			// console.log('Auth: No stored tokens or user found');
 		}
 		
 		// Add a small delay to ensure state is properly set
@@ -483,11 +483,11 @@ function isTokenValid(tokens: AuthTokens): boolean {
 	// This is a basic check - in production you might want to decode the JWT
 	// and check the actual expiration time
 	const isValid = !!tokens.access_token && !!tokens.refresh_token;
-	console.log('Auth: Token validation check:', {
-		hasAccessToken: !!tokens.access_token,
-		hasRefreshToken: !!tokens.refresh_token,
-		isValid
-	});
+	// console.log('Auth: Token validation check:', {
+	//     hasAccessToken: !!tokens.access_token,
+	//     hasRefreshToken: !!tokens.refresh_token,
+	//     isValid
+	// });
 	return isValid;
 }
 
@@ -509,11 +509,11 @@ function clearAuthData() {
 }
 
 function storeAuthData(tokens: AuthTokens, user: User) {
-	console.log('Auth: Storing auth data:', { tokens, user });
+	// console.log('Auth: Storing auth data:', { tokens, user });
 	if (browser) {
 		localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
 		localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
-		console.log('Auth: Data stored in localStorage');
+		// console.log('Auth: Data stored in localStorage');
 	}
 	authTokens.set(tokens);
 	currentUser.set(user);
@@ -527,7 +527,7 @@ function storeAuthData(tokens: AuthTokens, user: User) {
 	
 	// Schedule token refresh
 	scheduleTokenRefresh(tokens);
-	console.log('Auth: Auth state updated in stores');
+	// console.log('Auth: Auth state updated in stores');
 }
 
 function scheduleTokenRefresh(tokens: AuthTokens) {
@@ -548,8 +548,8 @@ function scheduleTokenRefresh(tokens: AuthTokens) {
 // API helper function
 export async function apiRequest(endpoint: string, options: RequestInit = {}): Promise<Response> {
 	const url = `${API_BASE_URL}${endpoint}`;
-	console.log('Auth: Making API request to:', url);
-	console.log('Auth: API_BASE_URL:', API_BASE_URL);
+	// console.log('Auth: Making API request to:', url);
+	// console.log('Auth: API_BASE_URL:', API_BASE_URL);
 	
 	const config: RequestInit = {
 		headers: {
@@ -568,11 +568,11 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}): P
 		};
 	}
 	
-	console.log('Auth: Request config:', { method: config.method, headers: config.headers, body: config.body });
+	// console.log('Auth: Request config:', { method: config.method, headers: config.headers, body: config.body });
 	
 	try {
 		const response = await fetch(url, config);
-		console.log('Auth: Response received:', { status: response.status, ok: response.ok, statusText: response.statusText });
+		// console.log('Auth: Response received:', { status: response.status, ok: response.ok, statusText: response.statusText });
 		
 		// Handle 401 - token expired
 		if (response.status === 401 && tokens && !endpoint.includes('/auth/')) {
@@ -600,126 +600,126 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}): P
 }
 
 function getCurrentTokens(): AuthTokens | null {
-	let tokens: AuthTokens | null = null;
-	authTokens.subscribe(value => tokens = value)();
-	return tokens;
+    let tokens: AuthTokens | null = null;
+    authTokens.subscribe(value => tokens = value)();
+    return tokens;
 }
 
 function getCurrentUser(): User | null {
-	let user: User | null = null;
-	currentUser.subscribe(value => user = value)();
-	return user;
+    let user: User | null = null;
+    currentUser.subscribe(value => user = value)();
+    return user;
 }
 
 export async function refreshTokens(): Promise<boolean> {
-	try {
-		const tokens = getCurrentTokens();
-		if (!tokens) {
-			return false;
-		}
-		
-		const response = await apiRequest('/auth/refresh', {
-			method: 'POST',
-			body: JSON.stringify({ refresh_token: tokens.refresh_token }),
-		});
-		
-		if (!response.ok) {
-			return false;
-		}
-		
-		const data = await response.json();
-		const newTokens: AuthTokens = {
-			access_token: data.access_token,
-			refresh_token: data.refresh_token,
-			expires_in: data.expires_in,
-			token_type: data.token_type
-		};
-		
-		// Update tokens in store
-		authTokens.set(newTokens);
-		
-		// Update auth store
-		auth.update(state => ({
-			...state,
-			token: newTokens.access_token
-		}));
-		
-		// Update storage
-		if (browser) {
-			localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(newTokens));
-		}
-		
-		// Schedule next refresh
-		scheduleTokenRefresh(newTokens);
-		
-		return true;
-	} catch (error) {
-		console.error('Token refresh error:', error);
-		return false;
-	}
+    try {
+        const tokens = getCurrentTokens();
+        if (!tokens) {
+            return false;
+        }
+        
+        const response = await apiRequest('/auth/refresh', {
+            method: 'POST',
+            body: JSON.stringify({ refresh_token: tokens.refresh_token }),
+        });
+        
+        if (!response.ok) {
+            return false;
+        }
+        
+        const data = await response.json();
+        const newTokens: AuthTokens = {
+            access_token: data.access_token,
+            refresh_token: data.refresh_token,
+            expires_in: data.expires_in,
+            token_type: data.token_type
+        };
+        
+        // Update tokens in store
+        authTokens.set(newTokens);
+        
+        // Update auth store
+        auth.update(state => ({
+            ...state,
+            token: newTokens.access_token
+        }));
+        
+        // Update storage
+        if (browser) {
+            localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(newTokens));
+        }
+        
+        // Schedule next refresh
+        scheduleTokenRefresh(newTokens);
+        
+        return true;
+    } catch (error) {
+        console.error('Token refresh error:', error);
+        return false;
+    }
 }
 
 // Utility functions
 export function requireAuth() {
-	if (browser) {
-		const user = getCurrentUser();
-		if (!user) {
-			goto('/login');
-		}
-	}
+    if (browser) {
+        const user = getCurrentUser();
+        if (!user) {
+            goto('/login');
+        }
+    }
 }
 
 export function requireRole(allowedRoles: string[]) {
-	if (browser) {
-		const user = getCurrentUser();
-		if (!user || !allowedRoles.includes(user.role)) {
-			goto('/unauthorized');
-		}
-	}
+    if (browser) {
+        const user = getCurrentUser();
+        if (!user || !allowedRoles.includes(user.role)) {
+            goto('/unauthorized');
+        }
+    }
 }
 
 export function requireEmailVerification() {
-	if (browser) {
-		const user = getCurrentUser();
-		if (!user || !user.email_verified) {
-			goto('/verify-email');
-		}
-	}
+    if (browser) {
+        const user = getCurrentUser();
+        if (!user || !user.email_verified) {
+            goto('/verify-email');
+        }
+    }
 }
 
 export function hasRole(role: string): boolean {
-	const user = getCurrentUser();
-	return user?.role === role;
+    const user = getCurrentUser();
+    return user?.role === role;
 }
 
 export function isAdmin(): boolean {
-	const user = getCurrentUser();
-	if (!user) return false;
-	
-	// Admin roles include all roles with level 7+ (subsystem managers and above)
-	const adminRoles = [
-		'super_admin',           // Level 10: Super Administrator
-		'system_admin',          // Level 9: System Administrator
-		'content_manager',       // Level 8: Content Manager
-		'articles_manager',      // Level 7: Articles Manager
-		'youtube_manager',       // Level 7: YouTube Manager
-		'streaming_manager',     // Level 7: Video Streaming Manager
-		'events_manager',        // Level 7: Events Manager
-		'advertisement_manager', // Level 7: Advertisement Manager
-		'user_manager',          // Level 7: User Account Manager
-		'analytics_manager',     // Level 7: Analytics Manager
-		'financial_admin',       // Level 7: Financial Administrator
-		'admin'                  // Legacy admin role
-	];
-	
-	return adminRoles.includes(user.role);
+    const user = getCurrentUser();
+    if (!user) return false;
+    
+    // Admin roles include all roles with level 7+ (subsystem managers and above)
+    const adminRoles = [
+        'super_admin',           // Level 10: Super Administrator
+        'system_admin',          // Level 9: System Administrator
+        'content_manager',       // Level 8: Content Manager
+        'articles_manager',      // Level 7: Articles Manager
+        'youtube_manager',       // Level 7: YouTube Manager
+        'streaming_manager',     // Level 7: Video Streaming Manager
+        'events_manager',        // Level 7: Events Manager
+        'advertisement_manager', // Level 7: Advertisement Manager
+        'user_manager',          // Level 7: User Account Manager
+        'analytics_manager',     // Level 7: Analytics Manager
+        'financial_admin',       // Level 7: Financial Administrator
+        'admin'                  // Legacy admin role
+    ];
+    
+    return adminRoles.includes(user.role);
 }
 
 export function isAdvertiser(): boolean {
-	return hasRole('advertiser') || hasRole('admin');
+    return hasRole('advertiser') || hasRole('admin');
 }
 
 export function isEmailVerified(): boolean {
-	const user = getCurrentUser();
-	return user?.email_verified || false;
+    const user = getCurrentUser();
+    return user?.email_verified || false;
 } 

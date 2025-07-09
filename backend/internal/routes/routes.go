@@ -141,9 +141,11 @@ func SetupRoutes(
 
 			fmt.Printf("Fetching video with ID: %s\n", videoID)
 
-			// Try to get video from Bunny.net first if it looks like a GUID
-			if strings.Contains(videoID, "-") {
-				bunnyVideo, err := bunnyService.GetVideo(videoID)
+			// First try to get video from database using numeric ID
+			videoIDInt, err := strconv.Atoi(videoID)
+			if err == nil {
+				// It's a numeric ID, get from database
+				video, err := db.GetVideoByID(videoIDInt)
 				if err != nil {
 					c.JSON(http.StatusNotFound, gin.H{
 						"error":   "Video not found",
@@ -152,63 +154,37 @@ func SetupRoutes(
 					return
 				}
 
-				// Get video play data
+				// If video has a Bunny.net ID, get the play data
+				if video.BunnyVideoID != "" {
+					playData, err := bunnyService.GetVideoPlayData(video.BunnyVideoID)
+					if err != nil {
+						fmt.Printf("Failed to get play data: %v\n", err)
+						// Continue without play data
+					}
+
+					if playData != nil {
+						playDataMap := make(map[string]interface{})
+						playDataBytes, err := json.Marshal(playData)
+						if err == nil {
+							json.Unmarshal(playDataBytes, &playDataMap)
+							video.PlayData = playDataMap
+						}
+						video.IframeSrc = playData.IframeSrc
+						video.DirectPlayURL = playData.DirectPlayURL
+						video.PlaybackURL = playData.DirectPlayURL // Use HLS stream URL for playback
+						video.Resolutions = playData.ResolutionOptions
+					}
+				}
+
+				c.JSON(http.StatusOK, video)
+				return
+			}
+
+			// If not a numeric ID, try to get from database by Bunny ID
+			video, err := db.GetVideoByBunnyID(videoID)
+			if err == nil {
+				// Found in database, get fresh play data
 				playData, err := bunnyService.GetVideoPlayData(videoID)
-				if err != nil {
-					fmt.Printf("Failed to get play data: %v\n", err)
-					// Continue without play data
-				}
-
-				// Create response
-				response := gin.H{
-					"id":            videoID,
-					"title":         bunnyVideo.Title,
-					"description":   bunnyVideo.Description,
-					"status":        bunnyVideo.Status,
-					"created_at":    bunnyVideo.CreatedAt,
-					"updated_at":    bunnyVideo.UpdatedAt,
-					"bunny_id":      videoID,
-					"thumbnail_url": bunnyService.GetThumbnailURL(videoID),
-					"duration":      bunnyVideo.Duration,
-					"size":          bunnyVideo.Size,
-					"preview":       bunnyVideo.Preview,
-					"library_id":    bunnyVideo.LibraryID,
-				}
-
-				if playData != nil {
-					response["play_data"] = playData
-					response["iframe_src"] = playData.IframeSrc
-					response["direct_play_url"] = playData.DirectPlayURL
-					response["resolutions"] = playData.ResolutionOptions
-					response["playback_url"] = playData.DirectPlayURL // Use HLS stream URL for playback
-				}
-
-				c.JSON(http.StatusOK, response)
-				return
-			}
-
-			// If not a GUID, try to get video from database
-			videoIDInt, err := strconv.Atoi(videoID)
-			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"error": "Invalid video ID format",
-				})
-				return
-			}
-
-			// Get video from database
-			video, err := db.GetVideoByID(videoIDInt)
-			if err != nil {
-				c.JSON(http.StatusNotFound, gin.H{
-					"error":   "Video not found",
-					"details": err.Error(),
-				})
-				return
-			}
-
-			// If video has a Bunny.net ID, get the play data
-			if video.BunnyVideoID != "" {
-				playData, err := bunnyService.GetVideoPlayData(video.BunnyVideoID)
 				if err != nil {
 					fmt.Printf("Failed to get play data: %v\n", err)
 					// Continue without play data
@@ -223,12 +199,56 @@ func SetupRoutes(
 					}
 					video.IframeSrc = playData.IframeSrc
 					video.DirectPlayURL = playData.DirectPlayURL
-					video.PlaybackURL = playData.DirectPlayURL // Use HLS stream URL for playback
+					video.PlaybackURL = playData.DirectPlayURL
 					video.Resolutions = playData.ResolutionOptions
 				}
+
+				c.JSON(http.StatusOK, video)
+				return
 			}
 
-			c.JSON(http.StatusOK, video)
+			// If not found in database, try to fetch directly from Bunny.net
+			bunnyVideo, err := bunnyService.GetVideo(videoID)
+			if err != nil {
+				c.JSON(http.StatusNotFound, gin.H{
+					"error":   "Video not found",
+					"details": err.Error(),
+				})
+				return
+			}
+
+			// Get video play data
+			playData, err := bunnyService.GetVideoPlayData(videoID)
+			if err != nil {
+				fmt.Printf("Failed to get play data: %v\n", err)
+				// Continue without play data
+			}
+
+			// Create response
+			response := gin.H{
+				"id":            videoID,
+				"title":         bunnyVideo.Title,
+				"description":   bunnyVideo.Description,
+				"status":        bunnyVideo.Status,
+				"created_at":    bunnyVideo.CreatedAt,
+				"updated_at":    bunnyVideo.UpdatedAt,
+				"bunny_id":      videoID,
+				"thumbnail_url": bunnyService.GetThumbnailURL(videoID),
+				"duration":      bunnyVideo.Duration,
+				"size":          bunnyVideo.Size,
+				"preview":       bunnyVideo.Preview,
+				"library_id":    bunnyVideo.LibraryID,
+			}
+
+			if playData != nil {
+				response["play_data"] = playData
+				response["iframe_src"] = playData.IframeSrc
+				response["direct_play_url"] = playData.DirectPlayURL
+				response["resolutions"] = playData.ResolutionOptions
+				response["playback_url"] = playData.DirectPlayURL // Use HLS stream URL for playback
+			}
+
+			c.JSON(http.StatusOK, response)
 		})
 
 		videos.GET("/:id/comments", GetMockCommentsHandler)
