@@ -51,7 +51,7 @@
 				title={video.title}
 				poster={video.thumbnailUrl}
 				playbackUrl={video.playbackUrl}
-				autoplay={true}
+				iframeSrc={video.iframeSrc}
 			/>
 		</div>
 

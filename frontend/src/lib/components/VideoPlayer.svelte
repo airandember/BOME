@@ -8,11 +8,13 @@
     export let title: string = '';
     export let poster: string = '';
     export let playbackUrl: string = '';
+    export let iframeSrc: string = '';
 
     let token: string | null = null;
     let hls: Hls | null = null;
     let retryCount = 0;
     const MAX_RETRIES = 3;
+    let useIframe = false;
 
     // Subscribe to auth store
     auth.subscribe(state => {
@@ -20,7 +22,7 @@
         console.log('Auth state updated:', { isAuthenticated: state.isAuthenticated, hasToken: !!state.token });
         
         // If token changed and we have an active HLS instance, reload the stream
-        if (newToken !== token && hls) {
+        if (newToken !== token && hls && !useIframe) {
             token = newToken;
             console.log('Token changed, reloading stream');
             retryCount = 0; // Reset retry count on token change
@@ -38,17 +40,33 @@
 
     const dispatch = createEventDispatcher();
     let videoElement: HTMLVideoElement;
+    let iframeElement: HTMLIFrameElement;
     let errorMessage = '';
 
+    function switchToIframe() {
+        console.log('Switching to iframe playback:', iframeSrc);
+        useIframe = true;
+        errorMessage = '';
+        
+        if (hls) {
+            hls.destroy();
+            hls = null;
+        }
+    }
+
     function initHls() {
+        if (useIframe) {
+            return; // Don't initialize HLS if using iframe
+        }
+
         if (!token) {
-            console.error('No auth token available');
-            errorMessage = 'Authentication required';
+            console.error('No auth token available, switching to iframe');
+            switchToIframe();
             return;
         }
 
         if (videoElement && proxyUrl) {
-            console.log('Setting up video with URL:', proxyUrl);
+            console.log('Setting up HLS video with URL:', proxyUrl);
             
             if (Hls.isSupported()) {
                 console.log('HLS.js is supported');
@@ -59,19 +77,15 @@
                 }
 
                 hls = new Hls({
-                    debug: true, // Enable debug logs
+                    debug: true,
                     enableWorker: true,
                     maxLoadingDelay: 4000,
                     xhrSetup: function(xhr, url) {
-                        // Add auth token to all HLS requests
                         if (token) {
                             console.log('Adding auth token to request:', url);
                             xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-                            // Add additional headers that might be needed
                             xhr.setRequestHeader('Accept', 'application/x-mpegURL,*/*');
-                            xhr.withCredentials = false; // Important for CORS
-                        } else {
-                            console.error('No auth token available for request:', url);
+                            xhr.withCredentials = false;
                         }
                     }
                 });
@@ -81,31 +95,29 @@
                     if (data.fatal) {
                         switch (data.type) {
                             case Hls.ErrorTypes.NETWORK_ERROR:
-                                errorMessage = 'Network error while loading video';
                                 console.error('Network error:', data.details, data.response);
                                 
-                                // Retry logic for network errors
                                 if (retryCount < MAX_RETRIES) {
-                                    console.log(`Retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+                                    console.log(`Retrying HLS (${retryCount + 1}/${MAX_RETRIES})...`);
                                     retryCount++;
                                     setTimeout(() => {
                                         if (hls) {
-                                            console.log('Reloading stream...');
+                                            console.log('Reloading HLS stream...');
                                             hls.loadSource(proxyUrl);
                                         }
-                                    }, 1000 * retryCount); // Exponential backoff
+                                    }, 1000 * retryCount);
                                 } else {
-                                    console.error('Max retries reached');
+                                    console.log('Max HLS retries reached, switching to iframe');
+                                    switchToIframe();
                                 }
                                 break;
                             case Hls.ErrorTypes.MEDIA_ERROR:
-                                errorMessage = 'Media error while playing video';
                                 console.error('Media error:', data.details);
                                 hls?.recoverMediaError();
                                 break;
                             default:
-                                errorMessage = 'Error playing video';
-                                console.error('Fatal error:', data.details);
+                                console.error('Fatal HLS error:', data.details);
+                                switchToIframe();
                                 break;
                         }
                     }
@@ -114,15 +126,15 @@
                 hls.on(Hls.Events.MANIFEST_PARSED, function() {
                     console.log('HLS manifest parsed, attempting playback');
                     videoElement.play().catch(e => {
-                        console.error('Playback failed:', e);
-                        errorMessage = 'Failed to start video playback';
+                        console.error('HLS playback failed:', e);
+                        switchToIframe();
                     });
                 });
 
                 hls.on(Hls.Events.LEVEL_LOADED, function() {
                     console.log('HLS level loaded successfully');
-                    errorMessage = ''; // Clear any previous errors
-                    retryCount = 0; // Reset retry counter on successful load
+                    errorMessage = '';
+                    retryCount = 0;
                 });
 
                 hls.loadSource(proxyUrl);
@@ -131,7 +143,6 @@
             // For Safari that has built-in HLS support
             else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
                 console.log('Using native HLS support');
-                // For Safari, we need to handle auth manually
                 const headers = new Headers();
                 headers.append('Authorization', `Bearer ${token}`);
                 
@@ -144,34 +155,47 @@
                         videoElement.src = URL.createObjectURL(blob);
                     })
                     .catch(e => {
-                        console.error('Video playback error:', e);
-                        errorMessage = 'Error playing video';
+                        console.error('Native HLS error:', e);
+                        switchToIframe();
                     });
                 
                 videoElement.onerror = function(e) {
                     console.error('Video playback error:', e);
-                    errorMessage = 'Error playing video';
+                    switchToIframe();
                 };
+            } else {
+                // Browser doesn't support HLS, use iframe
+                console.log('HLS not supported, using iframe');
+                switchToIframe();
             }
 
-            videoElement.addEventListener('play', () => {
-                errorMessage = ''; // Clear any error message on successful play
-                analytics.trackVideoEvent(videoId, 'play', {
-                    currentTime: videoElement.currentTime || 0,
-                    duration: videoElement.duration || 0
+            if (!useIframe) {
+                videoElement.addEventListener('play', () => {
+                    errorMessage = '';
+                    analytics.trackVideoEvent(videoId, 'play', {
+                        currentTime: videoElement.currentTime || 0,
+                        duration: videoElement.duration || 0
+                    });
                 });
-            });
 
-            videoElement.addEventListener('ended', () => {
-                analytics.trackVideoEvent(videoId, 'complete', {
-                    duration: videoElement.duration || 0
+                videoElement.addEventListener('ended', () => {
+                    analytics.trackVideoEvent(videoId, 'complete', {
+                        duration: videoElement.duration || 0
+                    });
                 });
-            });
+            }
         }
     }
 
     onMount(() => {
-        initHls();
+        // Try HLS first, fallback to iframe if it fails
+        if (playbackUrl && playbackUrl.includes('playlist.m3u8')) {
+            initHls();
+        } else if (iframeSrc) {
+            switchToIframe();
+        } else {
+            errorMessage = 'No valid video URL provided';
+        }
         
         return () => {
             if (hls) {
@@ -183,7 +207,17 @@
 </script>
 
 <div class="video-player">
-    {#if videoId && proxyUrl}
+    {#if useIframe && iframeSrc}
+        <iframe
+            bind:this={iframeElement}
+            src={iframeSrc}
+            {title}
+            frameborder="0"
+            allowfullscreen
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            class="iframe-element"
+        ></iframe>
+    {:else if videoId && proxyUrl}
         <video
             bind:this={videoElement}
             controls
@@ -193,14 +227,16 @@
         >
             Your browser does not support HTML video.
         </video>
-        {#if errorMessage}
-            <div class="error-message">
-                {errorMessage}
-            </div>
-        {/if}
-    {:else}
-        <div class="video-placeholder">
-            <p>Video not available</p>
+    {/if}
+    
+    {#if errorMessage}
+        <div class="error-message">
+            {errorMessage}
+            {#if iframeSrc && !useIframe}
+                <button on:click={switchToIframe} class="fallback-button">
+                    Try alternative player
+                </button>
+            {/if}
         </div>
     {/if}
 </div>
@@ -218,6 +254,12 @@
         width: 100%;
         height: auto;
         display: block;
+    }
+
+    .iframe-element {
+        width: 100%;
+        height: 100%;
+        min-height: 300px;
     }
 
     .video-placeholder {
@@ -240,5 +282,20 @@
         background: rgba(0, 0, 0, 0.8);
         color: #fff;
         text-align: center;
+    }
+
+    .fallback-button {
+        margin-top: 1rem;
+        padding: 0.5rem 1rem;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 1rem;
+    }
+
+    .fallback-button:hover {
+        background-color: #0056b3;
     }
 </style> 

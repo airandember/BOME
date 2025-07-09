@@ -238,17 +238,24 @@ func (b *BunnyService) GetVideo(videoID string) (*BunnyVideo, error) {
 
 // GetStreamURL returns the streaming URL for a video
 func (b *BunnyService) GetStreamURL(videoID string) string {
-	return fmt.Sprintf("https://vz-%s.b-cdn.net/%s/playlist.m3u8", b.streamLibrary, videoID)
+	cdnHostname := b.GetCDNHostname(videoID)
+	return fmt.Sprintf("https://%s/%s/playlist.m3u8", cdnHostname, videoID)
 }
 
 // GetThumbnailURL returns the thumbnail URL for a video
 func (b *BunnyService) GetThumbnailURL(videoID string) string {
-	return fmt.Sprintf("https://vz-%s.b-cdn.net/%s/thumbnail.jpg", b.streamLibrary, videoID)
+	cdnHostname := b.GetCDNHostname(videoID)
+	return fmt.Sprintf("https://%s/%s/thumbnail.jpg", cdnHostname, videoID)
 }
 
 // GetIframeURL returns the iframe embed URL for a video
 func (b *BunnyService) GetIframeURL(videoID string) string {
-	return fmt.Sprintf("https://iframe.mediadelivery.net/embed/%s/%s", b.streamLibrary, videoID)
+	return fmt.Sprintf("https://iframe.mediadelivery.net/play/%s/%s", b.streamLibrary, videoID)
+}
+
+// GetDirectPlayURL returns the direct play URL for a video (same as iframe URL)
+func (b *BunnyService) GetDirectPlayURL(videoID string) string {
+	return b.GetIframeURL(videoID)
 }
 
 // GetStreamLibrary returns the stream library ID
@@ -419,6 +426,62 @@ func (b *BunnyService) GetCollection(collectionID string) (*BunnyCollection, err
 	return &collection, nil
 }
 
+// TestCDNHostname tests if a CDN hostname works for a given video
+func (b *BunnyService) TestCDNHostname(hostname, videoID string) bool {
+	// Test by making a HEAD request to the playlist URL
+	testURL := fmt.Sprintf("https://%s/%s/playlist.m3u8", hostname, videoID)
+
+	req, err := http.NewRequest("HEAD", testURL, nil)
+	if err != nil {
+		return false
+	}
+
+	// Set a short timeout for testing
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	// Consider it working if we get a 200 response
+	return resp.StatusCode == http.StatusOK
+}
+
+// GetCDNHostname determines the correct CDN hostname for video streaming
+func (b *BunnyService) GetCDNHostname(videoID string) string {
+	// Based on the working example: https://vz-f75053f7-465.b-cdn.net/
+	// The pattern seems to be: vz-{librarySpecificHash}-{region}.b-cdn.net
+	// For now, let's use the library-region pattern and add fallback options
+
+	// Try the standard pattern first
+	primaryHostname := fmt.Sprintf("vz-%s-%s.b-cdn.net", b.streamLibrary, b.region)
+
+	// Test if it works
+	if b.TestCDNHostname(primaryHostname, videoID) {
+		fmt.Printf("Using working CDN hostname: %s\n", primaryHostname)
+		return primaryHostname
+	}
+
+	// If that doesn't work, try some alternative patterns
+	alternatives := []string{
+		fmt.Sprintf("vz-%s.b-cdn.net", b.streamLibrary),
+		fmt.Sprintf("vz-%s-%s.b-cdn.net", b.streamLibrary, "465"), // From the working example
+		"vz-f75053f7-465.b-cdn.net",                               // Direct from working example
+	}
+
+	for _, hostname := range alternatives {
+		if b.TestCDNHostname(hostname, videoID) {
+			fmt.Printf("Found working alternative CDN hostname: %s\n", hostname)
+			return hostname
+		}
+	}
+
+	// If all else fails, use the primary pattern
+	fmt.Printf("No working CDN hostname found, using default: %s\n", primaryHostname)
+	return primaryHostname
+}
+
 // GetVideoPlayData retrieves video play data from Bunny Stream
 func (b *BunnyService) GetVideoPlayData(videoID string) (*VideoPlayData, error) {
 	if videoID == "" {
@@ -463,14 +526,13 @@ func (b *BunnyService) GetVideoPlayData(videoID string) (*VideoPlayData, error) 
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// Get CDN hostname based on region
-	cdnHostname := fmt.Sprintf("vz-%s-%s", b.streamLibrary, b.region) // Format: vz-{libraryId}-{region}
-	cdnHostname += ".b-cdn.net"
+	// Get the correct CDN hostname
+	cdnHostname := b.GetCDNHostname(videoID)
 
 	// Construct the streaming URLs
 	playData.DirectPlayURL = fmt.Sprintf("https://%s/%s/playlist.m3u8", cdnHostname, videoID)
 	playData.PlaybackURL = playData.DirectPlayURL // Use the HLS stream URL for playback
-	playData.IframeSrc = fmt.Sprintf("https://iframe.mediadelivery.net/embed/%s/%s", b.streamLibrary, videoID)
+	playData.IframeSrc = b.GetDirectPlayURL(videoID)
 	playData.ThumbnailURL = fmt.Sprintf("https://%s/%s/thumbnail.jpg", cdnHostname, videoID)
 
 	fmt.Printf("Successfully fetched play data for video %s\n", videoID)
@@ -478,6 +540,7 @@ func (b *BunnyService) GetVideoPlayData(videoID string) (*VideoPlayData, error) 
 	fmt.Printf("- HLS Stream: %s\n", playData.PlaybackURL)
 	fmt.Printf("- Iframe: %s\n", playData.IframeSrc)
 	fmt.Printf("- Thumbnail: %s\n", playData.ThumbnailURL)
+	fmt.Printf("- Direct Play: %s\n", playData.IframeSrc)
 
 	return &playData, nil
 }

@@ -280,15 +280,29 @@ export const videoService = {
 			const data = await response.json();
 			
 			// Ensure we have proper playback URLs
-			const playbackUrl = data.playData?.directPlayUrl || data.directPlayUrl || 
-							  `https://iframe.mediadelivery.net/embed/${data.bunnyVideoId}`;
+			// For video playback, prioritize HLS stream URL over iframe URL
+			const hlsStreamUrl = data.playData?.directPlayUrl || data.directPlayUrl;
+			const iframeUrl = data.playData?.iframeSrc || data.iframeSrc || 
+							  `https://iframe.mediadelivery.net/play/347378/${data.bunnyVideoId}`;
+			
+			// Use HLS stream URL for playback if available, otherwise fall back to iframe
+			const playbackUrl = hlsStreamUrl || iframeUrl;
+			
+			// Debug logging
+			console.log('Video URL construction:', {
+				videoId: id,
+				hlsStreamUrl,
+				iframeUrl,
+				playbackUrl,
+				rawData: data
+			});
 			
 			return {
 				id: data.id || data.ID,  // Handle both formats
 				title: data.title || data.Title,
 				description: data.description || data.Description,
 				thumbnailUrl: data.thumbnailUrl || data.ThumbnailURL,
-				playbackUrl: playbackUrl, // Add this
+				playbackUrl: playbackUrl, // HLS stream URL for video playback
 				videoUrl: playbackUrl,
 				duration: data.duration || data.Duration,
 				viewCount: data.viewCount || data.ViewCount || 0,
@@ -299,6 +313,8 @@ export const videoService = {
 				createdAt: data.createdAt || data.CreatedAt,
 				updatedAt: data.updatedAt || data.UpdatedAt,
 				bunnyVideoId: data.bunnyVideoId || data.BunnyVideoID || id,
+				iframeSrc: iframeUrl, // Direct play iframe URL
+				directPlayUrl: hlsStreamUrl, // HLS stream URL
 				playData: data.playData || data.PlayData
 			};
 		} catch (error) {
