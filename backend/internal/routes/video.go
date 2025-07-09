@@ -14,29 +14,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Add at the top with other imports:
-type BunnyVideoDEF struct {
-	GUID                 string   `json:"guid"`
-	Title                string   `json:"title"`
-	Length               int      `json:"length"`
-	Width                int      `json:"width"`
-	Height               int      `json:"height"`
-	Status               int      `json:"status"`
-	Views                int      `json:"views"`
-	StorageSize          int64    `json:"storageSize"`
-	Framerate            float64  `json:"framerate"`
-	IsPublic             bool     `json:"isPublic"`
-	EncodeProgress       int      `json:"encodeProgress"`
-	AvailableResolutions []string `json:"resolutions"`
-	ThumbnailCount       int      `json:"thumbnailCount"`
-	HasMP4Fallback       bool     `json:"hasMP4Fallback"`
-	CollectionId         string   `json:"collectionId"`
-	AverageWatchTime     int      `json:"averageWatchTime"`
-	TotalWatchTime       int64    `json:"totalWatchTime"`
-	Category             string   `json:"category"`
-	DateUploaded         string   `json:"dateUploaded"` // Changed to string to match BunnyVideo struct
-}
-
 // GetVideosFromBunnyHandler fetches videos directly from Bunny.net library
 func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyService) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -87,10 +64,16 @@ func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyServ
 			thumbnailURL := bunnyService.GetThumbnailURL(bunnyVideo.GUID)
 
 			// Enhanced response with Bunny.net data
+			description := fmt.Sprintf("Video from Bunny.net library. Duration: %d seconds, Resolution: %dx%d",
+				bunnyVideo.Length, bunnyVideo.Width, bunnyVideo.Height)
+			if bunnyVideo.Description != nil {
+				description = *bunnyVideo.Description
+			}
+
 			responseVideo := gin.H{
 				"id":           bunnyVideo.GUID,
 				"title":        bunnyVideo.Title,
-				"description":  fmt.Sprintf("Video from Bunny.net library. Duration: %d seconds, Resolution: %dx%d", bunnyVideo.Length, bunnyVideo.Width, bunnyVideo.Height),
+				"description":  description,
 				"thumbnailUrl": thumbnailURL,
 				"videoUrl":     streamURL,
 				"duration":     bunnyVideo.Length,
@@ -115,7 +98,7 @@ func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyServ
 					"available_resolutions": bunnyVideo.AvailableResolutions,
 					"thumbnail_count":       bunnyVideo.ThumbnailCount,
 					"has_mp4_fallback":      bunnyVideo.HasMP4Fallback,
-					"collection_id":         bunnyVideo.CollectionId,
+					"collection_id":         bunnyVideo.CollectionID,
 					"average_watch_time":    bunnyVideo.AverageWatchTime,
 					"total_watch_time":      bunnyVideo.TotalWatchTime,
 				},
@@ -179,10 +162,50 @@ func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyServ
 	}
 }
 
+// GetBunnyVideoHandler fetches a single video from Bunny.net
+func GetBunnyVideoHandler(db *database.DB, bunnyService *services.BunnyService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		videoID := c.Param("id")
+
+		// Get video details from Bunny.net
+		bunnyVideo, err := bunnyService.GetVideo(videoID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error":    "Video not found",
+				"bunny_id": videoID,
+				"details":  err.Error(),
+				"code":     "VIDEO_NOT_FOUND",
+			})
+			return
+		}
+
+		// Get streaming URL and thumbnail URL
+		streamURL := bunnyService.GetStreamURL(videoID)
+		thumbnailURL := bunnyService.GetThumbnailURL(videoID)
+
+		// Create response
+		response := gin.H{
+			"id":           bunnyVideo.GUID,
+			"title":        bunnyVideo.Title,
+			"description":  bunnyVideo.Description,
+			"thumbnailUrl": thumbnailURL,
+			"playbackUrl":  streamURL, // Add this
+			"duration":     bunnyVideo.Length,
+			"status":       mapBunnyStatus(bunnyVideo.Status),
+			"created_at":   bunnyVideo.DateUploaded,
+			"updated_at":   bunnyVideo.DateUploaded,
+			"bunny_id":     bunnyVideo.GUID,
+			// ... other fields ...
+		}
+
+		c.JSON(http.StatusOK, response)
+	}
+}
+
 // Helper functions for Bunny.net integration
 
 // extractTagsFromBunnyVideo extracts tags from Bunny.net video metadata
-func extractTagsFromBunnyVideo(bunnyVideo BunnyVideoDEF) []string {
+func extractTagsFromBunnyVideo(bunnyVideo services.BunnyVideo) []string {
 	tags := []string{"bunny", "streaming"}
 
 	if bunnyVideo.Title != "" {
@@ -214,31 +237,29 @@ func mapBunnyStatus(status int) string {
 	}
 }
 
-// Update fetchBunnyVideos to handle the paginated response
-func fetchBunnyVideos(libraryID, apiKey string) ([]BunnyVideoDEF, error) {
-	client := &http.Client{}
-	req, err := http.NewRequest("GET",
-		fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos", libraryID),
-		nil)
+// Update fetchBunnyVideos to use services.BunnyVideo
+func fetchBunnyVideos(libraryID, apiKey string) ([]services.BunnyVideo, error) {
+	url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos", libraryID)
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Add("AccessKey", apiKey)
-	resp, err := client.Do(req)
+	req.Header.Set("AccessKey", apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Check status code first
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d", resp.StatusCode)
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	// Decode into paginated response structure
 	var response struct {
-		Items []BunnyVideoDEF `json:"items"`
+		Items []services.BunnyVideo `json:"items"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
@@ -247,35 +268,24 @@ func fetchBunnyVideos(libraryID, apiKey string) ([]BunnyVideoDEF, error) {
 	return response.Items, nil
 }
 
-// Update syncVideoToDatabase to use the correct bunnyVideo parameter for tag extraction
-func syncVideoToDatabase(db *database.DB, bunnyService *services.BunnyService, bunnyVideo BunnyVideoDEF) error {
-	// Convert to services.BunnyVideo format for database
-	uploadTime, _ := time.Parse(time.RFC3339, bunnyVideo.DateUploaded)
-	serviceVideo := services.BunnyVideo{
-		ID:    bunnyVideo.GUID,
-		Title: bunnyVideo.Title,
-		Description: fmt.Sprintf("Video from Bunny.net library. Duration: %d seconds, Resolution: %dx%d",
-			bunnyVideo.Length, bunnyVideo.Width, bunnyVideo.Height),
-		Status:    mapBunnyStatus(bunnyVideo.Status),
-		CreatedAt: uploadTime,
-		UpdatedAt: uploadTime,
-		Duration:  float64(bunnyVideo.Length),
-		Size:      bunnyVideo.StorageSize,
-		Thumbnail: bunnyService.GetThumbnailURL(bunnyVideo.GUID),
-		Preview:   bunnyService.GetStreamURL(bunnyVideo.GUID),
-		LibraryID: bunnyService.GetStreamLibrary(),
+// Update syncVideoToDatabase
+func syncVideoToDatabase(db *database.DB, bunnyService *services.BunnyService, bunnyVideo services.BunnyVideo) error {
+	description := fmt.Sprintf("Video from Bunny.net library. Duration: %d seconds, Resolution: %dx%d",
+		bunnyVideo.Length, bunnyVideo.Width, bunnyVideo.Height)
+	if bunnyVideo.Description != nil {
+		description = *bunnyVideo.Description
 	}
 
 	_, err := db.CreateVideo(
-		serviceVideo.Title,
-		serviceVideo.Description,
-		serviceVideo.ID,
-		serviceVideo.Thumbnail,
+		bunnyVideo.Title,
+		description,
+		bunnyVideo.GUID,
+		bunnyService.GetThumbnailURL(bunnyVideo.GUID),
 		bunnyVideo.Category,
-		int(serviceVideo.Duration),
-		serviceVideo.Size,
-		extractTagsFromBunnyVideo(bunnyVideo), // Fixed: Use original bunnyVideo instead of serviceVideo
-		0,                                     // createdBy - system
+		bunnyVideo.Length,
+		bunnyVideo.StorageSize,
+		extractTagsFromBunnyVideo(bunnyVideo),
+		0, // createdBy - system
 	)
 	return err
 }

@@ -1,355 +1,244 @@
 <script lang="ts">
-	import { onMount, createEventDispatcher } from 'svelte';
-	import { videoUtils } from '$lib/video';
-	import { analytics } from '$lib/services/analytics';
+    import { onMount, createEventDispatcher } from 'svelte';
+    import { analytics } from '$lib/services/analytics';
+    import { auth } from '$lib/auth';
+    import Hls from 'hls.js';
 
-	export let videoId: string = '';
-	export let title: string = '';
-	export let poster: string = '';
-	export let autoplay: boolean = false;
-	export let controls: boolean = true;
-	export let width: string = '100%';
-	export let height: string = 'auto';
-	export let playbackUrl: string = '';
+    export let videoId: string = '';
+    export let title: string = '';
+    export let poster: string = '';
+    export let playbackUrl: string = '';
 
-	const dispatch = createEventDispatcher();
+    let token: string | null = null;
+    let hls: Hls | null = null;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
 
-	let videoElement: HTMLVideoElement;
-	let isPlaying = false;
-	let currentTime = 0;
-	let duration = 0;
-	let volume = 1;
-	let isMuted = false;
-	let showControls = true;
-	let controlsTimeout: number;
-	let quarterWatched = false;
-	let halfWatched = false;
-	let threeQuartersWatched = false;
+    // Subscribe to auth store
+    auth.subscribe(state => {
+        const newToken = state.token;
+        console.log('Auth state updated:', { isAuthenticated: state.isAuthenticated, hasToken: !!state.token });
+        
+        // If token changed and we have an active HLS instance, reload the stream
+        if (newToken !== token && hls) {
+            token = newToken;
+            console.log('Token changed, reloading stream');
+            retryCount = 0; // Reset retry count on token change
+            hls.loadSource(proxyUrl);
+        } else {
+            token = newToken;
+        }
+    });
 
-	$: videoUrl = videoId ? `https://iframe.mediadelivery.net/embed/${videoId}?autoplay=${autoplay}` : '';
+    // Convert Bunny.net URL to our proxy URL
+    $: proxyUrl = playbackUrl ? playbackUrl.replace(
+        /https:\/\/vz-[^\/]+\.b-cdn\.net\/([^\/]+)(\/.*)?/,
+        `${window.location.origin}/api/v1/stream/$1$2`
+    ) : '';
 
-	onMount(() => {
-		if (videoElement) {
-			videoElement.addEventListener('loadedmetadata', handleLoadedMetadata);
-			videoElement.addEventListener('timeupdate', handleTimeUpdate);
-			videoElement.addEventListener('ended', handleEnded);
-			videoElement.addEventListener('play', handlePlay);
-			videoElement.addEventListener('pause', handlePause);
-		}
-	});
+    const dispatch = createEventDispatcher();
+    let videoElement: HTMLVideoElement;
+    let errorMessage = '';
 
-	function handleLoadedMetadata() {
-		duration = videoElement.duration;
-		dispatch('loadedmetadata', { duration });
-	}
+    function initHls() {
+        if (!token) {
+            console.error('No auth token available');
+            errorMessage = 'Authentication required';
+            return;
+        }
 
-	function handleTimeUpdate() {
-		currentTime = videoElement.currentTime;
-		const progress = Math.round((currentTime / duration) * 100);
-		
-		// Track progress at 25%, 50%, 75%
-		if (progress >= 25 && !quarterWatched) {
-			quarterWatched = true;
-			analytics.trackVideoEvent(videoId, 'progress', {
-				milestone: '25%',
-				currentTime,
-				duration
-			});
-		} else if (progress >= 50 && !halfWatched) {
-			halfWatched = true;
-			analytics.trackVideoEvent(videoId, 'progress', {
-				milestone: '50%',
-				currentTime,
-				duration
-			});
-		} else if (progress >= 75 && !threeQuartersWatched) {
-			threeQuartersWatched = true;
-			analytics.trackVideoEvent(videoId, 'progress', {
-				milestone: '75%',
-				currentTime,
-				duration
-			});
-		}
-		dispatch('timeupdate', { currentTime, duration });
-	}
+        if (videoElement && proxyUrl) {
+            console.log('Setting up video with URL:', proxyUrl);
+            
+            if (Hls.isSupported()) {
+                console.log('HLS.js is supported');
+                
+                // Destroy existing instance if any
+                if (hls) {
+                    hls.destroy();
+                }
 
-	function handleEnded() {
-		analytics.trackVideoEvent(videoId, 'complete', {
-			duration: videoElement.duration || 0
-		});
-		isPlaying = false;
-		dispatch('ended');
-	}
+                hls = new Hls({
+                    debug: true, // Enable debug logs
+                    enableWorker: true,
+                    maxLoadingDelay: 4000,
+                    xhrSetup: function(xhr, url) {
+                        // Add auth token to all HLS requests
+                        if (token) {
+                            console.log('Adding auth token to request:', url);
+                            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+                            // Add additional headers that might be needed
+                            xhr.setRequestHeader('Accept', 'application/x-mpegURL,*/*');
+                            xhr.withCredentials = false; // Important for CORS
+                        } else {
+                            console.error('No auth token available for request:', url);
+                        }
+                    }
+                });
+                
+                hls.on(Hls.Events.ERROR, function(event, data) {
+                    console.error('HLS error:', event, data);
+                    if (data.fatal) {
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                errorMessage = 'Network error while loading video';
+                                console.error('Network error:', data.details, data.response);
+                                
+                                // Retry logic for network errors
+                                if (retryCount < MAX_RETRIES) {
+                                    console.log(`Retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+                                    retryCount++;
+                                    setTimeout(() => {
+                                        if (hls) {
+                                            console.log('Reloading stream...');
+                                            hls.loadSource(proxyUrl);
+                                        }
+                                    }, 1000 * retryCount); // Exponential backoff
+                                } else {
+                                    console.error('Max retries reached');
+                                }
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                errorMessage = 'Media error while playing video';
+                                console.error('Media error:', data.details);
+                                hls?.recoverMediaError();
+                                break;
+                            default:
+                                errorMessage = 'Error playing video';
+                                console.error('Fatal error:', data.details);
+                                break;
+                        }
+                    }
+                });
 
-	function handlePlay() {
-		analytics.trackVideoEvent(videoId, 'play', {
-			currentTime: videoElement.currentTime || 0,
-			duration: videoElement.duration || 0
-		});
-		isPlaying = true;
-		dispatch('play');
-	}
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    console.log('HLS manifest parsed, attempting playback');
+                    videoElement.play().catch(e => {
+                        console.error('Playback failed:', e);
+                        errorMessage = 'Failed to start video playback';
+                    });
+                });
 
-	function handlePause() {
-		analytics.trackVideoEvent(videoId, 'pause', {
-			currentTime: videoElement.currentTime || 0,
-			duration: videoElement.duration || 0
-		});
-		isPlaying = false;
-		dispatch('pause');
-	}
+                hls.on(Hls.Events.LEVEL_LOADED, function() {
+                    console.log('HLS level loaded successfully');
+                    errorMessage = ''; // Clear any previous errors
+                    retryCount = 0; // Reset retry counter on successful load
+                });
 
-	function togglePlay() {
-		if (isPlaying) {
-			videoElement.pause();
-		} else {
-			videoElement.play();
-		}
-	}
+                hls.loadSource(proxyUrl);
+                hls.attachMedia(videoElement);
+            }
+            // For Safari that has built-in HLS support
+            else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+                console.log('Using native HLS support');
+                // For Safari, we need to handle auth manually
+                const headers = new Headers();
+                headers.append('Authorization', `Bearer ${token}`);
+                
+                fetch(proxyUrl, { headers })
+                    .then(response => {
+                        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                        return response.blob();
+                    })
+                    .then(blob => {
+                        videoElement.src = URL.createObjectURL(blob);
+                    })
+                    .catch(e => {
+                        console.error('Video playback error:', e);
+                        errorMessage = 'Error playing video';
+                    });
+                
+                videoElement.onerror = function(e) {
+                    console.error('Video playback error:', e);
+                    errorMessage = 'Error playing video';
+                };
+            }
 
-	function toggleMute() {
-		isMuted = !isMuted;
-		videoElement.muted = isMuted;
-	}
+            videoElement.addEventListener('play', () => {
+                errorMessage = ''; // Clear any error message on successful play
+                analytics.trackVideoEvent(videoId, 'play', {
+                    currentTime: videoElement.currentTime || 0,
+                    duration: videoElement.duration || 0
+                });
+            });
 
-	function setVolume(value: number) {
-		volume = value;
-		videoElement.volume = value;
-		if (value === 0) {
-			isMuted = true;
-		} else {
-			isMuted = false;
-		}
-	}
+            videoElement.addEventListener('ended', () => {
+                analytics.trackVideoEvent(videoId, 'complete', {
+                    duration: videoElement.duration || 0
+                });
+            });
+        }
+    }
 
-	function seekTo(value: number) {
-		videoElement.currentTime = value;
-	}
-
-	function toggleFullscreen() {
-		if (document.fullscreenElement) {
-			document.exitFullscreen();
-		} else {
-			videoElement.requestFullscreen();
-		}
-	}
-
-	function showControlsTemporarily() {
-		showControls = true;
-		clearTimeout(controlsTimeout);
-		controlsTimeout = setTimeout(() => {
-			if (isPlaying) {
-				showControls = false;
-			}
-		}, 3000);
-	}
-
-	function handleMouseMove() {
-		if (controls) {
-			showControlsTemporarily();
-		}
-	}
-
-	function handleKeydown(event: KeyboardEvent) {
-		switch (event.code) {
-			case 'Space':
-				event.preventDefault();
-				togglePlay();
-				break;
-			case 'ArrowLeft':
-				event.preventDefault();
-				seekTo(Math.max(0, currentTime - 10));
-				break;
-			case 'ArrowRight':
-				event.preventDefault();
-				seekTo(Math.min(duration, currentTime + 10));
-				break;
-			case 'ArrowUp':
-				event.preventDefault();
-				setVolume(Math.min(1, volume + 0.1));
-				break;
-			case 'ArrowDown':
-				event.preventDefault();
-				setVolume(Math.max(0, volume - 0.1));
-				break;
-			case 'KeyM':
-				event.preventDefault();
-				toggleMute();
-				break;
-			case 'KeyF':
-				event.preventDefault();
-				toggleFullscreen();
-				break;
-		}
-	}
+    onMount(() => {
+        initHls();
+        
+        return () => {
+            if (hls) {
+                hls.destroy();
+                hls = null;
+            }
+        };
+    });
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
-
-<div 
-	class="video-player"
-	style="width: {width}; height: {height};"
-	on:mousemove={handleMouseMove}
-	on:mouseleave={() => showControls = false}
->
-	{#if videoId && playbackUrl}
-		<video
-			bind:this={videoElement}
-			id="main-video"
-			class="video-element"
-			preload="auto"
-			crossorigin="anonymous"
-			{autoplay}
-			{controls}
-			{poster}
-			playsinline
-			data-plyr-config={{
-				title,
-				controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen']
-			}}
-		>
-			<source src={playbackUrl} type="application/x-mpegURL">
-			Your browser does not support the video tag.
-		</video>
-	{:else}
-		<div class="video-placeholder">
-			<p>Video not available</p>
-		</div>
-	{/if}
-
-	{#if controls && showControls}
-		<div class="video-controls" class:visible={showControls}>
-			<div class="progress-bar">
-				<input
-					type="range"
-					min="0"
-					max={duration}
-					value={currentTime}
-					on:input={(e) => {
-						const target = e.target as HTMLInputElement;
-						if (target) {
-							seekTo(parseFloat(target.value));
-						}
-					}}
-				/>
-			</div>
-
-			<div class="controls-bottom">
-				<button on:click={togglePlay}>
-					{isPlaying ? '⏸️' : '▶️'}
-				</button>
-
-				<div class="time-display">
-					{videoUtils.formatDuration(currentTime)} / {videoUtils.formatDuration(duration)}
-				</div>
-
-				<div class="volume-control">
-					<button on:click={toggleMute}>
-						{isMuted ? '🔇' : '🔊'}
-					</button>
-					<input
-						type="range"
-						min="0"
-						max="1"
-						step="0.1"
-						value={volume}
-						on:input={(e) => {
-							const target = e.target as HTMLInputElement;
-							if (target) {
-								setVolume(parseFloat(target.value));
-							}
-						}}
-					/>
-				</div>
-
-				<button on:click={toggleFullscreen}>
-					⛶
-				</button>
-			</div>
-		</div>
-	{/if}
+<div class="video-player">
+    {#if videoId && proxyUrl}
+        <video
+            bind:this={videoElement}
+            controls
+            {poster}
+            preload="auto"
+            class="video-element"
+        >
+            Your browser does not support HTML video.
+        </video>
+        {#if errorMessage}
+            <div class="error-message">
+                {errorMessage}
+            </div>
+        {/if}
+    {:else}
+        <div class="video-placeholder">
+            <p>Video not available</p>
+        </div>
+    {/if}
 </div>
 
-<style lang="postcss">
-	.video-player {
-		position: relative;
-		background: #000;
-		overflow: hidden;
-		border-radius: 8px;
-	}
+<style>
+    .video-player {
+        width: 100%;
+        max-width: 1280px;
+        margin: 0 auto;
+        background: #000;
+        position: relative;
+    }
 
-	.video-element {
-		width: 100%;
-		height: 100%;
-		object-fit: contain;
-	}
+    .video-element {
+        width: 100%;
+        height: auto;
+        display: block;
+    }
 
-	.video-placeholder {
-		width: 100%;
-		height: 100%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: #1a1a1a;
-		color: #fff;
-		min-height: 200px;
-	}
+    .video-placeholder {
+        width: 100%;
+        height: 100%;
+        min-height: 300px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #000;
+        color: #fff;
+    }
 
-	.video-controls {
-		position: absolute;
-		bottom: 0;
-		left: 0;
-		right: 0;
-		background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
-		padding: 10px;
-		opacity: 0;
-		transition: opacity 0.3s;
-	}
-
-	.video-controls.visible {
-		opacity: 1;
-	}
-
-	.progress-bar {
-		width: 100%;
-		margin-bottom: 10px;
-	}
-
-	.progress-bar input {
-		width: 100%;
-	}
-
-	.controls-bottom {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-	}
-
-	.time-display {
-		color: white;
-		font-size: 14px;
-	}
-
-	.volume-control {
-		display: flex;
-		align-items: center;
-		gap: 5px;
-	}
-
-	button {
-		background: none;
-		border: none;
-		color: white;
-		cursor: pointer;
-		padding: 5px;
-		font-size: 18px;
-	}
-
-	button:hover {
-		opacity: 0.8;
-	}
-
-	input[type="range"] {
-		cursor: pointer;
-	}
+    .error-message {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 1rem;
+        background: rgba(0, 0, 0, 0.8);
+        color: #fff;
+        text-align: center;
+    }
 </style> 

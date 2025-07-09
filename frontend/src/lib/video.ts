@@ -8,6 +8,7 @@ export interface Video {
 	title: string;
 	description: string;
 	thumbnailUrl: string;
+	playbackUrl: string; // Add this
 	videoUrl: string;
 	duration: number;
 	viewCount: number;
@@ -268,7 +269,9 @@ export const videoService = {
 	// Get a single video by ID or Bunny GUID
 	getVideo: async (id: string): Promise<Video> => {
 		try {
-			const response = await apiRequestWithRetry(`/videos/${id}`);
+			// If the ID contains hyphens, it's a Bunny GUID
+			const endpoint = id.includes('-') ? `/bunny-videos/${id}` : `/videos/${id}`;
+			const response = await apiRequestWithRetry(endpoint);
 			
 			if (!response.ok) {
 				throw await parseApiError(response);
@@ -281,21 +284,22 @@ export const videoService = {
 							  `https://iframe.mediadelivery.net/embed/${data.bunnyVideoId}`;
 			
 			return {
-				id: data.ID,
-				title: data.Title,
-				description: data.Description,
-				thumbnailUrl: data.ThumbnailURL,
+				id: data.id || data.ID,  // Handle both formats
+				title: data.title || data.Title,
+				description: data.description || data.Description,
+				thumbnailUrl: data.thumbnailUrl || data.ThumbnailURL,
+				playbackUrl: playbackUrl, // Add this
 				videoUrl: playbackUrl,
-				duration: data.Duration,
-				viewCount: data.ViewCount,
-				likeCount: data.LikeCount,
-				category: data.Category,
-				tags: data.Tags,
-				status: data.Status,
-				createdAt: data.CreatedAt,
-				updatedAt: data.UpdatedAt,
-				bunnyVideoId: data.BunnyVideoID,
-				playData: data.playData
+				duration: data.duration || data.Duration,
+				viewCount: data.viewCount || data.ViewCount || 0,
+				likeCount: data.likeCount || data.LikeCount || 0,
+				category: data.category || data.Category || '',
+				tags: data.tags || data.Tags || [],
+				status: data.status || data.Status,
+				createdAt: data.createdAt || data.CreatedAt,
+				updatedAt: data.updatedAt || data.UpdatedAt,
+				bunnyVideoId: data.bunnyVideoId || data.BunnyVideoID || id,
+				playData: data.playData || data.PlayData
 			};
 		} catch (error) {
 			console.error('Error fetching video:', error);

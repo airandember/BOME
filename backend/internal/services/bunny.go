@@ -27,17 +27,28 @@ type BunnyService struct {
 
 // BunnyVideo represents a video in Bunny Stream
 type BunnyVideo struct {
-	ID          string    `json:"id"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	Status      string    `json:"status"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	Duration    float64   `json:"duration"`
-	Size        int64     `json:"size"`
-	Thumbnail   string    `json:"thumbnail"`
-	Preview     string    `json:"preview"`
-	LibraryID   string    `json:"library_id"`
+	VideoLibraryID       int     `json:"videoLibraryId"`
+	GUID                 string  `json:"guid"`
+	Title                string  `json:"title"`
+	Description          *string `json:"description"`
+	DateUploaded         string  `json:"dateUploaded"`
+	Views                int     `json:"views"`
+	IsPublic             bool    `json:"isPublic"`
+	Length               int     `json:"length"`
+	Status               int     `json:"status"`
+	Framerate            float64 `json:"framerate"`
+	Width                int     `json:"width"`
+	Height               int     `json:"height"`
+	AvailableResolutions string  `json:"availableResolutions"`
+	ThumbnailCount       int     `json:"thumbnailCount"`
+	EncodeProgress       int     `json:"encodeProgress"`
+	StorageSize          int64   `json:"storageSize"`
+	HasMP4Fallback       bool    `json:"hasMP4Fallback"`
+	CollectionID         string  `json:"collectionId"`
+	ThumbnailFileName    string  `json:"thumbnailFileName"`
+	AverageWatchTime     int     `json:"averageWatchTime"`
+	TotalWatchTime       int64   `json:"totalWatchTime"`
+	Category             string  `json:"category"`
 }
 
 // BunnyUploadResponse represents the response from a video upload
@@ -67,7 +78,7 @@ type BunnyCollectionsResponse struct {
 
 // VideoPlayData represents the response from the video play data endpoint
 type VideoPlayData struct {
-	VideoLibraryID    string   `json:"videoLibraryId"`
+	VideoLibraryID    int      `json:"videoLibraryId"`
 	VideoGUID         string   `json:"guid"`
 	Title             string   `json:"title"`
 	Status            int      `json:"status"`
@@ -218,7 +229,7 @@ func (b *BunnyService) GetVideo(videoID string) (*BunnyVideo, error) {
 	}
 
 	// Validate required fields
-	if video.ID == "" {
+	if video.GUID == "" {
 		return nil, fmt.Errorf("invalid response: missing video ID (body: %s)", string(body))
 	}
 
@@ -227,12 +238,17 @@ func (b *BunnyService) GetVideo(videoID string) (*BunnyVideo, error) {
 
 // GetStreamURL returns the streaming URL for a video
 func (b *BunnyService) GetStreamURL(videoID string) string {
-	return fmt.Sprintf("https://iframe.mediadelivery.net/embed/%s/%s", b.streamLibrary, videoID)
+	return fmt.Sprintf("https://vz-%s.b-cdn.net/%s/playlist.m3u8", b.streamLibrary, videoID)
 }
 
 // GetThumbnailURL returns the thumbnail URL for a video
 func (b *BunnyService) GetThumbnailURL(videoID string) string {
-	return fmt.Sprintf("https://video.bunnycdn.com/%s/%s/thumbnail.jpg", b.streamLibrary, videoID)
+	return fmt.Sprintf("https://vz-%s.b-cdn.net/%s/thumbnail.jpg", b.streamLibrary, videoID)
+}
+
+// GetIframeURL returns the iframe embed URL for a video
+func (b *BunnyService) GetIframeURL(videoID string) string {
+	return fmt.Sprintf("https://iframe.mediadelivery.net/embed/%s/%s", b.streamLibrary, videoID)
 }
 
 // GetStreamLibrary returns the stream library ID
@@ -448,10 +464,7 @@ func (b *BunnyService) GetVideoPlayData(videoID string) (*VideoPlayData, error) 
 	}
 
 	// Get CDN hostname based on region
-	cdnHostname := "vz-" + b.pullZone
-	if b.region != "" {
-		cdnHostname += "-" + b.region
-	}
+	cdnHostname := fmt.Sprintf("vz-%s-%s", b.streamLibrary, b.region) // Format: vz-{libraryId}-{region}
 	cdnHostname += ".b-cdn.net"
 
 	// Construct the streaming URLs

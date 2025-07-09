@@ -50,7 +50,7 @@
 				videoId={video.bunnyVideoId} 
 				title={video.title}
 				poster={video.thumbnailUrl}
-				playbackUrl={video.playData?.playbackUrl}
+				playbackUrl={video.playbackUrl}
 				autoplay={true}
 			/>
 		</div>
