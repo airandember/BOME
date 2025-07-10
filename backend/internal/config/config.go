@@ -4,9 +4,39 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	_ "github.com/joho/godotenv"
 )
 
-// Config holds all configuration for the application
+// StreamingConfig defines streaming optimization settings
+type StreamingConfig struct {
+	Enable            bool                    `json:"enable"`
+	Cache             CacheConfig             `json:"cache"`
+	Preload           PreloadConfig           `json:"preload"`
+	AdaptiveStreaming AdaptiveStreamingConfig `json:"adaptive_streaming"`
+}
+
+// CacheConfig defines caching settings
+type CacheConfig struct {
+	Enable bool   `json:"enable"`
+	MaxAge string `json:"max_age"`
+}
+
+// PreloadConfig defines preloading settings
+type PreloadConfig struct {
+	Enable bool   `json:"enable"`
+	MaxAge string `json:"max_age"`
+}
+
+// AdaptiveStreamingConfig defines adaptive streaming settings
+type AdaptiveStreamingConfig struct {
+	Enable     bool `json:"enable"`
+	MaxBitrate int  `json:"max_bitrate"`
+	MinBitrate int  `json:"min_bitrate"`
+	Buffer     int  `json:"buffer"`
+}
+
+// Config holds all configuration settings
 type Config struct {
 	// Server Configuration
 	ServerPort  string
@@ -69,14 +99,18 @@ type Config struct {
 	AdminPassword  string
 	AdminSecretKey string
 
+	// Streaming and CDN Configuration
+	StreamingOptimization StreamingConfig `json:"streaming_optimization"`
+
 	// Third-Party Service Configuration
-	BunnyStorageZone   string
-	BunnyAPIKey        string
-	BunnyPullZone      string
-	BunnyStreamLibrary string
-	BunnyStreamAPIKey  string
-	BunnyRegion        string
-	BunnyWebhookSecret string
+	BunnyStorageZone   string `json:"bunny_storage_zone"`
+	BunnyAPIKey        string `json:"bunny_api_key"`
+	BunnyPullZone      string `json:"bunny_pull_zone"`
+	BunnyStreamLibrary string `json:"bunny_stream_library"`
+	BunnyStreamAPIKey  string `json:"bunny_stream_api_key"`
+	BunnyRegion        string `json:"bunny_region"`
+	BunnyWebhookSecret string `json:"bunny_webhook_secret"`
+	BunnyStreamCDN     string `json:"bunny_stream_cdn"`
 
 	StripeSecretKey         string
 	StripePublishableKey    string
@@ -170,6 +204,25 @@ func New() *Config {
 		AdminPassword:  getEnv("ADMIN_PASSWORD", "change_this_in_production"),
 		AdminSecretKey: getEnv("ADMIN_SECRET_KEY", "your-admin-secret-key"),
 
+		// Streaming and CDN Configuration
+		StreamingOptimization: StreamingConfig{
+			Enable: getEnvBool("ENABLE_STREAMING_OPTIMIZATION", false),
+			Cache: CacheConfig{
+				Enable: getEnvBool("ENABLE_CACHE", false),
+				MaxAge: getEnv("CACHE_MAX_AGE", "1h"),
+			},
+			Preload: PreloadConfig{
+				Enable: getEnvBool("ENABLE_PRELOAD", false),
+				MaxAge: getEnv("PRELOAD_MAX_AGE", "1h"),
+			},
+			AdaptiveStreaming: AdaptiveStreamingConfig{
+				Enable:     getEnvBool("ENABLE_ADAPTIVE_STREAMING", false),
+				MaxBitrate: getEnvInt("ADAPTIVE_MAX_BITRATE", 5000),
+				MinBitrate: getEnvInt("ADAPTIVE_MIN_BITRATE", 1000),
+				Buffer:     getEnvInt("ADAPTIVE_BUFFER", 5),
+			},
+		},
+
 		// Third-Party Service Configuration
 		BunnyStorageZone:   getEnv("BUNNY_STORAGE_ZONE", ""),
 		BunnyAPIKey:        getEnv("BUNNY_API_KEY", ""),
@@ -178,6 +231,7 @@ func New() *Config {
 		BunnyStreamAPIKey:  getEnv("BUNNY_STREAM_API_KEY", ""),
 		BunnyRegion:        getEnv("BUNNY_REGION", "de"),
 		BunnyWebhookSecret: getEnv("BUNNY_WEBHOOK_SECRET", ""),
+		BunnyStreamCDN:     getEnv("BUNNY_STREAM_CDN", ""),
 
 		StripeSecretKey:         getEnv("STRIPE_SECRET_KEY", ""),
 		StripePublishableKey:    getEnv("STRIPE_PUBLISHABLE_KEY", ""),

@@ -15,6 +15,15 @@
     let retryCount = 0;
     const MAX_RETRIES = 3;
     let useIframe = false;
+    let isLoading = false;
+    let loadStartTime = 0;
+
+    // Performance monitoring
+    let performanceMetrics = {
+        loadTime: 0,
+        bufferHealth: 0,
+        errorCount: 0
+    };
 
     // Subscribe to auth store
     auth.subscribe(state => {
@@ -47,6 +56,7 @@
         console.log('Switching to iframe playback:', iframeSrc);
         useIframe = true;
         errorMessage = '';
+        isLoading = false;
         
         if (hls) {
             hls.destroy();
@@ -67,6 +77,8 @@
 
         if (videoElement && proxyUrl) {
             console.log('Setting up HLS video with URL:', proxyUrl);
+            isLoading = true;
+            loadStartTime = performance.now();
             
             if (Hls.isSupported()) {
                 console.log('HLS.js is supported');
@@ -76,113 +88,93 @@
                     hls.destroy();
                 }
 
+                // Optimized HLS configuration
                 hls = new Hls({
-                    debug: true,
+                    debug: false, // Disable debug in production
                     enableWorker: true,
+                    lowLatencyMode: true,
+                    backBufferLength: 90,
+                    maxBufferLength: 30,
+                    maxMaxBufferLength: 600,
                     maxLoadingDelay: 4000,
+                    maxBufferSize: 60 * 1000 * 1000, // 60MB
+                    maxBufferHole: 0.5,
+                    highBufferWatchdogPeriod: 2,
+                    nudgeOffset: 0.1,
+                    nudgeMaxRetry: 3,
+                    maxFragLookUpTolerance: 0.25,
+                    liveSyncDurationCount: 3,
+                    liveMaxLatencyDurationCount: 10,
+                    liveDurationInfinity: false,
                     xhrSetup: function(xhr, url) {
                         if (token) {
-                            console.log('Adding auth token to request:', url);
                             xhr.setRequestHeader('Authorization', `Bearer ${token}`);
                             xhr.setRequestHeader('Accept', 'application/x-mpegURL,*/*');
                             xhr.withCredentials = false;
                         }
                     }
                 });
-                
-                hls.on(Hls.Events.ERROR, function(event, data) {
-                    console.error('HLS error:', event, data);
+
+                // Performance monitoring events
+                hls.on(Hls.Events.MANIFEST_LOADED, () => {
+                    console.log('HLS manifest loaded');
+                    performanceMetrics.loadTime = performance.now() - loadStartTime;
+                    isLoading = false;
+                });
+
+                hls.on(Hls.Events.LEVEL_LOADED, (event, data) => {
+                    performanceMetrics.bufferHealth = data.details.totalduration;
+                });
+
+                hls.on(Hls.Events.ERROR, (event, data) => {
+                    console.error('HLS error:', data);
+                    performanceMetrics.errorCount++;
+                    
                     if (data.fatal) {
                         switch (data.type) {
                             case Hls.ErrorTypes.NETWORK_ERROR:
-                                console.error('Network error:', data.details, data.response);
-                                
+                                console.log('Network error, attempting to recover...');
                                 if (retryCount < MAX_RETRIES) {
-                                    console.log(`Retrying HLS (${retryCount + 1}/${MAX_RETRIES})...`);
                                     retryCount++;
                                     setTimeout(() => {
-                                        if (hls) {
-                                            console.log('Reloading HLS stream...');
-                                            hls.loadSource(proxyUrl);
-                                        }
+                                        hls?.startLoad();
                                     }, 1000 * retryCount);
                                 } else {
-                                    console.log('Max HLS retries reached, switching to iframe');
+                                    console.log('Max retries reached, switching to iframe');
                                     switchToIframe();
                                 }
                                 break;
                             case Hls.ErrorTypes.MEDIA_ERROR:
-                                console.error('Media error:', data.details);
-                                hls?.recoverMediaError();
+                                console.log('Media error, attempting to recover...');
+                                if (retryCount < MAX_RETRIES) {
+                                    retryCount++;
+                                    hls?.recoverMediaError();
+                                } else {
+                                    switchToIframe();
+                                }
                                 break;
                             default:
-                                console.error('Fatal HLS error:', data.details);
+                                console.log('Fatal error, switching to iframe');
                                 switchToIframe();
                                 break;
                         }
                     }
                 });
 
-                hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                    console.log('HLS manifest parsed, attempting playback');
-                    videoElement.play().catch(e => {
-                        console.error('HLS playback failed:', e);
-                        switchToIframe();
-                    });
+                hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+                    console.log('HLS media attached');
+                    hls?.loadSource(proxyUrl);
                 });
 
-                hls.on(Hls.Events.LEVEL_LOADED, function() {
-                    console.log('HLS level loaded successfully');
-                    errorMessage = '';
-                    retryCount = 0;
-                });
-
-                hls.loadSource(proxyUrl);
                 hls.attachMedia(videoElement);
-            }
-            // For Safari that has built-in HLS support
-            else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+            } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+                // Native HLS support (Safari)
                 console.log('Using native HLS support');
-                const headers = new Headers();
-                headers.append('Authorization', `Bearer ${token}`);
-                
-                fetch(proxyUrl, { headers })
-                    .then(response => {
-                        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                        return response.blob();
-                    })
-                    .then(blob => {
-                        videoElement.src = URL.createObjectURL(blob);
-                    })
-                    .catch(e => {
-                        console.error('Native HLS error:', e);
-                        switchToIframe();
-                    });
-                
-                videoElement.onerror = function(e) {
-                    console.error('Video playback error:', e);
-                    switchToIframe();
-                };
+                videoElement.src = proxyUrl;
+                isLoading = false;
             } else {
-                // Browser doesn't support HLS, use iframe
-                console.log('HLS not supported, using iframe');
+                console.log('HLS not supported, switching to iframe');
                 switchToIframe();
-            }
-
-            if (!useIframe) {
-                videoElement.addEventListener('play', () => {
-                    errorMessage = '';
-                    analytics.trackVideoEvent(videoId, 'play', {
-                        currentTime: videoElement.currentTime || 0,
-                        duration: videoElement.duration || 0
-                    });
-                });
-
-                videoElement.addEventListener('ended', () => {
-                    analytics.trackVideoEvent(videoId, 'complete', {
-                        duration: videoElement.duration || 0
-                    });
-                });
             }
         }
     }

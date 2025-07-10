@@ -339,7 +339,7 @@ func SetupRoutes(
 		case 3:
 			status = "transcoding"
 		case 4:
-			status = "ready"
+			status = "ready" // Finished = Ready for playback
 		case 5:
 			status = "error"
 		case 6:

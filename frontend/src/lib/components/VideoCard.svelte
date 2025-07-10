@@ -7,18 +7,36 @@
 	export let showCategory: boolean = true;
 	export let showStats: boolean = true;
 
+	// Use thumbnail URL directly from backend response
+	$: thumbnailSrc = video.thumbnailUrl || '/16X10_Placeholder_IMG.png';
+
 	function handleClick() {
 		// Navigate to video page
 		window.location.href = `/videos/${video.id}`;
+	}
+
+	function handleKeyDown(event: KeyboardEvent) {
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault();
+			handleClick();
+		}
 	}
 
 	function getStatusColor(status: string): string {
 		switch (status) {
 			case 'ready':
 				return '#4CAF50'; // Green
+			case 'created':
+			case 'uploaded':
+				return '#2196F3'; // Blue
 			case 'processing':
+			case 'transcoding':
+			case 'jit_segmenting':
 				return '#FF9800'; // Orange
+			case 'jit_playlists_created':
+				return '#9C27B0'; // Purple
 			case 'error':
+			case 'upload_failed':
 				return '#F44336'; // Red
 			default:
 				return '#9E9E9E'; // Gray
@@ -29,27 +47,46 @@
 		switch (status) {
 			case 'ready':
 				return 'Ready';
+			case 'created':
+				return 'Created';
+			case 'uploaded':
+				return 'Uploaded';
 			case 'processing':
 				return 'Processing';
+			case 'transcoding':
+				return 'Transcoding';
+			case 'jit_segmenting':
+				return 'Segmenting';
+			case 'jit_playlists_created':
+				return 'Finalizing';
 			case 'error':
 				return 'Error';
+			case 'upload_failed':
+				return 'Upload Failed';
 			default:
 				return 'Unknown';
 		}
 	}
 </script>
 
-<div class="video-card" on:click={handleClick}>
+<div 
+	class="video-card" 
+	on:click={handleClick} 
+	on:keydown={handleKeyDown}
+	role="button"
+	tabindex="0"
+	aria-label="Play video: {video.title}"
+>
 	<div class="thumbnail-container">
 		<LazyImage
-			src={video.status === 'error' ? '/16X10_Placeholder_IMG.png' : video.thumbnailUrl}
+			src={thumbnailSrc}
 			alt={video.title}
 			className="thumbnail"
 			width="100%"
 			height="100%"
-			quality="medium"
-			cacheKey={`video-thumb-${video.id}`}
+			loading="lazy"
 			fallback="/16X10_Placeholder_IMG.png"
+			placeholder="/16X10_Placeholder_IMG.png"
 		/>
 		<div class="duration-badge">
 			{videoUtils.formatDuration(video.duration)}
@@ -118,17 +155,6 @@
 		width: 100%;
 		aspect-ratio: 16 / 9;
 		overflow: hidden;
-	}
-
-	.thumbnail {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		transition: transform 0.3s ease;
-	}
-
-	.video-card:hover .thumbnail {
-		transform: scale(1.05);
 	}
 
 	.duration-badge {

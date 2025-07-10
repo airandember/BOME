@@ -24,7 +24,7 @@
 	let loadingMore = false;
 	let authChecking = true;
 	let initialDataLoaded = false;
-	let activeTab: 'latest' | 'collections' | 'topics' = 'latest';
+	let activeTab: 'latest' | 'collections' | 'topics' | 'allVideos' = 'allVideos';
 
 	onMount(async () => {
 		await loadInitialData();
@@ -190,7 +190,7 @@
 
 	function switchTab(tab: typeof activeTab) {
 		activeTab = tab;
-		if (tab === 'latest') {
+		if (tab === 'latest' || tab === 'allVideos') {
 			searchQuery = '';
 			selectedCategory = '';
 			loadVideos(true);
@@ -228,6 +228,12 @@
 
 						<!-- Navigation Tabs -->
 						<div class="hub-tabs">
+							<button
+								class="tab-button {activeTab === 'allVideos' ? 'active' : ''}"
+								on:click={() => switchTab('allVideos')}
+							>
+								All Videos
+							</button>
 							<button 
 								class="tab-button {activeTab === 'latest' ? 'active' : ''}" 
 								on:click={() => switchTab('latest')}
@@ -248,16 +254,10 @@
 							</button>
 						</div>
 
-						<!-- Latest Videos Section -->
-						{#if activeTab === 'latest'}
-							<section class="latest-videos">
-								<h2>Latest Uploads</h2>
-								<div class="video-grid">
-									{#each latestVideos as video (video.id)}
-										<VideoCard {video} />
-									{/each}
-								</div>
-
+						<!-- All Videos Section -->
+						{#if activeTab === 'allVideos'}
+							<section class="all-videos">
+								<h2>Book of Mormon Evidence Videos</h2>
 								<div class="filters-section">
 									<div class="search-bar">
 										<input
@@ -277,6 +277,42 @@
 										<VideoCard {video} />
 									{/each}
 								</div>
+
+								{#if hasMore}
+									<div class="load-more">
+										<button class="btn-secondary" on:click={loadMore} disabled={loadingMore}>
+											{loadingMore ? 'Loading...' : 'Load More'}
+										</button>
+									</div>
+								{/if}
+							</section>
+						{/if}
+
+
+						<!-- Latest Videos Section -->
+						{#if activeTab === 'latest'}
+							<section class="latest-videos">
+								<h2>Latest Uploads</h2>
+								<div class="filters-section">
+									<div class="search-bar">
+										<input
+											type="text"
+											placeholder="Search videos..."
+											bind:value={searchQuery}
+											on:keydown={(e) => e.key === 'Enter' && handleSearch()}
+										/>
+										<button class="btn-primary" on:click={handleSearch}>
+											🔍 Search
+										</button>
+									</div>
+								</div>
+								<div class="video-grid">
+									{#each latestVideos as video (video.id)}
+										<VideoCard {video} />
+									{/each}
+								</div>
+
+								
 
 								{#if hasMore}
 									<div class="load-more">

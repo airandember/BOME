@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,8 +23,28 @@ type BunnyService struct {
 	streamAPIKey  string
 	region        string
 	webhookSecret string
+	streamCDN     string
 	client        *http.Client
+
+	// Performance optimizations
+	cache       sync.Map  // Thread-safe cache for video metadata
+	cdnHostname string    // Cached CDN hostname
+	cdnTestTime time.Time // Last time we tested CDN
 }
+
+// Cache entry for video metadata
+type CacheEntry struct {
+	Data      interface{}
+	ExpiresAt time.Time
+}
+
+// Performance constants
+const (
+	CACHE_TTL         = 5 * time.Minute
+	CDN_TEST_INTERVAL = 30 * time.Minute
+	REQUEST_TIMEOUT   = 15 * time.Second
+	MAX_RETRIES       = 3
+)
 
 // BunnyVideo represents a video in Bunny Stream
 type BunnyVideo struct {
@@ -106,8 +127,63 @@ func NewBunnyService() *BunnyService {
 		streamAPIKey:  os.Getenv("BUNNY_STREAM_API_KEY"),
 		region:        os.Getenv("BUNNY_REGION"),
 		webhookSecret: os.Getenv("BUNNY_WEBHOOK_SECRET"),
-		client:        &http.Client{Timeout: 30 * time.Second},
+		streamCDN:     os.Getenv("BUNNY_STREAM_CDN"),
+		client: &http.Client{
+			Timeout: REQUEST_TIMEOUT,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     90 * time.Second,
+			},
+		},
+		cache: sync.Map{},
 	}
+}
+
+// getCachedData retrieves cached data if still valid
+func (b *BunnyService) getCachedData(key string) (interface{}, bool) {
+	if value, ok := b.cache.Load(key); ok {
+		if entry, ok := value.(CacheEntry); ok {
+			if time.Now().Before(entry.ExpiresAt) {
+				return entry.Data, true
+			}
+			// Remove expired entry
+			b.cache.Delete(key)
+		}
+	}
+	return nil, false
+}
+
+// setCachedData stores data in cache with TTL
+func (b *BunnyService) setCachedData(key string, data interface{}) {
+	entry := CacheEntry{
+		Data:      data,
+		ExpiresAt: time.Now().Add(CACHE_TTL),
+	}
+	b.cache.Store(key, entry)
+}
+
+// makeRequestWithRetry makes HTTP requests with retry logic
+func (b *BunnyService) makeRequestWithRetry(req *http.Request) (*http.Response, error) {
+	var lastErr error
+
+	for i := 0; i < MAX_RETRIES; i++ {
+		resp, err := b.client.Do(req)
+		if err == nil {
+			return resp, nil
+		}
+
+		lastErr = err
+
+		// Don't retry on last attempt
+		if i < MAX_RETRIES-1 {
+			// Exponential backoff
+			waitTime := time.Duration(i+1) * time.Second
+			time.Sleep(waitTime)
+		}
+	}
+
+	return nil, lastErr
 }
 
 // UploadVideo uploads a video file to Bunny Stream
@@ -181,6 +257,13 @@ func (b *BunnyService) GetVideo(videoID string) (*BunnyVideo, error) {
 			b.streamLibrary != "", b.streamAPIKey != "")
 	}
 
+	// Check cache first
+	if cachedVideo, ok := b.getCachedData(videoID); ok {
+		if video, ok := cachedVideo.(*BunnyVideo); ok {
+			return video, nil
+		}
+	}
+
 	url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos/%s", b.streamLibrary, videoID)
 	fmt.Printf("Making request to Bunny.net: %s\n", url)
 
@@ -192,7 +275,7 @@ func (b *BunnyService) GetVideo(videoID string) (*BunnyVideo, error) {
 	req.Header.Set("AccessKey", b.streamAPIKey)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := b.client.Do(req)
+	resp, err := b.makeRequestWithRetry(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
@@ -205,7 +288,6 @@ func (b *BunnyService) GetVideo(videoID string) (*BunnyVideo, error) {
 	}
 
 	fmt.Printf("Bunny.net response status: %d\n", resp.StatusCode)
-	fmt.Printf("Bunny.net response body: %s\n", string(body))
 
 	// Handle different status codes
 	switch resp.StatusCode {
@@ -233,6 +315,9 @@ func (b *BunnyService) GetVideo(videoID string) (*BunnyVideo, error) {
 		return nil, fmt.Errorf("invalid response: missing video ID (body: %s)", string(body))
 	}
 
+	// Cache the response
+	b.setCachedData(videoID, &video)
+
 	return &video, nil
 }
 
@@ -245,7 +330,21 @@ func (b *BunnyService) GetStreamURL(videoID string) string {
 // GetThumbnailURL returns the thumbnail URL for a video
 func (b *BunnyService) GetThumbnailURL(videoID string) string {
 	cdnHostname := b.GetCDNHostname(videoID)
-	return fmt.Sprintf("https://%s/%s/thumbnail.jpg", cdnHostname, videoID)
+	thumbnailURL := fmt.Sprintf("https://%s/%s/thumbnail.jpg", cdnHostname, videoID)
+	fmt.Printf("Generated thumbnail URL for video %s: %s\n", videoID, thumbnailURL)
+	return thumbnailURL
+}
+
+// GetThumbnailURLWithFilename returns the thumbnail URL using the specific filename
+func (b *BunnyService) GetThumbnailURLWithFilename(videoID, filename string) string {
+	if filename == "" {
+		return b.GetThumbnailURL(videoID)
+	}
+
+	cdnHostname := b.GetCDNHostname(videoID)
+	thumbnailURL := fmt.Sprintf("https://%s/%s/%s", cdnHostname, videoID, filename)
+	fmt.Printf("Generated thumbnail URL with filename for video %s: %s\n", videoID, thumbnailURL)
+	return thumbnailURL
 }
 
 // GetIframeURL returns the iframe embed URL for a video
@@ -450,36 +549,26 @@ func (b *BunnyService) TestCDNHostname(hostname, videoID string) bool {
 
 // GetCDNHostname determines the correct CDN hostname for video streaming
 func (b *BunnyService) GetCDNHostname(videoID string) string {
-	// Based on the working example: https://vz-f75053f7-465.b-cdn.net/
-	// The pattern seems to be: vz-{librarySpecificHash}-{region}.b-cdn.net
-	// For now, let's use the library-region pattern and add fallback options
-
-	// Try the standard pattern first
-	primaryHostname := fmt.Sprintf("vz-%s-%s.b-cdn.net", b.streamLibrary, b.region)
-
-	// Test if it works
-	if b.TestCDNHostname(primaryHostname, videoID) {
-		fmt.Printf("Using working CDN hostname: %s\n", primaryHostname)
-		return primaryHostname
+	// Use the configured CDN hostname from environment if available
+	if b.streamCDN != "" {
+		return b.streamCDN
 	}
 
-	// If that doesn't work, try some alternative patterns
-	alternatives := []string{
-		fmt.Sprintf("vz-%s.b-cdn.net", b.streamLibrary),
-		fmt.Sprintf("vz-%s-%s.b-cdn.net", b.streamLibrary, "465"), // From the working example
-		"vz-f75053f7-465.b-cdn.net",                               // Direct from working example
-	}
-
-	for _, hostname := range alternatives {
-		if b.TestCDNHostname(hostname, videoID) {
-			fmt.Printf("Found working alternative CDN hostname: %s\n", hostname)
+	// Check cache first
+	if cachedHostname, ok := b.getCachedData(videoID); ok {
+		if hostname, ok := cachedHostname.(string); ok {
 			return hostname
 		}
 	}
 
-	// If all else fails, use the primary pattern
-	fmt.Printf("No working CDN hostname found, using default: %s\n", primaryHostname)
-	return primaryHostname
+	// Fallback to the standard pattern
+	fallbackHostname := fmt.Sprintf("vz-%s-%s.b-cdn.net", b.streamLibrary, b.region)
+	fmt.Printf("Using fallback CDN hostname: %s\n", fallbackHostname)
+
+	// Cache the fallback hostname
+	b.setCachedData(videoID, fallbackHostname)
+
+	return fallbackHostname
 }
 
 // GetVideoPlayData retrieves video play data from Bunny Stream
@@ -488,10 +577,17 @@ func (b *BunnyService) GetVideoPlayData(videoID string) (*VideoPlayData, error) 
 		return nil, fmt.Errorf("video ID is required")
 	}
 
+	// Check cache first
+	cacheKey := fmt.Sprintf("playdata_%s", videoID)
+	if cachedData, ok := b.getCachedData(cacheKey); ok {
+		if playData, ok := cachedData.(*VideoPlayData); ok {
+			return playData, nil
+		}
+	}
+
 	fmt.Printf("Fetching play data for video %s\n", videoID)
 
 	url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos/%s", b.streamLibrary, videoID)
-	fmt.Printf("Making request to Bunny.net: %s\n", url)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -501,21 +597,17 @@ func (b *BunnyService) GetVideoPlayData(videoID string) (*VideoPlayData, error) 
 	req.Header.Set("AccessKey", b.streamAPIKey)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := b.client.Do(req)
+	resp, err := b.makeRequestWithRetry(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
 	defer resp.Body.Close()
-
-	fmt.Printf("Bunny.net response status: %d\n", resp.StatusCode)
 
 	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
-
-	fmt.Printf("Bunny.net response body: %s\n", string(body))
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
@@ -533,14 +625,18 @@ func (b *BunnyService) GetVideoPlayData(videoID string) (*VideoPlayData, error) 
 	playData.DirectPlayURL = fmt.Sprintf("https://%s/%s/playlist.m3u8", cdnHostname, videoID)
 	playData.PlaybackURL = playData.DirectPlayURL // Use the HLS stream URL for playback
 	playData.IframeSrc = b.GetDirectPlayURL(videoID)
-	playData.ThumbnailURL = fmt.Sprintf("https://%s/%s/thumbnail.jpg", cdnHostname, videoID)
+
+	// Use the correct thumbnail filename from the API response
+	if playData.ThumbnailFileName != "" {
+		playData.ThumbnailURL = b.GetThumbnailURLWithFilename(videoID, playData.ThumbnailFileName)
+	} else {
+		// Fallback to default thumbnail name
+		playData.ThumbnailURL = b.GetThumbnailURL(videoID)
+	}
+
+	// Cache the response
+	b.setCachedData(cacheKey, &playData)
 
 	fmt.Printf("Successfully fetched play data for video %s\n", videoID)
-	fmt.Printf("Streaming URLs:\n")
-	fmt.Printf("- HLS Stream: %s\n", playData.PlaybackURL)
-	fmt.Printf("- Iframe: %s\n", playData.IframeSrc)
-	fmt.Printf("- Thumbnail: %s\n", playData.ThumbnailURL)
-	fmt.Printf("- Direct Play: %s\n", playData.IframeSrc)
-
 	return &playData, nil
 }

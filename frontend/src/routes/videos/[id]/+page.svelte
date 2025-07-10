@@ -89,19 +89,22 @@
 <style lang="postcss">
 	.video-page {
 		margin-top: 50px;
-		min-height: calc(100vh - 50px);
+		height: 100%;
+		width: 100%;
+		//min-height: calc(100vh - 50px);
 		background: #141414;
 		color: #fff;
 	}
 
 	.video-section {
-		width: 100%;
+		width: 100vw;
+		height: 80vh;
 		background: #000;
 		position: relative;
 	}
 
 	.content-section {
-		max-width: 1200px;
+		max-width: 95vw;
 		margin: 0 auto;
 		padding: 2rem;
 	}

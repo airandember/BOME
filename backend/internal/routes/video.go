@@ -61,7 +61,7 @@ func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyServ
 		for _, bunnyVideo := range paginatedVideos {
 			// Get streaming URL from bunny.net
 			streamURL := bunnyService.GetStreamURL(bunnyVideo.GUID)
-			thumbnailURL := bunnyService.GetThumbnailURL(bunnyVideo.GUID)
+			thumbnailURL := bunnyService.GetThumbnailURLWithFilename(bunnyVideo.GUID, bunnyVideo.ThumbnailFileName)
 
 			// Enhanced response with Bunny.net data
 			description := fmt.Sprintf("Video from Bunny.net library. Duration: %d seconds, Resolution: %dx%d",
@@ -181,7 +181,7 @@ func GetBunnyVideoHandler(db *database.DB, bunnyService *services.BunnyService) 
 
 		// Get streaming URL and thumbnail URL
 		streamURL := bunnyService.GetStreamURL(videoID)
-		thumbnailURL := bunnyService.GetThumbnailURL(videoID)
+		thumbnailURL := bunnyService.GetThumbnailURLWithFilename(videoID, bunnyVideo.ThumbnailFileName)
 
 		// Create response
 		response := gin.H{
@@ -223,15 +223,23 @@ func extractTagsFromBunnyVideo(bunnyVideo services.BunnyVideo) []string {
 func mapBunnyStatus(status int) string {
 	switch status {
 	case 0:
-		return "queued"
+		return "created"
 	case 1:
-		return "processing"
+		return "uploaded"
 	case 2:
-		return "encoding"
+		return "processing"
 	case 3:
-		return "ready"
+		return "transcoding"
 	case 4:
+		return "ready" // Finished = Ready for playback
+	case 5:
 		return "error"
+	case 6:
+		return "upload_failed"
+	case 7:
+		return "jit_segmenting"
+	case 8:
+		return "jit_playlists_created"
 	default:
 		return "unknown"
 	}
@@ -280,7 +288,7 @@ func syncVideoToDatabase(db *database.DB, bunnyService *services.BunnyService, b
 		bunnyVideo.Title,
 		description,
 		bunnyVideo.GUID,
-		bunnyService.GetThumbnailURL(bunnyVideo.GUID),
+		bunnyService.GetThumbnailURLWithFilename(bunnyVideo.GUID, bunnyVideo.ThumbnailFileName),
 		bunnyVideo.Category,
 		bunnyVideo.Length,
 		bunnyVideo.StorageSize,

@@ -1,7 +1,22 @@
 import { apiRequest } from './auth';
+import { CacheManager } from './performance/optimization';
 
 // Default placeholder image path
 const DEFAULT_THUMBNAIL = '/16X10_Placeholder_IMG.png';
+
+// Cache configuration
+const CACHE_CONFIG = {
+	VIDEO_LIST_TTL: 5 * 60 * 1000, // 5 minutes
+	VIDEO_DETAILS_TTL: 10 * 60 * 1000, // 10 minutes
+	CATEGORIES_TTL: 30 * 60 * 1000, // 30 minutes
+};
+
+// Initialize cache names
+const CACHE_NAMES = {
+	VIDEO_LIST: 'video_list',
+	VIDEO_DETAILS: 'video_details',
+	CATEGORIES: 'categories'
+};
 
 export interface Video {
 	id: number;
@@ -187,6 +202,12 @@ function getThumbnailUrl(video: Partial<Video>): string {
 	return (video.thumbnailUrl && video.thumbnailUrl !== 'error') ? video.thumbnailUrl : DEFAULT_THUMBNAIL;
 }
 
+// Initialize cache cleanup
+setInterval(() => {
+	CacheManager.cleanup();
+	console.log('Cache cleanup completed');
+}, 10 * 60 * 1000); // Run every 10 minutes
+
 // Video service - only uses real backend data, no mock fallbacks
 export const videoService = {
 	// Get all collections with pagination
@@ -238,6 +259,16 @@ export const videoService = {
 		if (category) params.append('category', category);
 		if (search) params.append('search', search);
 
+		// Create cache key
+		const cacheKey = `videos_${page}_${limit}_${category || 'all'}_${search || 'none'}`;
+		
+		// Check cache first
+		const cachedData = CacheManager.get(CACHE_NAMES.VIDEO_LIST, cacheKey);
+		if (cachedData) {
+			console.log('Returning cached video list');
+			return cachedData;
+		}
+
 		console.log('Fetching videos from:', `/bunny-videos?${params.toString()}`);
 		
 		try {
@@ -250,15 +281,9 @@ export const videoService = {
 			
 			const data = await response.json();
 			
-			// Process videos to ensure proper thumbnail URLs
-			if (data.videos && Array.isArray(data.videos)) {
-				data.videos = data.videos.map((video: Partial<Video>) => ({
-					...video,
-					thumbnailUrl: getThumbnailUrl(video)
-				}));
-			}
+			// Cache the response
+			CacheManager.set(CACHE_NAMES.VIDEO_LIST, cacheKey, data, CACHE_CONFIG.VIDEO_LIST_TTL);
 			
-			console.log('Videos API response:', data);
 			return data;
 		} catch (error) {
 			console.error('Error fetching videos:', error);
@@ -268,6 +293,13 @@ export const videoService = {
 
 	// Get a single video by ID or Bunny GUID
 	getVideo: async (id: string): Promise<Video> => {
+		// Check cache first
+		const cachedVideo = CacheManager.get(CACHE_NAMES.VIDEO_DETAILS, id);
+		if (cachedVideo) {
+			console.log('Returning cached video details for:', id);
+			return cachedVideo;
+		}
+
 		try {
 			// If the ID contains hyphens, it's a Bunny GUID
 			const endpoint = id.includes('-') ? `/bunny-videos/${id}` : `/videos/${id}`;
@@ -288,20 +320,11 @@ export const videoService = {
 			// Use HLS stream URL for playback if available, otherwise fall back to iframe
 			const playbackUrl = hlsStreamUrl || iframeUrl;
 			
-			// Debug logging
-			console.log('Video URL construction:', {
-				videoId: id,
-				hlsStreamUrl,
-				iframeUrl,
-				playbackUrl,
-				rawData: data
-			});
-			
-			return {
+			const video: Video = {
 				id: data.id || data.ID,  // Handle both formats
 				title: data.title || data.Title,
 				description: data.description || data.Description,
-				thumbnailUrl: data.thumbnailUrl || data.ThumbnailURL,
+				thumbnailUrl: data.thumbnailUrl || data.ThumbnailURL || getThumbnailUrl(data),
 				playbackUrl: playbackUrl, // HLS stream URL for video playback
 				videoUrl: playbackUrl,
 				duration: data.duration || data.Duration,
@@ -317,6 +340,11 @@ export const videoService = {
 				directPlayUrl: hlsStreamUrl, // HLS stream URL
 				playData: data.playData || data.PlayData
 			};
+
+			// Cache the video details
+			CacheManager.set(CACHE_NAMES.VIDEO_DETAILS, id, video, CACHE_CONFIG.VIDEO_DETAILS_TTL);
+
+			return video;
 		} catch (error) {
 			console.error('Error fetching video:', error);
 			throw error;
