@@ -13,6 +13,8 @@
 
 	let videos: Video[] = [];
 	let latestVideos: Video[] = [];
+	let searchResults: Video[] = [];
+	let allSearchResults: Video[] = []; // Store all search results for client-side filtering
 	let collections: BunnyCollection[] = [];
 	let categories: VideoCategory[] = [];
 	let loading = false;
@@ -25,9 +27,137 @@
 	let authChecking = true;
 	let initialDataLoaded = false;
 	let activeTab: 'latest' | 'collections' | 'topics' | 'allVideos' = 'allVideos';
+	let scrollThreshold = 800; // pixels from bottom to trigger auto-load (accounts for footer height)
+	let searchTimeout: NodeJS.Timeout | null = null;
+	let isSearching = false;
 
-	onMount(async () => {
-		await loadInitialData();
+	// Client-side search filtering function
+	function clientSideFilter(videoList: Video[], query: string): Video[] {
+		if (!query.trim()) return videoList;
+		
+		const searchTerms = query.toLowerCase().trim().split(' ').filter(term => term.length > 0);
+		
+		return videoList.filter(video => {
+			const searchableText = [
+				video.title,
+				video.description,
+				video.category,
+				...(video.tags || [])
+			].join(' ').toLowerCase();
+			
+			// Check if ANY search term is found in the video's searchable text (more permissive)
+			return searchTerms.some(term => searchableText.includes(term));
+		});
+	}
+
+	// Reactive statement to handle real-time search with client-side filtering
+	$: {
+		if (searchTimeout) {
+			clearTimeout(searchTimeout);
+		}
+		searchTimeout = setTimeout(() => {
+			if (searchQuery.length > 0) {
+				handleSearch();
+			} else if (searchQuery.length === 0) {
+				// Clear search when query is empty
+				clearSearch();
+			}
+		}, 300); // 300ms debounce
+	}
+
+	// Get the current video list based on tab and search state with client-side filtering
+	$: currentVideos = searchQuery.length > 0 ? 
+		clientSideFilter(allSearchResults, searchQuery) : 
+		(activeTab === 'latest' ? latestVideos : videos);
+
+	// Update searchResults when allSearchResults or searchQuery changes
+	$: {
+		if (searchQuery.length > 0) {
+			searchResults = clientSideFilter(allSearchResults, searchQuery);
+		} else {
+			searchResults = [];
+		}
+	}
+
+	onMount(() => {
+		// Initialize data asynchronously
+		loadInitialData();
+		
+		// Add global debug function to window for console access
+		if (typeof window !== 'undefined') {
+			(window as any).debugVideoSearch = () => {
+				console.log('🔍 Video Search Debug Info:', {
+					searchQuery,
+					isSearching,
+					totalVideos: videos.length,
+					latestVideos: latestVideos.length,
+					allSearchResults: allSearchResults.length,
+					filteredSearchResults: searchResults.length,
+					currentVideos: currentVideos.length,
+					activeTab,
+					hasMore,
+					currentPage
+				});
+				
+				if (searchQuery) {
+					console.log('🔍 Search Query Analysis:', {
+						originalQuery: searchQuery,
+						searchTerms: searchQuery.toLowerCase().trim().split(' ').filter(term => term.length > 0),
+						allResults: allSearchResults.map(v => ({ id: v.id, title: v.title })),
+						filteredResults: searchResults.map(v => ({ id: v.id, title: v.title }))
+					});
+				}
+			};
+		}
+		
+		// Add scroll listener for infinite scroll
+		const handleScroll = () => {
+			// Only auto-load if we're on a tab that supports it, have more content, and not searching
+			if ((activeTab === 'latest' || activeTab === 'allVideos') && hasMore && !loadingMore && !isSearching) {
+				const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+				const windowHeight = window.innerHeight;
+				const documentHeight = document.documentElement.scrollHeight;
+				
+				// Check if we're within the threshold of the bottom
+				if (scrollTop + windowHeight >= documentHeight - scrollThreshold) {
+					console.log('🚀 Infinite scroll triggered!', {
+						scrollTop,
+						windowHeight,
+						documentHeight,
+						threshold: scrollThreshold,
+						hasMore,
+						loadingMore,
+						activeTab,
+						isSearching,
+						searchQuery
+					});
+					loadMore();
+				}
+			}
+		};
+
+		// Add throttled scroll listener
+		let scrollTimer: NodeJS.Timeout | null = null;
+		const throttledScroll = () => {
+			if (scrollTimer) return;
+			scrollTimer = setTimeout(() => {
+				handleScroll();
+				scrollTimer = null;
+			}, 100);
+		};
+
+		window.addEventListener('scroll', throttledScroll);
+		
+		// Cleanup function
+		return () => {
+			window.removeEventListener('scroll', throttledScroll);
+			if (scrollTimer) clearTimeout(scrollTimer);
+			if (searchTimeout) clearTimeout(searchTimeout);
+			// Clean up global debug function
+			if (typeof window !== 'undefined') {
+				delete (window as any).debugVideoSearch;
+			}
+		};
 	});
 
 	async function loadInitialData() {
@@ -92,39 +222,88 @@
 		try {
 			if (reset) {
 				currentPage = 1;
-				videos = [];
+				if (!isSearching) {
+					videos = [];
+				}
 			}
 
-			console.log('Loading videos - page:', currentPage, 'category:', selectedCategory, 'search:', searchQuery);
+			console.log('🎬 Loading videos:', {
+				page: currentPage,
+				category: selectedCategory,
+				search: searchQuery,
+				isSearching,
+				reset
+			});
 
 			const response: VideosResponse = await videoService.getVideos(
 				currentPage,
 				20,
 				selectedCategory || undefined,
-				searchQuery || undefined
+				isSearching ? searchQuery || undefined : undefined
 			);
 
-			console.log('Videos response:', response);
+			console.log('📥 API Response:', {
+				videosCount: response.videos?.length || 0,
+				hasMore: response.pagination?.has_more || false,
+				currentPage: response.pagination?.current_page || 1
+			});
 
 			const newVideos = response.videos || [];
 			
-			if (reset) {
-				videos = newVideos;
+			// Validate that search results actually match the query
+			if (isSearching && searchQuery.trim()) {
+				const validatedResults = clientSideFilter(newVideos, searchQuery);
+				console.log('✅ Search validation:', {
+					serverResults: newVideos.length,
+					validatedResults: validatedResults.length,
+					query: searchQuery
+				});
+				
+				// Use validated results
+				const finalResults = validatedResults.length > 0 ? validatedResults : newVideos;
+				
+				if (reset) {
+					allSearchResults = finalResults;
+				} else {
+					// For search results, prevent duplicates
+					const existingIds = new Set(allSearchResults.map(v => v.id));
+					const uniqueNewVideos = finalResults.filter(video => !existingIds.has(video.id));
+					allSearchResults = [...allSearchResults, ...uniqueNewVideos];
+				}
 			} else {
-				// Prevent duplicate videos by checking IDs
-				const existingIds = new Set(videos.map(v => v.id));
-				const uniqueNewVideos = newVideos.filter(video => !existingIds.has(video.id));
-				videos = [...videos, ...uniqueNewVideos];
+				// Regular video loading (not search)
+				if (reset) {
+					if (activeTab === 'latest') {
+						latestVideos = newVideos;
+					} else {
+						videos = newVideos;
+					}
+				} else {
+					const targetArray = activeTab === 'latest' ? latestVideos : videos;
+					const existingIds = new Set(targetArray.map(v => v.id));
+					const uniqueNewVideos = newVideos.filter(video => !existingIds.has(video.id));
+					
+					if (activeTab === 'latest') {
+						latestVideos = [...latestVideos, ...uniqueNewVideos];
+					} else {
+						videos = [...videos, ...uniqueNewVideos];
+					}
+				}
 			}
 
 			// Update pagination info
 			hasMore = response.pagination?.has_more || false;
-			console.log('Videos loaded:', newVideos.length, 'hasMore:', hasMore);
+			console.log('📊 Load complete:', {
+				videosLoaded: newVideos.length,
+				hasMore,
+				totalInArray: isSearching ? allSearchResults.length : 
+					(activeTab === 'latest' ? latestVideos.length : videos.length)
+			});
 			
 			// Clear any previous errors on success
 			error = '';
 		} catch (err: any) {
-			console.error('Error loading videos:', err);
+			console.error('❌ Error loading videos:', err);
 			
 			// Provide more specific error messages
 			if (err.error_type === 'authentication_error') {
@@ -144,10 +323,117 @@
 	}
 
 	async function handleSearch() {
-		console.log('Searching videos with query:', searchQuery);
-		// Reset the initial data flag when searching
-		initialDataLoaded = false;
-		await loadVideos(true);
+		if (searchQuery.trim().length === 0) {
+			clearSearch();
+			return;
+		}
+
+		console.log('🔍 Starting search for:', searchQuery);
+		isSearching = true;
+		currentPage = 1;
+		
+		// Clear previous search results
+		searchResults = [];
+		allSearchResults = [];
+		
+		try {
+			// Load all search results at once (higher limit for comprehensive search)
+			const response: VideosResponse = await videoService.getVideos(
+				1,
+				100, // Load more results for search
+				undefined,
+				searchQuery
+			);
+
+			const newVideos = response.videos || [];
+			
+			// Validate and store search results
+			const validatedResults = clientSideFilter(newVideos, searchQuery);
+			allSearchResults = validatedResults.length > 0 ? validatedResults : newVideos;
+			
+			// If we have very few results, also search in the local cache
+			if (allSearchResults.length < 10) {
+				console.log('🔄 Expanding search with local results');
+				const localResults = [
+					...videos,
+					...latestVideos
+				];
+				
+				// Remove duplicates and add to search results
+				const existingIds = new Set(allSearchResults.map(v => v.id));
+				const additionalResults = localResults.filter(video => 
+					!existingIds.has(video.id) && 
+					clientSideFilter([video], searchQuery).length > 0
+				);
+				
+				allSearchResults = [...allSearchResults, ...additionalResults];
+			}
+			
+			// For search, we don't use pagination - show all results
+			hasMore = false;
+			
+			console.log('📊 Search complete:', {
+				query: searchQuery,
+				totalResults: allSearchResults.length
+			});
+			
+		} catch (err) {
+			console.error('❌ Search failed:', err);
+			handleError(err);
+		} finally {
+			// Always stop the search spinner when search completes
+			isSearching = false;
+		}
+	}
+
+	function clearSearch() {
+		console.log('🧹 Clearing search');
+		isSearching = false;
+		searchResults = [];
+		allSearchResults = [];
+		currentPage = 1;
+		
+		// Restore pagination for regular browsing
+		hasMore = true;
+		
+		// Don't reload if we already have data for the current tab
+		if ((activeTab === 'allVideos' && videos.length === 0) || 
+		    (activeTab === 'latest' && latestVideos.length === 0)) {
+			loadVideos(true);
+		}
+	}
+
+	function handleClearSearch() {
+		searchQuery = '';
+		clearSearch();
+	}
+
+	// Debug function to show all search results (including non-matching)
+	function showAllSearchResults() {
+		if (allSearchResults.length > 0) {
+			console.log('🔍 All search results for "' + searchQuery + '":', allSearchResults);
+			console.log('✅ Filtered results:', searchResults);
+			console.log('📊 Search terms:', searchQuery.toLowerCase().trim().split(' '));
+		}
+	}
+
+	// Debug function to test client-side filtering
+	function debugClientSideFilter(video: Video) {
+		const searchTerms = searchQuery.toLowerCase().trim().split(' ').filter(term => term.length > 0);
+		const searchableText = [
+			video.title,
+			video.description,
+			video.category,
+			...(video.tags || [])
+		].join(' ').toLowerCase();
+		
+		console.log('🔍 Debug filter for:', video.title, {
+			searchTerms,
+			searchableText,
+			matches: searchTerms.some(term => searchableText.includes(term)) // Changed from every to some
+		});
+		
+		return searchTerms.some(term => searchableText.includes(term)); // Changed from every to some
 	}
 
 	async function handleCategoryChange() {
@@ -172,6 +458,7 @@
 	function clearFilters() {
 		searchQuery = '';
 		selectedCategory = '';
+		clearSearch();
 		// Reset the initial data flag when clearing filters
 		initialDataLoaded = false;
 		loadVideos(true);
@@ -191,9 +478,23 @@
 	function switchTab(tab: typeof activeTab) {
 		activeTab = tab;
 		if (tab === 'latest' || tab === 'allVideos') {
-			searchQuery = '';
+			// Don't clear search when switching between video tabs
 			selectedCategory = '';
-			loadVideos(true);
+			
+			// If we're not searching, load appropriate data for the tab
+			if (!isSearching) {
+				// Check if we need to load data for this tab
+				if ((tab === 'allVideos' && videos.length === 0) || 
+				    (tab === 'latest' && latestVideos.length === 0)) {
+					loadVideos(true);
+				}
+			}
+		} else {
+			// Clear search when going to collections or topics
+			if (searchQuery) {
+				searchQuery = '';
+				clearSearch();
+			}
 		}
 	}
 </script>
@@ -265,26 +566,55 @@
 											type="text"
 											placeholder="Search videos..."
 											bind:value={searchQuery}
-											on:keydown={(e) => e.key === 'Enter' && handleSearch()}
 										/>
+										{#if searchQuery}
+											<button class="btn-clear" on:click={handleClearSearch} title="Clear search">
+												✕
+											</button>
+										{/if}
 										<button class="btn-primary" on:click={handleSearch}>
 											🔍 Search
 										</button>
 									</div>
+									{#if searchQuery}
+										<div class="search-info">
+											{#if isSearching}
+												<div class="search-loading">
+													<LoadingSpinner size="small" />
+													<p>Searching for "{searchQuery}"...</p>
+												</div>
+											{:else if searchResults.length > 0}
+												<p>{searchResults.length} video{searchResults.length !== 1 ? 's' : ''} found</p>
+											{:else if searchQuery && !isSearching}
+												<p>No videos found for "{searchQuery}"</p>
+											{/if}
+										</div>
+									{/if}
 								</div>
 
-								<div class="video-grid">
-									{#each videos as video (video.id)}
-										<VideoCard {video} />
-									{/each}
-								</div>
-
-								{#if hasMore}
-									<div class="load-more">
-										<button class="btn-secondary" on:click={loadMore} disabled={loadingMore}>
-											{loadingMore ? 'Loading...' : 'Load More'}
-										</button>
+								{#if currentVideos.length === 0 && !loading && !loadingMore && !isSearching}
+									<div class="no-results">
+										<p>No videos found{searchQuery ? ` for "${searchQuery}"` : ''}.</p>
+										{#if searchQuery}
+											<button class="btn-secondary" on:click={handleClearSearch}>
+												Clear Search
+											</button>
+										{/if}
 									</div>
+								{:else}
+									<div class="video-grid">
+										{#each currentVideos as video (video.id)}
+											<VideoCard {video} />
+										{/each}
+									</div>
+
+									{#if hasMore && !isSearching}
+										<div class="load-more">
+											<button class="btn-secondary" on:click={loadMore} disabled={loadingMore}>
+												{loadingMore ? 'Loading...' : 'Load More (or keep scrolling)'}
+											</button>
+										</div>
+									{/if}
 								{/if}
 							</section>
 						{/if}
@@ -300,27 +630,55 @@
 											type="text"
 											placeholder="Search videos..."
 											bind:value={searchQuery}
-											on:keydown={(e) => e.key === 'Enter' && handleSearch()}
 										/>
+										{#if searchQuery}
+											<button class="btn-clear" on:click={handleClearSearch} title="Clear search">
+												✕
+											</button>
+										{/if}
 										<button class="btn-primary" on:click={handleSearch}>
 											🔍 Search
 										</button>
 									</div>
-								</div>
-								<div class="video-grid">
-									{#each latestVideos as video (video.id)}
-										<VideoCard {video} />
-									{/each}
+									{#if searchQuery}
+										<div class="search-info">
+											{#if isSearching}
+												<div class="search-loading">
+													<LoadingSpinner size="small" />
+													<p>Searching for "{searchQuery}"...</p>
+												</div>
+											{:else if searchResults.length > 0}
+												<p>{searchResults.length} video{searchResults.length !== 1 ? 's' : ''} found</p>
+											{:else if searchQuery && !isSearching}
+												<p>No videos found for "{searchQuery}"</p>
+											{/if}
+										</div>
+									{/if}
 								</div>
 
-								
-
-								{#if hasMore}
-									<div class="load-more">
-										<button class="btn-secondary" on:click={loadMore} disabled={loadingMore}>
-											{loadingMore ? 'Loading...' : 'Load More'}
-										</button>
+								{#if currentVideos.length === 0 && !loading && !loadingMore && !isSearching}
+									<div class="no-results">
+										<p>No videos found{searchQuery ? ` for "${searchQuery}"` : ''}.</p>
+										{#if searchQuery}
+											<button class="btn-secondary" on:click={handleClearSearch}>
+												Clear Search
+											</button>
+										{/if}
 									</div>
+								{:else}
+									<div class="video-grid">
+										{#each currentVideos as video (video.id)}
+											<VideoCard {video} />
+										{/each}
+									</div>
+
+									{#if hasMore && !isSearching}
+										<div class="load-more">
+											<button class="btn-secondary" on:click={loadMore} disabled={loadingMore}>
+												{loadingMore ? 'Loading...' : 'Load More (or keep scrolling)'}
+											</button>
+										</div>
+									{/if}
 								{/if}
 							</section>
 						{/if}
@@ -446,6 +804,7 @@
 		gap: 1rem;
 		margin-bottom: 2rem;
 		flex-wrap: wrap;
+		width: 100%;
 	}
 
 	.tab-button {
@@ -492,11 +851,13 @@
 		gap: 0.5rem;
 		max-width: 400px;
 		width: 100%;
+		position: relative;
 	}
 
 	.search-bar input {
 		flex: 1;
 		padding: 0.75rem;
+		padding-right: 2.5rem; /* Make space for clear button when present */
 		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		font-size: 1rem;
@@ -509,18 +870,39 @@
 		border-color: var(--color-primary);
 	}
 
+	.btn-clear {
+		position: absolute;
+		right: 70px; /* Position it inside the input, accounting for search button */
+		top: 50%;
+		transform: translateY(-50%);
+		background: none;
+		border: none;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+		font-size: 1rem;
+		padding: 0.25rem;
+		transition: color 0.2s;
+		z-index: 1;
+
+		&:hover {
+			color: var(--color-text);
+		}
+	}
+
 	.video-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+		grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
 		gap: 1.5rem;
 		margin-bottom: 2rem;
+		width: 100%;
 	}
 
 	.collections-grid, .topics-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 		gap: 1.5rem;
 		margin-bottom: 2rem;
+		width: 100%;
 	}
 
 	.collection-card, .topic-card {
@@ -559,6 +941,36 @@
 		margin-top: 2rem;
 	}
 
+	.search-info {
+		margin-top: 1rem;
+		text-align: center;
+		color: var(--color-text-secondary);
+		font-size: 0.9rem;
+	}
+
+	.search-loading {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.search-loading p {
+		margin: 0;
+	}
+
+	.no-results {
+		text-align: center;
+		padding: 2rem 0;
+		color: var(--color-text-secondary);
+		font-size: 1rem;
+
+		p {
+			margin-bottom: 1rem;
+		}
+	}
+
 	.error-message {
 		background: #fee;
 		border: 1px solid #fcc;
@@ -589,7 +1001,8 @@
 	}
 
 	.container {
-		max-width: 1200px;
+		width: 95vw;
+		max-width: none;
 		margin: 0 auto;
 		padding: 0 1rem;
 	}
@@ -650,22 +1063,18 @@
 		}
 
 		.video-grid {
-			grid-template-columns: 1fr;
+			grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
 			gap: 1rem;
 		}
 
 		.collections-grid, .topics-grid {
-			grid-template-columns: 1fr;
+			grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
 			gap: 1rem;
 		}
 
-		.search-bar {
-			flex-direction: column;
-			gap: 0.5rem;
-		}
-
-		.search-bar input {
-			width: 100%;
+		.container {
+			width: 98vw;
+			padding: 0 0.5rem;
 		}
 	}
 

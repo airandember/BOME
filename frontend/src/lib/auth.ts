@@ -39,8 +39,6 @@ export interface AuthError {
 
 // Configuration
 const API_BASE_URL = browser ? (import.meta.env.VITE_API_URL || '/api/v1') : '';
-const TOKEN_STORAGE_KEY = 'bome_auth_tokens';
-const USER_STORAGE_KEY = 'bome_user_data';
 
 // Stores
 export const authTokens = writable<AuthTokens | null>(null);
@@ -56,9 +54,8 @@ export const authError = writable<AuthError | null>(null);
 let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
 
 // Secure token storage using httpOnly cookies (fallback to localStorage for development)
-class SecureTokenStorage {
-	private static readonly TOKEN_KEY = 'bome_auth_token';
-	private static readonly REFRESH_KEY = 'bome_refresh_token';
+export class SecureTokenStorage {
+	private static readonly TOKEN_KEY = 'bome_auth_data';
 	
 	static storeTokens(accessToken: string, refreshToken: string): void {
 		if (browser) {
@@ -67,9 +64,11 @@ class SecureTokenStorage {
 			try {
 				// Store with expiration
 				const tokenData = {
-					token: accessToken,
-					refresh: refreshToken,
-					expires: Date.now() + (15 * 60 * 1000), // 15 minutes
+					access_token: accessToken,
+					refresh_token: refreshToken,
+					expires_in: 4 * 60 * 60, // 4 hours in seconds
+					token_type: 'Bearer',
+					expires: Date.now() + (4 * 60 * 60 * 1000), // 4 hours
 					created: Date.now()
 				};
 				
@@ -83,7 +82,7 @@ class SecureTokenStorage {
 		}
 	}
 	
-	static getAccessToken(): string | null {
+	static getTokens(): AuthTokens | null {
 		if (!browser) return null;
 		
 		try {
@@ -98,21 +97,52 @@ class SecureTokenStorage {
 				return null;
 			}
 			
-			return tokenData.token;
+			return {
+				access_token: tokenData.access_token,
+				refresh_token: tokenData.refresh_token,
+				expires_in: tokenData.expires_in,
+				token_type: tokenData.token_type
+			};
 		} catch {
 			return null;
 		}
 	}
 	
+	static getAccessToken(): string | null {
+		const tokens = this.getTokens();
+		return tokens?.access_token || null;
+	}
+	
 	static getRefreshToken(): string | null {
+		const tokens = this.getTokens();
+		return tokens?.refresh_token || null;
+	}
+	
+	static storeUser(user: User): void {
+		if (browser) {
+			try {
+				const userData = {
+					...user,
+					stored_at: Date.now()
+				};
+				localStorage.setItem('bome_user_data', JSON.stringify(userData));
+			} catch (error) {
+				console.error('Failed to store user data:', error);
+			}
+		}
+	}
+	
+	static getUser(): User | null {
 		if (!browser) return null;
 		
 		try {
-			const stored = localStorage.getItem(this.TOKEN_KEY);
+			const stored = localStorage.getItem('bome_user_data');
 			if (!stored) return null;
 			
-			const tokenData = JSON.parse(stored);
-			return tokenData.refresh;
+			const userData = JSON.parse(stored);
+			// Remove the stored_at property before returning
+			const { stored_at, ...user } = userData;
+			return user;
 		} catch {
 			return null;
 		}
@@ -121,7 +151,12 @@ class SecureTokenStorage {
 	static clearTokens(): void {
 		if (browser) {
 			localStorage.removeItem(this.TOKEN_KEY);
+			localStorage.removeItem('bome_user_data');
 			localStorage.removeItem('bome_secure_storage');
+			// Clean up any old token storage keys
+			localStorage.removeItem('bome_auth_tokens');
+			localStorage.removeItem('bome_token_info');
+			localStorage.removeItem('authToken');
 		}
 	}
 	
@@ -349,7 +384,7 @@ function createAuthStore() {
 						loading: false
 					}));
 					if (browser) {
-						localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+						SecureTokenStorage.storeUser(user);
 					}
 				}
 				
@@ -433,34 +468,31 @@ export async function testBackendConnectivity() {
 export async function initializeAuth() {
 	try {
 		// console.log('Auth: Starting initialization...');
-		const storedTokens = localStorage.getItem(TOKEN_STORAGE_KEY);
-		const storedUser = localStorage.getItem(USER_STORAGE_KEY);
+		const storedTokens = SecureTokenStorage.getTokens();
+		const storedUser = SecureTokenStorage.getUser();
 		
 		// console.log('Auth: Stored tokens:', storedTokens ? 'Found' : 'Not found');
 		// console.log('Auth: Stored user:', storedUser ? 'Found' : 'Not found');
 		
 		if (storedTokens && storedUser) {
-			const tokens: AuthTokens = JSON.parse(storedTokens);
-			const user: User = JSON.parse(storedUser);
-			
-			// console.log('Auth: Parsed tokens:', tokens);
-			// console.log('Auth: Parsed user:', user);
+			// console.log('Auth: Parsed tokens:', storedTokens);
+			// console.log('Auth: Parsed user:', storedUser);
 			
 			// Check if tokens are still valid (basic check)
-			if (isTokenValid(tokens)) {
+			if (isTokenValid(storedTokens)) {
 				// console.log('Auth: Tokens are valid, setting auth state');
-				authTokens.set(tokens);
-				currentUser.set(user);
+				authTokens.set(storedTokens);
+				currentUser.set(storedUser);
 				auth.set({
 					isAuthenticated: true,
-					user,
-					token: tokens.access_token,
+					user: storedUser,
+					token: storedTokens.access_token,
 					loading: false,
 					error: null
 				});
 				
 				// Schedule token refresh
-				scheduleTokenRefresh(tokens);
+				scheduleTokenRefresh(storedTokens);
 				// console.log('Auth: Auth state set successfully');
 			} else {
 				// console.log('Auth: Tokens are invalid, clearing auth data');
@@ -493,8 +525,7 @@ function isTokenValid(tokens: AuthTokens): boolean {
 
 function clearAuthData() {
 	if (browser) {
-		localStorage.removeItem(TOKEN_STORAGE_KEY);
-		localStorage.removeItem(USER_STORAGE_KEY);
+		SecureTokenStorage.clearTokens();
 	}
 	authTokens.set(null);
 	currentUser.set(null);
@@ -511,8 +542,8 @@ function clearAuthData() {
 function storeAuthData(tokens: AuthTokens, user: User) {
 	// console.log('Auth: Storing auth data:', { tokens, user });
 	if (browser) {
-		localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(tokens));
-		localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+		SecureTokenStorage.storeTokens(tokens.access_token, tokens.refresh_token);
+		SecureTokenStorage.storeUser(user);
 		// console.log('Auth: Data stored in localStorage');
 	}
 	authTokens.set(tokens);
@@ -535,8 +566,8 @@ function scheduleTokenRefresh(tokens: AuthTokens) {
 		clearTimeout(refreshTimeout);
 	}
 	
-	// Refresh 1 minute before expiration
-	const refreshTime = (tokens.expires_in - 60) * 1000;
+	// Refresh 30 minutes before expiration for better user experience
+	const refreshTime = (tokens.expires_in - 30 * 60) * 1000;
 	
 	if (refreshTime > 0) {
 		refreshTimeout = setTimeout(() => {
@@ -646,7 +677,7 @@ export async function refreshTokens(): Promise<boolean> {
         
         // Update storage
         if (browser) {
-            localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(newTokens));
+            SecureTokenStorage.storeTokens(newTokens.access_token, newTokens.refresh_token);
         }
         
         // Schedule next refresh
@@ -722,4 +753,44 @@ export function isAdvertiser(): boolean {
 export function isEmailVerified(): boolean {
     const user = getCurrentUser();
     return user?.email_verified || false;
+} 
+
+// Debug function to check token storage state
+export function debugTokenStorage() {
+	if (!browser) return { error: 'Not in browser environment' };
+	
+	const tokens = SecureTokenStorage.getTokens();
+	const user = SecureTokenStorage.getUser();
+	const allLocalStorage = Object.keys(localStorage).filter(key => key.includes('bome') || key.includes('auth'));
+	
+	return {
+		tokens,
+		user,
+		allAuthKeys: allLocalStorage,
+		hasSecureFlag: SecureTokenStorage.isSecure(),
+		currentTime: Date.now(),
+		tokenExpiry: tokens ? Date.now() + (tokens.expires_in * 1000) : null
+	};
+}
+
+// Helper function to clean all auth storage
+export function clearAllAuthStorage() {
+	if (!browser) return;
+	
+	// Clear all possible auth keys
+	const authKeys = [
+		'bome_auth_data',
+		'bome_user_data', 
+		'bome_secure_storage',
+		'bome_auth_tokens',
+		'bome_token_info',
+		'authToken',
+		'bome_auth_token'
+	];
+	
+	authKeys.forEach(key => {
+		localStorage.removeItem(key);
+	});
+	
+	console.log('🧹 Cleared all auth storage');
 } 

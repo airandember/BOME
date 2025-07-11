@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '../app.css';
-	import { auth } from '$lib/auth';
+	import { auth, initializeAuth } from '$lib/auth';
 	import { onMount } from 'svelte';
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
 	import { initializeSecurity } from '$lib/utils/security';
@@ -8,10 +8,30 @@
 
 	let mounted = false;
 
-	onMount(() => {
-		mounted = true;
+	onMount(async () => {
+		// Initialize auth system before mounting components
+		await initializeAuth();
+		
+		// Initialize other services
 		initializeSecurity();
 		authStore.init();
+		
+		// Add debug functions to window for debugging
+		if (typeof window !== 'undefined') {
+			(window as any).debugAuth = () => {
+				const { debugTokenStorage, clearAllAuthStorage } = require('$lib/auth');
+				return debugTokenStorage();
+			};
+			(window as any).clearAuth = () => {
+				const { clearAllAuthStorage } = require('$lib/auth');
+				clearAllAuthStorage();
+			};
+			console.log('🔧 Debug commands available:');
+			console.log('  - window.debugAuth() - Check token storage state');
+			console.log('  - window.clearAuth() - Clear all auth storage');
+		}
+		
+		mounted = true;
 	});
 </script>
 

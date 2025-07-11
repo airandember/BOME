@@ -3,6 +3,7 @@ import { writable, derived, get } from 'svelte/store';
 import { apiClient, type ApiResponse } from '$lib/api/client';
 import { toastStore } from '$lib/stores/toast';
 import { browser } from '$app/environment';
+import { auth } from '$lib/auth';
 
 // Optimistic update utility
 function createOptimisticStore<T>(initialState: T) {
@@ -94,21 +95,33 @@ function createAuthStore() {
 		
 		// Initialize auth state on app start
 		async init() {
-			const token = apiClient.token; // Use the getter
-			if (token) {
-				store.update(state => ({ ...state, isAuthenticated: true, token }));
-			}
+			// Main auth system handles initialization
+			// This is just a placeholder for compatibility
 		},
 
-		// Login with backend API
+		// Login with main auth system
 		async login(email: string, password: string) {
 			return store.optimisticUpdate(
 				// Optimistic update: show loading state
 				(state) => ({ ...state, loading: true, error: null }),
-				// API call
-				() => apiClient.login({ email, password }),
+				// API call - use main auth system
+				async () => {
+					const result = await auth.login(email, password);
+					if (result.success && result.user) {
+						return {
+							user: {
+								id: result.user.id,
+								email: result.user.email,
+								role: result.user.role,
+								full_name: `${result.user.first_name} ${result.user.last_name}`
+							},
+							token: 'handled-by-main-auth'
+						};
+					}
+					throw new Error(result.error || 'Login failed');
+				},
 				// Success callback
-				(result, state) => {
+				(result: any, state) => {
 					toastStore.success(`Welcome back, ${result.user.full_name}!`, { 
 						title: 'Login Successful' 
 					});
@@ -133,41 +146,16 @@ function createAuthStore() {
 			);
 		},
 
-		// Logout with backend API
+		// Logout with main auth system
 		async logout() {
-			return store.optimisticUpdate(
-				// Optimistic update: show loading and clear user data
-				(state) => ({
-					isAuthenticated: false,
-					user: null,
-					token: null,
-					loading: true,
-					error: null
-				}),
-				// API call
-				() => apiClient.logout(),
-				// Success callback
-				(result, state) => {
-					toastStore.success('You have been signed out successfully', { 
-						title: 'Logout Successful' 
-					});
-					return {
-						...state,
-						loading: false
-					};
-				},
-				// Error callback (still logout locally even if API fails)
-				(error, state) => {
-					console.warn('Logout API failed, but continuing with local logout:', error);
-					toastStore.success('You have been signed out', { 
-						title: 'Signed Out' 
-					});
-					return {
-						...state,
-						loading: false
-					};
-				}
-			);
+			await auth.logout();
+			store.update(state => ({
+				isAuthenticated: false,
+				user: null,
+				token: null,
+				loading: false,
+				error: null
+			}));
 		},
 
 		// Clear error

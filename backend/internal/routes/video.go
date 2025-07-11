@@ -21,6 +21,7 @@ func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyServ
 		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 		sync := c.DefaultQuery("sync", "false") == "true"
+		search := c.DefaultQuery("search", "")
 
 		// Validate and limit parameters
 		if limit > 100 {
@@ -30,8 +31,18 @@ func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyServ
 			limit = 20
 		}
 
-		// Fetch videos directly from Bunny.net with pagination
-		videos, totalItems, err := fetchBunnyVideos(bunnyService.GetStreamLibrary(), bunnyService.GetStreamAPIKey(), page, limit)
+		var videos []services.BunnyVideo
+		var totalItems int
+		var err error
+
+		if search != "" {
+			// For search requests, fetch more videos to filter from
+			videos, totalItems, err = fetchBunnyVideosWithSearch(bunnyService.GetStreamLibrary(), bunnyService.GetStreamAPIKey(), search, limit)
+		} else {
+			// Regular pagination
+			videos, totalItems, err = fetchBunnyVideos(bunnyService.GetStreamLibrary(), bunnyService.GetStreamAPIKey(), page, limit, "")
+		}
+
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "Failed to fetch videos from Bunny.net",
@@ -234,8 +245,69 @@ func mapBunnyStatus(status int) string {
 	}
 }
 
+// fetchBunnyVideosWithSearch fetches videos from Bunny.net and filters them server-side
+func fetchBunnyVideosWithSearch(libraryID, apiKey string, search string, limit int) ([]services.BunnyVideo, int, error) {
+	if search == "" {
+		return fetchBunnyVideos(libraryID, apiKey, 1, limit, "")
+	}
+
+	fmt.Printf("🔍 Server-side search for: %s\n", search)
+
+	// Fetch multiple pages to have more videos to search through
+	maxPages := 10 // Fetch up to 10 pages (up to 1000 videos) to search through
+	var allVideos []services.BunnyVideo
+
+	for page := 1; page <= maxPages; page++ {
+		videos, _, err := fetchBunnyVideos(libraryID, apiKey, page, 100, "") // Fetch 100 per page
+		if err != nil {
+			return nil, 0, err
+		}
+
+		if len(videos) == 0 {
+			break // No more videos
+		}
+
+		allVideos = append(allVideos, videos...)
+
+		// If we have enough videos to search through, break
+		if len(allVideos) >= 1000 {
+			break
+		}
+	}
+
+	// Filter videos based on search query (case-insensitive)
+	var filteredVideos []services.BunnyVideo
+	searchLower := strings.ToLower(search)
+
+	for _, video := range allVideos {
+		// Search in title, description, and category
+		searchableText := strings.ToLower(video.Title)
+		if video.Description != nil {
+			searchableText += " " + strings.ToLower(*video.Description)
+		}
+		if video.Category != "" {
+			searchableText += " " + strings.ToLower(video.Category)
+		}
+
+		// Check if search term is found in the searchable text
+		if strings.Contains(searchableText, searchLower) {
+			filteredVideos = append(filteredVideos, video)
+		}
+	}
+
+	// Limit the results
+	if len(filteredVideos) > limit {
+		filteredVideos = filteredVideos[:limit]
+	}
+
+	fmt.Printf("🔍 Server-side search results: %d videos found for '%s' (searched through %d total videos)\n",
+		len(filteredVideos), search, len(allVideos))
+
+	return filteredVideos, len(filteredVideos), nil
+}
+
 // Update fetchBunnyVideos to support pagination and date sorting
-func fetchBunnyVideos(libraryID, apiKey string, page int, itemsPerPage int) ([]services.BunnyVideo, int, error) {
+func fetchBunnyVideos(libraryID, apiKey string, page int, itemsPerPage int, search string) ([]services.BunnyVideo, int, error) {
 	// Default values
 	if page < 1 {
 		page = 1
@@ -244,10 +316,13 @@ func fetchBunnyVideos(libraryID, apiKey string, page int, itemsPerPage int) ([]s
 		itemsPerPage = 100
 	}
 
-	url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos?page=%d&itemsPerPage=%d&orderBy=date",
+	apiURL := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos?page=%d&itemsPerPage=%d&orderBy=date",
 		libraryID, page, itemsPerPage)
 
-	req, err := http.NewRequest("GET", url, nil)
+	// Note: Bunny.net API doesn't support search parameter, so we ignore it here
+	// Search filtering is handled in fetchBunnyVideosWithSearch function
+
+	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to create request: %w", err)
 	}

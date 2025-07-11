@@ -794,7 +794,7 @@ func SetupRoutes(
 		}
 
 		// Fetch videos from Bunny.net
-		videos, _, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey, 1, 100)
+		videos, _, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey, 1, 100, "")
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "Failed to fetch videos from Bunny.net",
@@ -837,7 +837,7 @@ func SetupRoutes(
 	// Test sync endpoint (no auth required for testing)
 	v1.POST("/test/sync-bunny-videos", func(c *gin.Context) {
 		// Fetch videos from Bunny.net
-		videos, _, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey, 1, 100)
+		videos, _, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey, 1, 100, "")
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "Failed to fetch videos from Bunny.net",
@@ -892,7 +892,7 @@ func SetupRoutes(
 		}
 
 		// Fetch videos from Bunny.net
-		videos, _, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey, 1, 100)
+		videos, _, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey, 1, 100, "")
 		if err != nil {
 			// Categorize errors for better client handling
 			var statusCode int
@@ -989,7 +989,7 @@ func SetupRoutes(
 		}
 
 		// Fetch videos from Bunny.net
-		videos, _, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey, 1, 100)
+		videos, _, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey, 1, 100, "")
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "Failed to fetch videos from Bunny.net",

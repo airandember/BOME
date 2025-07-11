@@ -2,6 +2,7 @@ import { browser } from '$app/environment';
 import { apiRequest } from '$lib/auth';
 import type { AdminAnalytics } from '$lib/types/advertising';
 import { WS_CONFIG, getWebSocketUrl } from '$lib/config/websocket';
+import { SecureTokenStorage } from '$lib/auth';
 
 interface AnalyticsEvent {
     type: string;
@@ -223,7 +224,7 @@ export class AnalyticsService {
     private initializeWebSocket() {
         if (!browser || this.ws) return;
 
-        const tokens = JSON.parse(localStorage.getItem('bome_auth_tokens') || 'null');
+        const tokens = SecureTokenStorage.getTokens();
         if (!tokens?.access_token) {
             console.debug('No auth token found, skipping WebSocket connection');
             return;
@@ -513,6 +514,11 @@ export class AnalyticsService {
         }
 
         this.flushEvents();
+    }
+
+    private getAuthToken(): string | null {
+        const tokens = SecureTokenStorage.getTokens();
+        return tokens?.access_token || null;
     }
 }
 
