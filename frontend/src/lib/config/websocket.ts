@@ -18,6 +18,7 @@ export const WS_CONFIG = {
 
 export const getWebSocketUrl = (endpoint: string, token: string): string => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const backendHost = window.location.hostname === 'localhost' ? 'localhost:8080' : window.location.host;
+    // In development, use the same host and port as the frontend (Vite will proxy WebSocket connections)
+    const backendHost = window.location.host;
     return `${protocol}//${backendHost}${endpoint}?token=${encodeURIComponent(token)}`;
 }; 

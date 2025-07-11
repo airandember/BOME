@@ -44,6 +44,7 @@
 
 <div class="page-wrapper">
 	<main class="main-content-wrapper">
+		
 		{#if loading}
 			<div class="loading-container">
 				<LoadingSpinner size="large" />

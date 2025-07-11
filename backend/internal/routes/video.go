@@ -19,7 +19,6 @@ func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyServ
 	return func(c *gin.Context) {
 		// Parse query parameters
 		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-		offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 		sync := c.DefaultQuery("sync", "false") == "true"
 
@@ -31,8 +30,8 @@ func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyServ
 			limit = 20
 		}
 
-		// Fetch videos directly from Bunny.net
-		videos, err := fetchBunnyVideos(bunnyService.GetStreamLibrary(), bunnyService.GetStreamAPIKey())
+		// Fetch videos directly from Bunny.net with pagination
+		videos, totalItems, err := fetchBunnyVideos(bunnyService.GetStreamLibrary(), bunnyService.GetStreamAPIKey(), page, limit)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "Failed to fetch videos from Bunny.net",
@@ -41,27 +40,16 @@ func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyServ
 			return
 		}
 
-		// Apply pagination
-		start := offset
-		end := start + limit
-		if start >= len(videos) {
-			start = len(videos)
-		}
-		if end > len(videos) {
-			end = len(videos)
-		}
-
-		paginatedVideos := videos[start:end]
-
 		// Transform Bunny.net videos to API response format
 		var responseVideos []gin.H
 		var totalDuration int64
 		var totalSize int64
 
-		for _, bunnyVideo := range paginatedVideos {
+		for _, bunnyVideo := range videos {
 			// Get streaming URL from bunny.net
 			streamURL := bunnyService.GetStreamURL(bunnyVideo.GUID)
 			thumbnailURL := bunnyService.GetThumbnailURLWithFilename(bunnyVideo.GUID, bunnyVideo.ThumbnailFileName)
+			iframeURL := bunnyService.GetIframeURL(bunnyVideo.GUID)
 
 			// Enhanced response with Bunny.net data
 			description := fmt.Sprintf("Video from Bunny.net library. Duration: %d seconds, Resolution: %dx%d",
@@ -76,6 +64,8 @@ func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyServ
 				"description":  description,
 				"thumbnailUrl": thumbnailURL,
 				"videoUrl":     streamURL,
+				"iframeSrc":    iframeURL,
+				"playbackUrl":  streamURL,
 				"duration":     bunnyVideo.Length,
 				"viewCount":    bunnyVideo.Views,
 				"likeCount":    0, // Bunny.net doesn't provide like counts
@@ -115,13 +105,13 @@ func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyServ
 
 		// Calculate pagination info
 		currentPage := page
-		totalPages := (len(videos) + limit - 1) / limit
+		totalPages := (totalItems + limit - 1) / limit
 		hasMore := currentPage < totalPages
 
 		// Sync to database if requested
 		if sync {
 			go func() {
-				for _, bunnyVideo := range paginatedVideos {
+				for _, bunnyVideo := range videos {
 					syncVideoToDatabase(db, bunnyService, bunnyVideo)
 				}
 			}()
@@ -135,10 +125,9 @@ func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyServ
 			"pagination": gin.H{
 				"current_page": currentPage,
 				"per_page":     limit,
-				"total":        len(videos),
+				"total":        totalItems,
 				"total_pages":  totalPages,
 				"has_more":     hasMore,
-				"offset":       offset,
 			},
 			"summary": gin.H{
 				"total_videos":   len(responseVideos),
@@ -245,12 +234,22 @@ func mapBunnyStatus(status int) string {
 	}
 }
 
-// Update fetchBunnyVideos to use services.BunnyVideo
-func fetchBunnyVideos(libraryID, apiKey string) ([]services.BunnyVideo, error) {
-	url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos", libraryID)
+// Update fetchBunnyVideos to support pagination and date sorting
+func fetchBunnyVideos(libraryID, apiKey string, page int, itemsPerPage int) ([]services.BunnyVideo, int, error) {
+	// Default values
+	if page < 1 {
+		page = 1
+	}
+	if itemsPerPage < 1 || itemsPerPage > 100 {
+		itemsPerPage = 100
+	}
+
+	url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos?page=%d&itemsPerPage=%d&orderBy=date",
+		libraryID, page, itemsPerPage)
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("AccessKey", apiKey)
@@ -258,22 +257,25 @@ func fetchBunnyVideos(libraryID, apiKey string) ([]services.BunnyVideo, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
+		return nil, 0, fmt.Errorf("failed to make request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, 0, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	var response struct {
-		Items []services.BunnyVideo `json:"items"`
+		Items        []services.BunnyVideo `json:"items"`
+		TotalItems   int                   `json:"totalItems"`
+		Page         int                   `json:"currentPage"`
+		ItemsPerPage int                   `json:"itemsPerPage"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, 0, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return response.Items, nil
+	return response.Items, response.TotalItems, nil
 }
 
 // Update syncVideoToDatabase

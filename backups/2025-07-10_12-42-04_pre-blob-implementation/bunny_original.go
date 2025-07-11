@@ -349,7 +349,7 @@ func (b *BunnyService) GetThumbnailURLWithFilename(videoID, filename string) str
 
 // GetIframeURL returns the iframe embed URL for a video
 func (b *BunnyService) GetIframeURL(videoID string) string {
-	return fmt.Sprintf("https://iframe.mediadelivery.net/embed/%s/%s?autoplay=true&loop=false&muted=false&preload=true&responsive=false&fullscreen=true", b.streamLibrary, videoID)
+	return fmt.Sprintf("https://iframe.mediadelivery.net/play/%s/%s", b.streamLibrary, videoID)
 }
 
 // GetDirectPlayURL returns the direct play URL for a video (same as iframe URL)
@@ -624,7 +624,7 @@ func (b *BunnyService) GetVideoPlayData(videoID string) (*VideoPlayData, error) 
 	// Construct the streaming URLs
 	playData.DirectPlayURL = fmt.Sprintf("https://%s/%s/playlist.m3u8", cdnHostname, videoID)
 	playData.PlaybackURL = playData.DirectPlayURL // Use the HLS stream URL for playback
-	playData.IframeSrc = b.GetIframeURL(videoID)
+	playData.IframeSrc = b.GetDirectPlayURL(videoID)
 
 	// Use the correct thumbnail filename from the API response
 	if playData.ThumbnailFileName != "" {

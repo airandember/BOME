@@ -38,7 +38,7 @@ export interface AuthError {
 }
 
 // Configuration
-const API_BASE_URL = browser ? (import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1') : '';
+const API_BASE_URL = browser ? (import.meta.env.VITE_API_URL || '/api/v1') : '';
 const TOKEN_STORAGE_KEY = 'bome_auth_tokens';
 const USER_STORAGE_KEY = 'bome_user_data';
 

@@ -47,8 +47,42 @@
 
     // Initialize Player.js for iframe control
     async function initPlayerJs() {
-        // Player.js not needed for new iframe approach
-        isLoading = false;
+        if (!iframeElement) return;
+        
+        try {
+            await loadPlayerJs();
+            playerJsInstance = new (window as any).playerjs.Player(iframeElement);
+            
+            playerJsInstance.on('ready', () => {
+                console.log('Player.js ready');
+                playerJsReady = true;
+                isLoading = false;
+                
+                // You can now control the player programmatically
+                // playerJsInstance.play();
+                // playerJsInstance.pause();
+                // playerJsInstance.setCurrentTime(30);
+            });
+            
+            playerJsInstance.on('play', () => {
+                console.log('Video started playing');
+            });
+            
+            playerJsInstance.on('pause', () => {
+                console.log('Video paused');
+            });
+            
+            playerJsInstance.on('ended', () => {
+                console.log('Video ended');
+            });
+            
+            playerJsInstance.on('error', (error: any) => {
+                console.error('Player.js error:', error);
+            });
+            
+        } catch (error) {
+            console.error('Failed to initialize Player.js:', error);
+        }
     }
 
     // Subscribe to auth store
@@ -67,10 +101,10 @@
         }
     });
 
-    // Convert Bunny.net URL to our proxy URL
+    // Convert Bunny.net URL to our proxy URL - FIX: Use backend port 8080
     $: proxyUrl = playbackUrl ? playbackUrl.replace(
         /https:\/\/vz-[^\/]+\.b-cdn\.net\/([^\/]+)(\/.*)?/,
-        `/api/v1/stream/$1$2`
+        `http://localhost:8080/api/v1/stream/$1$2`
     ) : '';
 
     // Also try to extract direct video URL from iframe if available
@@ -89,16 +123,24 @@
 
     const dispatch = createEventDispatcher();
     let videoElement: HTMLVideoElement;
-    let errorMessage: string = '';
+    let iframeElement: HTMLIFrameElement;
+    let errorMessage = '';
 
     function switchToIframe() {
-        if (iframeSrc) {
-            useIframe = true;
-            isLoading = false;
-            console.log('Switched to iframe playback:', iframeSrc);
-        } else {
-            errorMessage = 'No iframe source available';
+        console.log('Switching to iframe playback:', iframeSrc);
+        useIframe = true;
+        errorMessage = '';
+        isLoading = true;
+        
+        if (hls) {
+            hls.destroy();
+            hls = null;
         }
+        
+        // Initialize Player.js after iframe is mounted
+        setTimeout(() => {
+            initPlayerJs();
+        }, 100);
     }
 
     function initHls() {
@@ -127,7 +169,7 @@
 
                 // Optimized HLS configuration
                 hls = new Hls({
-                    debug: false,
+                    debug: false, // Disable debug in production
                     enableWorker: true,
                     lowLatencyMode: true,
                     backBufferLength: 90,
@@ -229,11 +271,6 @@
         }
     }
 
-    function handleVideoEnded() {
-        console.log('Video ended');
-        dispatch('ended');
-    }
-
     onMount(() => {
         // Priority order: Iframe -> HLS -> Direct MP4 (since videos are private)
         if (iframeSrc) {
@@ -270,12 +307,15 @@
 <div class="video-player">
     <div class="video-container">
         {#if useIframe && iframeSrc}
-            <iframe 
-                title='{title || "BOME Video"}' 
-                src="{iframeSrc}" 
-                loading="lazy" 
-                style="border:0;position:absolute;top:0;height:100vh;width:100%;" 
-                allow="accelerometer;gyroscope;autoplay;encrypted-media;picture-in-picture;"
+            <iframe
+                bind:this={iframeElement}
+                src={iframeSrc}
+                {title}
+                frameborder="0"
+                allowfullscreen
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                loading="lazy"
+                class="iframe-element"
                 on:load={() => {
                     isLoading = false;
                     console.log('Iframe loaded successfully');
@@ -289,7 +329,6 @@
                 preload="auto"
                 class="video-element"
                 crossorigin="anonymous"
-                on:ended={handleVideoEnded}
             >
                 <track kind="captions" src="" srclang="en" label="English" default />
                 Your browser does not support HTML video.
@@ -302,7 +341,7 @@
                 <p>Loading video...</p>
             </div>
         {/if}
-
+        
         {#if errorMessage}
             <div class="error-message">
                 {errorMessage}
