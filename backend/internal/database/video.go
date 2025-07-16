@@ -1,7 +1,6 @@
 package database
 
 import (
-	"bome-backend/internal/services"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -28,11 +27,11 @@ type Video struct {
 	UpdatedAt            time.Time
 
 	// Bunny.net play data
-	PlayData      *services.VideoPlayData `json:"play_data,omitempty"`
-	IframeSrc     string                  `json:"iframe_src,omitempty"`
-	DirectPlayURL string                  `json:"direct_play_url,omitempty"`
-	PlaybackURL   string                  `json:"playback_url,omitempty"`
-	Resolutions   []string                `json:"resolutions,omitempty"`
+	PlayData      map[string]interface{} `json:"play_data,omitempty"`
+	IframeSrc     string                 `json:"iframe_src,omitempty"`
+	DirectPlayURL string                 `json:"direct_play_url,omitempty"`
+	PlaybackURL   string                 `json:"playback_url,omitempty"`
+	Resolutions   []string               `json:"resolutions,omitempty"`
 }
 
 // CreateVideo inserts a new video into the database

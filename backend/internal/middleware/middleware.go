@@ -139,15 +139,16 @@ func Recovery() gin.HandlerFunc {
 
 // RateLimiting implements basic rate limiting per IP
 func RateLimiting() gin.HandlerFunc {
-	// Global rate limiter: 100 requests per minute per IP
-	rateLimiter := services.NewRateLimiter(100, time.Minute)
+	// Increased rate limiter: 200 requests per minute per IP to accommodate video preloading
+	rateLimiter := services.NewRateLimiter(200, time.Minute)
 
 	return func(c *gin.Context) {
 		clientIP := services.GetClientIP(c.Request.RemoteAddr, c.GetHeader("X-Forwarded-For"), c.GetHeader("X-Real-IP"))
 
 		if !rateLimiter.Allow(clientIP) {
 			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error": "Rate limit exceeded. Please slow down.",
+				"error":       "Rate limit exceeded. Please slow down.",
+				"retry_after": "60s",
 			})
 			c.Abort()
 			return

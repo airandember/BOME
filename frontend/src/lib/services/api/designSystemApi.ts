@@ -4,6 +4,7 @@
  */
 
 import type { StyleTheme, DesignToken } from '../designTokenService';
+import { SecureTokenStorage } from '$lib/auth';
 
 const API_BASE = '/api/v1/admin';
 
@@ -52,7 +53,7 @@ class DesignSystemApi {
 		};
 
 		// Add auth token if available
-		const token = localStorage.getItem('authToken');
+		const token = SecureTokenStorage.getAccessToken();
 		if (token) {
 			config.headers = {
 				...config.headers,
@@ -73,6 +74,14 @@ class DesignSystemApi {
 			console.error(`API request failed: ${endpoint}`, error);
 			throw error;
 		}
+	}
+
+	private getAuthHeaders(): HeadersInit {
+		const token = SecureTokenStorage.getAccessToken();
+		return {
+			'Content-Type': 'application/json',
+			...(token && { 'Authorization': `Bearer ${token}` })
+		};
 	}
 
 	// Theme Management
@@ -159,7 +168,7 @@ class DesignSystemApi {
 		};
 
 		// Add auth token if available
-		const token = localStorage.getItem('authToken');
+		const token = SecureTokenStorage.getAccessToken();
 		if (token) {
 			config.headers = {
 				'Authorization': `Bearer ${token}`,

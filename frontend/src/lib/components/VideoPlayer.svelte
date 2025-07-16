@@ -1,355 +1,427 @@
 <script lang="ts">
-	import { onMount, createEventDispatcher } from 'svelte';
-	import { videoUtils } from '$lib/video';
-	import { analytics } from '$lib/services/analytics';
+    import { onMount, createEventDispatcher } from 'svelte';
+    import { analytics } from '$lib/services/analytics';
+    import { auth } from '$lib/auth';
+    import Hls from 'hls.js';
 
-	export let videoId: string = '';
-	export let title: string = '';
-	export let poster: string = '';
-	export let autoplay: boolean = false;
-	export let controls: boolean = true;
-	export let width: string = '100%';
-	export let height: string = 'auto';
-	export let playbackUrl: string = '';
+    export let videoId: string = '';
+    export let title: string = '';
+    export let poster: string = '';
+    export let playbackUrl: string = '';
+    export let iframeSrc: string = '';
 
-	const dispatch = createEventDispatcher();
+    let token: string | null = null;
+    let hls: Hls | null = null;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+    let useIframe = false;
+    let isLoading = false;
+    let loadStartTime = 0;
 
-	let videoElement: HTMLVideoElement;
-	let isPlaying = false;
-	let currentTime = 0;
-	let duration = 0;
-	let volume = 1;
-	let isMuted = false;
-	let showControls = true;
-	let controlsTimeout: number;
-	let quarterWatched = false;
-	let halfWatched = false;
-	let threeQuartersWatched = false;
+    // Performance monitoring
+    let performanceMetrics = {
+        loadTime: 0,
+        bufferHealth: 0,
+        errorCount: 0
+    };
 
-	$: videoUrl = videoId ? `https://iframe.mediadelivery.net/embed/${videoId}?autoplay=${autoplay}` : '';
+    // Player.js instance for iframe control
+    let playerJsInstance: any = null;
+    let playerJsReady = false;
 
-	onMount(() => {
-		if (videoElement) {
-			videoElement.addEventListener('loadedmetadata', handleLoadedMetadata);
-			videoElement.addEventListener('timeupdate', handleTimeUpdate);
-			videoElement.addEventListener('ended', handleEnded);
-			videoElement.addEventListener('play', handlePlay);
-			videoElement.addEventListener('pause', handlePause);
-		}
-	});
+    // Load Player.js library dynamically
+    function loadPlayerJs(): Promise<void> {
+        return new Promise((resolve, reject) => {
+            if ((window as any).playerjs) {
+                resolve();
+                return;
+            }
+            
+            const script = document.createElement('script');
+            script.src = 'https://assets.mediadelivery.net/playerjs/player-0.1.0.min.js';
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error('Failed to load Player.js'));
+            document.head.appendChild(script);
+        });
+    }
 
-	function handleLoadedMetadata() {
-		duration = videoElement.duration;
-		dispatch('loadedmetadata', { duration });
-	}
+    // Initialize Player.js for iframe control
+    async function initPlayerJs() {
+        // Player.js not needed for new iframe approach
+        isLoading = false;
+    }
 
-	function handleTimeUpdate() {
-		currentTime = videoElement.currentTime;
-		const progress = Math.round((currentTime / duration) * 100);
-		
-		// Track progress at 25%, 50%, 75%
-		if (progress >= 25 && !quarterWatched) {
-			quarterWatched = true;
-			analytics.trackVideoEvent(videoId, 'progress', {
-				milestone: '25%',
-				currentTime,
-				duration
-			});
-		} else if (progress >= 50 && !halfWatched) {
-			halfWatched = true;
-			analytics.trackVideoEvent(videoId, 'progress', {
-				milestone: '50%',
-				currentTime,
-				duration
-			});
-		} else if (progress >= 75 && !threeQuartersWatched) {
-			threeQuartersWatched = true;
-			analytics.trackVideoEvent(videoId, 'progress', {
-				milestone: '75%',
-				currentTime,
-				duration
-			});
-		}
-		dispatch('timeupdate', { currentTime, duration });
-	}
+    // Subscribe to auth store
+    auth.subscribe(state => {
+        const newToken = state.token;
+        console.log('Auth state updated:', { isAuthenticated: state.isAuthenticated, hasToken: !!state.token });
+        
+        // If token changed and we have an active HLS instance, reload the stream
+        if (newToken !== token && hls && !useIframe) {
+            token = newToken;
+            console.log('Token changed, reloading stream');
+            retryCount = 0; // Reset retry count on token change
+            hls.loadSource(proxyUrl);
+        } else {
+            token = newToken;
+        }
+    });
 
-	function handleEnded() {
-		analytics.trackVideoEvent(videoId, 'complete', {
-			duration: videoElement.duration || 0
-		});
-		isPlaying = false;
-		dispatch('ended');
-	}
+    // Convert Bunny.net URL to our proxy URL
+    $: proxyUrl = playbackUrl ? playbackUrl.replace(
+        /https:\/\/vz-[^\/]+\.b-cdn\.net\/([^\/]+)(\/.*)?/,
+        `/api/v1/stream/$1$2`
+    ) : '';
 
-	function handlePlay() {
-		analytics.trackVideoEvent(videoId, 'play', {
-			currentTime: videoElement.currentTime || 0,
-			duration: videoElement.duration || 0
-		});
-		isPlaying = true;
-		dispatch('play');
-	}
+    // Also try to extract direct video URL from iframe if available
+    $: directVideoUrl = iframeSrc ? extractDirectVideoUrl(iframeSrc) : '';
 
-	function handlePause() {
-		analytics.trackVideoEvent(videoId, 'pause', {
-			currentTime: videoElement.currentTime || 0,
-			duration: videoElement.duration || 0
-		});
-		isPlaying = false;
-		dispatch('pause');
-	}
+    function extractDirectVideoUrl(iframeSrc: string): string {
+        // Extract video ID from iframe URL: https://iframe.mediadelivery.net/embed/347378/VIDEO_ID
+        const match = iframeSrc.match(/\/embed\/\d+\/([^\/\?]+)/);
+        if (match) {
+            const videoId = match[1];
+            // Return direct play URL - use /play/ for direct video playback
+            return `https://iframe.mediadelivery.net/play/347378/${videoId}`;
+        }
+        return '';
+    }
 
-	function togglePlay() {
-		if (isPlaying) {
-			videoElement.pause();
-		} else {
-			videoElement.play();
-		}
-	}
+    const dispatch = createEventDispatcher();
+    let videoElement: HTMLVideoElement;
+    let errorMessage: string = '';
 
-	function toggleMute() {
-		isMuted = !isMuted;
-		videoElement.muted = isMuted;
-	}
+    function switchToIframe() {
+        if (iframeSrc) {
+            useIframe = true;
+            isLoading = false;
+            console.log('Switched to iframe playback:', iframeSrc);
+        } else {
+            errorMessage = 'No iframe source available';
+        }
+    }
 
-	function setVolume(value: number) {
-		volume = value;
-		videoElement.volume = value;
-		if (value === 0) {
-			isMuted = true;
-		} else {
-			isMuted = false;
-		}
-	}
+    function initHls() {
+        if (useIframe) {
+            return; // Don't initialize HLS if using iframe
+        }
 
-	function seekTo(value: number) {
-		videoElement.currentTime = value;
-	}
+        if (!token) {
+            console.error('No auth token available, switching to iframe');
+            switchToIframe();
+            return;
+        }
 
-	function toggleFullscreen() {
-		if (document.fullscreenElement) {
-			document.exitFullscreen();
-		} else {
-			videoElement.requestFullscreen();
-		}
-	}
+        if (videoElement && proxyUrl) {
+            console.log('Setting up HLS video with URL:', proxyUrl);
+            isLoading = true;
+            loadStartTime = performance.now();
+            
+            if (Hls.isSupported()) {
+                console.log('HLS.js is supported');
+                
+                // Destroy existing instance if any
+                if (hls) {
+                    hls.destroy();
+                }
 
-	function showControlsTemporarily() {
-		showControls = true;
-		clearTimeout(controlsTimeout);
-		controlsTimeout = setTimeout(() => {
-			if (isPlaying) {
-				showControls = false;
-			}
-		}, 3000);
-	}
+                // Optimized HLS configuration
+                hls = new Hls({
+                    debug: false,
+                    enableWorker: true,
+                    lowLatencyMode: true,
+                    backBufferLength: 90,
+                    maxBufferLength: 30,
+                    maxMaxBufferLength: 600,
+                    maxLoadingDelay: 4000,
+                    maxBufferSize: 60 * 1000 * 1000, // 60MB
+                    maxBufferHole: 0.5,
+                    highBufferWatchdogPeriod: 2,
+                    nudgeOffset: 0.1,
+                    nudgeMaxRetry: 3,
+                    maxFragLookUpTolerance: 0.25,
+                    liveSyncDurationCount: 3,
+                    liveMaxLatencyDurationCount: 10,
+                    liveDurationInfinity: false,
+                    xhrSetup: function(xhr, url) {
+                        if (token) {
+                            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+                            xhr.setRequestHeader('Accept', 'application/x-mpegURL,*/*');
+                            xhr.withCredentials = false;
+                        }
+                    }
+                });
 
-	function handleMouseMove() {
-		if (controls) {
-			showControlsTemporarily();
-		}
-	}
+                // Performance monitoring events
+                hls.on(Hls.Events.MANIFEST_LOADED, () => {
+                    console.log('HLS manifest loaded');
+                    performanceMetrics.loadTime = performance.now() - loadStartTime;
+                    isLoading = false;
+                });
 
-	function handleKeydown(event: KeyboardEvent) {
-		switch (event.code) {
-			case 'Space':
-				event.preventDefault();
-				togglePlay();
-				break;
-			case 'ArrowLeft':
-				event.preventDefault();
-				seekTo(Math.max(0, currentTime - 10));
-				break;
-			case 'ArrowRight':
-				event.preventDefault();
-				seekTo(Math.min(duration, currentTime + 10));
-				break;
-			case 'ArrowUp':
-				event.preventDefault();
-				setVolume(Math.min(1, volume + 0.1));
-				break;
-			case 'ArrowDown':
-				event.preventDefault();
-				setVolume(Math.max(0, volume - 0.1));
-				break;
-			case 'KeyM':
-				event.preventDefault();
-				toggleMute();
-				break;
-			case 'KeyF':
-				event.preventDefault();
-				toggleFullscreen();
-				break;
-		}
-	}
+                hls.on(Hls.Events.LEVEL_LOADED, (event, data) => {
+                    performanceMetrics.bufferHealth = data.details.totalduration;
+                });
+
+                hls.on(Hls.Events.ERROR, (event, data) => {
+                    console.error('HLS error:', data);
+                    performanceMetrics.errorCount++;
+                    
+                    if (data.fatal) {
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                console.log('Network error, attempting to recover...');
+                                if (retryCount < MAX_RETRIES) {
+                                    retryCount++;
+                                    setTimeout(() => {
+                                        hls?.startLoad();
+                                    }, 1000 * retryCount);
+                                } else {
+                                    console.log('Max retries reached, trying direct video...');
+                                    if (directVideoUrl) {
+                                        useDirectVideo();
+                                    } else {
+                                        switchToIframe();
+                                    }
+                                }
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                console.log('Media error, attempting to recover...');
+                                if (retryCount < MAX_RETRIES) {
+                                    retryCount++;
+                                    hls?.recoverMediaError();
+                                } else {
+                                    console.log('Max retries reached, trying direct video...');
+                                    if (directVideoUrl) {
+                                        useDirectVideo();
+                                    } else {
+                                        switchToIframe();
+                                    }
+                                }
+                                break;
+                            default:
+                                console.log('Fatal error, trying direct video...');
+                                if (directVideoUrl) {
+                                    useDirectVideo();
+                                } else {
+                                    switchToIframe();
+                                }
+                                break;
+                        }
+                    }
+                });
+
+                hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+                    console.log('HLS media attached');
+                    hls?.loadSource(proxyUrl);
+                });
+
+                hls.attachMedia(videoElement);
+            } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+                // Native HLS support (Safari)
+                console.log('Using native HLS support');
+                videoElement.src = proxyUrl;
+                isLoading = false;
+            } else {
+                console.log('HLS not supported, switching to iframe');
+                switchToIframe();
+            }
+        }
+    }
+
+    function handleVideoEnded() {
+        console.log('Video ended');
+        dispatch('ended');
+    }
+
+    onMount(() => {
+        // Priority order: Iframe -> HLS -> Direct MP4 (since videos are private)
+        if (iframeSrc) {
+            console.log('Using iframe playback (recommended for private videos)');
+            switchToIframe();
+        } else if (playbackUrl && playbackUrl.includes('playlist.m3u8')) {
+            console.log('Trying HLS playback');
+            initHls();
+        } else if (directVideoUrl) {
+            console.log('Trying direct MP4 playback:', directVideoUrl);
+            useDirectVideo();
+        } else {
+            errorMessage = 'No valid video URL provided';
+        }
+        
+        return () => {
+            if (hls) {
+                hls.destroy();
+                hls = null;
+            }
+        };
+    });
+
+    function useDirectVideo() {
+        if (videoElement && directVideoUrl) {
+            console.log('Setting direct video source:', directVideoUrl);
+            videoElement.src = directVideoUrl;
+            isLoading = false;
+            useIframe = false;
+        }
+    }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<div class="video-player">
+    <div class="video-container">
+        {#if useIframe && iframeSrc}
+            <iframe 
+                title='{title || "BOME Video"}' 
+                src="{iframeSrc}" 
+                loading="lazy" 
+                style="border:0;position:absolute;top:0;height:100vh;width:100%;" 
+                allow="accelerometer;gyroscope;autoplay;encrypted-media;picture-in-picture;"
+                allowfullscreen="true"
+                on:load={() => {
+                    isLoading = false;
+                    console.log('Iframe loaded successfully');
+                }}
+            ></iframe>
+        {:else if videoId && (proxyUrl || directVideoUrl)}
+            <video
+                bind:this={videoElement}
+                controls
+                {poster}
+                preload="auto"
+                class="video-element"
+                crossorigin="anonymous"
+                on:ended={handleVideoEnded}
+            >
+                <track kind="captions" src="" srclang="en" label="English" default />
+                Your browser does not support HTML video.
+            </video>
+        {/if}
+        
+        {#if isLoading}
+            <div class="loading-indicator">
+                <div class="spinner"></div>
+                <p>Loading video...</p>
+            </div>
+        {/if}
 
-<div 
-	class="video-player"
-	style="width: {width}; height: {height};"
-	on:mousemove={handleMouseMove}
-	on:mouseleave={() => showControls = false}
->
-	{#if videoId && playbackUrl}
-		<video
-			bind:this={videoElement}
-			id="main-video"
-			class="video-element"
-			preload="auto"
-			crossorigin="anonymous"
-			{autoplay}
-			{controls}
-			{poster}
-			playsinline
-			data-plyr-config={{
-				title,
-				controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen']
-			}}
-		>
-			<source src={playbackUrl} type="application/x-mpegURL">
-			Your browser does not support the video tag.
-		</video>
-	{:else}
-		<div class="video-placeholder">
-			<p>Video not available</p>
-		</div>
-	{/if}
-
-	{#if controls && showControls}
-		<div class="video-controls" class:visible={showControls}>
-			<div class="progress-bar">
-				<input
-					type="range"
-					min="0"
-					max={duration}
-					value={currentTime}
-					on:input={(e) => {
-						const target = e.target as HTMLInputElement;
-						if (target) {
-							seekTo(parseFloat(target.value));
-						}
-					}}
-				/>
-			</div>
-
-			<div class="controls-bottom">
-				<button on:click={togglePlay}>
-					{isPlaying ? '⏸️' : '▶️'}
-				</button>
-
-				<div class="time-display">
-					{videoUtils.formatDuration(currentTime)} / {videoUtils.formatDuration(duration)}
-				</div>
-
-				<div class="volume-control">
-					<button on:click={toggleMute}>
-						{isMuted ? '🔇' : '🔊'}
-					</button>
-					<input
-						type="range"
-						min="0"
-						max="1"
-						step="0.1"
-						value={volume}
-						on:input={(e) => {
-							const target = e.target as HTMLInputElement;
-							if (target) {
-								setVolume(parseFloat(target.value));
-							}
-						}}
-					/>
-				</div>
-
-				<button on:click={toggleFullscreen}>
-					⛶
-				</button>
-			</div>
-		</div>
-	{/if}
+        {#if errorMessage}
+            <div class="error-message">
+                {errorMessage}
+                <div class="error-actions">
+                    {#if directVideoUrl && !useIframe}
+                        <button on:click={useDirectVideo} class="fallback-button">
+                            Try Direct Video
+                        </button>
+                    {/if}
+                    {#if iframeSrc && !useIframe}
+                        <button on:click={switchToIframe} class="fallback-button">
+                            Try Iframe Player
+                        </button>
+                    {/if}
+                </div>
+            </div>
+        {/if}
+    </div>
 </div>
 
-<style lang="postcss">
-	.video-player {
-		position: relative;
-		background: #000;
-		overflow: hidden;
-		border-radius: 8px;
-	}
+<style>
+    .video-player {
+        width: 100%;
+        max-width: 100vw;
+        max-height: 80vh;
+        margin: 0 auto;
+        background: #000;
+        position: relative;
+        padding: 0;
+    }
 
-	.video-element {
-		width: 100%;
-		height: 100%;
-		object-fit: contain;
-	}
+    .video-container {
+        width: 100%;
+        height: 80vh;
+        
+        
+    }
 
-	.video-placeholder {
-		width: 100%;
-		height: 100%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: #1a1a1a;
-		color: #fff;
-		min-height: 200px;
-	}
+    .wrapper {
+        border: 5px red solid !important;
+    }
 
-	.video-controls {
-		position: absolute;
-		bottom: 0;
-		left: 0;
-		right: 0;
-		background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
-		padding: 10px;
-		opacity: 0;
-		transition: opacity 0.3s;
-	}
+    .video-element {
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+        object-fit: contain; /* Ensure video fits within container */
+    }
 
-	.video-controls.visible {
-		opacity: 1;
-	}
+    .iframe-element {
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+        border: none;
+    }
 
-	.progress-bar {
-		width: 100%;
-		margin-bottom: 10px;
-	}
+    .loading-indicator {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        color: #fff;
+        z-index: 10;
+    }
 
-	.progress-bar input {
-		width: 100%;
-	}
+    .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-top: 4px solid #fff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1rem;
+    }
 
-	.controls-bottom {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-	}
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
 
-	.time-display {
-		color: white;
-		font-size: 14px;
-	}
+    .error-message {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 1rem;
+        background: rgba(0, 0, 0, 0.8);
+        color: #fff;
+        text-align: center;
+    }
 
-	.volume-control {
-		display: flex;
-		align-items: center;
-		gap: 5px;
-	}
+    .error-actions {
+        margin-top: 1rem;
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
 
-	button {
-		background: none;
-		border: none;
-		color: white;
-		cursor: pointer;
-		padding: 5px;
-		font-size: 18px;
-	}
+    .fallback-button {
+        padding: 0.5rem 1rem;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 1rem;
+        transition: background-color 0.2s;
+    }
 
-	button:hover {
-		opacity: 0.8;
-	}
-
-	input[type="range"] {
-		cursor: pointer;
-	}
+    .fallback-button:hover {
+        background-color: #0056b3;
+    }
 </style> 

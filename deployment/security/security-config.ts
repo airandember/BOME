@@ -65,7 +65,7 @@ class SecurityConfigManager {
 				saltRounds: 12
 			},
 			authentication: {
-				jwtExpiry: '15m',
+				jwtExpiry: '4h',
 				refreshTokenExpiry: '7d',
 				maxLoginAttempts: 5,
 				lockoutDuration: 15 * 60 * 1000 // 15 minutes

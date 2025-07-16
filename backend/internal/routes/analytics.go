@@ -131,6 +131,30 @@ func SetupAnalyticsRoutes(router *gin.RouterGroup) {
 		})
 	})
 
+	// Start periodic analytics broadcaster
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			metrics := gin.H{
+				"current_active_users":   234,
+				"page_views_last_minute": 12,
+				"current_streams":        8,
+				"server_load":            0.65,
+				"bandwidth_usage":        "125 MB/s",
+				"recent_signups":         3,
+				"recent_subscriptions":   1,
+				"error_rate":             0.02,
+				"response_time":          150,
+				"timestamp":              time.Now(),
+			}
+
+			// Use existing broadcast function
+			BroadcastAnalyticsUpdate("realtime_metrics", metrics)
+		}
+	}()
+
 	// System health endpoint
 	analytics.GET("/system-health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{

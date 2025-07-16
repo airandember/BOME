@@ -121,8 +121,8 @@ func GenerateTokenPair(userID int, email, role string, emailVerified bool) (*Tok
 	accessTokenID := fmt.Sprintf("access_%d_%s", userID, time.Now().Format("20060102150405"))
 	refreshTokenID := fmt.Sprintf("refresh_%d_%s", userID, time.Now().Format("20060102150405"))
 
-	// Generate access token (short-lived: 15 minutes)
-	accessToken, err := generateToken(userID, email, role, emailVerified, "access", 15*time.Minute, jwtSecret, accessTokenID)
+	// Generate access token (extended: 4 hours instead of 15 minutes)
+	accessToken, err := generateToken(userID, email, role, emailVerified, "access", 4*time.Hour, jwtSecret, accessTokenID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
 	}
@@ -136,7 +136,7 @@ func GenerateTokenPair(userID int, email, role string, emailVerified bool) (*Tok
 	return &TokenPair{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
-		ExpiresIn:    int64((15 * time.Minute).Seconds()),
+		ExpiresIn:    int64((4 * time.Hour).Seconds()),
 		TokenType:    "Bearer",
 	}, nil
 }

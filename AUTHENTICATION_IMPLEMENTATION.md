@@ -11,7 +11,7 @@ This document outlines the complete implementation of a secure, production-ready
 ### Backend Authentication Features
 
 #### **1. Secure JWT Token System**
-- **Access Tokens**: Short-lived (15 minutes) for API access
+- **Access Tokens**: Medium-lived (4 hours) for API access
 - **Refresh Tokens**: Long-lived (7 days) for token renewal
 - **Token Validation**: Comprehensive claims validation
 - **Automatic Refresh**: Frontend automatically refreshes tokens

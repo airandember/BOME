@@ -1,13 +1,29 @@
 import { apiRequest } from './auth';
+import { CacheManager } from './performance/optimization';
 
 // Default placeholder image path
 const DEFAULT_THUMBNAIL = '/16X10_Placeholder_IMG.png';
+
+// Cache configuration
+const CACHE_CONFIG = {
+	VIDEO_LIST_TTL: 5 * 60 * 1000, // 5 minutes
+	VIDEO_DETAILS_TTL: 10 * 60 * 1000, // 10 minutes
+	CATEGORIES_TTL: 30 * 60 * 1000, // 30 minutes
+};
+
+// Initialize cache names
+const CACHE_NAMES = {
+	VIDEO_LIST: 'video_list',
+	VIDEO_DETAILS: 'video_details',
+	CATEGORIES: 'categories'
+};
 
 export interface Video {
 	id: number;
 	title: string;
 	description: string;
 	thumbnailUrl: string;
+	playbackUrl: string; // Add this
 	videoUrl: string;
 	duration: number;
 	viewCount: number;
@@ -44,10 +60,10 @@ export interface VideoComment {
 export interface VideosResponse {
 	videos: Video[];
 	pagination: {
-		current_page: number;
-		per_page: number;
-		total: number;
-		has_more: boolean;
+		currentPage: number;
+		itemsPerPage: number;
+		totalItems: number;
+		hasMore: boolean;
 	};
 }
 
@@ -60,12 +76,13 @@ export interface ApiError {
 
 // Collection interfaces
 export interface BunnyCollection {
-	id: string;
+	guid: string;  // Changed from 'id' to 'guid' to match backend
 	name: string;
 	videoCount: number;
 	totalSize: number;
-	createdAt: string;
-	updatedAt: string;
+	dateCreated: string;  // Changed from 'createdAt' to 'dateCreated' to match backend
+	lastUpdated: string;  // Changed from 'updatedAt' to 'lastUpdated' to match backend
+	previewVideoIds?: string[];  // Array of Bunny video GUIDs for preview
 }
 
 export interface CollectionsResponse {
@@ -186,6 +203,12 @@ function getThumbnailUrl(video: Partial<Video>): string {
 	return (video.thumbnailUrl && video.thumbnailUrl !== 'error') ? video.thumbnailUrl : DEFAULT_THUMBNAIL;
 }
 
+// Initialize cache cleanup
+setInterval(() => {
+	CacheManager.cleanup();
+	console.log('Cache cleanup completed');
+}, 10 * 60 * 1000); // Run every 10 minutes
+
 // Video service - only uses real backend data, no mock fallbacks
 export const videoService = {
 	// Get all collections with pagination
@@ -237,6 +260,16 @@ export const videoService = {
 		if (category) params.append('category', category);
 		if (search) params.append('search', search);
 
+		// Create cache key
+		const cacheKey = `videos_${page}_${limit}_${category || 'all'}_${search || 'none'}`;
+		
+		// Check cache first
+		const cachedData = CacheManager.get(CACHE_NAMES.VIDEO_LIST, cacheKey);
+		if (cachedData) {
+			console.log('Returning cached video list');
+			return cachedData;
+		}
+
 		console.log('Fetching videos from:', `/bunny-videos?${params.toString()}`);
 		
 		try {
@@ -249,15 +282,9 @@ export const videoService = {
 			
 			const data = await response.json();
 			
-			// Process videos to ensure proper thumbnail URLs
-			if (data.videos && Array.isArray(data.videos)) {
-				data.videos = data.videos.map((video: Partial<Video>) => ({
-					...video,
-					thumbnailUrl: getThumbnailUrl(video)
-				}));
-			}
+			// Cache the response
+			CacheManager.set(CACHE_NAMES.VIDEO_LIST, cacheKey, data, CACHE_CONFIG.VIDEO_LIST_TTL);
 			
-			console.log('Videos API response:', data);
 			return data;
 		} catch (error) {
 			console.error('Error fetching videos:', error);
@@ -266,72 +293,62 @@ export const videoService = {
 	},
 
 	// Get a single video by ID or Bunny GUID
-	getVideo: async (id: number | string): Promise<Video> => {
+	getVideo: async (id: string): Promise<Video> => {
+		// Check cache first
+		const cachedVideo = CacheManager.get(CACHE_NAMES.VIDEO_DETAILS, id);
+		if (cachedVideo) {
+			console.log('Returning cached video details for:', id);
+			return cachedVideo;
+		}
+
 		try {
-			// If the ID is a string and looks like a GUID, use bunny-videos endpoint
-			const isGuid = typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-			const endpoint = isGuid ? `/bunny-videos/${id}` : `/videos/${id}`;
-			
-			console.log(`Fetching video from endpoint: ${endpoint}`);
-			
+			// If the ID contains hyphens, it's a Bunny GUID
+			const endpoint = id.includes('-') ? `/bunny-videos/${id}` : `/videos/${id}`;
 			const response = await apiRequestWithRetry(endpoint);
-			console.log(`Response status: ${response.status}`);
-			
-			const responseText = await response.text();
-			console.log(`Response body: ${responseText}`);
 			
 			if (!response.ok) {
-				let errorData;
-				try {
-					errorData = JSON.parse(responseText);
-				} catch (e) {
-					errorData = { error: responseText };
-				}
-				
-				const error = parseApiError(response, errorData);
-				console.error('Error fetching video:', error);
-				throw error;
+				throw await parseApiError(response);
 			}
 			
-			let data;
-			try {
-				data = JSON.parse(responseText);
-			} catch (e) {
-				console.error('Failed to parse response as JSON:', responseText);
-				throw new Error('Invalid JSON response from server');
-			}
+			const data = await response.json();
 			
-			console.log('Parsed video data:', data);
+			// Ensure we have proper playback URLs
+			// For video playback, prioritize HLS stream URL over iframe URL
+			const hlsStreamUrl = data.playData?.directPlayUrl || data.directPlayUrl;
+			const iframeUrl = data.playData?.iframeSrc || data.iframeSrc || 
+							  `https://iframe.mediadelivery.net/play/347378/${data.bunnyVideoId}`;
 			
-			if (!data || typeof data !== 'object') {
-				console.error('Invalid response format:', data);
-				throw new Error('Invalid response format from server');
-			}
-
-			// Extract play data
-			const playData = data.play_data || data.playData;
-			const thumbnailUrl = playData?.thumbnailUrl || data.thumbnail_url || getThumbnailUrl(data);
-			const videoUrl = playData?.directPlayUrl || data.direct_play_url || '';
+			// Use HLS stream URL for playback if available, otherwise fall back to iframe
+			const playbackUrl = hlsStreamUrl || iframeUrl;
 			
-			return {
-				...data,
-				thumbnailUrl,
-				videoUrl,
-				iframeSrc: playData?.iframeSrc || data.iframe_src,
-				directPlayUrl: playData?.directPlayUrl || data.direct_play_url,
-				resolutions: playData?.resolutions || data.resolutions,
-				playData: {
-					...playData,
-					playbackUrl: playData?.directPlayUrl || playData?.playbackUrl || data.direct_play_url || '',
-					directPlayUrl: playData?.directPlayUrl || data.direct_play_url || '',
-					iframeSrc: playData?.iframeSrc || data.iframe_src || '',
-					thumbnailUrl: thumbnailUrl
-				}
+			const video: Video = {
+				id: data.id || data.ID,  // Handle both formats
+				title: data.title || data.Title,
+				description: data.description || data.Description,
+				thumbnailUrl: data.thumbnailUrl || data.ThumbnailURL || getThumbnailUrl(data),
+				playbackUrl: playbackUrl, // HLS stream URL for video playback
+				videoUrl: playbackUrl,
+				duration: data.duration || data.Duration,
+				viewCount: data.viewCount || data.ViewCount || 0,
+				likeCount: data.likeCount || data.LikeCount || 0,
+				category: data.category || data.Category || '',
+				tags: data.tags || data.Tags || [],
+				status: data.status || data.Status,
+				createdAt: data.createdAt || data.CreatedAt,
+				updatedAt: data.updatedAt || data.UpdatedAt,
+				bunnyVideoId: data.bunnyVideoId || data.BunnyVideoID || id,
+				iframeSrc: iframeUrl, // Direct play iframe URL
+				directPlayUrl: hlsStreamUrl, // HLS stream URL
+				playData: data.playData || data.PlayData
 			};
+
+			// Cache the video details
+			CacheManager.set(CACHE_NAMES.VIDEO_DETAILS, id, video, CACHE_CONFIG.VIDEO_DETAILS_TTL);
+
+			return video;
 		} catch (error) {
-			console.error('Error in getVideo:', error);
-			// Rethrow with more context
-			throw error instanceof Error ? error : new Error('Unknown error occurred while fetching video');
+			console.error('Error fetching video:', error);
+			throw error;
 		}
 	},
 
@@ -460,6 +477,39 @@ export const videoService = {
 			console.error('Error syncing Bunny videos:', error);
 			throw error;
 		}
+	},
+
+	// Get videos by collection ID
+	getVideosByCollection: async (collectionId: string, page = 1, itemsPerPage = 20): Promise<VideosResponse> => {
+		try {
+			// Use the dedicated collection videos endpoint
+			const response = await apiRequestWithRetry(`/bunny-collections/${collectionId}/videos?page=${page}&per_page=${itemsPerPage}`);
+			
+			if (!response.ok) {
+				const data = await response.json().catch(() => ({}));
+				throw parseApiError(response, data);
+			}
+			
+			const data = await response.json();
+			console.log('Collection videos response:', data);
+			
+			// The backend returns the response in the correct format already
+			return {
+				videos: data.videos || [],
+				pagination: {
+					currentPage: data.pagination?.current_page || page,
+					itemsPerPage: data.pagination?.per_page || itemsPerPage,
+					totalItems: data.pagination?.total || 0,
+					hasMore: data.pagination?.has_more || false
+				}
+			};
+		} catch (error) {
+			console.error('Error fetching videos by collection:', error);
+			if (error instanceof Error) {
+				error.message = `Failed to fetch collection videos: ${error.message}`;
+			}
+			throw error;
+		}
 	}
 };
 
@@ -478,7 +528,12 @@ export const videoUtils = {
 	},
 
 	// Format view count
-	formatViewCount: (count: number): string => {
+	formatViewCount: (count: number | undefined | null): string => {
+		// Handle undefined, null, or NaN values
+		if (count == null || isNaN(count)) {
+			return '0';
+		}
+		
 		if (count >= 1000000) {
 			return `${(count / 1000000).toFixed(1)}M`;
 		} else if (count >= 1000) {

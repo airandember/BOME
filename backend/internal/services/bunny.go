@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,22 +23,53 @@ type BunnyService struct {
 	streamAPIKey  string
 	region        string
 	webhookSecret string
+	streamCDN     string
 	client        *http.Client
+
+	// Performance optimizations
+	cache       sync.Map  // Thread-safe cache for video metadata
+	cdnHostname string    // Cached CDN hostname
+	cdnTestTime time.Time // Last time we tested CDN
 }
+
+// Cache entry for video metadata
+type CacheEntry struct {
+	Data      interface{}
+	ExpiresAt time.Time
+}
+
+// Performance constants
+const (
+	CACHE_TTL         = 5 * time.Minute
+	CDN_TEST_INTERVAL = 30 * time.Minute
+	REQUEST_TIMEOUT   = 15 * time.Second
+	MAX_RETRIES       = 3
+)
 
 // BunnyVideo represents a video in Bunny Stream
 type BunnyVideo struct {
-	ID          string    `json:"id"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	Status      string    `json:"status"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	Duration    float64   `json:"duration"`
-	Size        int64     `json:"size"`
-	Thumbnail   string    `json:"thumbnail"`
-	Preview     string    `json:"preview"`
-	LibraryID   string    `json:"library_id"`
+	VideoLibraryID       int     `json:"videoLibraryId"`
+	GUID                 string  `json:"guid"`
+	Title                string  `json:"title"`
+	Description          *string `json:"description"`
+	DateUploaded         string  `json:"dateUploaded"`
+	Views                int     `json:"views"`
+	IsPublic             bool    `json:"isPublic"`
+	Length               int     `json:"length"`
+	Status               int     `json:"status"`
+	Framerate            float64 `json:"framerate"`
+	Width                int     `json:"width"`
+	Height               int     `json:"height"`
+	AvailableResolutions string  `json:"availableResolutions"`
+	ThumbnailCount       int     `json:"thumbnailCount"`
+	EncodeProgress       int     `json:"encodeProgress"`
+	StorageSize          int64   `json:"storageSize"`
+	HasMP4Fallback       bool    `json:"hasMP4Fallback"`
+	CollectionID         string  `json:"collectionId"`
+	ThumbnailFileName    string  `json:"thumbnailFileName"`
+	AverageWatchTime     int     `json:"averageWatchTime"`
+	TotalWatchTime       int64   `json:"totalWatchTime"`
+	Category             string  `json:"category"`
 }
 
 // BunnyUploadResponse represents the response from a video upload
@@ -67,7 +99,7 @@ type BunnyCollectionsResponse struct {
 
 // VideoPlayData represents the response from the video play data endpoint
 type VideoPlayData struct {
-	VideoLibraryID    string   `json:"videoLibraryId"`
+	VideoLibraryID    int      `json:"videoLibraryId"`
 	VideoGUID         string   `json:"guid"`
 	Title             string   `json:"title"`
 	Status            int      `json:"status"`
@@ -95,8 +127,63 @@ func NewBunnyService() *BunnyService {
 		streamAPIKey:  os.Getenv("BUNNY_STREAM_API_KEY"),
 		region:        os.Getenv("BUNNY_REGION"),
 		webhookSecret: os.Getenv("BUNNY_WEBHOOK_SECRET"),
-		client:        &http.Client{Timeout: 30 * time.Second},
+		streamCDN:     os.Getenv("BUNNY_STREAM_CDN"),
+		client: &http.Client{
+			Timeout: REQUEST_TIMEOUT,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     90 * time.Second,
+			},
+		},
+		cache: sync.Map{},
 	}
+}
+
+// getCachedData retrieves cached data if still valid
+func (b *BunnyService) getCachedData(key string) (interface{}, bool) {
+	if value, ok := b.cache.Load(key); ok {
+		if entry, ok := value.(CacheEntry); ok {
+			if time.Now().Before(entry.ExpiresAt) {
+				return entry.Data, true
+			}
+			// Remove expired entry
+			b.cache.Delete(key)
+		}
+	}
+	return nil, false
+}
+
+// setCachedData stores data in cache with TTL
+func (b *BunnyService) setCachedData(key string, data interface{}) {
+	entry := CacheEntry{
+		Data:      data,
+		ExpiresAt: time.Now().Add(CACHE_TTL),
+	}
+	b.cache.Store(key, entry)
+}
+
+// makeRequestWithRetry makes HTTP requests with retry logic
+func (b *BunnyService) makeRequestWithRetry(req *http.Request) (*http.Response, error) {
+	var lastErr error
+
+	for i := 0; i < MAX_RETRIES; i++ {
+		resp, err := b.client.Do(req)
+		if err == nil {
+			return resp, nil
+		}
+
+		lastErr = err
+
+		// Don't retry on last attempt
+		if i < MAX_RETRIES-1 {
+			// Exponential backoff
+			waitTime := time.Duration(i+1) * time.Second
+			time.Sleep(waitTime)
+		}
+	}
+
+	return nil, lastErr
 }
 
 // UploadVideo uploads a video file to Bunny Stream
@@ -170,6 +257,13 @@ func (b *BunnyService) GetVideo(videoID string) (*BunnyVideo, error) {
 			b.streamLibrary != "", b.streamAPIKey != "")
 	}
 
+	// Check cache first
+	if cachedVideo, ok := b.getCachedData(videoID); ok {
+		if video, ok := cachedVideo.(*BunnyVideo); ok {
+			return video, nil
+		}
+	}
+
 	url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos/%s", b.streamLibrary, videoID)
 	fmt.Printf("Making request to Bunny.net: %s\n", url)
 
@@ -181,7 +275,7 @@ func (b *BunnyService) GetVideo(videoID string) (*BunnyVideo, error) {
 	req.Header.Set("AccessKey", b.streamAPIKey)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := b.client.Do(req)
+	resp, err := b.makeRequestWithRetry(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
@@ -194,7 +288,6 @@ func (b *BunnyService) GetVideo(videoID string) (*BunnyVideo, error) {
 	}
 
 	fmt.Printf("Bunny.net response status: %d\n", resp.StatusCode)
-	fmt.Printf("Bunny.net response body: %s\n", string(body))
 
 	// Handle different status codes
 	switch resp.StatusCode {
@@ -218,21 +311,50 @@ func (b *BunnyService) GetVideo(videoID string) (*BunnyVideo, error) {
 	}
 
 	// Validate required fields
-	if video.ID == "" {
+	if video.GUID == "" {
 		return nil, fmt.Errorf("invalid response: missing video ID (body: %s)", string(body))
 	}
+
+	// Cache the response
+	b.setCachedData(videoID, &video)
 
 	return &video, nil
 }
 
 // GetStreamURL returns the streaming URL for a video
 func (b *BunnyService) GetStreamURL(videoID string) string {
-	return fmt.Sprintf("https://iframe.mediadelivery.net/embed/%s/%s", b.streamLibrary, videoID)
+	cdnHostname := b.GetCDNHostname(videoID)
+	return fmt.Sprintf("https://%s/%s/playlist.m3u8", cdnHostname, videoID)
 }
 
 // GetThumbnailURL returns the thumbnail URL for a video
 func (b *BunnyService) GetThumbnailURL(videoID string) string {
-	return fmt.Sprintf("https://video.bunnycdn.com/%s/%s/thumbnail.jpg", b.streamLibrary, videoID)
+	cdnHostname := b.GetCDNHostname(videoID)
+	thumbnailURL := fmt.Sprintf("https://%s/%s/thumbnail.jpg", cdnHostname, videoID)
+	//fmt.Printf("Generated thumbnail URL for video %s: %s\n", videoID, thumbnailURL)
+	return thumbnailURL
+}
+
+// GetThumbnailURLWithFilename returns the thumbnail URL using the specific filename
+func (b *BunnyService) GetThumbnailURLWithFilename(videoID, filename string) string {
+	if filename == "" {
+		return b.GetThumbnailURL(videoID)
+	}
+
+	cdnHostname := b.GetCDNHostname(videoID)
+	thumbnailURL := fmt.Sprintf("https://%s/%s/%s", cdnHostname, videoID, filename)
+	//fmt.Printf("Generated thumbnail URL with filename for video %s: %s\n", videoID, thumbnailURL)
+	return thumbnailURL
+}
+
+// GetIframeURL returns the iframe embed URL for a video
+func (b *BunnyService) GetIframeURL(videoID string) string {
+	return fmt.Sprintf("https://iframe.mediadelivery.net/embed/%s/%s?autoplay=true&loop=false&muted=false&preload=true&responsive=false", b.streamLibrary, videoID)
+}
+
+// GetDirectPlayURL returns the direct play URL for a video (same as iframe URL)
+func (b *BunnyService) GetDirectPlayURL(videoID string) string {
+	return fmt.Sprintf("https://iframe.mediadelivery.net/play/%s/%s", b.streamLibrary, videoID)
 }
 
 // GetStreamLibrary returns the stream library ID
@@ -403,16 +525,69 @@ func (b *BunnyService) GetCollection(collectionID string) (*BunnyCollection, err
 	return &collection, nil
 }
 
+// TestCDNHostname tests if a CDN hostname works for a given video
+func (b *BunnyService) TestCDNHostname(hostname, videoID string) bool {
+	// Test by making a HEAD request to the playlist URL
+	testURL := fmt.Sprintf("https://%s/%s/playlist.m3u8", hostname, videoID)
+
+	req, err := http.NewRequest("HEAD", testURL, nil)
+	if err != nil {
+		return false
+	}
+
+	// Set a short timeout for testing
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	// Consider it working if we get a 200 response
+	return resp.StatusCode == http.StatusOK
+}
+
+// GetCDNHostname determines the correct CDN hostname for video streaming
+func (b *BunnyService) GetCDNHostname(videoID string) string {
+	// Use the configured CDN hostname from environment if available
+	if b.streamCDN != "" {
+		return b.streamCDN
+	}
+
+	// Check cache first
+	if cachedHostname, ok := b.getCachedData(videoID); ok {
+		if hostname, ok := cachedHostname.(string); ok {
+			return hostname
+		}
+	}
+
+	// Fallback to the standard pattern
+	fallbackHostname := fmt.Sprintf("vz-%s-%s.b-cdn.net", b.streamLibrary, b.region)
+	fmt.Printf("Using fallback CDN hostname: %s\n", fallbackHostname)
+
+	// Cache the fallback hostname
+	b.setCachedData(videoID, fallbackHostname)
+
+	return fallbackHostname
+}
+
 // GetVideoPlayData retrieves video play data from Bunny Stream
 func (b *BunnyService) GetVideoPlayData(videoID string) (*VideoPlayData, error) {
 	if videoID == "" {
 		return nil, fmt.Errorf("video ID is required")
 	}
 
+	// Check cache first
+	cacheKey := fmt.Sprintf("playdata_%s", videoID)
+	if cachedData, ok := b.getCachedData(cacheKey); ok {
+		if playData, ok := cachedData.(*VideoPlayData); ok {
+			return playData, nil
+		}
+	}
+
 	fmt.Printf("Fetching play data for video %s\n", videoID)
 
 	url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos/%s", b.streamLibrary, videoID)
-	fmt.Printf("Making request to Bunny.net: %s\n", url)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -422,21 +597,17 @@ func (b *BunnyService) GetVideoPlayData(videoID string) (*VideoPlayData, error) 
 	req.Header.Set("AccessKey", b.streamAPIKey)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := b.client.Do(req)
+	resp, err := b.makeRequestWithRetry(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
 	defer resp.Body.Close()
-
-	fmt.Printf("Bunny.net response status: %d\n", resp.StatusCode)
 
 	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
-
-	fmt.Printf("Bunny.net response body: %s\n", string(body))
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
@@ -447,24 +618,120 @@ func (b *BunnyService) GetVideoPlayData(videoID string) (*VideoPlayData, error) 
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// Get CDN hostname based on region
-	cdnHostname := "vz-" + b.pullZone
-	if b.region != "" {
-		cdnHostname += "-" + b.region
-	}
-	cdnHostname += ".b-cdn.net"
+	// Get the correct CDN hostname
+	cdnHostname := b.GetCDNHostname(videoID)
 
 	// Construct the streaming URLs
 	playData.DirectPlayURL = fmt.Sprintf("https://%s/%s/playlist.m3u8", cdnHostname, videoID)
 	playData.PlaybackURL = playData.DirectPlayURL // Use the HLS stream URL for playback
-	playData.IframeSrc = fmt.Sprintf("https://iframe.mediadelivery.net/embed/%s/%s", b.streamLibrary, videoID)
-	playData.ThumbnailURL = fmt.Sprintf("https://%s/%s/thumbnail.jpg", cdnHostname, videoID)
+	playData.IframeSrc = b.GetIframeURL(videoID)
+
+	// Use the correct thumbnail filename from the API response
+	if playData.ThumbnailFileName != "" {
+		playData.ThumbnailURL = b.GetThumbnailURLWithFilename(videoID, playData.ThumbnailFileName)
+	} else {
+		// Fallback to default thumbnail name
+		playData.ThumbnailURL = b.GetThumbnailURL(videoID)
+	}
+
+	// Cache the response
+	b.setCachedData(cacheKey, &playData)
 
 	fmt.Printf("Successfully fetched play data for video %s\n", videoID)
-	fmt.Printf("Streaming URLs:\n")
-	fmt.Printf("- HLS Stream: %s\n", playData.PlaybackURL)
-	fmt.Printf("- Iframe: %s\n", playData.IframeSrc)
-	fmt.Printf("- Thumbnail: %s\n", playData.ThumbnailURL)
-
 	return &playData, nil
+}
+
+// GetVideosByCollection retrieves videos from a specific collection
+func (b *BunnyService) GetVideosByCollection(collectionID string, page, itemsPerPage int) ([]BunnyVideo, int, error) {
+	if collectionID == "" {
+		fmt.Print("No Collection ID provided\n")
+		return nil, 0, fmt.Errorf("collection ID is required")
+	}
+
+	if b.streamLibrary == "" || b.streamAPIKey == "" {
+		fmt.Print("Bunny.net stream Library or API Key configuration missing\n")
+		return nil, 0, fmt.Errorf("bunny.net configuration missing")
+	}
+
+	// NOTE: Bunny.net API doesn't support direct collection filtering in the List Videos endpoint
+	// We need to fetch all videos and filter them by collectionId on our side
+	// This is a limitation of the Bunny.net API as of the current documentation
+
+	fmt.Printf("Fetching videos and filtering by collection ID: %s\n", collectionID)
+
+	// Fetch videos from Bunny.net (we may need multiple pages to find collection videos)
+	var collectionVideos []BunnyVideo
+	currentPage := 1
+	maxPages := 10 // Limit to prevent infinite loops
+
+	for currentPage <= maxPages {
+		url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos?page=%d&itemsPerPage=100&orderBy=date",
+			b.streamLibrary, currentPage)
+
+		fmt.Printf("Fetching page %d from: %s\n", currentPage, url)
+
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("AccessKey", b.streamAPIKey)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := b.makeRequestWithRetry(req)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to make request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to read response body: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, 0, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+		}
+
+		var response struct {
+			Items      []BunnyVideo `json:"items"`
+			TotalItems int          `json:"totalItems"`
+		}
+
+		if err := json.Unmarshal(body, &response); err != nil {
+			return nil, 0, fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		// Filter videos by collection ID
+		for _, video := range response.Items {
+			if video.CollectionID == collectionID {
+				collectionVideos = append(collectionVideos, video)
+			}
+		}
+
+		// If we have no more videos or found enough, break
+		if len(response.Items) == 0 || len(collectionVideos) >= itemsPerPage*page {
+			break
+		}
+
+		currentPage++
+	}
+
+	fmt.Printf("Found %d videos in collection %s\n", len(collectionVideos), collectionID)
+
+	// Apply pagination to the filtered results
+	startIndex := (page - 1) * itemsPerPage
+	endIndex := startIndex + itemsPerPage
+
+	if startIndex >= len(collectionVideos) {
+		return []BunnyVideo{}, len(collectionVideos), nil
+	}
+
+	if endIndex > len(collectionVideos) {
+		endIndex = len(collectionVideos)
+	}
+
+	paginatedVideos := collectionVideos[startIndex:endIndex]
+
+	return paginatedVideos, len(collectionVideos), nil
 }

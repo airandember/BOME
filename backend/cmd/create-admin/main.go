@@ -9,7 +9,6 @@ import (
 	"bome-backend/internal/services"
 
 	"github.com/joho/godotenv"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 func main() {
