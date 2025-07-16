@@ -8,6 +8,8 @@
 
 	export let redirectTo: string = '/login';
 	export let requireSubscription: boolean = true;
+	export let requiredTier: 'free' | 'premium' = 'premium';
+	export let checking: boolean = false;
 
 	const dispatch = createEventDispatcher();
 	let loading = true;
@@ -16,6 +18,8 @@
 	let subscription: Subscription | null = null;
 	let user: any = null;
 	let authInitialized = false;
+
+	$: checking = loading;
 
 	// Reactive statement that triggers when auth state changes
 	$: if (authInitialized && !loading) {
@@ -67,6 +71,7 @@
 			console.log('🔍 SubscriptionCheck: Checking access...', { 
 				isAuthenticated, 
 				requireSubscription,
+				requiredTier,
 				userRole: user?.role
 			});
 
@@ -93,13 +98,21 @@
 				
 				console.log('💳 SubscriptionCheck: Subscription response:', { 
 					hasSubscription: !!subscription,
-					status: subscription?.status 
+					status: subscription?.status,
+					tier: subscription?.tier || 'free'
 				});
 
 				// If no subscription or not active, redirect to subscription page
 				if (!subscription || subscription.status !== 'active') {
 					console.log('❌ SubscriptionCheck: No active subscription, redirecting to subscription page');
 					goto('/subscription');
+					return;
+				}
+
+				// Check tier requirements
+				if (requiredTier === 'premium' && subscription.tier !== 'premium') {
+					console.log('❌ SubscriptionCheck: Premium tier required, redirecting to upgrade page');
+					goto('/subscription?upgrade=true');
 					return;
 				}
 			}

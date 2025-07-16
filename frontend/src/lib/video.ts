@@ -60,10 +60,10 @@ export interface VideoComment {
 export interface VideosResponse {
 	videos: Video[];
 	pagination: {
-		current_page: number;
-		per_page: number;
-		total: number;
-		has_more: boolean;
+		currentPage: number;
+		itemsPerPage: number;
+		totalItems: number;
+		hasMore: boolean;
 	};
 }
 
@@ -76,12 +76,13 @@ export interface ApiError {
 
 // Collection interfaces
 export interface BunnyCollection {
-	id: string;
+	guid: string;  // Changed from 'id' to 'guid' to match backend
 	name: string;
 	videoCount: number;
 	totalSize: number;
-	createdAt: string;
-	updatedAt: string;
+	dateCreated: string;  // Changed from 'createdAt' to 'dateCreated' to match backend
+	lastUpdated: string;  // Changed from 'updatedAt' to 'lastUpdated' to match backend
+	previewVideoIds?: string[];  // Array of Bunny video GUIDs for preview
 }
 
 export interface CollectionsResponse {
@@ -476,6 +477,39 @@ export const videoService = {
 			console.error('Error syncing Bunny videos:', error);
 			throw error;
 		}
+	},
+
+	// Get videos by collection ID
+	getVideosByCollection: async (collectionId: string, page = 1, itemsPerPage = 20): Promise<VideosResponse> => {
+		try {
+			// Use the dedicated collection videos endpoint
+			const response = await apiRequestWithRetry(`/bunny-collections/${collectionId}/videos?page=${page}&per_page=${itemsPerPage}`);
+			
+			if (!response.ok) {
+				const data = await response.json().catch(() => ({}));
+				throw parseApiError(response, data);
+			}
+			
+			const data = await response.json();
+			console.log('Collection videos response:', data);
+			
+			// The backend returns the response in the correct format already
+			return {
+				videos: data.videos || [],
+				pagination: {
+					currentPage: data.pagination?.current_page || page,
+					itemsPerPage: data.pagination?.per_page || itemsPerPage,
+					totalItems: data.pagination?.total || 0,
+					hasMore: data.pagination?.has_more || false
+				}
+			};
+		} catch (error) {
+			console.error('Error fetching videos by collection:', error);
+			if (error instanceof Error) {
+				error.message = `Failed to fetch collection videos: ${error.message}`;
+			}
+			throw error;
+		}
 	}
 };
 
@@ -494,7 +528,12 @@ export const videoUtils = {
 	},
 
 	// Format view count
-	formatViewCount: (count: number): string => {
+	formatViewCount: (count: number | undefined | null): string => {
+		// Handle undefined, null, or NaN values
+		if (count == null || isNaN(count)) {
+			return '0';
+		}
+		
 		if (count >= 1000000) {
 			return `${(count / 1000000).toFixed(1)}M`;
 		} else if (count >= 1000) {

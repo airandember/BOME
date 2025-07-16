@@ -276,6 +276,7 @@
                 loading="lazy" 
                 style="border:0;position:absolute;top:0;height:100vh;width:100%;" 
                 allow="accelerometer;gyroscope;autoplay;encrypted-media;picture-in-picture;"
+                allowfullscreen="true"
                 on:load={() => {
                     isLoading = false;
                     console.log('Iframe loaded successfully');

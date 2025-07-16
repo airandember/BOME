@@ -331,7 +331,7 @@ func (b *BunnyService) GetStreamURL(videoID string) string {
 func (b *BunnyService) GetThumbnailURL(videoID string) string {
 	cdnHostname := b.GetCDNHostname(videoID)
 	thumbnailURL := fmt.Sprintf("https://%s/%s/thumbnail.jpg", cdnHostname, videoID)
-	fmt.Printf("Generated thumbnail URL for video %s: %s\n", videoID, thumbnailURL)
+	//fmt.Printf("Generated thumbnail URL for video %s: %s\n", videoID, thumbnailURL)
 	return thumbnailURL
 }
 
@@ -343,13 +343,13 @@ func (b *BunnyService) GetThumbnailURLWithFilename(videoID, filename string) str
 
 	cdnHostname := b.GetCDNHostname(videoID)
 	thumbnailURL := fmt.Sprintf("https://%s/%s/%s", cdnHostname, videoID, filename)
-	fmt.Printf("Generated thumbnail URL with filename for video %s: %s\n", videoID, thumbnailURL)
+	//fmt.Printf("Generated thumbnail URL with filename for video %s: %s\n", videoID, thumbnailURL)
 	return thumbnailURL
 }
 
 // GetIframeURL returns the iframe embed URL for a video
 func (b *BunnyService) GetIframeURL(videoID string) string {
-	return fmt.Sprintf("https://iframe.mediadelivery.net/embed/%s/%s?autoplay=true&loop=false&muted=false&preload=true&responsive=false&fullscreen=true", b.streamLibrary, videoID)
+	return fmt.Sprintf("https://iframe.mediadelivery.net/embed/%s/%s?autoplay=true&loop=false&muted=false&preload=true&responsive=false", b.streamLibrary, videoID)
 }
 
 // GetDirectPlayURL returns the direct play URL for a video (same as iframe URL)
@@ -639,4 +639,99 @@ func (b *BunnyService) GetVideoPlayData(videoID string) (*VideoPlayData, error) 
 
 	fmt.Printf("Successfully fetched play data for video %s\n", videoID)
 	return &playData, nil
+}
+
+// GetVideosByCollection retrieves videos from a specific collection
+func (b *BunnyService) GetVideosByCollection(collectionID string, page, itemsPerPage int) ([]BunnyVideo, int, error) {
+	if collectionID == "" {
+		fmt.Print("No Collection ID provided\n")
+		return nil, 0, fmt.Errorf("collection ID is required")
+	}
+
+	if b.streamLibrary == "" || b.streamAPIKey == "" {
+		fmt.Print("Bunny.net stream Library or API Key configuration missing\n")
+		return nil, 0, fmt.Errorf("bunny.net configuration missing")
+	}
+
+	// NOTE: Bunny.net API doesn't support direct collection filtering in the List Videos endpoint
+	// We need to fetch all videos and filter them by collectionId on our side
+	// This is a limitation of the Bunny.net API as of the current documentation
+
+	fmt.Printf("Fetching videos and filtering by collection ID: %s\n", collectionID)
+
+	// Fetch videos from Bunny.net (we may need multiple pages to find collection videos)
+	var collectionVideos []BunnyVideo
+	currentPage := 1
+	maxPages := 10 // Limit to prevent infinite loops
+
+	for currentPage <= maxPages {
+		url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos?page=%d&itemsPerPage=100&orderBy=date",
+			b.streamLibrary, currentPage)
+
+		fmt.Printf("Fetching page %d from: %s\n", currentPage, url)
+
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("AccessKey", b.streamAPIKey)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := b.makeRequestWithRetry(req)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to make request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to read response body: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, 0, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+		}
+
+		var response struct {
+			Items      []BunnyVideo `json:"items"`
+			TotalItems int          `json:"totalItems"`
+		}
+
+		if err := json.Unmarshal(body, &response); err != nil {
+			return nil, 0, fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		// Filter videos by collection ID
+		for _, video := range response.Items {
+			if video.CollectionID == collectionID {
+				collectionVideos = append(collectionVideos, video)
+			}
+		}
+
+		// If we have no more videos or found enough, break
+		if len(response.Items) == 0 || len(collectionVideos) >= itemsPerPage*page {
+			break
+		}
+
+		currentPage++
+	}
+
+	fmt.Printf("Found %d videos in collection %s\n", len(collectionVideos), collectionID)
+
+	// Apply pagination to the filtered results
+	startIndex := (page - 1) * itemsPerPage
+	endIndex := startIndex + itemsPerPage
+
+	if startIndex >= len(collectionVideos) {
+		return []BunnyVideo{}, len(collectionVideos), nil
+	}
+
+	if endIndex > len(collectionVideos) {
+		endIndex = len(collectionVideos)
+	}
+
+	paginatedVideos := collectionVideos[startIndex:endIndex]
+
+	return paginatedVideos, len(collectionVideos), nil
 }

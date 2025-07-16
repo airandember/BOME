@@ -72,6 +72,12 @@ func main() {
 
 	// Initialize services
 	bunnyService := services.NewBunnyService()
+	optimizedBunnyService := services.NewOptimizedBunnyService(bunnyService)
+	optimizedBunnyService.StartBackgroundTasks()
+
+	// Store optimized service globally for metrics access
+	services.SetGlobalOptimizedBunnyService(optimizedBunnyService)
+
 	stripeService := services.NewStripeService()
 	spacesService, err := services.NewSpacesService()
 	if err != nil {
@@ -116,7 +122,7 @@ func main() {
 
 	// Setup routes
 	log.Println("Setting up routes...")
-	routes.SetupRoutes(router, cfg, db, redis, bunnyService, stripeService, spacesService, emailService)
+	routes.SetupRoutes(router, cfg, db, redis, optimizedBunnyService.GetBunnyService(), stripeService, spacesService, emailService)
 	log.Println("Routes setup completed successfully")
 
 	// Create HTTP server

@@ -2,6 +2,7 @@
 	import { videoUtils } from '$lib/video';
 	import type { Video } from '$lib/video';
 	import LazyImage from './LazyImage.svelte';
+	import { optimizeVideo } from '$lib/performance/video-optimization';
 
 	export let video: Video;
 	export let showCategory: boolean = true;
@@ -76,6 +77,7 @@
 	role="button"
 	tabindex="0"
 	aria-label="Play video: {video.title}"
+	use:optimizeVideo={video.bunnyVideoId || video.id.toString()}
 >
 	<div class="thumbnail-container">
 		<LazyImage

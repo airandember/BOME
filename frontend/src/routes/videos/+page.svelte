@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
 	import { videoService, type Video, type VideoCategory, type VideosResponse, type BunnyCollection } from '$lib/video';
 	import VideoCard from '$lib/components/VideoCard.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
@@ -30,6 +31,14 @@
 	let scrollThreshold = 800; // pixels from bottom to trigger auto-load (accounts for footer height)
 	let searchTimeout: NodeJS.Timeout | null = null;
 	let isSearching = false;
+
+	// Set active tab from URL parameter
+	$: {
+		const tabParam = $page.url.searchParams.get('tab');
+		if (tabParam && ['latest', 'collections', 'topics', 'allVideos'].includes(tabParam)) {
+			activeTab = tabParam as typeof activeTab;
+		}
+	}
 
 	// Client-side search filtering function
 	function clientSideFilter(videoList: Video[], query: string): Video[] {
@@ -244,8 +253,8 @@
 
 			console.log('📥 API Response:', {
 				videosCount: response.videos?.length || 0,
-				hasMore: response.pagination?.has_more || false,
-				currentPage: response.pagination?.current_page || 1
+				//hasMore: response.pagination?.has_more || false,
+				//currentPage: response.pagination?.current_page || 1
 			});
 
 			const newVideos = response.videos || [];
@@ -292,7 +301,7 @@
 			}
 
 			// Update pagination info
-			hasMore = response.pagination?.has_more || false;
+			//hasMore = response.pagination?.has_more || false;
 			console.log('📊 Load complete:', {
 				videosLoaded: newVideos.length,
 				hasMore,
@@ -477,6 +486,12 @@
 
 	function switchTab(tab: typeof activeTab) {
 		activeTab = tab;
+		
+		// Update URL to reflect the active tab
+		const url = new URL(window.location.href);
+		url.searchParams.set('tab', tab);
+		window.history.replaceState({}, '', url.toString());
+		
 		if (tab === 'latest' || tab === 'allVideos') {
 			// Don't clear search when switching between video tabs
 			selectedCategory = '';
@@ -688,14 +703,29 @@
 							<section class="collections">
 								<h2>Video Collections</h2>
 								<div class="collections-grid">
-									{#each collections as collection (collection.id)}
-										<div class="collection-card">
-											<h3>{collection.name}</h3>
-											<p>{collection.videoCount} videos</p>
-											<button class="btn-primary" on:click={() => goto(`/videos/collections/${collection.id}`)}>
-												View Collection
-											</button>
-										</div>
+									{#each collections as collection (collection.guid)}
+										<a 
+											href="/videos/collections/{collection.guid}" 
+											class="collection-card"
+											on:click|preventDefault={() => goto(`/videos/collections/${collection.guid}`)}
+										>
+											<div class="collection-image">
+												<img 
+													src="/src/lib/HOMEPAGE_TEST_ASSETS/16X10_WORDLESS_Collection_Placeholder_IMG.webp" 
+													alt={collection.name}
+													loading="lazy"
+												/>
+												<div class="collection-overlay">
+													<span class="video-count">{collection.videoCount} videos</span>
+												</div>
+											</div>
+											<div class="collection-content">
+												<h3>{collection.name}</h3>
+												<p class="collection-description">
+													Explore this collection of Book of Mormon evidence videos
+												</p>
+											</div>
+										</a>
 									{/each}
 								</div>
 							</section>
@@ -1048,6 +1078,96 @@
 		}
 	}
 
+	.collections-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+		gap: 2rem;
+		margin-bottom: 2rem;
+		width: 100%;
+	}
+
+	.collection-card {
+		background: var(--color-surface);
+		border-radius: 16px;
+		overflow: hidden;
+		transition: all 0.3s ease;
+		text-decoration: none;
+		color: inherit;
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		border: 1px solid var(--color-border);
+		
+		&:hover {
+			transform: translateY(-8px);
+			box-shadow: 0 12px 30px rgba(0, 0, 0, 0.15);
+			border-color: var(--color-primary);
+			
+			.collection-image img {
+				transform: scale(1.05);
+			}
+			
+			.collection-overlay {
+				background: rgba(0, 0, 0, 0.4);
+			}
+		}
+	}
+
+	.collection-image {
+		position: relative;
+		aspect-ratio: 16/10;
+		overflow: hidden;
+		
+		img {
+			width: 100%;
+			height: 100%;
+			object-fit: cover;
+			transition: transform 0.3s ease;
+		}
+	}
+
+	.collection-overlay {
+		position: absolute;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.3);
+		display: flex;
+		align-items: flex-end;
+		padding: 1.5rem;
+		transition: background 0.3s ease;
+	}
+
+	.video-count {
+		color: white;
+		font-size: 0.9rem;
+		font-weight: 500;
+		padding: 0.5rem 1rem;
+		background: rgba(0, 0, 0, 0.5);
+		border-radius: 20px;
+		backdrop-filter: blur(4px);
+	}
+
+	.collection-content {
+		padding: 1.5rem;
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		
+		h3 {
+			font-size: 1.4rem;
+			color: var(--color-text);
+			font-weight: 600;
+			margin: 0;
+		}
+		
+		.collection-description {
+			color: var(--color-text-secondary);
+			font-size: 0.95rem;
+			line-height: 1.5;
+			margin: 0;
+		}
+	}
+
 	@media (max-width: 768px) {
 		.hub-header h1 {
 			font-size: 2rem;
@@ -1067,9 +1187,17 @@
 			gap: 1rem;
 		}
 
-		.collections-grid, .topics-grid {
-			grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-			gap: 1rem;
+		.collections-grid {
+			grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+			gap: 1.5rem;
+		}
+
+		.collection-content {
+			padding: 1.25rem;
+			
+			h3 {
+				font-size: 1.2rem;
+			}
 		}
 
 		.container {

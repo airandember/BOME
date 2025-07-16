@@ -20,6 +20,7 @@ export interface Subscription {
 	cancelAtPeriodEnd: boolean;
 	createdAt: string;
 	updatedAt: string;
+	tier: 'free' | 'premium';
 }
 
 export interface PaymentMethod {

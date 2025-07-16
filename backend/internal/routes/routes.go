@@ -357,6 +357,36 @@ func SetupRoutes(
 		fmt.Printf("Video routes setup complete\n")
 	}
 
+	// Test endpoint to verify route registration
+	v1.GET("/test/optimization", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"message":   "Optimization test endpoint working",
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
+	})
+
+	// Performance monitoring endpoint
+	v1.GET("/performance/metrics", func(c *gin.Context) {
+		// Get metrics from the global optimized Bunny service if available
+		if optimizedService := services.GetGlobalOptimizedBunnyService(); optimizedService != nil {
+			metrics := optimizedService.GetMetrics()
+			c.JSON(http.StatusOK, gin.H{
+				"success":   true,
+				"metrics":   metrics,
+				"timestamp": time.Now().Format(time.RFC3339),
+			})
+		} else {
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"metrics": gin.H{
+					"message":      "Optimized service not available",
+					"service_type": "standard",
+				},
+				"timestamp": time.Now().Format(time.RFC3339),
+			})
+		}
+	})
+
 	// Bunny.net direct access endpoint (separate from videos to avoid conflicts)
 	v1.GET("/bunny-videos", GetVideosFromBunnyHandler(db, bunnyService))
 
@@ -555,6 +585,78 @@ func SetupRoutes(
 		}
 
 		c.JSON(http.StatusOK, collection)
+	})
+
+	// Get videos by collection ID - PREMIUM FEATURE
+	v1.GET("/bunny-collections/:id/videos", middleware.AuthRequired(), middleware.SessionActivityTracker(db), func(c *gin.Context) {
+		collectionID := c.Param("id")
+		if collectionID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Collection ID is required"})
+			return
+		}
+
+		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+		perPage, _ := strconv.Atoi(c.DefaultQuery("per_page", "20"))
+
+		videos, totalItems, err := bunnyService.GetVideosByCollection(collectionID, page, perPage)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to fetch videos for collection: %v", err),
+			})
+			return
+		}
+
+		// Transform videos to API response format
+		var responseVideos []gin.H
+		for _, bunnyVideo := range videos {
+			streamURL := bunnyService.GetStreamURL(bunnyVideo.GUID)
+			thumbnailURL := bunnyService.GetThumbnailURLWithFilename(bunnyVideo.GUID, bunnyVideo.ThumbnailFileName)
+			iframeURL := bunnyService.GetIframeURL(bunnyVideo.GUID)
+
+			description := fmt.Sprintf("Video from Bunny.net library. Duration: %d seconds, Resolution: %dx%d",
+				bunnyVideo.Length, bunnyVideo.Width, bunnyVideo.Height)
+			if bunnyVideo.Description != nil {
+				description = *bunnyVideo.Description
+			}
+
+			responseVideo := gin.H{
+				"id":           bunnyVideo.GUID,
+				"title":        bunnyVideo.Title,
+				"description":  description,
+				"thumbnailUrl": thumbnailURL,
+				"videoUrl":     streamURL,
+				"iframeSrc":    iframeURL,
+				"playbackUrl":  streamURL,
+				"duration":     bunnyVideo.Length,
+				"viewCount":    bunnyVideo.Views,
+				"likeCount":    0, // Bunny.net doesn't provide likes, default to 0
+				"category":     bunnyVideo.Category,
+				"tags":         []string{}, // Bunny.net doesn't provide tags, default to empty array
+				"status":       mapBunnyStatus(bunnyVideo.Status),
+				"createdAt":    bunnyVideo.DateUploaded,
+				"updatedAt":    bunnyVideo.DateUploaded,
+				"bunnyVideoId": bunnyVideo.GUID, // Add this field for frontend compatibility
+				"collectionId": bunnyVideo.CollectionID,
+			}
+			responseVideos = append(responseVideos, responseVideo)
+		}
+
+		// Calculate pagination info
+		totalPages := (totalItems + perPage - 1) / perPage
+		hasMore := page < totalPages
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"videos":  responseVideos,
+			"pagination": gin.H{
+				"current_page": page,
+				"per_page":     perPage,
+				"total":        totalItems,
+				"total_pages":  totalPages,
+				"has_more":     hasMore,
+			},
+			"collection_id": collectionID,
+		})
 	})
 
 	// Subscription routes
