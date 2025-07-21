@@ -70,23 +70,21 @@ func (tb *TokenBlacklist) GetBlacklistSize() int {
 	return len(tb.tokens)
 }
 
-// initializeSecrets ensures JWT secrets are loaded from environment variables
-func initializeSecrets() error {
+// InitializeJWTSecrets initializes JWT secrets from config
+func InitializeJWTSecrets(jwtSecretStr, jwtRefreshSecretStr string) error {
 	if secretsInitialized {
 		return nil
 	}
 
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		return errors.New("JWT_SECRET environment variable is required")
+	if jwtSecretStr == "" {
+		return errors.New("JWT_SECRET is required")
 	}
-	jwtSecret = []byte(secret)
+	jwtSecret = []byte(jwtSecretStr)
 
-	refreshSecret := os.Getenv("JWT_REFRESH_SECRET")
-	if refreshSecret == "" {
-		refreshSecret = secret + "_refresh"
+	if jwtRefreshSecretStr == "" {
+		jwtRefreshSecretStr = jwtSecretStr + "_refresh"
 	}
-	jwtRefreshSecret = []byte(refreshSecret)
+	jwtRefreshSecret = []byte(jwtRefreshSecretStr)
 
 	secretsInitialized = true
 	return nil
@@ -113,7 +111,7 @@ type TokenPair struct {
 
 // GenerateTokenPair generates both access and refresh tokens
 func GenerateTokenPair(userID int, email, role string, emailVerified bool) (*TokenPair, error) {
-	if err := initializeSecrets(); err != nil {
+	if err := InitializeJWTSecrets(os.Getenv("JWT_SECRET"), os.Getenv("JWT_REFRESH_SECRET")); err != nil {
 		return nil, fmt.Errorf("failed to initialize JWT secrets: %w", err)
 	}
 
@@ -143,7 +141,7 @@ func GenerateTokenPair(userID int, email, role string, emailVerified bool) (*Tok
 
 // GenerateToken generates a JWT for a user (backward compatibility)
 func GenerateToken(userID int, email, role string, expiry time.Duration) (string, error) {
-	if err := initializeSecrets(); err != nil {
+	if err := InitializeJWTSecrets(os.Getenv("JWT_SECRET"), os.Getenv("JWT_REFRESH_SECRET")); err != nil {
 		return "", fmt.Errorf("failed to initialize JWT secrets: %w", err)
 	}
 	tokenID := fmt.Sprintf("legacy_%d_%s", userID, time.Now().Format("20060102150405"))
@@ -176,7 +174,7 @@ func generateToken(userID int, email, role string, emailVerified bool, tokenType
 
 // ParseToken parses and validates a JWT
 func ParseToken(tokenString string) (*Claims, error) {
-	if err := initializeSecrets(); err != nil {
+	if err := InitializeJWTSecrets(os.Getenv("JWT_SECRET"), os.Getenv("JWT_REFRESH_SECRET")); err != nil {
 		return nil, fmt.Errorf("failed to initialize JWT secrets: %w", err)
 	}
 
@@ -221,7 +219,7 @@ func ParseToken(tokenString string) (*Claims, error) {
 
 // ParseRefreshToken parses and validates a refresh token
 func ParseRefreshToken(tokenString string) (*Claims, error) {
-	if err := initializeSecrets(); err != nil {
+	if err := InitializeJWTSecrets(os.Getenv("JWT_SECRET"), os.Getenv("JWT_REFRESH_SECRET")); err != nil {
 		return nil, fmt.Errorf("failed to initialize JWT secrets: %w", err)
 	}
 

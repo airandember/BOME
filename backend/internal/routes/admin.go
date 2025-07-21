@@ -1,14 +1,19 @@
 package routes
 
 import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"bome-backend/internal/database"
 	"bome-backend/internal/middleware"
+	"bome-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,15 +26,16 @@ type UpdateUserRequest struct {
 // GetUsersHandler handles retrieving users for admin
 func GetUsersHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Mock user data for development mode
+		// Mock user data for development mode or when database is not available
 		if db == nil {
+			log.Println("Database not available, returning mock user data")
 			users := []map[string]interface{}{
 				{
 					"id":                 1,
 					"email":              "admin@bome.test",
 					"firstName":          "Test",
 					"lastName":           "Administrator",
-					"role":               "admin",
+					"role":               "super_admin",
 					"emailVerified":      true,
 					"createdAt":          "2024-01-15T10:30:00Z",
 					"lastLogin":          "2024-01-20T14:22:00Z",
@@ -78,7 +84,8 @@ func GetUsersHandler(db *database.DB) gin.HandlerFunc {
 			page := c.DefaultQuery("page", "1")
 			limit := c.DefaultQuery("limit", "10")
 			search := c.Query("search")
-			// Note: role and status filtering not implemented in mock data
+			role := c.Query("role")
+			status := c.Query("status")
 
 			// Mock filtering (in real implementation, this would be done in the database)
 			filteredUsers := users
@@ -94,6 +101,28 @@ func GetUsersHandler(db *database.DB) gin.HandlerFunc {
 				}
 			}
 
+			// Mock role filtering
+			if role != "" {
+				filtered := []map[string]interface{}{}
+				for _, user := range filteredUsers {
+					if user["role"] == role {
+						filtered = append(filtered, user)
+					}
+				}
+				filteredUsers = filtered
+			}
+
+			// Mock status filtering
+			if status != "" {
+				filtered := []map[string]interface{}{}
+				for _, user := range filteredUsers {
+					if user["status"] == status {
+						filtered = append(filtered, user)
+					}
+				}
+				filteredUsers = filtered
+			}
+
 			c.JSON(http.StatusOK, gin.H{
 				"users": filteredUsers,
 				"pagination": gin.H{
@@ -106,21 +135,83 @@ func GetUsersHandler(db *database.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Real database implementation
+		// Real database implementation with error handling
 		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
 		search := c.Query("search")
-		// Note: role and status not used in current database implementation
+		role := c.Query("role")
+		status := c.Query("status")
+
+		// Debug logging for role filtering
+		log.Printf("🔍 GetUsersHandler Debug - Role filter: '%s', Search: '%s', Status: '%s'", role, search, status)
 
 		offset := (page - 1) * limit
-		users, err := db.GetUsers(limit, offset, "", search)
+
+		// Use the new GetUsersWithRoles function that joins with the roles table
+		users, err := db.GetUsersWithRoles(limit, offset, role, search, status)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get users"})
+			log.Printf("Database error in GetUsersHandler: %v", err)
+			log.Println("Falling back to mock data due to database error")
+
+			// Return mock data as fallback when database fails
+			users := []map[string]interface{}{
+				{
+					"id":                 1,
+					"email":              "admin@bome.test",
+					"firstName":          "Test",
+					"lastName":           "Administrator",
+					"role":               "super_admin",
+					"emailVerified":      true,
+					"createdAt":          "2024-01-15T10:30:00Z",
+					"lastLogin":          "2024-01-20T14:22:00Z",
+					"status":             "active",
+					"subscriptionStatus": "premium",
+				},
+				{
+					"id":                 2,
+					"email":              "john.doe@example.com",
+					"firstName":          "John",
+					"lastName":           "Doe",
+					"role":               "user",
+					"emailVerified":      true,
+					"createdAt":          "2024-01-18T09:15:00Z",
+					"lastLogin":          "2024-01-20T11:45:00Z",
+					"status":             "active",
+					"subscriptionStatus": "basic",
+				},
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"users": users,
+				"pagination": gin.H{
+					"page":       page,
+					"limit":      limit,
+					"total":      len(users),
+					"totalPages": 1,
+				},
+				"note": "Using mock data due to database error",
+			})
 			return
 		}
 
-		// Calculate total pages (mock for now)
-		total := len(users)
+		// Get total count for proper pagination
+		var total int
+		if role != "" || search != "" || status != "" {
+			// Use filtered count when filters are applied
+			total, err = db.GetFilteredUserCountWithRoles(role, search, status)
+			if err != nil {
+				log.Printf("Failed to get filtered user count: %v", err)
+				total = len(users) // Fallback to current page count
+			}
+		} else {
+			// Use total count when no filters
+			total, err = db.GetUserCount()
+			if err != nil {
+				log.Printf("Failed to get user count: %v", err)
+				total = len(users) // Fallback to current page count
+			}
+		}
+
 		totalPages := (total + limit - 1) / limit
 
 		c.JSON(http.StatusOK, gin.H{
@@ -210,115 +301,32 @@ func GetAnalyticsHandler(db *database.DB) gin.HandlerFunc {
 		// Get query parameters for filtering
 		period := c.DefaultQuery("period", "7d")
 
-		// Mock analytics data for development mode when database is not available
+		// Check if database is available
 		if db == nil {
-			analytics := map[string]interface{}{
-				"total_advertisers": 23,
-				"active_campaigns":  12,
-				"total_revenue":     15420.80,
-				"pending_approvals": 5,
-				"top_performing_placements": []map[string]interface{}{
-					{
-						"placement_id": 1,
-						"name":         "Header Banner",
-						"revenue":      8520.30,
-						"impressions":  45230,
-					},
-					{
-						"placement_id": 2,
-						"name":         "Sidebar Large",
-						"revenue":      4890.50,
-						"impressions":  28940,
-					},
-					{
-						"placement_id": 3,
-						"name":         "Between Videos",
-						"revenue":      2010.00,
-						"impressions":  15680,
-					},
-				},
-				"revenue_by_month": []map[string]interface{}{
-					{"month": "Jan", "revenue": 12450.80, "advertisers": 18},
-					{"month": "Feb", "revenue": 13890.20, "advertisers": 20},
-					{"month": "Mar", "revenue": 15420.80, "advertisers": 23},
-					{"month": "Apr", "revenue": 18230.50, "advertisers": 25},
-					{"month": "May", "revenue": 21340.90, "advertisers": 28},
-					{"month": "Jun", "revenue": 19850.60, "advertisers": 26},
-				},
-				"users": map[string]interface{}{
-					"total":          1247,
-					"new_today":      23,
-					"new_week":       156,
-					"new_month":      892,
-					"active_today":   445,
-					"growth_rate":    0.125,
-					"churn_rate":     0.032,
-					"retention_rate": 0.87,
-				},
-				"videos": map[string]interface{}{
-					"total":          342,
-					"published":      298,
-					"pending":        12,
-					"draft":          32,
-					"total_views":    15678,
-					"total_likes":    3456,
-					"total_comments": 1234,
-					"total_shares":   567,
-					"avg_rating":     4.2,
-					"top_categories": []map[string]interface{}{
-						{"name": "Archaeology", "count": 89, "views": 4567},
-						{"name": "History", "count": 76, "views": 3890},
-						{"name": "Science", "count": 65, "views": 3245},
-						{"name": "Geography", "count": 43, "views": 2134},
-						{"name": "Linguistics", "count": 25, "views": 1842},
-					},
-				},
-			}
-			c.JSON(http.StatusOK, gin.H{"data": analytics, "period": period})
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": "Analytics service unavailable - database connection required",
+				"data":  nil,
+			})
 			return
 		}
 
-		// Real database implementation would go here
-		userCount, err := db.GetUserCount()
+		// Use analytics service for consistent data structure
+		analyticsService := services.NewAnalyticsService(db)
+		analyticsData, err := analyticsService.GetAnalytics(period)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user count"})
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to get analytics: %v", err),
+				"data":  nil,
+			})
 			return
 		}
 
-		videoCount, err := db.GetVideoCount()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get video count"})
-			return
-		}
-
-		totalViews, err := db.GetTotalViews()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get total views"})
-			return
-		}
-
-		totalLikes, err := db.GetTotalLikes()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get total likes"})
-			return
-		}
-
-		recentActivity, err := db.GetRecentActivity(10)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get recent activity"})
-			return
-		}
-
-		analytics := map[string]interface{}{
-			"users":    userCount,
-			"videos":   videoCount,
-			"views":    totalViews,
-			"likes":    totalLikes,
-			"activity": recentActivity,
-			"period":   period,
-		}
-
-		c.JSON(http.StatusOK, gin.H{"data": analytics, "period": period})
+		// Standardize response format
+		c.JSON(http.StatusOK, gin.H{
+			"data":   analyticsData,
+			"period": period,
+			"status": "success",
+		})
 	}
 }
 
@@ -1437,6 +1445,17 @@ func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
 	router.GET("/users/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUserHandler(db))
 	router.PUT("/users/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), UpdateUserHandler(db))
 	router.DELETE("/users/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), DeleteUserHandler(db))
+	router.GET("/users/stats", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUserStatsHandler(db))
+	router.GET("/users/roles", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAvailableRolesHandler(db))
+
+	// Roles and Departments
+	router.GET("/roles", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetRolesWithDepartmentsHandler(db))
+	router.GET("/departments", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetDepartmentsHandler(db))
+	router.GET("/rolesAndDepartments", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetRolesAndDepartmentsHandler(db))
+
+	// Cross-subsite and webhook analytics (unique to admin)
+	router.GET("/analytics/cross-subsite", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetCrossSubsiteAnalyticsHandler(db))
+	router.GET("/analytics/webhooks", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetWebhookAnalyticsHandler(db))
 
 	// Videos
 	router.GET("/videos", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAdminVideosHandler(db))
@@ -1650,6 +1669,780 @@ func SetupMockDesignSystemRoutes(router *gin.RouterGroup) {
 			c.JSON(http.StatusOK, gin.H{
 				"message": "Token deleted successfully (mock)",
 			})
+		})
+	}
+}
+
+// GetCrossSubsiteAnalyticsHandler handles retrieving cross-subsite analytics
+func GetCrossSubsiteAnalyticsHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		timeframe := c.DefaultQuery("timeframe", "24h")
+		subsite := c.DefaultQuery("subsite", "all")
+
+		// Mock cross-subsite data for development mode
+		if db == nil {
+			stats := map[string]interface{}{
+				"streaming": map[string]interface{}{
+					"users":           1250,
+					"videos":          89,
+					"views":           4567,
+					"revenue":         1250.00,
+					"engagement_rate": 0.0234,
+				},
+				"articles": map[string]interface{}{
+					"users":           890,
+					"articles":        45,
+					"reads":           2340,
+					"revenue":         890.00,
+					"engagement_rate": 0.0189,
+				},
+				"expo": map[string]interface{}{
+					"users":           567,
+					"events":          12,
+					"registrations":   890,
+					"revenue":         567.00,
+					"engagement_rate": 0.0156,
+				},
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"stats":     stats,
+				"timeframe": timeframe,
+				"subsite":   subsite,
+			})
+			return
+		}
+
+		// Real database implementation would go here
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "Cross-subsite analytics not implemented"})
+	}
+}
+
+// GetWebhookAnalyticsHandler handles retrieving webhook analytics
+func GetWebhookAnalyticsHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		timeframe := c.DefaultQuery("timeframe", "24h")
+
+		// Mock webhook analytics for development mode
+		if db == nil {
+			analytics := map[string]interface{}{
+				"total_events":      1250,
+				"success_rate":      0.985,
+				"avg_response_time": 245,
+				"events_by_subsite": map[string]interface{}{
+					"streaming": 850,
+					"articles":  250,
+					"expo":      150,
+				},
+				"events_by_type": map[string]interface{}{
+					"user.signup":          450,
+					"video.upload":         300,
+					"subscription.created": 200,
+					"payment.processed":    150,
+					"content.published":    150,
+				},
+				"recent_failures": []map[string]interface{}{
+					{
+						"timestamp":  "2024-06-18T15:30:00Z",
+						"event_type": "subscription.created",
+						"subsite":    "streaming",
+						"error":      "Webhook endpoint timeout",
+					},
+					{
+						"timestamp":  "2024-06-18T15:25:00Z",
+						"event_type": "video.upload",
+						"subsite":    "streaming",
+						"error":      "Invalid payload format",
+					},
+				},
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"analytics": analytics,
+				"timeframe": timeframe,
+			})
+			return
+		}
+
+		// Real database implementation would go here
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "Webhook analytics not implemented"})
+	}
+}
+
+// GetUserStatsHandler handles retrieving user statistics
+func GetUserStatsHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Get total users
+		totalUsers, err := db.GetUserCount()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user count"})
+			return
+		}
+
+		// Get admin users count (roles with level >= 7)
+		var adminUsers int
+		err = db.QueryRow(`
+			SELECT COUNT(*) 
+			FROM users 
+			WHERE role IN ('super_admin', 'system_admin', 'content_manager', 'user_manager', 'analytics_manager')
+		`).Scan(&adminUsers)
+		if err != nil {
+			adminUsers = 0
+		}
+
+		// Get verified users count
+		var verifiedUsers int
+		err = db.QueryRow(`
+			SELECT COUNT(*) 
+			FROM users 
+			WHERE email_verified = true
+		`).Scan(&verifiedUsers)
+		if err != nil {
+			verifiedUsers = 0
+		}
+
+		// Get pending users count
+		var pendingUsers int
+		err = db.QueryRow(`
+			SELECT COUNT(*) 
+			FROM users 
+			WHERE email_verified = false
+		`).Scan(&pendingUsers)
+		if err != nil {
+			pendingUsers = 0
+		}
+
+		// Get active users count (users who logged in within last 30 days)
+		var activeUsers int
+		err = db.QueryRow(`
+			SELECT COUNT(*) 
+			FROM users 
+			WHERE last_login >= NOW() - INTERVAL '30 days'
+		`).Scan(&activeUsers)
+		if err != nil {
+			activeUsers = 0
+		}
+
+		stats := gin.H{
+			"total":    totalUsers,
+			"admins":   adminUsers,
+			"verified": verifiedUsers,
+			"pending":  pendingUsers,
+			"active":   activeUsers,
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"stats":  stats,
+			"status": "success",
+		})
+	}
+}
+
+// GetAvailableRolesHandler returns all available roles for filtering
+func GetAvailableRolesHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Mock roles data for development mode
+		if db == nil {
+			roles := []map[string]interface{}{
+				{"id": "super_admin", "name": "Super Administrator"},
+				{"id": "system_admin", "name": "System Administrator"},
+				{"id": "content_manager", "name": "Content Manager"},
+				{"id": "user_manager", "name": "User Manager"},
+				{"id": "analytics_manager", "name": "Analytics Manager"},
+				{"id": "user", "name": "User"},
+			}
+			c.JSON(http.StatusOK, gin.H{"roles": roles})
+			return
+		}
+
+		// Real database implementation
+		query := `SELECT role_id, name FROM roles ORDER BY level DESC, name ASC`
+		rows, err := db.Query(query)
+		if err != nil {
+			log.Printf("Database error in GetAvailableRolesHandler: %v", err)
+			// Return mock data as fallback
+			roles := []map[string]interface{}{
+				{
+					"id":   "super_admin",
+					"name": "Super Administrator",
+					"department": map[string]interface{}{
+						"id":    1000,
+						"name":  "Core_Admin",
+						"icon":  "🔧",
+						"color": "#dc2626",
+					},
+				},
+				{
+					"id":   "system_admin",
+					"name": "System Administrator",
+					"department": map[string]interface{}{
+						"id":    1000,
+						"name":  "Core_Admin",
+						"icon":  "🔧",
+						"color": "#dc2626",
+					},
+				},
+				{
+					"id":   "content_manager",
+					"name": "Content Manager",
+					"department": map[string]interface{}{
+						"id":    600,
+						"name":  "Content_Management",
+						"icon":  "📚",
+						"color": "#7C3AED",
+					},
+				},
+				{
+					"id":   "user_manager",
+					"name": "User Manager",
+					"department": map[string]interface{}{
+						"id":    400,
+						"name":  "User_Admin",
+						"icon":  "👥",
+						"color": "#5FB7E0",
+					},
+				},
+				{
+					"id":   "analytics_manager",
+					"name": "Analytics Manager",
+					"department": map[string]interface{}{
+						"id":    200,
+						"name":  "System_Insight",
+						"icon":  "📈",
+						"color": "#D6BD1A",
+					},
+				},
+				{
+					"id":   "user",
+					"name": "User",
+					"department": map[string]interface{}{
+						"id":    900,
+						"name":  "Base",
+						"icon":  "🫂",
+						"color": "#6b7280",
+					},
+				},
+			}
+			c.JSON(http.StatusOK, gin.H{"roles": roles, "note": "Using fallback data due to database error"})
+			return
+		}
+		defer rows.Close()
+
+		var roles []map[string]interface{}
+		for rows.Next() {
+			var roleID, name string
+			err := rows.Scan(&roleID, &name)
+			if err != nil {
+				log.Printf("Error scanning role: %v", err)
+				continue
+			}
+			roles = append(roles, map[string]interface{}{
+				"id":   roleID,
+				"name": name,
+			})
+		}
+
+		c.JSON(http.StatusOK, gin.H{"roles": roles})
+	}
+}
+
+// GetRolesWithDepartmentsHandler returns all roles with department information
+func GetRolesWithDepartmentsHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Mock roles data for development mode
+		if db == nil {
+			roles := []map[string]interface{}{
+				{
+					"id":   "super_admin",
+					"name": "Super Administrator",
+					"department": map[string]interface{}{
+						"id":    1000,
+						"name":  "Core_Admin",
+						"icon":  "🔧",
+						"color": "#dc2626",
+					},
+				},
+				{
+					"id":   "system_admin",
+					"name": "System Administrator",
+					"department": map[string]interface{}{
+						"id":    1000,
+						"name":  "Core_Admin",
+						"icon":  "🔧",
+						"color": "#dc2626",
+					},
+				},
+				{
+					"id":   "content_manager",
+					"name": "Content Manager",
+					"department": map[string]interface{}{
+						"id":    600,
+						"name":  "Content_Management",
+						"icon":  "📚",
+						"color": "#7C3AED",
+					},
+				},
+				{
+					"id":   "user_manager",
+					"name": "User Manager",
+					"department": map[string]interface{}{
+						"id":    400,
+						"name":  "User_Admin",
+						"icon":  "👥",
+						"color": "#5FB7E0",
+					},
+				},
+				{
+					"id":   "analytics_manager",
+					"name": "Analytics Manager",
+					"department": map[string]interface{}{
+						"id":    200,
+						"name":  "System_Insight",
+						"icon":  "📈",
+						"color": "#D6BD1A",
+					},
+				},
+				{
+					"id":   "user",
+					"name": "User",
+					"department": map[string]interface{}{
+						"id":    900,
+						"name":  "Base",
+						"icon":  "🫂",
+						"color": "#6b7280",
+					},
+				},
+			}
+			c.JSON(http.StatusOK, gin.H{"roles": roles})
+			return
+		}
+
+		// Real database implementation
+		query := `
+			SELECT 
+				r.role_id,
+				r.name,
+				r.slug,
+				r.description,
+				r.category,
+				r.level,
+				r.permissions,
+				r.is_system_role,
+				r.color,
+				r.icon,
+				r.subsystem_access,
+				r.created_at,
+				r.updated_at,
+				d.dept_id as dept_id,
+				d.dept_name as dept_name,
+				d.dept_icon as dept_icon,
+				d.dept_color as dept_color,
+				d.dept_description as dept_description
+			FROM roles r
+			LEFT JOIN departments d ON r.dept_id = d.dept_id
+			ORDER BY r.level DESC, r.name ASC
+		`
+
+		rows, err := db.Query(query)
+		if err != nil {
+			log.Printf("Database error in GetRolesWithDepartmentsHandler: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch roles"})
+			return
+		}
+		defer rows.Close()
+
+		var roles []map[string]interface{}
+		for rows.Next() {
+			var roleID, name, slug, description, category, color, icon string
+			var level int
+			var permissions, subsystemAccess []byte
+			var isSystemRole bool
+			var createdAt, updatedAt time.Time
+			var deptID sql.NullInt64
+			var deptName, deptIcon, deptColor, deptDescription sql.NullString
+
+			err := rows.Scan(
+				&roleID, &name, &slug, &description, &category, &level,
+				&permissions, &isSystemRole, &color, &icon, &subsystemAccess,
+				&createdAt, &updatedAt, &deptID, &deptName, &deptIcon, &deptColor, &deptDescription,
+			)
+			if err != nil {
+				log.Printf("Error scanning role: %v", err)
+				continue
+			}
+
+			role := map[string]interface{}{
+				"id":              roleID,
+				"name":            name,
+				"slug":            slug,
+				"description":     description,
+				"category":        category,
+				"level":           level,
+				"permissions":     permissions,
+				"isSystemRole":    isSystemRole,
+				"color":           color,
+				"icon":            icon,
+				"subsystemAccess": subsystemAccess,
+				"createdAt":       createdAt.Format(time.RFC3339),
+				"updatedAt":       updatedAt.Format(time.RFC3339),
+			}
+
+			// Add department info if available
+			if deptID.Valid {
+				role["department"] = map[string]interface{}{
+					"dept_id":          deptID.Int64,
+					"dept_name":        deptName.String,
+					"dept_icon":        deptIcon.String,
+					"dept_color":       deptColor.String,
+					"dept_description": deptDescription.String,
+				}
+			}
+
+			roles = append(roles, role)
+		}
+
+		c.JSON(http.StatusOK, gin.H{"roles": roles})
+	}
+}
+
+// GetDepartmentsHandler returns all departments
+func GetDepartmentsHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Mock departments data for development mode
+		if db == nil {
+			departments := []map[string]interface{}{
+				{"id": 100, "name": "Secure_Tech", "icon": "🛡️", "color": "#3E6313", "description": "Security and technical infrastructure"},
+				{"id": 200, "name": "System_Insight", "icon": "📈", "color": "#D6BD1A", "description": "System analytics and insights"},
+				{"id": 300, "name": "Finance", "icon": "💰", "color": "#059669", "description": "Financial operations and billing"},
+				{"id": 400, "name": "User_Admin", "icon": "👥", "color": "#5FB7E0", "description": "User management and administration"},
+				{"id": 500, "name": "Content_Strat", "icon": "🎨", "color": "#2563EB", "description": "Content strategy and planning"},
+				{"id": 600, "name": "Content_Management", "icon": "📚", "color": "#7C3AED", "description": "Content creation and management"},
+				{"id": 700, "name": "Marketing", "icon": "📢", "color": "#f59e0b", "description": "Marketing and advertising"},
+				{"id": 800, "name": "Academia", "icon": "🎓", "color": "#7c2d12", "description": "Academic and research operations"},
+				{"id": 900, "name": "Base", "icon": "🫂", "color": "#6b7280", "description": "Base user operations"},
+				{"id": 1000, "name": "Core_Admin", "icon": "🔧", "color": "#dc2626", "description": "Core system administration"},
+			}
+			c.JSON(http.StatusOK, gin.H{"departments": departments})
+			return
+		}
+
+		// Real database implementation
+		query := `SELECT id, name, icon, color, description, created_at, updated_at FROM departments ORDER BY id ASC`
+		rows, err := db.Query(query)
+		if err != nil {
+			log.Printf("Database error in GetDepartmentsHandler: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch departments"})
+			return
+		}
+		defer rows.Close()
+
+		var departments []map[string]interface{}
+		for rows.Next() {
+			var id int
+			var name, icon, color, description string
+			var createdAt, updatedAt time.Time
+
+			err := rows.Scan(&id, &name, &icon, &color, &description, &createdAt, &updatedAt)
+			if err != nil {
+				log.Printf("Error scanning department: %v", err)
+				continue
+			}
+
+			departments = append(departments, map[string]interface{}{
+				"id":          id,
+				"name":        name,
+				"icon":        icon,
+				"color":       color,
+				"description": description,
+				"createdAt":   createdAt.Format(time.RFC3339),
+				"updatedAt":   updatedAt.Format(time.RFC3339),
+			})
+		}
+
+		c.JSON(http.StatusOK, gin.H{"departments": departments})
+	}
+}
+
+// GetRolesAndDepartmentsHandler returns both roles and departments in a single response
+func GetRolesAndDepartmentsHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		log.Printf("🔍 GetRolesAndDepartmentsHandler: Starting request")
+
+		// Check if database is available
+		if db == nil {
+			log.Printf("❌ GetRolesAndDepartmentsHandler: Database is nil")
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Database not available",
+			})
+			return
+		}
+
+		// Check if tables exist
+		var rolesTableExists bool
+		err := db.QueryRow("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'roles')").Scan(&rolesTableExists)
+		if err != nil {
+			log.Printf("❌ GetRolesAndDepartmentsHandler: Failed to check roles table existence: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to check database schema",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		var departmentsTableExists bool
+		err = db.QueryRow("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'departments')").Scan(&departmentsTableExists)
+		if err != nil {
+			log.Printf("❌ GetRolesAndDepartmentsHandler: Failed to check departments table existence: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to check database schema",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		log.Printf("🔍 GetRolesAndDepartmentsHandler: Tables exist - roles: %v, departments: %v", rolesTableExists, departmentsTableExists)
+
+		if !rolesTableExists {
+			log.Printf("❌ GetRolesAndDepartmentsHandler: Roles table does not exist")
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Roles table does not exist. Please run database migrations.",
+			})
+			return
+		}
+
+		// Check if dept_id column exists in roles table
+		var deptIdColumnExists bool
+		err = db.QueryRow("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'roles' AND column_name = 'dept_id')").Scan(&deptIdColumnExists)
+		if err != nil {
+			log.Printf("❌ GetRolesAndDepartmentsHandler: Failed to check dept_id column existence: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to check database schema",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		log.Printf("🔍 GetRolesAndDepartmentsHandler: dept_id column exists: %v", deptIdColumnExists)
+
+		// Build query based on whether dept_id column exists
+		var query string
+		if deptIdColumnExists {
+			query = `
+				SELECT 
+					r.id,
+					r.role_id,
+					r.name as role_name,
+					r.slug,
+					r.description as role_description,
+					r.category,
+					r.level,
+					r.permissions,
+					r.is_system_role,
+					r.color as role_color,
+					r.icon as role_icon,
+					r.subsystem_access,
+					r.created_at,
+					r.updated_at,
+					d.dept_id as department_id,
+					d.dept_name as department_name,
+					d.dept_icon as department_icon,
+					d.dept_color as department_color,
+					d.dept_description as department_description
+				FROM roles r
+				LEFT JOIN departments d ON r.dept_id = d.dept_id
+				ORDER BY d.dept_id, r.level DESC
+			`
+		} else {
+			// Fallback query without department information
+			query = `
+				SELECT 
+					r.id,
+					r.role_id,
+					r.name as role_name,
+					r.slug,
+					r.description as role_description,
+					r.category,
+					r.level,
+					r.permissions,
+					r.is_system_role,
+					r.color as role_color,
+					r.icon as role_icon,
+					r.subsystem_access,
+					r.created_at,
+					r.updated_at,
+					NULL as department_id,
+					NULL as department_name,
+					NULL as department_icon,
+					NULL as department_color,
+					NULL as department_description
+				FROM roles r
+				ORDER BY r.level DESC
+			`
+		}
+
+		log.Printf("🔍 GetRolesAndDepartmentsHandler: Executing query")
+		rows, err := db.Query(query)
+		if err != nil {
+			log.Printf("❌ GetRolesAndDepartmentsHandler: Database query failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to fetch roles and departments",
+				"details": err.Error(),
+			})
+			return
+		}
+		defer rows.Close()
+
+		log.Printf("🔍 GetRolesAndDepartmentsHandler: Query executed successfully, processing rows")
+
+		var roles []map[string]interface{}
+		var departmentsMap = make(map[int]map[string]interface{})
+		var departmentIds = make(map[int]bool)
+
+		rowCount := 0
+		for rows.Next() {
+			rowCount++
+			log.Printf("🔍 GetRolesAndDepartmentsHandler: Processing row %d", rowCount)
+
+			var role struct {
+				ID                    int     `json:"id"`
+				RoleID                string  `json:"roleId"`
+				RoleName              string  `json:"roleName"`
+				Slug                  string  `json:"slug"`
+				RoleDescription       string  `json:"roleDescription"`
+				Category              string  `json:"category"`
+				Level                 int     `json:"level"`
+				Permissions           string  `json:"permissions"`
+				IsSystemRole          bool    `json:"isSystemRole"`
+				RoleColor             string  `json:"roleColor"`
+				RoleIcon              string  `json:"roleIcon"`
+				SubsystemAccess       string  `json:"subsystemAccess"`
+				CreatedAt             string  `json:"createdAt"`
+				UpdatedAt             string  `json:"updatedAt"`
+				DepartmentID          *int    `json:"departmentId"`
+				DepartmentName        *string `json:"departmentName"`
+				DepartmentIcon        *string `json:"departmentIcon"`
+				DepartmentColor       *string `json:"departmentColor"`
+				DepartmentDescription *string `json:"departmentDescription"`
+			}
+
+			err := rows.Scan(
+				&role.ID,
+				&role.RoleID,
+				&role.RoleName,
+				&role.Slug,
+				&role.RoleDescription,
+				&role.Category,
+				&role.Level,
+				&role.Permissions,
+				&role.IsSystemRole,
+				&role.RoleColor,
+				&role.RoleIcon,
+				&role.SubsystemAccess,
+				&role.CreatedAt,
+				&role.UpdatedAt,
+				&role.DepartmentID,
+				&role.DepartmentName,
+				&role.DepartmentIcon,
+				&role.DepartmentColor,
+				&role.DepartmentDescription,
+			)
+			if err != nil {
+				log.Printf("❌ GetRolesAndDepartmentsHandler: Failed to scan row %d: %v", rowCount, err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error":   "Failed to scan role data",
+					"details": err.Error(),
+				})
+				return
+			}
+
+			log.Printf("🔍 GetRolesAndDepartmentsHandler: Successfully scanned row %d, role: %s", rowCount, role.RoleName)
+
+			// Parse permissions and subsystem access
+			var permissions []string
+			if role.Permissions != "" {
+				err := json.Unmarshal([]byte(role.Permissions), &permissions)
+				if err != nil {
+					permissions = []string{}
+				}
+			}
+
+			var subsystemAccess []string
+			if role.SubsystemAccess != "" {
+				err := json.Unmarshal([]byte(role.SubsystemAccess), &subsystemAccess)
+				if err != nil {
+					subsystemAccess = []string{}
+				}
+			}
+
+			// Create role object
+			roleObj := map[string]interface{}{
+				"id":              role.RoleID, // role_id from database
+				"dbId":            role.ID,     // database primary key
+				"name":            role.RoleName,
+				"slug":            role.Slug,
+				"description":     role.RoleDescription,
+				"category":        role.Category,
+				"level":           role.Level,
+				"permissions":     permissions,
+				"isSystemRole":    role.IsSystemRole,
+				"color":           role.RoleColor,
+				"icon":            role.RoleIcon,
+				"subsystemAccess": subsystemAccess,
+				"createdAt":       role.CreatedAt,
+				"updatedAt":       role.UpdatedAt,
+			}
+
+			// Add department information if available
+			if role.DepartmentID != nil {
+				roleObj["department"] = map[string]interface{}{
+					"id":          *role.DepartmentID,
+					"name":        *role.DepartmentName,
+					"icon":        *role.DepartmentIcon,
+					"color":       *role.DepartmentColor,
+					"description": *role.DepartmentDescription,
+				}
+				// Also add department_id at the top level for easy access
+				roleObj["dept_id"] = *role.DepartmentID
+
+				// Track department for the departments list
+				departmentIds[*role.DepartmentID] = true
+				if _, exists := departmentsMap[*role.DepartmentID]; !exists {
+					departmentsMap[*role.DepartmentID] = map[string]interface{}{
+						"id":          *role.DepartmentID,
+						"name":        *role.DepartmentName,
+						"icon":        *role.DepartmentIcon,
+						"color":       *role.DepartmentColor,
+						"description": *role.DepartmentDescription,
+						"createdAt":   role.CreatedAt,
+						"updatedAt":   role.UpdatedAt,
+					}
+				}
+			}
+
+			roles = append(roles, roleObj)
+		}
+
+		// Convert departments map to slice
+		var departments []map[string]interface{}
+		for _, dept := range departmentsMap {
+			departments = append(departments, dept)
+		}
+
+		// Sort departments by ID
+		sort.Slice(departments, func(i, j int) bool {
+			return departments[i]["id"].(int) < departments[j]["id"].(int)
+		})
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data": map[string]interface{}{
+				"roles":       roles,
+				"departments": departments,
+			},
+			"total": map[string]int{
+				"roles":       len(roles),
+				"departments": len(departments),
+			},
 		})
 	}
 }

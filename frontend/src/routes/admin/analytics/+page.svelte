@@ -1,2147 +1,991 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
-	import { api } from '$lib/auth';
+	import { auth, apiRequest } from '$lib/auth';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
-	import { analyticsService } from '$lib/services/analytics';
+	import { goto } from '$app/navigation';
+	import { AnalyticsService } from '$lib/services/analytics';
 	import type { AnalyticsResponse, RealTimeMetrics, SystemHealth } from '$lib/services/analytics';
 
-	interface Analytics {
-		metadata: {
-			last_updated: string;
-			version: string;
-		};
-		real_time: {
-			current_active_users: number;
-			page_views_last_minute: number;
-			current_streams: number;
-			server_load: number;
-			bandwidth_usage: string;
-			recent_signups: number;
-			recent_subscriptions: number;
-			error_rate: number;
-			response_time: number;
-			events_last_minute: any[];
-			live_events: any[];
-			top_content_now: any[];
-		};
+	interface DashboardData {
 		users: {
 			total: number;
 			new_today: number;
-			new_week: number;
-			new_month: number;
 			active_today: number;
 			growth_rate: number;
-			churn_rate: number;
-			retention_rate: number;
-			daily_active: Record<string, number>;
-			weekly_active: Record<string, number>;
-			monthly_active: Record<string, number>;
 		};
-		videos: {
-			total: number;
-			published: number;
-			pending: number;
-			draft: number;
+		content: {
+			total_videos: number;
+			total_articles: number;
+			total_events: number;
 			total_views: number;
-			total_likes: number;
-			total_comments: number;
-			total_shares: number;
-			avg_rating: number;
-			views: Record<string, any>;
-			engagement: Record<string, any>;
-			completion_rates: Record<string, any>;
-			top_categories: Array<{
-				name: string;
-				count: number;
-				views: number;
-			}>;
 		};
-		subscriptions: {
-			active: number;
-			new_today: number;
-			new_week: number;
-			new_month: number;
-			cancelled: number;
-			revenue_today: number;
-			revenue_week: number;
-			revenue_month: number;
-			revenue_year: number;
+		revenue: {
+			total_monthly: number;
+			total_yearly: number;
 			mrr: number;
-			arr: number;
-			ltv: number;
-			plans: Array<{
-				name: string;
-				count: number;
-				revenue: number;
-			}>;
-			history: Record<string, any>;
-		};
-		engagement: {
-			avg_watch_time: string;
-			completion_rate: number;
-			like_ratio: number;
-			comment_rate: number;
-			share_count: number;
-			bounce_rate: number;
-			session_duration: string;
-			pages_per_session: number;
-			daily_stats: Record<string, any>;
-			hourly_stats: Record<string, any>;
+			growth_rate: number;
 		};
 		system_health: {
+			status: 'healthy' | 'warning' | 'critical';
 			uptime: string;
 			response_time: string;
 			error_rate: string;
-			storage_used: string;
-			bandwidth_used: string;
-			cdn_hits: string;
-			database_size: string;
 			active_sessions: number;
-			last_write: string;
-			total_events_tracked: number;
 		};
-		geographic: {
-			top_countries: Array<{
-				country: string;
-				users: number;
-				percentage: number;
-			}>;
-			top_states: Array<{
-				state: string;
-				users: number;
-				percentage: number;
-			}>;
-			daily_distribution: Record<string, any>;
-		};
-		devices: {
-			desktop: {
-				users: number;
-				percentage: number;
-				avg_session: string;
-			};
-			mobile: {
-				users: number;
-				percentage: number;
-				avg_session: string;
-			};
-			tablet: {
-				users: number;
-				percentage: number;
-				avg_session: string;
-			};
-			browsers: Array<{
-				name: string;
-				users: number;
-				percentage: number;
-			}>;
-		};
-		time_series: {
-			users: Array<{
-				date: string;
-				new_users: number;
-				active_users: number;
-				returning_users: number;
-			}>;
-			revenue: Array<{
-				date: string;
-				revenue: number;
-				subscriptions: number;
-				upgrades: number;
-			}>;
-			engagement: Array<{
-				date: string;
-				views: number;
-				likes: number;
-				comments: number;
-				shares: number;
-			}>;
-		};
-		conversion: {
-			funnel: Array<{
-				stage: string;
-				count: number;
-				conversion: number;
-			}>;
-			cohort_analysis: Array<{
-				cohort: string;
-				users: number;
-				retention_30d: number;
-				retention_90d: number;
-			}>;
-			daily_conversion: Record<string, any>;
-		};
-		events: any[];
-		page_views: Record<string, any>;
-		user_interactions: Record<string, any>;
-	}
-
-	interface RealTimeData {
-		active_users: number;
-		current_streams: number;
-		server_load: number;
-		bandwidth_usage: string;
-		recent_signups: number;
-		recent_subscriptions: number;
-		error_rate: number;
-		response_time: number;
-		live_events: Array<{
-			time: string;
-			event: string;
-			details: string;
-		}>;
-		top_content_now: Array<{
-			title: string;
-			viewers: number;
-		}>;
-	}
-
-	let analytics: AnalyticsResponse = {
-		metadata: {
-			last_updated: new Date().toISOString(),
-			version: '1.0'
-		},
 		real_time: {
-			active_users: 0,
-			current_active_users: 0,
-			page_views_last_minute: 0,
-			current_streams: 0,
-			server_load: 0,
-			bandwidth_usage: '0 MB/s',
-			recent_signups: 0,
-			recent_subscriptions: 0,
-			error_rate: 0,
-			response_time: 0,
-			events_last_minute: [],
-			live_events: [],
-			top_content_now: []
-		},
-		system_health: {
-			uptime: '0 minutes',
-			response_time: '0ms',
-			error_rate: '0%',
-			storage_used: '0 GB',
-			bandwidth_used: '0 MB/s',
-			cdn_hits: '0',
-			database_size: '0 GB',
-			active_sessions: 0,
-			last_write: new Date().toISOString(),
-			total_events_tracked: 0
-		},
-		users: {
-			total: 0,
-			new_today: 0,
-			new_week: 0,
-			new_month: 0,
-			active_today: 0,
-			growth_rate: 0,
-			churn_rate: 0,
-			retention_rate: 0,
-			daily_active: {},
-			weekly_active: {},
-			monthly_active: {}
-		},
-		videos: {
-			total: 0,
-			published: 0,
-			pending: 0,
-			draft: 0,
-			total_views: 0,
-			total_likes: 0,
-			total_comments: 0,
-			total_shares: 0,
-			avg_rating: 0,
-			views: {},
-			engagement: {},
-			completion_rates: {},
-			top_categories: []
-		},
-		subscriptions: {
-			active: 0,
-			new_today: 0,
-			new_week: 0,
-			new_month: 0,
-			cancelled: 0,
-			revenue_today: 0,
-			revenue_week: 0,
-			revenue_month: 0,
-			revenue_year: 0,
-			mrr: 0,
-			arr: 0,
-			ltv: 0,
-			plans: [],
-			history: {}
-		},
-		engagement: {
-			avg_watch_time: '0m',
-			completion_rate: 0,
-			like_ratio: 0,
-			comment_rate: 0,
-			share_count: 0,
-			bounce_rate: 0,
-			session_duration: '0m',
-			pages_per_session: 0,
-			daily_stats: {},
-			hourly_stats: {}
-		},
-		geographic: {
-			top_countries: [],
-			top_states: [],
-			daily_distribution: {}
-		},
-		devices: {
-			desktop: { users: 0, percentage: 0, avg_session: '0m' },
-			mobile: { users: 0, percentage: 0, avg_session: '0m' },
-			tablet: { users: 0, percentage: 0, avg_session: '0m' },
-			browsers: []
-		},
-		time_series: {
-			users: [],
-			revenue: [],
-			engagement: []
-		},
-		conversion: {
-			funnel: [],
-			cohort_analysis: [],
-			daily_conversion: {}
-		},
-		events: [],
-		page_views: {},
-		user_interactions: {}
-	};
+			active_users: number;
+			current_streams: number;
+			server_load: number;
+			bandwidth_usage: string;
+		};
+		bottlenecks: {
+			high_error_rate: boolean;
+			slow_response: boolean;
+			high_cpu: boolean;
+			disk_space: boolean;
+		};
+	}
 
-	let realTimeData: RealTimeMetrics | null = null;
+	let dashboardData: DashboardData | null = null;
 	let loading = true;
-	let selectedPeriod = '7d';
-	let selectedView = 'overview';
-	let realTimeInterval: NodeJS.Timeout | undefined;
+	let error: string | null = null;
+	let refreshInterval: NodeJS.Timeout | null = null;
+	let lastUpdated = new Date();
 
-	// Chart data
-	let chartData: any = null;
-
-	onMount(() => {
-		// Only run analytics in browser environment
-		if (browser) {
-			loadAnalytics();
-			
-			// Subscribe to real-time metrics only in browser
-			try {
-				analyticsService.subscribeToMetrics([
-					'active_users',
-					'current_streams',
-					'server_load',
-					'bandwidth_usage',
-					'recent_signups',
-					'recent_subscriptions',
-					'error_rate',
-					'response_time',
-					'events_last_minute',
-					'live_events',
-					'top_content_now'
-				]);
-
-				// Set up event listeners for real-time updates
-				const handleAnalyticsUpdate = (event: CustomEvent) => {
-					if (event.detail) {
-						realTimeData = event.detail;
-					}
-				};
-
-				const handleSystemHealthUpdate = (event: CustomEvent) => {
-					if (event.detail) {
-						analytics.system_health = { ...analytics.system_health, ...event.detail };
-					}
-				};
-
-				window.addEventListener('analytics-update', handleAnalyticsUpdate as EventListener);
-				window.addEventListener('system-health-update', handleSystemHealthUpdate as EventListener);
-
-				// Cleanup function
-				return () => {
-					analyticsService.unsubscribeFromMetrics([
-						'active_users',
-						'current_streams',
-						'server_load',
-						'bandwidth_usage',
-						'recent_signups',
-						'recent_subscriptions',
-						'error_rate',
-						'response_time',
-						'events_last_minute',
-						'live_events',
-						'top_content_now'
-					]);
-					window.removeEventListener('analytics-update', handleAnalyticsUpdate as EventListener);
-					window.removeEventListener('system-health-update', handleSystemHealthUpdate as EventListener);
-				};
-			} catch (error) {
-				console.error('Failed to set up analytics subscriptions:', error);
-			}
-		} else {
-			// For SSR, just set loading to false
-			loading = false;
+	onMount(async () => {
+		// Check authentication first
+		if (!$auth.isAuthenticated) {
+			showToast('Please log in to access analytics', 'error');
+			goto('/admin');
+			return;
 		}
+
+		// Check if user has admin privileges
+		const user = $auth.user;
+		if (!user || !isAdminUser(user)) {
+			showToast('Access denied. Admin privileges required.', 'error');
+			goto('/admin');
+			return;
+		}
+
+		await loadDashboard();
+		
+		// Refresh every 30 seconds
+		refreshInterval = setInterval(loadDashboard, 30000);
 	});
 
 	onDestroy(() => {
-		if (browser && realTimeInterval) {
-			clearInterval(realTimeInterval);
+		if (refreshInterval) {
+			clearInterval(refreshInterval);
 		}
 	});
 
-	async function loadAnalytics() {
-		if (!browser) return;
-		
+	function isAdminUser(user: any): boolean {
+		if (!user) return false;
+		const adminRoles = [
+			'super_admin', 'system_admin', 'content_manager', 
+			'articles_manager', 'youtube_manager', 'streaming_manager',
+			'events_manager', 'advertisement_manager', 'user_manager',
+			'analytics_manager', 'financial_admin', 'admin'
+		];
+		return adminRoles.includes(user.role);
+	}
+
+	async function loadDashboard() {
 		try {
 			loading = true;
-			analytics = await analyticsService.getAnalytics(selectedPeriod);
-			
-			// Process data for charts
-			if (analytics?.time_series) {
-				chartData = {
-					userGrowth: analytics.time_series.users,
-					revenueGrowth: analytics.time_series.revenue,
-					engagement: analytics.time_series.engagement
-				};
+			error = null;
+
+			// Check if user is still authenticated
+			if (!$auth.isAuthenticated) {
+				throw new Error('Authentication required');
 			}
-		} catch (error) {
-			showToast('Failed to load analytics', 'error');
-			console.error('Error loading analytics:', error);
+
+			// Fetch analytics data
+			const response = await apiRequest('/admin/dashboard/analytics');
+
+			if (!response.ok) {
+				if (response.status === 401) {
+					throw new Error('Authentication expired. Please log in again.');
+				} else if (response.status === 403) {
+					throw new Error('Access denied. Admin privileges required.');
+				} else {
+					throw new Error(`Failed to load analytics (${response.status})`);
+				}
+			}
+
+			const data = await response.json();
+			
+			// Fetch system health data
+			let systemHealth = null;
+			try {
+				const healthResponse = await apiRequest('/admin/dashboard/analytics/system-health');
+				if (healthResponse.ok) {
+					const healthData = await healthResponse.json();
+					systemHealth = healthData.data;
+				}
+			} catch (healthError) {
+				console.warn('Failed to fetch system health:', healthError);
+			}
+
+			// Transform the data into our dashboard format
+			dashboardData = {
+				users: {
+					total: data.data?.users?.total || 0,
+					new_today: data.data?.users?.new_today || 0,
+					active_today: data.data?.users?.active_today || 0,
+					growth_rate: data.data?.users?.growth_rate || 0
+				},
+				content: {
+					total_videos: data.data?.videos?.total || 0,
+					total_articles: 0, // Will be populated from articles subsite
+					total_events: 0,   // Will be populated from expo subsite
+					total_views: data.data?.videos?.total_views || 0
+				},
+				revenue: {
+					total_monthly: data.data?.subscriptions?.revenue_month || 0,
+					total_yearly: data.data?.subscriptions?.revenue_year || 0,
+					mrr: data.data?.subscriptions?.mrr || 0,
+					growth_rate: 0.15 // Mock growth rate
+				},
+				system_health: {
+					status: systemHealth?.status || 'unknown',
+					uptime: systemHealth?.uptime || 'Unknown',
+					response_time: systemHealth?.response_time || 'Unknown',
+					error_rate: systemHealth?.error_rate || 'Unknown',
+					active_sessions: systemHealth?.active_sessions || data.data?.real_time?.active_users || 0
+				},
+				real_time: {
+					active_users: data.data?.real_time?.active_users || 0,
+					current_streams: data.data?.real_time?.current_streams || 0,
+					server_load: data.data?.real_time?.server_load || 0,
+					bandwidth_usage: data.data?.real_time?.bandwidth_usage || '0 MB/s'
+				},
+				bottlenecks: {
+					high_error_rate: parseFloat(systemHealth?.error_rate || '0') > 5,
+					slow_response: parseInt(systemHealth?.response_time || '0') > 1000,
+					high_cpu: (systemHealth?.cpu?.usage || 0) > 80,
+					disk_space: (systemHealth?.disk?.percent || 0) > 90
+				}
+			};
+
+			lastUpdated = new Date();
+
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Unknown error';
+			console.error('Dashboard load error:', err);
+			
+			if (error.includes('Authentication')) {
+				showToast(error, 'error');
+				goto('/admin');
+				return;
+			}
+			
+			showToast('Failed to load dashboard', 'error');
 		} finally {
 			loading = false;
 		}
 	}
 
-	async function exportData(format: 'csv' | 'json') {
-		if (!browser) return;
-		
-		try {
-			const blob = await analyticsService.exportAnalytics(format, selectedPeriod);
-			const url = window.URL.createObjectURL(blob);
-			const a = document.createElement('a');
-			a.href = url;
-			a.download = `analytics_export.${format}`;
-			document.body.appendChild(a);
-			a.click();
-			window.URL.revokeObjectURL(url);
-			document.body.removeChild(a);
-			showToast(`Analytics exported as ${format.toUpperCase()}`, 'success');
-		} catch (error) {
-			showToast('Failed to export analytics', 'error');
-			console.error('Error exporting analytics:', error);
-		}
+	function formatNumber(num: number): string {
+		return new Intl.NumberFormat().format(num);
 	}
 
-	function formatCurrency(amount: number) {
+	function formatCurrency(amount: number): string {
 		return new Intl.NumberFormat('en-US', {
 			style: 'currency',
 			currency: 'USD'
 		}).format(amount);
 	}
 
-	function formatNumber(num: number) {
-		return new Intl.NumberFormat('en-US').format(num);
+	function getStatusColor(status: string): string {
+		switch (status) {
+			case 'healthy': return 'text-green-500';
+			case 'warning': return 'text-yellow-500';
+			case 'critical': return 'text-red-500';
+			default: return 'text-gray-500';
+		}
 	}
 
-	function formatPercentage(num: number) {
-		return `${(num * 100).toFixed(1)}%`;
+	function getStatusIcon(status: string): string {
+		switch (status) {
+			case 'healthy': return '✓';
+			case 'warning': return '⚠';
+			case 'critical': return '✗';
+			default: return '?';
+		}
 	}
 
-	function getGrowthIndicator(current: number, previous: number) {
-		if (previous === 0) return { type: 'neutral', value: '0%' };
-		const growth = ((current - previous) / previous) * 100;
-		return {
-			type: growth > 0 ? 'positive' : growth < 0 ? 'negative' : 'neutral',
-			value: `${growth > 0 ? '+' : ''}${growth.toFixed(1)}%`
-		};
-	}
-
-	function formatTime(timeString: string) {
-		return new Date(timeString).toLocaleTimeString();
+	function getBottleneckCount(): number {
+		if (!dashboardData || !dashboardData.bottlenecks) return 0;
+		return Object.values(dashboardData.bottlenecks).filter(Boolean).length;
 	}
 </script>
 
 <svelte:head>
-	<title>Analytics - Admin Dashboard</title>
+	<title>Analytics Dashboard - BOME Admin</title>
 </svelte:head>
 
-<div class="analytics-page">
-	<div class="page-header">
+<div class="dashboard">
+	<!-- Header -->
+	<div class="header">
 		<div class="header-content">
-			<div class="header-text">
-				<h1>Analytics Dashboard</h1>
-				<p>Monitor your platform's performance and user engagement</p>
+			<h1>Analytics Dashboard</h1>
+			<p class="subtitle">High-level metrics and system health overview</p>
+		</div>
+		<div class="header-actions">
+			<div class="last-updated">
+				Last updated: {lastUpdated.toLocaleTimeString()}
 			</div>
-			
-			<div class="header-controls">
-				<div class="view-selector">
-					<button 
-						class="view-btn" 
-						class:active={selectedView === 'overview'}
-						on:click={() => selectedView = 'overview'}
-					>
-						Overview
-					</button>
-					<button 
-						class="view-btn" 
-						class:active={selectedView === 'realtime'}
-						on:click={() => selectedView = 'realtime'}
-					>
-						Real-time
-					</button>
-					<button 
-						class="view-btn" 
-						class:active={selectedView === 'detailed'}
-						on:click={() => selectedView = 'detailed'}
-					>
-						Detailed
-					</button>
-				</div>
-				
-				<div class="period-selector">
-					<select bind:value={selectedPeriod} on:change={loadAnalytics} class="period-select">
-						<option value="24h">Last 24 Hours</option>
-						<option value="7d">Last 7 Days</option>
-						<option value="30d">Last 30 Days</option>
-						<option value="90d">Last 90 Days</option>
-					</select>
-				</div>
-				
-				<div class="export-controls">
-					<button class="export-btn" on:click={() => exportData('csv')}>
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-							<polyline points="7,10 12,15 17,10"></polyline>
-							<line x1="12" y1="15" x2="12" y2="3"></line>
-						</svg>
-						CSV
-					</button>
-					<button class="export-btn" on:click={() => exportData('json')}>
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-							<polyline points="7,10 12,15 17,10"></polyline>
-							<line x1="12" y1="15" x2="12" y2="3"></line>
-						</svg>
-						JSON
-					</button>
-				</div>
-			</div>
+			<button class="refresh-btn" on:click={loadDashboard} disabled={loading}>
+				{loading ? 'Refreshing...' : 'Refresh'}
+			</button>
 		</div>
 	</div>
 
-	{#if loading}
+	{#if loading && !dashboardData}
 		<div class="loading-container">
-			<LoadingSpinner size="large" color="primary" />
-			<p>Loading analytics...</p>
+			<LoadingSpinner />
+			<p>Loading dashboard...</p>
 		</div>
-	{:else if selectedView === 'realtime' && realTimeData}
-		<!-- Real-time Analytics View -->
-		<div class="realtime-dashboard">
-			<div class="realtime-header">
-				<h2>Real-time Analytics</h2>
-				<div class="live-indicator">
-					<div class="pulse"></div>
-					<span>Live</span>
+	{:else if error}
+		<div class="error-container">
+			<div class="error-icon">⚠️</div>
+			<h3>Failed to Load Dashboard</h3>
+			<p class="error-message">{error}</p>
+			<button class="retry-btn" on:click={loadDashboard}>Try Again</button>
+		</div>
+	{:else if dashboardData}
+		<!-- System Health Alert -->
+		{#if dashboardData && dashboardData.system_health && dashboardData.system_health.status !== 'healthy'}
+			<div class="alert {dashboardData.system_health.status || 'warning'}">
+				<div class="alert-icon">
+					{getStatusIcon(dashboardData.system_health.status || 'warning')}
+				</div>
+				<div class="alert-content">
+					<h3>System Health Alert</h3>
+					<p>System status: {(dashboardData.system_health.status || 'unknown').toUpperCase()}</p>
+				</div>
+				<a href="/admin/monitoring" class="alert-action">View Details</a>
+			</div>
+		{/if}
+
+		<!-- Bottlenecks Alert -->
+		{#if getBottleneckCount() > 0}
+			<div class="alert warning">
+				<div class="alert-icon">⚠</div>
+				<div class="alert-content">
+					<h3>Performance Bottlenecks Detected</h3>
+					<p>{getBottleneckCount()} performance issue{getBottleneckCount() > 1 ? 's' : ''} detected</p>
+				</div>
+				<a href="/admin/monitoring" class="alert-action">Investigate</a>
+			</div>
+		{/if}
+
+		<!-- Key Metrics Grid -->
+		<div class="metrics-grid">
+			<div class="metric-card primary">
+				<div class="metric-header">
+					<h3>Total Users</h3>
+					<div class="metric-icon">👥</div>
+				</div>
+				<div class="metric-value">{formatNumber(dashboardData && dashboardData.users ? dashboardData.users.total : 0)}</div>
+				<div class="metric-details">
+					<span class="metric-change positive">+{formatNumber(dashboardData && dashboardData.users ? dashboardData.users.new_today : 0)} today</span>
+					<span class="metric-growth">+{(dashboardData && dashboardData.users ? dashboardData.users.growth_rate : 0).toFixed(1)}%</span>
 				</div>
 			</div>
-			
-			<!-- Real-time Metrics -->
-			<div class="realtime-metrics">
-				<div class="realtime-card glass">
-					<div class="metric-icon active-users">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-							<circle cx="9" cy="7" r="4"></circle>
-							<path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-							<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-						</svg>
-					</div>
-					<div class="metric-content">
-						<h3>Active Users</h3>
-						<div class="metric-value">{formatNumber(realTimeData.active_users)}</div>
-					</div>
+
+			<div class="metric-card">
+				<div class="metric-header">
+					<h3>Active Users</h3>
+					<div class="metric-icon">🟢</div>
 				</div>
-				
-				<div class="realtime-card glass">
-					<div class="metric-icon streaming">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<polygon points="23,7 16,12 23,17 23,7"></polygon>
-							<rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
-						</svg>
-					</div>
-					<div class="metric-content">
-						<h3>Live Streams</h3>
-						<div class="metric-value">{formatNumber(realTimeData.current_streams)}</div>
-					</div>
-				</div>
-				
-				<div class="realtime-card glass">
-					<div class="metric-icon server">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<rect x="2" y="3" width="20" height="4" rx="1" ry="1"></rect>
-							<rect x="2" y="9" width="20" height="4" rx="1" ry="1"></rect>
-							<rect x="2" y="15" width="20" height="4" rx="1" ry="1"></rect>
-							<line x1="6" y1="5" x2="6.01" y2="5"></line>
-							<line x1="6" y1="11" x2="6.01" y2="11"></line>
-							<line x1="6" y1="17" x2="6.01" y2="17"></line>
-						</svg>
-					</div>
-					<div class="metric-content">
-						<h3>Server Load</h3>
-						<div class="metric-value">{(realTimeData.server_load * 100).toFixed(1)}%</div>
-					</div>
-				</div>
-				
-				<div class="realtime-card glass">
-					<div class="metric-icon bandwidth">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<polyline points="22,12 18,12 15,21 9,3 6,12 2,12"></polyline>
-						</svg>
-					</div>
-					<div class="metric-content">
-						<h3>Bandwidth</h3>
-						<div class="metric-value">{realTimeData.bandwidth_usage}</div>
-					</div>
+				<div class="metric-value">{formatNumber(dashboardData && dashboardData.real_time ? dashboardData.real_time.active_users : 0)}</div>
+				<div class="metric-details">
+					<span class="metric-change">Live</span>
 				</div>
 			</div>
-			
-			<!-- Live Events -->
-			<div class="live-events glass">
-				<h3>Live Activity</h3>
-				<div class="events-list">
-					{#each realTimeData.live_events as event (event.time)}
-						<div class="event-item">
-							<div class="event-time">{formatTime(event.time)}</div>
-							<div class="event-details">
-								<div class="event-type">{event.event}</div>
-								<div class="event-description">{event.details}</div>
-							</div>
-						</div>
-					{/each}
+
+			<div class="metric-card">
+				<div class="metric-header">
+					<h3>Content Views</h3>
+					<div class="metric-icon">👁️</div>
+				</div>
+				<div class="metric-value">{formatNumber(dashboardData && dashboardData.content ? dashboardData.content.total_views : 0)}</div>
+				<div class="metric-details">
+					<span class="metric-change">Total</span>
 				</div>
 			</div>
-			
-			<!-- Top Content Now -->
-			<div class="top-content glass">
-				<h3>Trending Content</h3>
-				<div class="content-list">
-					{#each realTimeData.top_content_now as content (content.title)}
-						<div class="content-item">
-							<div class="content-title">{content.title}</div>
-							<div class="content-viewers">{content.viewers} viewers</div>
-						</div>
-					{/each}
+
+			<div class="metric-card revenue">
+				<div class="metric-header">
+					<h3>Monthly Revenue</h3>
+					<div class="metric-icon">💰</div>
+				</div>
+				<div class="metric-value">{formatCurrency(dashboardData && dashboardData.revenue ? dashboardData.revenue.total_monthly : 0)}</div>
+				<div class="metric-details">
+					<span class="metric-change positive">+{(dashboardData && dashboardData.revenue ? dashboardData.revenue.growth_rate : 0).toFixed(1)}%</span>
+					<span class="metric-mrr">MRR: {formatCurrency(dashboardData && dashboardData.revenue ? dashboardData.revenue.mrr : 0)}</span>
 				</div>
 			</div>
 		</div>
-	{:else if selectedView === 'detailed' && analytics}
-		<!-- Detailed Analytics View -->
-		<div class="detailed-analytics">
-			<h2>Detailed Analytics</h2>
-			
-			<!-- Geographic Analytics -->
-			<div class="analytics-section">
-				<div class="section-header">
-					<h3>Geographic Distribution</h3>
-				</div>
-				<div class="geographic-grid">
-					<div class="geographic-card glass">
-						<h4>Top Countries</h4>
-						<div class="country-list">
-							{#each analytics.geographic.top_countries as country}
-								<div class="country-item">
-									<div class="country-info">
-										<span class="country-name">{country.country}</span>
-										<span class="country-percentage">{country.percentage}%</span>
-									</div>
-									<div class="country-bar">
-										<div class="country-fill" style="width: {country.percentage}%"></div>
-									</div>
-									<span class="country-count">{formatNumber(country.users)} users</span>
-								</div>
-							{/each}
-						</div>
-					</div>
-					
-					<div class="geographic-card glass">
-						<h4>Top States (US)</h4>
-						<div class="state-list">
-							{#each analytics.geographic.top_states as state}
-								<div class="state-item">
-									<div class="state-info">
-										<span class="state-name">{state.state}</span>
-										<span class="state-percentage">{state.percentage}%</span>
-									</div>
-									<div class="state-bar">
-										<div class="state-fill" style="width: {state.percentage}%"></div>
-									</div>
-									<span class="state-count">{formatNumber(state.users)} users</span>
-								</div>
-							{/each}
-						</div>
-					</div>
+
+		<!-- System Health Overview -->
+		<div class="health-section">
+			<div class="section-header">
+				<h2>System Health</h2>
+				<div class="status-badge {getStatusColor(dashboardData && dashboardData.system_health ? dashboardData.system_health.status : 'unknown')}">
+					{getStatusIcon(dashboardData && dashboardData.system_health ? dashboardData.system_health.status : 'unknown')} {(dashboardData && dashboardData.system_health ? dashboardData.system_health.status : 'unknown').toUpperCase()}
 				</div>
 			</div>
-			
-			<!-- Device Analytics -->
-			<div class="analytics-section">
-				<div class="section-header">
-					<h3>Device & Browser Analytics</h3>
-				</div>
-				<div class="device-grid">
-					<div class="device-overview glass">
-						<h4>Device Types</h4>
-						<div class="device-stats">
-							<div class="device-stat">
-								<div class="device-icon desktop">
-									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-										<line x1="8" y1="21" x2="16" y2="21"></line>
-										<line x1="12" y1="17" x2="12" y2="21"></line>
-									</svg>
-								</div>
-								<div class="device-info">
-									<div class="device-name">Desktop</div>
-									<div class="device-users">{formatNumber(analytics.devices.desktop.users)} users</div>
-									<div class="device-percentage">{analytics.devices.desktop.percentage}%</div>
-									<div class="device-session">Avg: {analytics.devices.desktop.avg_session}</div>
-								</div>
-							</div>
-							
-							<div class="device-stat">
-								<div class="device-icon mobile">
-									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
-										<line x1="12" y1="18" x2="12.01" y2="18"></line>
-									</svg>
-								</div>
-								<div class="device-info">
-									<div class="device-name">Mobile</div>
-									<div class="device-users">{formatNumber(analytics.devices.mobile.users)} users</div>
-									<div class="device-percentage">{analytics.devices.mobile.percentage}%</div>
-									<div class="device-session">Avg: {analytics.devices.mobile.avg_session}</div>
-								</div>
-							</div>
-							
-							<div class="device-stat">
-								<div class="device-icon tablet">
-									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect>
-										<line x1="12" y1="18" x2="12.01" y2="18"></line>
-									</svg>
-								</div>
-								<div class="device-info">
-									<div class="device-name">Tablet</div>
-									<div class="device-users">{formatNumber(analytics.devices.tablet.users)} users</div>
-									<div class="device-percentage">{analytics.devices.tablet.percentage}%</div>
-									<div class="device-session">Avg: {analytics.devices.tablet.avg_session}</div>
-								</div>
-							</div>
-						</div>
-					</div>
-					
-					<div class="browser-stats glass">
-						<h4>Browser Distribution</h4>
-						<div class="browser-list">
-							{#each analytics.devices.browsers as browser}
-								<div class="browser-item">
-									<div class="browser-info">
-										<span class="browser-name">{browser.name}</span>
-										<span class="browser-percentage">{browser.percentage}%</span>
-									</div>
-									<div class="browser-bar">
-										<div class="browser-fill" style="width: {browser.percentage}%"></div>
-									</div>
-									<span class="browser-count">{formatNumber(browser.users)} users</span>
-								</div>
-							{/each}
-						</div>
+			<div class="health-grid">
+				<div class="health-card">
+					<div class="health-metric">
+						<span class="label">Uptime</span>
+						<span class="value">{dashboardData && dashboardData.system_health ? dashboardData.system_health.uptime : 'Unknown'}</span>
 					</div>
 				</div>
-			</div>
-			
-			<!-- Conversion Funnel -->
-			<div class="analytics-section">
-				<div class="section-header">
-					<h3>Conversion Funnel</h3>
-				</div>
-				<div class="funnel-container glass">
-					<div class="funnel-stages">
-						{#each analytics.conversion.funnel as stage, index}
-							<div class="funnel-stage" style="width: {stage.conversion}%">
-								<div class="stage-info">
-									<div class="stage-name">{stage.stage}</div>
-									<div class="stage-count">{formatNumber(stage.count)}</div>
-									<div class="stage-conversion">{stage.conversion}%</div>
-								</div>
-								{#if index < analytics.conversion.funnel.length - 1}
-									<div class="funnel-arrow">
-										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-											<polyline points="9,18 15,12 9,6"></polyline>
-										</svg>
-									</div>
-								{/if}
-							</div>
-						{/each}
+				<div class="health-card">
+					<div class="health-metric">
+						<span class="label">Response Time</span>
+						<span class="value">{dashboardData && dashboardData.system_health ? dashboardData.system_health.response_time : 'Unknown'}</span>
 					</div>
 				</div>
-			</div>
-		</div>
-	{:else if analytics}
-		<!-- Overview Analytics View -->
-		<div class="overview-dashboard">
-			<!-- Top Metrics Cards -->
-			<div class="metrics-grid">
-				<!-- User Metrics -->
-				<div class="metric-card glass user-metrics">
-					<div class="metric-icon users">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-							<circle cx="9" cy="7" r="4"></circle>
-							<path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-							<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-						</svg>
-					</div>
-					<div class="metric-content">
-						<h3>Total Users</h3>
-						<div class="metric-value">{formatNumber(analytics.users?.total || 0)}</div>
-						<div class="metric-label">
-							{analytics.users?.new_today || 0} new today
-						</div>
+				<div class="health-card">
+					<div class="health-metric">
+						<span class="label">Error Rate</span>
+						<span class="value {dashboardData && dashboardData.bottlenecks && dashboardData.bottlenecks.high_error_rate ? 'text-red-500' : ''}">{dashboardData && dashboardData.system_health ? dashboardData.system_health.error_rate : 'Unknown'}</span>
 					</div>
 				</div>
-
-				<!-- Video Metrics -->
-				<div class="metric-card glass video-metrics">
-					<div class="metric-icon videos">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<polygon points="23,7 16,12 23,17 23,7"></polygon>
-							<rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
-						</svg>
-					</div>
-					<div class="metric-content">
-						<h3>Total Videos</h3>
-						<div class="metric-value">{formatNumber(analytics.videos?.total || 0)}</div>
-						<div class="metric-label">
-							{formatNumber(analytics.videos?.total_views || 0)} total views
-						</div>
-					</div>
-				</div>
-
-				<!-- Subscription Metrics -->
-				<div class="metric-card glass subscription-metrics">
-					<div class="metric-icon subscriptions">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-							<line x1="16" y1="2" x2="16" y2="6"></line>
-							<line x1="8" y1="2" x2="8" y2="6"></line>
-							<line x1="3" y1="10" x2="21" y2="10"></line>
-						</svg>
-					</div>
-					<div class="metric-content">
-						<h3>Active Subscriptions</h3>
-						<div class="metric-value">{formatNumber(analytics.subscriptions?.active || 0)}</div>
-						<div class="metric-label">
-							{formatCurrency(analytics.subscriptions?.revenue_month || 0)} this month
-						</div>
-					</div>
-				</div>
-
-				<!-- Revenue Metrics -->
-				<div class="metric-card glass revenue-metrics">
-					<div class="metric-icon revenue">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<line x1="12" y1="1" x2="12" y2="23"></line>
-							<path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-						</svg>
-					</div>
-					<div class="metric-content">
-						<h3>Monthly Revenue</h3>
-						<div class="metric-value">{formatCurrency(analytics.subscriptions?.revenue_month || 0)}</div>
-						<div class="metric-label">
-							MRR: {formatCurrency(analytics.subscriptions?.mrr || 0)}
-						</div>
+				<div class="health-card">
+					<div class="health-metric">
+						<span class="label">Active Sessions</span>
+						<span class="value">{formatNumber(dashboardData && dashboardData.system_health ? dashboardData.system_health.active_sessions : 0)}</span>
 					</div>
 				</div>
 			</div>
 		</div>
 
-		<!-- Charts and Detailed Analytics -->
-		<div class="analytics-grid">
-			<!-- User Activity Chart -->
-			<div class="chart-card glass">
-				<div class="chart-header">
-					<h3>User Activity</h3>
-					<div class="chart-legend">
-						<span class="legend-item">
-							<div class="legend-color active"></div>
-							Active Users
-						</span>
-						<span class="legend-item">
-							<div class="legend-color new"></div>
-							New Users
-						</span>
-					</div>
-				</div>
-				<div class="chart-placeholder">
-					<div class="chart-bars">
-						{#each Array(7) as _, i (i)}
-							<div class="chart-bar">
-								<div class="bar active" style="height: {Math.random() * 80 + 20}%"></div>
-								<div class="bar new" style="height: {Math.random() * 40 + 10}%"></div>
-							</div>
-						{/each}
-					</div>
-					<div class="chart-labels">
-						<span>Mon</span>
-						<span>Tue</span>
-						<span>Wed</span>
-						<span>Thu</span>
-						<span>Fri</span>
-						<span>Sat</span>
-						<span>Sun</span>
-					</div>
-				</div>
+		<!-- Quick Actions -->
+		<div class="actions-section">
+			<h2>Quick Actions</h2>
+			<div class="actions-grid">
+				<a href="/admin/streaming/analytics" class="action-card">
+					<div class="action-icon">🎥</div>
+					<h3>Streaming Analytics</h3>
+					<p>Video performance, engagement, and user metrics</p>
+				</a>
+				<a href="/admin/articles/analytics" class="action-card">
+					<div class="action-icon">📝</div>
+					<h3>Articles Analytics</h3>
+					<p>Content performance and reader engagement</p>
+				</a>
+				<a href="/admin/expo/analytics" class="action-card">
+					<div class="action-icon">🎪</div>
+					<h3>Expo Analytics</h3>
+					<p>Event performance and attendee metrics</p>
+				</a>
+				<a href="/admin/monitoring" class="action-card">
+					<div class="action-icon">🔍</div>
+					<h3>System Monitoring</h3>
+					<p>Detailed system health and performance</p>
+				</a>
+				<a href="/admin/analytics/export" class="action-card">
+					<div class="action-icon">📊</div>
+					<h3>Export Data</h3>
+					<p>Download reports and analytics data</p>
+				</a>
+				<a href="/admin/analytics/webhooks" class="action-card">
+					<div class="action-icon">🔗</div>
+					<h3>Webhook Analytics</h3>
+					<p>Monitor webhook performance</p>
+				</a>
 			</div>
-
-			<!-- Content Performance -->
-			<div class="performance-card glass">
-				<div class="performance-header">
-					<h3>Content Performance</h3>
-				</div>
-				<div class="performance-stats">
-					<div class="stat-item">
-						<div class="stat-label">Total Views</div>
-						<div class="stat-value">{formatNumber(analytics.videos?.total_views || 0)}</div>
-						<div class="stat-change positive">+12.5%</div>
-					</div>
-					<div class="stat-item">
-						<div class="stat-label">Total Likes</div>
-						<div class="stat-value">{formatNumber(analytics.videos?.total_likes || 0)}</div>
-						<div class="stat-change positive">+8.3%</div>
-					</div>
-					<div class="stat-item">
-						<div class="stat-label">Comments</div>
-						<div class="stat-value">{formatNumber(analytics.videos?.total_comments || 0)}</div>
-						<div class="stat-change positive">+15.7%</div>
-					</div>
-					<div class="stat-item">
-						<div class="stat-label">Shares</div>
-						<div class="stat-value">{formatNumber(analytics.engagement?.share_count || 0)}</div>
-						<div class="stat-change positive">+22.1%</div>
-					</div>
-				</div>
-			</div>
-
-			<!-- Subscription Analytics -->
-			<div class="subscription-card glass">
-				<div class="subscription-header">
-					<h3>Subscription Analytics</h3>
-				</div>
-				<div class="subscription-stats">
-					<div class="subscription-metric">
-						<div class="subscription-icon">
-							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-								<circle cx="8.5" cy="7" r="4"></circle>
-								<line x1="20" y1="8" x2="20" y2="14"></line>
-								<line x1="23" y1="11" x2="17" y2="11"></line>
-							</svg>
-						</div>
-						<div class="subscription-details">
-							<div class="subscription-value">{formatNumber(analytics.subscriptions?.active || 0)}</div>
-							<div class="subscription-label">Active Subscriptions</div>
-						</div>
-					</div>
-					<div class="subscription-metric">
-						<div class="subscription-icon">
-							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<line x1="12" y1="1" x2="12" y2="23"></line>
-								<path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-							</svg>
-						</div>
-						<div class="subscription-details">
-							<div class="subscription-value">{formatCurrency(analytics.subscriptions?.revenue_week || 0)}</div>
-							<div class="subscription-label">Weekly Revenue</div>
-						</div>
-					</div>
-					<div class="subscription-metric">
-						<div class="subscription-icon">
-							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<polyline points="23,6 13.5,15.5 8.5,10.5 1,18"></polyline>
-								<polyline points="17,6 23,6 23,12"></polyline>
-							</svg>
-						</div>
-						<div class="subscription-details">
-							<div class="subscription-value">{analytics.subscriptions?.new_week || 0}</div>
-							<div class="subscription-label">New This Week</div>
-						</div>
-					</div>
-				</div>
-			</div>
-
-			<!-- System Health -->
-			<div class="system-card glass">
-				<div class="system-header">
-					<h3>System Health</h3>
-					<div class="system-status {analytics?.system_health?.error_rate === 'N/A' ? 'warning' : 'healthy'}">
-						<div class="status-indicator"></div>
-						{analytics?.system_health?.error_rate === 'N/A' ? 'Limited Data' : 'Healthy'}
-					</div>
-				</div>
-				<div class="system-metrics">
-					<div class="system-metric">
-						<div class="system-label">Uptime</div>
-						<div class="system-value">{analytics?.system_health?.uptime || 'N/A'}</div>
-					</div>
-					<div class="system-metric">
-						<div class="system-label">Response Time</div>
-						<div class="system-value">{analytics?.system_health?.response_time || 'N/A'}</div>
-					</div>
-					<div class="system-metric">
-						<div class="system-label">Error Rate</div>
-						<div class="system-value">{analytics?.system_health?.error_rate || 'N/A'}</div>
-					</div>
-					<div class="system-metric">
-						<div class="system-label">Storage Used</div>
-						<div class="system-value">{analytics?.system_health?.storage_used || 'N/A'}</div>
-					</div>
-				</div>
-			</div>
-		</div>
-	{:else}
-		<div class="error-state glass">
-			<div class="error-icon">
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<circle cx="12" cy="12" r="10"></circle>
-					<line x1="12" y1="8" x2="12" y2="12"></line>
-					<line x1="12" y1="16" x2="12.01" y2="16"></line>
-				</svg>
-			</div>
-			<h3>Failed to Load Analytics</h3>
-			<p>There was an error loading the analytics data.</p>
-			<button class="btn btn-primary" on:click={loadAnalytics}>
-				Try Again
-			</button>
 		</div>
 	{/if}
 </div>
 
 <style>
-	.analytics-page {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-2xl);
+	.dashboard {
+		padding: var(--space-xl);
+		max-width: 1200px;
+		margin: 0 auto;
 	}
 
-	.page-header {
+	.header {
 		display: flex;
-		flex-direction: column;
+		justify-content: space-between;
+		align-items: flex-start;
+		margin-bottom: var(--space-xl);
 		gap: var(--space-lg);
 	}
 
 	.header-content {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		flex-wrap: wrap;
-		gap: var(--space-lg);
+		flex-grow: 1;
 	}
 
-	.header-text h1 {
-		font-size: var(--text-3xl);
+	.header h1 {
+		font-size: var(--text-2xl);
 		font-weight: 700;
 		color: var(--text-primary);
+		margin: 0;
+	}
+
+	.subtitle {
+		color: var(--text-secondary);
+		margin: var(--space-xs) 0 0 0;
+	}
+
+	.header-actions {
+		display: flex;
+		gap: var(--space-sm);
+		flex-shrink: 0;
+	}
+
+	.last-updated {
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
+	}
+
+	.refresh-btn {
+		padding: var(--space-sm) var(--space-lg);
+		background: var(--primary);
+		color: white;
+		border: none;
+		border-radius: var(--radius-lg);
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.refresh-btn:hover:not(:disabled) {
+		background: var(--primary-dark);
+		transform: translateY(-1px);
+	}
+
+	.refresh-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.retry-btn {
+		padding: var(--space-sm) var(--space-lg);
+		background: var(--primary);
+		color: white;
+		border: none;
+		border-radius: var(--radius-lg);
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.retry-btn:hover:not(:disabled) {
+		background: var(--primary-dark);
+		transform: translateY(-1px);
+	}
+
+	.retry-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.loading-container, .error-container {
+		text-align: center;
+		padding: var(--space-xxl);
+	}
+
+	.error-icon {
+		font-size: var(--text-4xl);
+		color: var(--error);
 		margin-bottom: var(--space-sm);
 	}
 
-	.header-text p {
+	.error-message {
+		color: var(--error);
+		margin-bottom: var(--space-lg);
+	}
+
+	/* Alert Styles */
+	.alert {
+		background-color: var(--bg-glass);
+		backdrop-filter: blur(20px);
+		border-radius: var(--radius-lg);
+		padding: var(--space-md);
+		margin-bottom: var(--space-lg);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+	}
+
+	.alert-icon {
+		font-size: var(--text-2xl);
+		color: var(--primary);
+	}
+
+	.alert-content h3 {
+		font-size: var(--text-md);
+		font-weight: 600;
+		margin: 0 0 var(--space-xs) 0;
+		color: var(--text-primary);
+	}
+
+	.alert-content p {
+		font-size: var(--text-sm);
 		color: var(--text-secondary);
-		font-size: var(--text-lg);
 		margin: 0;
 	}
 
-	.header-controls {
-		display: flex;
-		align-items: center;
-		gap: var(--space-lg);
-		flex-wrap: wrap;
-	}
-
-	.view-selector {
-		display: flex;
-		background: var(--bg-glass);
-		border-radius: var(--radius-lg);
-		padding: 4px;
-		gap: 4px;
-	}
-
-	.view-btn {
+	.alert-action {
+		margin-left: auto;
 		padding: var(--space-sm) var(--space-lg);
+		background: var(--primary);
+		color: white;
 		border: none;
 		border-radius: var(--radius-md);
-		background: transparent;
-		color: var(--text-secondary);
-		font-size: var(--text-sm);
-		font-weight: 500;
-		cursor: pointer;
-		transition: all var(--transition-fast);
-	}
-
-	.view-btn.active {
-		background: var(--primary);
-		color: var(--white);
-		box-shadow: var(--shadow-sm);
-	}
-
-	.view-btn:hover:not(.active) {
-		background: rgba(255, 255, 255, 0.1);
-		color: var(--text-primary);
-	}
-
-	.export-controls {
-		display: flex;
-		gap: var(--space-sm);
-	}
-
-	.export-btn {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		padding: var(--space-sm) var(--space-md);
-		border: 1px solid var(--border-color);
-		border-radius: var(--radius-md);
-		background: var(--bg-glass);
-		color: var(--text-primary);
+		font-weight: 600;
 		font-size: var(--text-sm);
 		cursor: pointer;
-		transition: all var(--transition-fast);
+		transition: all 0.2s ease;
 	}
 
-	.export-btn:hover {
-		background: var(--bg-hover);
-		border-color: var(--primary);
+	.alert-action:hover {
+		background: var(--primary-dark);
+		transform: translateY(-1px);
 	}
 
-	.export-btn svg {
-		width: 16px;
-		height: 16px;
+	.alert-action:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
 	}
 
-	/* Real-time Dashboard Styles */
-	.realtime-dashboard {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-2xl);
-	}
-
-	.realtime-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-	}
-
-	.realtime-header h2 {
-		font-size: var(--text-2xl);
-		font-weight: 600;
-		color: var(--text-primary);
-		margin: 0;
-	}
-
-	.live-indicator {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		padding: var(--space-sm) var(--space-md);
-		background: rgba(67, 233, 123, 0.1);
-		border: 1px solid var(--success);
-		border-radius: var(--radius-full);
-		color: var(--success);
-		font-size: var(--text-sm);
-		font-weight: 600;
-	}
-
-	.pulse {
-		width: 8px;
-		height: 8px;
-		background: var(--success);
-		border-radius: 50%;
-		animation: pulse 2s infinite;
-	}
-
-	@keyframes pulse {
-		0% {
-			transform: scale(0.95);
-			box-shadow: 0 0 0 0 rgba(67, 233, 123, 0.7);
-		}
-		70% {
-			transform: scale(1);
-			box-shadow: 0 0 0 10px rgba(67, 233, 123, 0);
-		}
-		100% {
-			transform: scale(0.95);
-			box-shadow: 0 0 0 0 rgba(67, 233, 123, 0);
-		}
-	}
-
-	.realtime-metrics {
+	/* Metrics Grid */
+	.metrics-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
 		gap: var(--space-lg);
-	}
-
-	.realtime-card {
-		display: flex;
-		align-items: center;
-		gap: var(--space-lg);
-		padding: var(--space-xl);
-		border-radius: var(--radius-xl);
-		transition: all var(--transition-normal);
-	}
-
-	.realtime-card:hover {
-		transform: translateY(-2px);
-		box-shadow: var(--shadow-lg);
-	}
-
-	.realtime-card .metric-icon {
-		width: 56px;
-		height: 56px;
-	}
-
-	.realtime-card .metric-icon.active-users {
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-	}
-
-	.realtime-card .metric-icon.streaming {
-		background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-	}
-
-	.realtime-card .metric-icon.server {
-		background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-	}
-
-	.realtime-card .metric-icon.bandwidth {
-		background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-	}
-
-	.metric-content h3 {
-		font-size: var(--text-md);
-		font-weight: 600;
-		color: var(--text-secondary);
-		margin: 0 0 var(--space-sm) 0;
-	}
-
-	.metric-content .metric-value {
-		font-size: var(--text-2xl);
-		font-weight: 700;
-		color: var(--text-primary);
-		margin: 0;
-	}
-
-	.live-events-section {
-		display: grid;
-		grid-template-columns: 2fr 1fr;
-		gap: var(--space-xl);
-	}
-
-	.live-events,
-	.top-content {
-		padding: var(--space-xl);
-		border-radius: var(--radius-xl);
-	}
-
-	.live-events h3,
-	.top-content h3 {
-		font-size: var(--text-lg);
-		font-weight: 600;
-		color: var(--text-primary);
-		margin: 0 0 var(--space-lg) 0;
-	}
-
-	.events-list {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-md);
-		max-height: 400px;
-		overflow-y: auto;
-	}
-
-	.event-item {
-		display: flex;
-		gap: var(--space-md);
-		padding: var(--space-md);
-		background: rgba(255, 255, 255, 0.05);
-		border-radius: var(--radius-md);
-		transition: all var(--transition-fast);
-	}
-
-	.event-item:hover {
-		background: rgba(255, 255, 255, 0.1);
-	}
-
-	.event-time {
-		font-size: var(--text-xs);
-		color: var(--text-secondary);
-		white-space: nowrap;
-		min-width: 60px;
-	}
-
-	.event-content {
-		flex: 1;
-	}
-
-	.event-type {
-		font-size: var(--text-sm);
-		font-weight: 600;
-		color: var(--text-primary);
-		margin-bottom: 2px;
-	}
-
-	.event-details {
-		font-size: var(--text-xs);
-		color: var(--text-secondary);
-	}
-
-	.content-list {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-md);
-	}
-
-	.content-item {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: var(--space-md);
-		background: rgba(255, 255, 255, 0.05);
-		border-radius: var(--radius-md);
-	}
-
-	.content-title {
-		font-size: var(--text-sm);
-		color: var(--text-primary);
-		font-weight: 500;
-		flex: 1;
-		margin-right: var(--space-md);
-	}
-
-	.content-viewers {
-		font-size: var(--text-xs);
-		color: var(--primary);
-		font-weight: 600;
-	}
-
-	/* Detailed Analytics Styles */
-	.detailed-analytics {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-2xl);
-	}
-
-	.detailed-analytics h2 {
-		font-size: var(--text-2xl);
-		font-weight: 600;
-		color: var(--text-primary);
-		margin: 0;
-	}
-
-	.analytics-section {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-lg);
-	}
-
-	.section-header h3 {
-		font-size: var(--text-xl);
-		font-weight: 600;
-		color: var(--text-primary);
-		margin: 0;
-	}
-
-	.geographic-grid {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: var(--space-xl);
-	}
-
-	.geographic-card {
-		padding: var(--space-xl);
-		border-radius: var(--radius-xl);
-	}
-
-	.geographic-card h4 {
-		font-size: var(--text-lg);
-		font-weight: 600;
-		color: var(--text-primary);
-		margin: 0 0 var(--space-lg) 0;
-	}
-
-	.country-list,
-	.state-list {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-md);
-	}
-
-	.country-item,
-	.state-item {
-		display: flex;
-		align-items: center;
-		gap: var(--space-md);
-		padding: var(--space-md);
-		background: rgba(255, 255, 255, 0.05);
-		border-radius: var(--radius-md);
-	}
-
-	.country-info,
-	.state-info {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		min-width: 120px;
-	}
-
-	.country-name,
-	.state-name {
-		font-size: var(--text-sm);
-		font-weight: 500;
-		color: var(--text-primary);
-	}
-
-	.country-percentage,
-	.state-percentage {
-		font-size: var(--text-xs);
-		color: var(--text-secondary);
-	}
-
-	.country-bar,
-	.state-bar {
-		flex: 1;
-		height: 6px;
-		background: rgba(255, 255, 255, 0.1);
-		border-radius: var(--radius-full);
-		overflow: hidden;
-		margin: 0 var(--space-md);
-	}
-
-	.country-fill,
-	.state-fill {
-		height: 100%;
-		background: var(--primary);
-		border-radius: var(--radius-full);
-		transition: width var(--transition-normal);
-	}
-
-	.country-count,
-	.state-count {
-		font-size: var(--text-xs);
-		color: var(--text-secondary);
-		min-width: 80px;
-		text-align: right;
-	}
-
-	.device-grid {
-		display: grid;
-		grid-template-columns: 2fr 1fr;
-		gap: var(--space-xl);
-	}
-
-	.device-overview,
-	.browser-stats {
-		padding: var(--space-xl);
-		border-radius: var(--radius-xl);
-	}
-
-	.device-overview h4,
-	.browser-stats h4 {
-		font-size: var(--text-lg);
-		font-weight: 600;
-		color: var(--text-primary);
-		margin: 0 0 var(--space-lg) 0;
-	}
-
-	.device-stats {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-lg);
-	}
-
-	.device-stat {
-		display: flex;
-		align-items: center;
-		gap: var(--space-lg);
-		padding: var(--space-lg);
-		background: rgba(255, 255, 255, 0.05);
-		border-radius: var(--radius-lg);
-	}
-
-	.device-icon {
-		width: 48px;
-		height: 48px;
-		border-radius: var(--radius-lg);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.device-icon.desktop {
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-	}
-
-	.device-icon.mobile {
-		background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-	}
-
-	.device-icon.tablet {
-		background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-	}
-
-	.device-icon svg {
-		width: 24px;
-		height: 24px;
-		color: var(--white);
-	}
-
-	.device-info {
-		flex: 1;
-	}
-
-	.device-name {
-		font-size: var(--text-md);
-		font-weight: 600;
-		color: var(--text-primary);
-		margin-bottom: var(--space-xs);
-	}
-
-	.device-users {
-		font-size: var(--text-lg);
-		font-weight: 700;
-		color: var(--text-primary);
-		margin-bottom: var(--space-xs);
-	}
-
-	.device-percentage {
-		font-size: var(--text-sm);
-		color: var(--primary);
-		font-weight: 600;
-		margin-bottom: var(--space-xs);
-	}
-
-	.device-session {
-		font-size: var(--text-xs);
-		color: var(--text-secondary);
-	}
-
-	.browser-list {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-md);
-	}
-
-	.browser-item {
-		display: flex;
-		align-items: center;
-		gap: var(--space-md);
-		padding: var(--space-md);
-		background: rgba(255, 255, 255, 0.05);
-		border-radius: var(--radius-md);
-	}
-
-	.browser-info {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		min-width: 100px;
-	}
-
-	.browser-name {
-		font-size: var(--text-sm);
-		font-weight: 500;
-		color: var(--text-primary);
-	}
-
-	.browser-percentage {
-		font-size: var(--text-xs);
-		color: var(--text-secondary);
-	}
-
-	.browser-bar {
-		flex: 1;
-		height: 6px;
-		background: rgba(255, 255, 255, 0.1);
-		border-radius: var(--radius-full);
-		overflow: hidden;
-		margin: 0 var(--space-md);
-	}
-
-	.browser-fill {
-		height: 100%;
-		background: var(--primary);
-		border-radius: var(--radius-full);
-		transition: width var(--transition-normal);
-	}
-
-	.browser-count {
-		font-size: var(--text-xs);
-		color: var(--text-secondary);
-		min-width: 60px;
-		text-align: right;
-	}
-
-	.funnel-container {
-		padding: var(--space-xl);
-		border-radius: var(--radius-xl);
-	}
-
-	.funnel-stages {
-		display: flex;
-		align-items: center;
-		gap: var(--space-md);
-		overflow-x: auto;
-		padding: var(--space-lg);
-	}
-
-	.funnel-stage {
-		display: flex;
-		align-items: center;
-		gap: var(--space-md);
-		min-width: 150px;
-		padding: var(--space-lg);
-		background: linear-gradient(135deg, var(--primary) 0%, rgba(102, 126, 234, 0.8) 100%);
-		border-radius: var(--radius-lg);
-		color: var(--white);
-		text-align: center;
-		position: relative;
-	}
-
-	.stage-info {
-		flex: 1;
-	}
-
-	.stage-name {
-		font-size: var(--text-sm);
-		font-weight: 600;
-		margin-bottom: var(--space-xs);
-	}
-
-	.stage-count {
-		font-size: var(--text-lg);
-		font-weight: 700;
-		margin-bottom: var(--space-xs);
-	}
-
-	.stage-conversion {
-		font-size: var(--text-xs);
-		opacity: 0.9;
-	}
-
-	.funnel-arrow {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 24px;
-		height: 24px;
-		background: var(--bg-glass);
-		border-radius: 50%;
-		color: var(--text-primary);
-	}
-
-	.funnel-arrow svg {
-		width: 14px;
-		height: 14px;
-	}
-
-	.metrics-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-		gap: var(--space-xl);
+		margin-bottom: var(--space-xl);
 	}
 
 	.metric-card {
-		padding: var(--space-xl);
+		background: var(--bg-glass);
+		backdrop-filter: blur(20px);
 		border-radius: var(--radius-xl);
-		transition: all var(--transition-normal);
+		padding: var(--space-xl);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		transition: all 0.2s ease;
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
 	}
 
 	.metric-card:hover {
-		transform: translateY(-4px);
-		box-shadow: var(--shadow-lg);
+		transform: translateY(-2px);
+		box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+	}
+
+	.metric-card.primary {
+		background: linear-gradient(135deg, var(--primary), var(--primary-light));
+		color: white;
+	}
+
+	.metric-card.primary .metric-header h3 {
+		color: white;
+	}
+
+	.metric-card.primary .metric-icon {
+		color: white;
+	}
+
+	.metric-card.revenue {
+		background: linear-gradient(135deg, var(--success), var(--success-light));
+		color: white;
+	}
+
+	.metric-card.revenue .metric-header h3 {
+		color: white;
+	}
+
+	.metric-card.revenue .metric-icon {
+		color: white;
 	}
 
 	.metric-header {
 		display: flex;
+		justify-content: space-between;
 		align-items: center;
-		gap: var(--space-md);
-		margin-bottom: var(--space-lg);
-	}
-
-	.metric-icon {
-		width: 48px;
-		height: 48px;
-		border-radius: var(--radius-lg);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		box-shadow: var(--shadow-md);
-	}
-
-	.metric-icon.users {
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-	}
-
-	.metric-icon.videos {
-		background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-	}
-
-	.metric-icon.revenue {
-		background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-	}
-
-	.metric-icon.engagement {
-		background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-	}
-
-	.metric-icon svg {
-		width: 24px;
-		height: 24px;
-		color: var(--white);
+		margin-bottom: var(--space-md);
 	}
 
 	.metric-header h3 {
 		font-size: var(--text-lg);
 		font-weight: 600;
-		color: var(--text-primary);
 		margin: 0;
+		color: var(--text-secondary);
+	}
+
+	.metric-icon {
+		font-size: var(--text-2xl);
+		color: var(--primary);
 	}
 
 	.metric-value {
 		font-size: var(--text-3xl);
 		font-weight: 700;
 		color: var(--text-primary);
-		margin-bottom: var(--space-md);
+		margin-bottom: var(--space-sm);
 	}
 
 	.metric-details {
 		display: flex;
-		gap: var(--space-md);
-		flex-wrap: wrap;
-	}
-
-	.metric-sub {
+		justify-content: space-between;
+		align-items: center;
 		font-size: var(--text-sm);
 		color: var(--text-secondary);
 	}
 
-	.metric-trend {
-		font-size: var(--text-sm);
+	.metric-change {
 		font-weight: 600;
-		padding: 2px 6px;
-		border-radius: var(--radius-sm);
 	}
 
-	.metric-trend.positive {
-		background: rgba(67, 233, 123, 0.1);
+	.metric-change.positive {
 		color: var(--success);
 	}
 
-	.metric-trend.negative {
-		background: rgba(255, 107, 107, 0.1);
+	.metric-change.negative {
 		color: var(--error);
 	}
 
-	.analytics-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-		gap: var(--space-xl);
+	.metric-growth {
+		color: var(--success);
+		font-weight: 600;
 	}
 
-	.chart-card,
-	.performance-card,
-	.subscription-card,
-	.system-card {
-		padding: var(--space-xl);
+	.metric-mrr {
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
+		margin-top: var(--space-xs);
+	}
+
+	/* Health Section */
+	.health-section {
+		background: var(--bg-glass);
+		backdrop-filter: blur(20px);
 		border-radius: var(--radius-xl);
+		padding: var(--space-xl);
+		margin-bottom: var(--space-xl);
+		border: 1px solid rgba(255, 255, 255, 0.1);
 	}
 
-	.chart-header,
-	.performance-header,
-	.subscription-header,
-	.system-header {
+	.section-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: var(--space-lg);
+	}
+
+	.section-header h2 {
+		font-size: var(--text-xl);
+		font-weight: 600;
+		margin: 0;
+		color: var(--text-primary);
+	}
+
+	.status-badge {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		margin-bottom: var(--space-xl);
+		gap: var(--space-sm);
+		padding: var(--space-sm) var(--space-md);
+		border-radius: var(--radius-lg);
+		font-weight: 600;
+		font-size: var(--text-sm);
 	}
 
-	.chart-header h3,
-	.performance-header h3,
-	.subscription-header h3,
-	.system-header h3 {
+	.health-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+		gap: var(--space-lg);
+	}
+
+	.health-card {
+		text-align: center;
+	}
+
+	.health-metric {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-xs);
+	}
+
+	.health-metric .label {
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
+	}
+
+	.health-metric .value {
+		font-size: var(--text-lg);
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+
+	/* Actions Section */
+	.actions-section {
+		margin-top: var(--space-xl);
+	}
+
+	.actions-section h2 {
+		font-size: var(--text-xl);
+		font-weight: 600;
+		margin: 0 0 var(--space-lg) 0;
+		color: var(--text-primary);
+	}
+
+	.actions-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+		gap: var(--space-lg);
+	}
+
+	.action-card {
+		background: var(--bg-glass);
+		backdrop-filter: blur(20px);
+		border-radius: var(--radius-xl);
+		padding: var(--space-xl);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		text-decoration: none;
+		color: inherit;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		transition: all 0.2s ease;
+	}
+
+	.action-card:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+		border-color: var(--primary);
+	}
+
+	.action-icon {
+		font-size: var(--text-3xl);
+		color: var(--primary);
+		margin-bottom: var(--space-sm);
+	}
+
+	.action-card h3 {
+		font-size: var(--text-lg);
+		font-weight: 600;
+		margin: 0 0 var(--space-sm) 0;
+		color: var(--text-primary);
+	}
+
+	.action-card p {
+		color: var(--text-secondary);
+		margin: 0;
+		font-size: var(--text-sm);
+	}
+
+	/* Status Colors */
+	.text-green-500 { color: #10b981; }
+	.text-yellow-500 { color: #f59e0b; }
+	.text-red-500 { color: #ef4444; }
+	.text-gray-500 { color: #6b7280; }
+
+	/* Responsive */
+	@media (max-width: 768px) {
+		.dashboard {
+			padding: var(--space-lg);
+		}
+
+		.header {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: var(--space-sm);
+		}
+
+		.header-actions {
+			width: 100%;
+			justify-content: space-between;
+		}
+
+		.metrics-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.health-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.actions-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.alert {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: var(--space-sm);
+		}
+
+		.alert-action {
+			margin-left: 0;
+			width: 100%;
+			text-align: center;
+		}
+	}
+
+	@media (max-width: 480px) {
+		.dashboard {
+			padding: var(--space-md);
+		}
+
+		.header h1 {
+			font-size: var(--text-xl);
+		}
+
+		.metric-value {
+			font-size: var(--text-2xl);
+		}
+
+		.health-metric .value {
+			font-size: var(--text-md);
+		}
+	}
+
+	/* Dark mode enhancements */
+	@media (prefers-color-scheme: dark) {
+		.metric-card {
+			background: rgba(255, 255, 255, 0.05);
+			border-color: rgba(255, 255, 255, 0.1);
+		}
+
+		.health-card {
+			background: rgba(255, 255, 255, 0.03);
+		}
+
+		.action-card {
+			background: rgba(255, 255, 255, 0.05);
+			border-color: rgba(255, 255, 255, 0.1);
+		}
+	}
+
+	/* Animation enhancements */
+	.metric-card {
+		animation: fadeInUp 0.6s ease-out;
+	}
+
+	.health-card {
+		animation: fadeInUp 0.6s ease-out 0.1s both;
+	}
+
+	.action-card {
+		animation: fadeInUp 0.6s ease-out 0.2s both;
+	}
+
+	@keyframes fadeInUp {
+		from {
+			opacity: 0;
+			transform: translateY(20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	/* Hover effects */
+	.metric-card:hover {
+		transform: translateY(-4px);
+		box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+	}
+
+	.health-card:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+	}
+
+	.action-card:hover {
+		transform: translateY(-4px);
+		box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+	}
+
+	/* Loading animation */
+	.loading-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		min-height: 400px;
+		gap: var(--space-lg);
+	}
+
+	.loading-container p {
+		color: var(--text-secondary);
+		font-size: var(--text-lg);
+	}
+
+	/* Error state */
+	.error-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		min-height: 400px;
+		text-align: center;
+		gap: var(--space-lg);
+	}
+
+	.error-container h3 {
 		font-size: var(--text-xl);
 		font-weight: 600;
 		color: var(--text-primary);
 		margin: 0;
 	}
 
-	.chart-legend {
-		display: flex;
-		gap: var(--space-lg);
+	/* Status colors */
+	.alert.warning {
+		background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05));
+		border-color: rgba(245, 158, 11, 0.3);
 	}
 
-	.legend-item {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		font-size: var(--text-sm);
-		color: var(--text-secondary);
+	.alert.warning .alert-icon {
+		color: #f59e0b;
 	}
 
-	.legend-color {
-		width: 12px;
-		height: 12px;
-		border-radius: 50%;
+	.alert.critical {
+		background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));
+		border-color: rgba(239, 68, 68, 0.3);
 	}
 
-	.legend-color.active {
-		background: var(--primary);
+	.alert.critical .alert-icon {
+		color: #ef4444;
 	}
 
-	.legend-color.new {
-		background: var(--secondary);
+	/* Status badge colors */
+	.status-badge.text-green-500 {
+		background: rgba(16, 185, 129, 0.1);
+		color: #10b981;
+		border: 1px solid rgba(16, 185, 129, 0.3);
 	}
 
-	.chart-placeholder {
-		height: 200px;
-		display: flex;
-		flex-direction: column;
-		justify-content: space-between;
+	.status-badge.text-yellow-500 {
+		background: rgba(245, 158, 11, 0.1);
+		color: #f59e0b;
+		border: 1px solid rgba(245, 158, 11, 0.3);
 	}
 
-	.chart-bars {
-		display: flex;
-		align-items: end;
-		gap: var(--space-md);
-		height: 160px;
-		padding: var(--space-md) 0;
+	.status-badge.text-red-500 {
+		background: rgba(239, 68, 68, 0.1);
+		color: #ef4444;
+		border: 1px solid rgba(239, 68, 68, 0.3);
 	}
 
-	.chart-bar {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 2px;
-		height: 100%;
-		justify-content: end;
-	}
-
-	.bar {
-		width: 100%;
-		border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-		transition: all var(--transition-normal);
-	}
-
-	.bar.active {
-		background: var(--primary-gradient);
-		opacity: 0.8;
-	}
-
-	.bar.new {
-		background: var(--secondary-gradient);
-		opacity: 0.6;
-	}
-
-	.chart-labels {
-		display: flex;
-		justify-content: space-between;
-		padding: 0 var(--space-md);
-		font-size: var(--text-xs);
-		color: var(--text-secondary);
-	}
-
-	.performance-stats {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-		gap: var(--space-lg);
-	}
-
-	.stat-item {
-		text-align: center;
-	}
-
-	.stat-label {
-		font-size: var(--text-sm);
-		color: var(--text-secondary);
-		margin-bottom: var(--space-sm);
-	}
-
-	.stat-value {
-		font-size: var(--text-2xl);
-		font-weight: 700;
-		color: var(--text-primary);
-		margin-bottom: var(--space-xs);
-	}
-
-	.stat-change {
-		font-size: var(--text-sm);
-		font-weight: 600;
-		padding: 2px 6px;
-		border-radius: var(--radius-sm);
-	}
-
-	.stat-change.positive {
-		background: rgba(67, 233, 123, 0.1);
-		color: var(--success);
-	}
-
-	.subscription-stats {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-xl);
-	}
-
-	.subscription-metric {
-		display: flex;
-		align-items: center;
-		gap: var(--space-lg);
-	}
-
-	.subscription-icon {
-		width: 40px;
-		height: 40px;
-		border-radius: var(--radius-lg);
-		background: var(--bg-glass);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.subscription-icon svg {
-		width: 20px;
-		height: 20px;
-		color: var(--text-primary);
-	}
-
-	.subscription-value {
-		font-size: var(--text-xl);
-		font-weight: 700;
-		color: var(--text-primary);
-	}
-
-	.subscription-label {
-		font-size: var(--text-sm);
-		color: var(--text-secondary);
-	}
-
-	.system-status {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		font-size: var(--text-sm);
-		font-weight: 600;
-	}
-
-	.system-status.healthy {
-		color: var(--success);
-	}
-
-	.status-indicator {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: var(--success);
-		animation: pulse 2s infinite;
-	}
-
-	@keyframes pulse {
-		0% {
-			box-shadow: 0 0 0 0 rgba(67, 233, 123, 0.7);
-		}
-		70% {
-			box-shadow: 0 0 0 10px rgba(67, 233, 123, 0);
-		}
-		100% {
-			box-shadow: 0 0 0 0 rgba(67, 233, 123, 0);
-		}
-	}
-
-	.system-metrics {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-		gap: var(--space-lg);
-	}
-
-	.system-metric {
-		text-align: center;
-	}
-
-	.system-label {
-		font-size: var(--text-sm);
-		color: var(--text-secondary);
-		margin-bottom: var(--space-sm);
-	}
-
-	.system-value {
-		font-size: var(--text-lg);
-		font-weight: 600;
-		color: var(--text-primary);
-	}
-
-	.btn {
-		padding: var(--space-md) var(--space-lg);
-		border: none;
-		border-radius: var(--radius-lg);
-		font-weight: 600;
-		cursor: pointer;
-		transition: all var(--transition-normal);
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm);
-		text-decoration: none;
-		font-size: var(--text-base);
-	}
-
-	.btn-primary {
-		background: var(--primary-gradient);
-		color: var(--white);
-		box-shadow: var(--shadow-md);
-	}
-
-	.btn-primary:hover {
-		transform: translateY(-2px);
-		box-shadow: var(--shadow-lg);
-	}
-
-	.period-selector {
-		margin-left: auto;
-	}
-
-	.period-select {
-		padding: var(--space-md);
-		border: none;
-		border-radius: var(--radius-lg);
-		background: var(--bg-glass);
-		color: var(--text-primary);
-		font-size: var(--text-sm);
-		cursor: pointer;
-		min-width: 150px;
-	}
-
-	.loading-container,
-	.error-state {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: var(--space-lg);
-		padding: var(--space-3xl);
-		text-align: center;
-	}
-
-	.error-state {
-		border-radius: var(--radius-xl);
-	}
-
-	.error-icon {
-		width: 64px;
-		height: 64px;
-		opacity: 0.5;
-	}
-
-	.error-icon svg {
-		width: 100%;
-		height: 100%;
-		color: var(--error);
-	}
-
-	/* Responsive Design */
-	@media (max-width: 1200px) {
-		.geographic-grid,
-		.device-grid {
-			grid-template-columns: 1fr;
-		}
-
-		.live-events-section {
-			grid-template-columns: 1fr;
-		}
-
-		.funnel-stages {
-			flex-direction: column;
-			align-items: stretch;
-		}
-
-		.funnel-stage {
-			min-width: unset;
-		}
-
-		.funnel-arrow {
-			transform: rotate(90deg);
-		}
-	}
-
-	@media (max-width: 768px) {
-		.header-content {
-			flex-direction: column;
-			align-items: stretch;
-		}
-
-		.header-controls {
-			flex-direction: column;
-			gap: var(--space-md);
-		}
-
-		.view-selector {
-			justify-content: center;
-		}
-
-		.export-controls {
-			justify-content: center;
-		}
-
-		.realtime-metrics {
-			grid-template-columns: 1fr;
-		}
-
-		.device-stats {
-			gap: var(--space-md);
-		}
-
-		.device-stat {
-			flex-direction: column;
-			text-align: center;
-			gap: var(--space-md);
-		}
-	}
-
-	@media (max-width: 480px) {
-		.analytics-page {
-			gap: var(--space-lg);
-		}
-
-		.realtime-card,
-		.geographic-card,
-		.device-overview,
-		.browser-stats,
-		.funnel-container {
-			padding: var(--space-lg);
-		}
-
-		.view-selector {
-			flex-direction: column;
-			gap: var(--space-xs);
-		}
-
-		.view-btn {
-			text-align: center;
-		}
-	}
-
-	.system-status.warning {
-		color: var(--warning);
-	}
-
-	.system-status.warning .status-indicator {
-		background: var(--warning);
+	.status-badge.text-gray-500 {
+		background: rgba(107, 114, 128, 0.1);
+		color: #6b7280;
+		border: 1px solid rgba(107, 114, 128, 0.3);
 	}
 </style> 

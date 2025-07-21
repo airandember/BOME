@@ -119,6 +119,14 @@
 			<a href="/contact" class="nav-link" on:click={closeMenu}>
 				<span>Contact</span>
 			</a>
+			<a href="/admin" class="admin-link" title="Admin Panel" aria-label="Admin Login" style="height: 36px; width: 36px; padding: 0.5rem; border-radius: 50px;">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+					<rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+					<line x1="8" y1="21" x2="16" y2="21"></line>
+					<line x1="12" y1="17" x2="12" y2="21"></line>
+				</svg>
+			</a>
+			<br>
 		</div>
 
 		<div class="nav-actions">

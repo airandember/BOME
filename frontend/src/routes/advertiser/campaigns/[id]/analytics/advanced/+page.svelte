@@ -482,7 +482,7 @@
 										value={metric} 
 									/>
 									<span class="checkmark"></span>
-									{metric.charAt(0).toUpperCase() + metric.slice(1).replace('_', ' ')}
+									{metric?.charAt(0)?.toUpperCase() + metric?.slice(1)?.replace('_', ' ') || 'Unknown'}
 								</label>
 							{/each}
 						</div>

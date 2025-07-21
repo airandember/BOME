@@ -1,681 +1,832 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
-	import { auth, isAdmin as checkIsAdmin } from '$lib/auth';
 	import { goto } from '$app/navigation';
+	import { auth } from '$lib/auth';
+	import { page } from '$app/stores';
 	import { theme } from '$lib/theme';
-	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
-	import ToastContainer from '$lib/components/ToastContainer.svelte';
-	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 
-	let isAuthenticated = false;
 	let isAdmin = false;
-	let user: any = null;
-	let isLoaded = false;
-	let isSidebarOpen = true;
-	let authChecked = false;
+	let userRole = '';
+	let isSuperAdmin = false;
+	let isDark = false;
 
-	// Subscribe to auth store
-	const unsubscribe = auth.subscribe(state => {
-		isAuthenticated = state.isAuthenticated;
-		user = state.user;
-		isAdmin = checkIsAdmin();
-		
-		// Only check auth after we have a definitive state
-		if (!authChecked) {
-			checkAuth();
-		}
+	// Subscribe to theme changes
+	theme.subscribe(state => {
+		isDark = state.isDark;
 	});
 
-	onMount(() => {
-		// Longer delay to ensure auth store is properly initialized
-		setTimeout(() => {
-			checkAuth();
-		}, 200);
-
-		return () => {
-			unsubscribe();
-		};
-	});
-
-	function checkAuth() {
-		authChecked = true;
-		
-		// Check admin access with more graceful handling
-		if (!isAuthenticated && !isAdmin) {
-			// Don't redirect immediately, show loading state longer
-			setTimeout(() => {
-				if (!isAuthenticated) {
-					goto('/login');
-				}
-			}, 1000);
-			return;
-		}
-
-		if (isAuthenticated && !isAdmin) {
-			// Show a message instead of immediate redirect
-			setTimeout(() => {
-				goto('/');
-			}, 2000);
-			return;
-		}
-
-		// All checks passed, show the admin interface
-		setTimeout(() => {
-			isLoaded = true;
-		}, 300);
-	}
-
-	const toggleSidebar = () => {
-		isSidebarOpen = !isSidebarOpen;
-	};
-
-	const navItems = [
+	// Subsites configuration
+	const subsites = [
 		{
-			href: '/admin',
-			label: 'Dashboard',
-			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<rect x="3" y="3" width="7" height="9"></rect>
-				<rect x="14" y="3" width="7" height="5"></rect>
-				<rect x="14" y="12" width="7" height="9"></rect>
-				<rect x="3" y="16" width="7" height="5"></rect>
-			</svg>`
+			id: 'streaming',
+			name: 'Streaming',
+			icon: 'play',
+			path: '/admin/streaming',
+			description: 'Video streaming platform',
+			status: 'active'
 		},
 		{
-			href: '/admin/analytics',
-			label: 'Analytics',
-			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<polyline points="22,12 18,12 15,21 9,3 6,12 2,12"></polyline>
-			</svg>`
+			id: 'articles',
+			name: 'Articles',
+			icon: 'file-text',
+			path: '/admin/articles',
+			description: 'Blog and articles platform',
+			status: 'under_construction'
 		},
 		{
-			href: '/admin/users',
-			label: 'Users',
-			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-				<circle cx="9" cy="7" r="4"></circle>
-				<path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-				<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-			</svg>`
-		},
-		{
-			href: '/admin/videos',
-			label: 'Videos',
-			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<polygon points="23,7 16,12 23,17 23,7"></polygon>
-				<rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
-			</svg>`
-		},
-		{
-			href: '/admin/financial',
-			label: 'Financial',
-			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<line x1="12" y1="1" x2="12" y2="23"></line>
-				<path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-			</svg>`
-		},
-		{
-			href: '/admin/security',
-			label: 'Security',
-			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-				<path d="M9 12l2 2 4-4"></path>
-			</svg>`
-		},
-		{
-			href: '/admin/roles',
-			label: 'Role Management',
-			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-				<circle cx="12" cy="7" r="4"></circle>
-				<path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
-				<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-				<circle cx="16" cy="7" r="4"></circle>
-				<path d="M20 11v2a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4v-2"></path>
-			</svg>`
-		},
-		{
-			href: '/admin/advertisements',
-			label: 'Advertisements',
-			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-				<line x1="8" y1="21" x2="16" y2="21"></line>
-				<line x1="12" y1="17" x2="12" y2="21"></line>
-			</svg>`
-		},
-		{
-			href: '/admin/placements',
-			label: 'Ad Placements',
-			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-				<polyline points="3.27,6.96 12,12.01 20.73,6.96"></polyline>
-				<line x1="12" y1="22.08" x2="12" y2="12"></line>
-			</svg>`
-		},
-		{
-			href: '/admin/settings',
-			label: 'Settings',
-			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<circle cx="12" cy="12" r="3"></circle>
-				<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1 1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-			</svg>`
-		},
-		{
-			href: '/admin/design-system',
-			label: 'Design System',
-			icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-				<circle cx="9" cy="9" r="2"></circle>
-				<path d="M21 15l-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
-				<path d="M14 14l-3-3"></path>
-			</svg>`
+			id: 'expo',
+			name: 'Expo & Tours',
+			icon: 'map-pin',
+			path: '/admin/expo',
+			description: 'Events and tours platform',
+			status: 'under_construction'
 		}
 	];
+
+	onMount(() => {
+		// Initial setup will be handled by reactive statements
+	});
+
+	// Reactive statements to handle auth state changes
+	$: if ($auth.isAuthenticated && $auth.user) {
+		const adminRoles = [
+			'super_admin', 'system_admin', 'content_manager', 
+			'articles_manager', 'youtube_manager', 'streaming_manager',
+			'events_manager', 'advertisement_manager', 'user_manager',
+			'analytics_manager', 'financial_admin', 'admin'
+		];
+		isAdmin = adminRoles.includes($auth.user.role);
+		userRole = $auth.user.role;
+		isSuperAdmin = $auth.user.role === 'super_admin';
+	} else {
+		isAdmin = false;
+		userRole = '';
+		isSuperAdmin = false;
+	}
+
+	// Reactive redirect logic
+	$: if ($page.url.pathname !== '/admin' && !isAdmin && $auth.isAuthenticated) {
+		// User is authenticated but not admin, redirect to login
+		goto('/admin');
+	} else if ($page.url.pathname !== '/admin' && !$auth.isAuthenticated) {
+		// User is not authenticated, redirect to login
+		goto('/admin');
+	}
+
+	function isAdminUser(user: any): boolean {
+		if (!user) return false;
+		const adminRoles = [
+			'super_admin', 'system_admin', 'content_manager', 
+			'articles_manager', 'youtube_manager', 'streaming_manager',
+			'events_manager', 'advertisement_manager', 'user_manager',
+			'analytics_manager', 'financial_admin', 'admin'
+		];
+		return adminRoles.includes(user.role);
+	}
+
+	function getUserPermissions(role: string): string[] {
+		const permissionMap: Record<string, string[]> = {
+			'super_admin': ['*'], // All permissions
+			'system_admin': ['system:read', 'system:update', 'system:manage', 'analytics:read', 'analytics:export', 'monitoring:read'],
+			'content_manager': ['content:read', 'content:create', 'content:update', 'content:delete', 'videos:manage', 'analytics:read'],
+			'articles_manager': ['articles:read', 'articles:create', 'articles:update', 'articles:delete', 'analytics:read'],
+			'youtube_manager': ['videos:read', 'videos:create', 'videos:update', 'videos:delete', 'analytics:read'],
+			'streaming_manager': ['videos:read', 'videos:create', 'videos:update', 'videos:delete', 'analytics:read'],
+			'events_manager': ['events:read', 'events:create', 'events:update', 'events:delete', 'analytics:read'],
+			'advertisement_manager': ['advertisements:read', 'advertisements:create', 'advertisements:update', 'advertisements:delete', 'analytics:read'],
+			'user_manager': ['users:read', 'users:create', 'users:update', 'users:delete', 'analytics:read'],
+			'analytics_manager': ['analytics:read', 'analytics:export', 'analytics:manage', 'monitoring:read'],
+			'financial_admin': ['financial:read', 'financial:manage', 'analytics:read'],
+			'admin': ['*'] // Legacy admin - all permissions
+		};
+		return permissionMap[role] || [];
+	}
+
+	function hasPermission(permission: string): boolean {
+		const permissions = getUserPermissions(userRole);
+		return permissions.includes('*') || permissions.includes(permission);
+	}
+
+	function getSubsiteIcon(iconName: string) {
+		switch (iconName) {
+			case 'play':
+				return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<polygon points="23,7 16,12 23,17 23,7"></polygon>
+					<rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+				</svg>`;
+			case 'file-text':
+				return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+					<polyline points="14,2 14,8 20,8"></polyline>
+					<line x1="16" y1="13" x2="8" y2="13"></line>
+					<line x1="16" y1="17" x2="8" y2="17"></line>
+					<polyline points="10,9 9,9 8,9"></polyline>
+				</svg>`;
+			case 'map-pin':
+				return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+					<circle cx="12" cy="10" r="3"></circle>
+				</svg>`;
+			default:
+				return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<circle cx="12" cy="12" r="10"></circle>
+					<line x1="12" y1="16" x2="12" y2="12"></line>
+					<line x1="12" y1="8" x2="12.01" y2="8"></line>
+				</svg>`;
+		}
+	}
+
+	const toggleTheme = () => {
+		theme.toggle();
+	};
+
+	async function handleLogout() {
+		await auth.logout();
+		goto('/admin');
+	}
 </script>
 
 <svelte:head>
-	<title>Admin Dashboard - BOME</title>
-	<meta name="description" content="BOME Admin Dashboard" />
+	<title>BOME Admin</title>
+	<meta name="description" content="BOME administrative interface" />
 </svelte:head>
 
-{#if !isLoaded}
-	<div class="loading-screen">
-		<LoadingSpinner size="large" color="primary" />
-		<p>Loading Admin Dashboard...</p>
-	</div>
-{:else}
+{#if $page.url.pathname === '/admin'}
+	<!-- Login page - no navigation -->
+	<slot />
+{:else if isAdmin}
+	<!-- Admin pages with navigation -->
 	<div class="admin-layout">
-		<!-- Sidebar -->
-		<aside class="sidebar glass" class:collapsed={!isSidebarOpen}>
+		<!-- Sidebar Navigation -->
+		<nav class="admin-sidebar">
 			<div class="sidebar-header">
-				<div class="brand">
-					<div class="brand-logo">
+				<div class="brand-logo">
+					<a href="/" aria-label="BOME Admin">
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 							<path d="M12 2L2 7l10 5 10-5-10-5z"></path>
 							<path d="M2 17l10 5 10-5"></path>
 							<path d="M2 12l10 5 10-5"></path>
 						</svg>
-					</div>
-					{#if isSidebarOpen}
-						<span class="brand-text">BOME Admin</span>
+					</a>
+				</div>
+				<div class="brand-text">
+					<h2>BOME Admin</h2>
+					
+					{#if isSuperAdmin}
+						<span class="super-admin-badge">SUPER ADMIN</span>
+						{:else}<span class="role-badge">{userRole.replace('_', ' ').toUpperCase()}</span>
 					{/if}
 				</div>
-				<button class="sidebar-toggle" on:click={toggleSidebar}>
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M3 12h18"></path>
-						<path d="M3 6h18"></path>
-						<path d="M3 18h18"></path>
-					</svg>
+				<button class="theme-toggle glass" on:click={toggleTheme} aria-label="Toggle theme">
+					<div class="toggle-container">
+						<svg class="sun-icon" class:active={!isDark} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<circle cx="12" cy="12" r="5"></circle>
+							<line x1="12" y1="1" x2="12" y2="3"></line>
+							<line x1="12" y1="21" x2="12" y2="23"></line>
+							<line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+							<line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+							<line x1="1" y1="12" x2="3" y2="12"></line>
+							<line x1="21" y1="12" x2="23" y2="12"></line>
+							<line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+							<line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+						</svg>
+						
+						<svg class="moon-icon" class:active={isDark} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+						</svg>
+						
+						<div class="toggle-slider" class:dark={isDark}></div>
+					</div>
 				</button>
 			</div>
 
-			<nav class="sidebar-nav">
-				{#each navItems as item}
-					<a href={item.href} class="nav-item" class:active={$page.url.pathname === item.href}>
-						<div class="nav-icon" class:active={$page.url.pathname === item.href}>
-							{@html item.icon}
-						</div>
-						{#if isSidebarOpen}
-							<span class="nav-label">{item.label}</span>
+			<div class="sidebar-nav">
+				<!-- Main Dashboard -->
+				<a href="/admin/dashboard" class="nav-item" class:active={$page.url.pathname === '/admin/dashboard'}>
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<rect x="3" y="3" width="7" height="7"></rect>
+						<rect x="14" y="3" width="7" height="7"></rect>
+						<rect x="14" y="14" width="7" height="7"></rect>
+						<rect x="3" y="14" width="7" height="7"></rect>
+					</svg>
+					Hub Dashboard
+				</a>
+
+				<!-- Subsites Section -->
+				<div class="nav-section">
+					<div class="section-header">Subsites</div>
+					
+					{#each subsites as subsite}
+						<a href={subsite.path} class="nav-item subsite-item" class:active={$page.url.pathname.startsWith(subsite.path)} class:under-construction={subsite.status === 'under_construction'}>
+							<div class="subsite-icon" style="innerHTML={getSubsiteIcon(subsite.icon)}"></div>
+							<div class="subsite-info">
+								<div class="subsite-name">{subsite.name}</div>
+								<div class="subsite-status {subsite.status}">
+									{#if subsite.status === 'under_construction'}
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+											<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+											<line x1="12" y1="9" x2="12" y2="13"></line>
+											<line x1="12" y1="17" x2="12.01" y2="17"></line>
+										</svg>
+										Under Construction
+									{:else}
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+											<polyline points="20,6 9,17 4,12"></polyline>
+										</svg>
+										Active
+									{/if}
+								</div>
+							</div>
+						</a>
+					{/each}
+				</div>
+
+				<!-- Analytics & Monitoring -->
+				{#if hasPermission('analytics:read')}
+					<div class="nav-section">
+						<div class="section-header">Analytics & Monitoring</div>
+						
+						<a href="/admin/analytics" class="nav-item" class:active={$page.url.pathname.startsWith('/admin/analytics')}>
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<polyline points="22,12 18,12 15,21 9,3 6,12 2,12"></polyline>
+							</svg>
+							Analytics
+						</a>
+
+						{#if hasPermission('monitoring:read')}
+							<a href="/admin/monitoring" class="nav-item" class:active={$page.url.pathname.startsWith('/admin/monitoring')}>
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+									<rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+									<line x1="8" y1="21" x2="16" y2="21"></line>
+									<line x1="12" y1="17" x2="12" y2="21"></line>
+								</svg>
+								Server Monitoring
+							</a>
 						{/if}
-					</a>
-				{/each}
-			</nav>
+					</div>
+				{/if}
+
+				<!-- Management Section -->
+				<div class="nav-section">
+					<div class="section-header">Management</div>
+					
+					{#if hasPermission('users:read')}
+						<a href="/admin/users" class="nav-item" class:active={$page.url.pathname.startsWith('/admin/users')}>
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+								<circle cx="9" cy="7" r="4"></circle>
+								<path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+								<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+							</svg>
+							Users
+						</a>
+					{/if}
+
+					{#if hasPermission('advertisements:read')}
+						<a href="/admin/advertisers" class="nav-item" class:active={$page.url.pathname.startsWith('/admin/advertisers')}>
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+								<circle cx="9" cy="7" r="4"></circle>
+								<path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+								<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+							</svg>
+							Advertisers
+						</a>
+					{/if}
+
+					{#if hasPermission('advertisements:read')}
+						<a href="/admin/advertisements" class="nav-item" class:active={$page.url.pathname.startsWith('/admin/advertisements')}>
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+								<circle cx="8.5" cy="8.5" r="1.5"></circle>
+								<polyline points="21,15 16,10 5,21"></polyline>
+							</svg>
+							Advertisements
+						</a>
+					{/if}
+
+					{#if hasPermission('system:read')}
+						<a href="/admin/system" class="nav-item" class:active={$page.url.pathname.startsWith('/admin/system')}>
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<circle cx="12" cy="12" r="3"></circle>
+								<path d="M12 1v6m0 6v6"></path>
+								<path d="M21 12h-6m-6 0H3"></path>
+							</svg>
+							System Settings
+						</a>
+					{/if}
+				</div>
+			</div>
 
 			<div class="sidebar-footer">
 				<div class="user-info">
 					<div class="user-avatar">
-						{user?.firstName?.charAt(0) || 'A'}
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+							<circle cx="12" cy="7" r="4"></circle>
+						</svg>
 					</div>
-					{#if isSidebarOpen}
-						<div class="user-details">
-							<div class="user-name">{user?.firstName} {user?.lastName}</div>
-							<div class="user-role">
-								{#if user?.roles && user.roles.length > 0}
-									{user.roles[0].name}
-								{:else}
-									Administrator
-								{/if}
-							</div>
-							{#if user?.roles && user.roles.some((r: any) => r.id === 'super-administrator')}
-								<div class="super-admin-badge">Super Admin</div>
-							{/if}
-						</div>
-					{/if}
+					<div class="user-details">
+						<div class="user-name">{$auth.user?.first_name || 'Admin'}</div>
+						<div class="user-email">{$auth.user?.email || ''}</div>
+					</div>
 				</div>
-				<button class="logout-btn" on:click={async () => { await auth.logout(); goto('/login'); }}>
+				<button class="logout-button" on:click={handleLogout}>
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 						<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
 						<polyline points="16,17 21,12 16,7"></polyline>
 						<line x1="21" y1="12" x2="9" y2="12"></line>
 					</svg>
-					{#if isSidebarOpen}
-						<span>Logout</span>
-					{/if}
+					Logout
 				</button>
 			</div>
-		</aside>
+		</nav>
 
 		<!-- Main Content -->
-		<main class="main-content" class:sidebar-open={isSidebarOpen}>
-			<header class="content-header glass">
-				<div class="header-left">
-					<button class="mobile-toggle" on:click={toggleSidebar}>
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M3 12h18"></path>
-							<path d="M3 6h18"></path>
-							<path d="M3 18h18"></path>
-						</svg>
-					</button>
-					<h1 class="page-title">Admin Dashboard</h1>
-				</div>
-				<div class="header-right">
-					<a href="/" class="home-btn" title="Go to Home">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-							<polyline points="9,22 9,12 15,12 15,22"></polyline>
-						</svg>
-					</a>
-					<ThemeToggle />
-				</div>
-			</header>
-
-			<div class="content-area">
-				<slot />
-			</div>
+		<main class="admin-main">
+			<slot />
 		</main>
 	</div>
-
-	<ToastContainer />
+{:else}
+	<!-- Not admin - redirect to login -->
+	<div class="redirect-message">
+		<p>Redirecting to admin login...</p>
+	</div>
 {/if}
 
 <style>
-	.loading-screen {
-		min-height: 100vh;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		background: var(--primary-gradient);
-		color: var(--white);
-		gap: var(--space-lg);
-	}
-
-	.loading-screen p {
-		font-size: var(--text-lg);
-		opacity: 0.8;
-	}
-
 	.admin-layout {
 		display: flex;
 		min-height: 100vh;
-		background: var(--bg-secondary);
+		background: var(--bg-primary);
 	}
 
-	/* Sidebar */
-	.sidebar {
-		width: 280px;
-		height: 100vh;
-		position: fixed;
-		left: 0;
-		top: 0;
-		z-index: var(--z-fixed);
+	.admin-sidebar {
+		width: 320px;
+		background: var(--bg-glass);
+		backdrop-filter: blur(20px);
+		border-right: 1px solid rgba(255, 255, 255, 0.1);
 		display: flex;
 		flex-direction: column;
-		transition: all var(--transition-normal);
-		border-right: 1px solid rgba(255, 255, 255, 0.1);
-	}
-
-	.sidebar.collapsed {
-		width: 80px;
+		position: fixed;
+		height: 100vh;
+		z-index: 100;
+		overflow-y: auto;
 	}
 
 	.sidebar-header {
-		padding: var(--space-xl);
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
+		padding: 2rem 1.5rem;
 		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-	}
-
-	.brand {
 		display: flex;
 		align-items: center;
-		gap: var(--space-md);
+		gap: 1rem;
 	}
 
 	.brand-logo {
 		width: 40px;
 		height: 40px;
 		background: var(--primary-gradient);
-		border-radius: var(--radius-lg);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		box-shadow: var(--shadow-md);
-	}
-
-	.brand-logo svg {
-		width: 24px;
-		height: 24px;
-		color: var(--white);
-	}
-
-	.brand-text {
-		font-size: var(--text-xl);
-		font-weight: 700;
-		color: var(--text-primary);
-		font-family: var(--font-display);
-	}
-
-	.sidebar-toggle {
-		width: 32px;
-		height: 32px;
-		border: none;
-		background: var(--bg-glass);
-		border-radius: var(--radius-lg);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-		transition: all var(--transition-normal);
-		color: var(--text-primary);
-	}
-
-	.sidebar-toggle:hover {
-		background: var(--bg-glass-dark);
-		transform: scale(1.05);
-	}
-
-	.sidebar-toggle svg {
-		width: 18px;
-		height: 18px;
-	}
-
-	.sidebar-nav {
-		flex: 1;
-		padding: var(--space-lg);
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-sm);
-	}
-
-	.nav-item {
-		display: flex;
-		align-items: center;
-		gap: var(--space-md);
-		padding: var(--space-md);
-		border-radius: var(--radius-lg);
-		text-decoration: none;
-		color: var(--text-secondary);
-		transition: all var(--transition-normal);
-		cursor: pointer;
-	}
-
-	.nav-item:hover {
-		background: var(--bg-glass);
-		color: var(--text-primary);
-		transform: translateX(4px);
-	}
-
-	.nav-item.active {
-		background: var(--primary-gradient);
-		color: var(--white);
-		box-shadow: var(--shadow-md);
-	}
-
-	.nav-icon {
-		width: 24px;
-		height: 24px;
+		border-radius: 10px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
 	}
 
-	.nav-icon svg {
+	.brand-logo svg {
 		width: 20px;
 		height: 20px;
+		color: white;
 	}
 
-	.nav-label {
+	.brand-text {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.brand-text h2 {
+		font-size: 1.25rem;
+		font-weight: 700;
+		color: var(--text-primary);
+		margin: 0 0 0.25rem 0;
+	}
+
+	.role-badge {
+		background: var(--primary-gradient);
+		color: white;
+		padding: 0.125rem 0.5rem;
+		border-radius: 12px;
+		font-size: 0.7rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		display: block;
+	}
+
+	.super-admin-badge {
+		background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+		color: white;
+		padding: 0.125rem 0.5rem;
+		border-radius: 12px;
+		font-size: 0.7rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		display: block;
+	}
+
+	/* Theme Toggle Styles */
+	.theme-toggle {
+		width: 48px;
+		height: 48px;
+		border-radius: var(--radius-xl);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		cursor: pointer;
+		transition: all var(--transition-normal);
+		position: relative;
+		overflow: hidden;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--bg-glass);
+	}
+
+	.theme-toggle:hover {
+		transform: translateY(-2px);
+		box-shadow: var(--shadow-lg);
+	}
+
+	.theme-toggle:active {
+		transform: translateY(0);
+	}
+
+	.toggle-container {
+		position: relative;
+		width: 32px;
+		height: 32px;
+		border-radius: var(--radius-lg);
+		background: var(--bg-glass);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		overflow: hidden;
+	}
+
+	.sun-icon,
+	.moon-icon {
+		width: 18px;
+		height: 18px;
+		position: absolute;
+		transition: all var(--transition-bounce);
+		color: var(--text-primary);
+	}
+
+	.sun-icon {
+		opacity: 1;
+		transform: scale(1) rotate(0deg);
+	}
+
+	.sun-icon.active {
+		opacity: 1;
+		transform: scale(1) rotate(0deg);
+		color: var(--warning);
+	}
+
+	.sun-icon:not(.active) {
+		opacity: 0.5;
+		transform: scale(0.8) rotate(-90deg);
+	}
+
+	.moon-icon {
+		opacity: 0.5;
+		transform: scale(0.8) rotate(90deg);
+	}
+
+	.moon-icon.active {
+		opacity: 1;
+		transform: scale(1) rotate(0deg);
+		color: var(--accent);
+	}
+
+	.moon-icon:not(.active) {
+		opacity: 0.5;
+		transform: scale(0.8) rotate(90deg);
+	}
+
+	.toggle-slider {
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		width: 12px;
+		height: 12px;
+		background: var(--primary-gradient);
+		border-radius: 50%;
+		transition: all var(--transition-bounce);
+		box-shadow: var(--shadow-sm);
+	}
+
+	.toggle-slider.dark {
+		transform: translateX(16px);
+		background: var(--accent-gradient);
+	}
+
+	/* Hover effects */
+	.theme-toggle:hover .toggle-slider {
+		transform: scale(1.1);
+	}
+
+	.theme-toggle:hover .toggle-slider.dark {
+		transform: translateX(16px) scale(1.1);
+	}
+
+	/* Focus styles */
+	.theme-toggle:focus {
+		outline: none;
+		box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+	}
+
+	/* Responsive */
+	@media (max-width: 768px) {
+		.theme-toggle {
+			width: 44px;
+			height: 44px;
+		}
+
+		.toggle-container {
+			width: 28px;
+			height: 28px;
+		}
+
+		.sun-icon,
+		.moon-icon {
+			width: 16px;
+			height: 16px;
+		}
+
+		.toggle-slider {
+			width: 10px;
+			height: 10px;
+		}
+
+		.toggle-slider.dark {
+			transform: translateX(14px);
+		}
+
+		.theme-toggle:hover .toggle-slider.dark {
+			transform: translateX(14px) scale(1.1);
+		}
+	}
+
+	@media (max-width: 480px) {
+		.theme-toggle {
+			width: 40px;
+			height: 40px;
+		}
+
+		.toggle-container {
+			width: 24px;
+			height: 24px;
+		}
+
+		.sun-icon,
+		.moon-icon {
+			width: 14px;
+			height: 14px;
+		}
+
+		.toggle-slider {
+			width: 8px;
+			height: 8px;
+		}
+
+		.toggle-slider.dark {
+			transform: translateX(12px);
+		}
+
+		.theme-toggle:hover .toggle-slider.dark {
+			transform: translateX(12px) scale(1.1);
+		}
+	}
+
+	.sidebar-nav {
+		flex: 1;
+		padding: 1rem 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.nav-section {
+		margin-bottom: 1rem;
+	}
+
+	.section-header {
+		padding: 0.5rem 1.5rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		margin-bottom: 0.5rem;
+	}
+
+	.nav-item {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.75rem 1.5rem;
+		color: var(--text-secondary);
+		text-decoration: none;
+		transition: all 0.3s ease;
+		border-radius: 0 8px 8px 0;
+		margin-right: 1rem;
+	}
+
+	.nav-item:hover {
+		background: rgba(255, 255, 255, 0.1);
+		color: var(--text-primary);
+	}
+
+	.nav-item.active {
+		background: var(--primary);
+		color: white;
+	}
+
+	.nav-item svg {
+		width: 18px;
+		height: 18px;
+		flex-shrink: 0;
+	}
+
+	/* Subsites styling */
+	.subsite-item {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 1rem 1.5rem;
+	}
+
+	.subsite-icon {
+		width: 32px;
+		height: 32px;
+		background: var(--bg-glass-dark);
+		border-radius: 8px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.subsite-icon svg {
+		width: 16px;
+		height: 16px;
+		color: var(--text-secondary);
+	}
+
+	.subsite-info {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.subsite-name {
+		font-weight: 600;
+		color: var(--text-primary);
+		font-size: 0.9rem;
+		margin-bottom: 0.125rem;
+	}
+
+	.subsite-status {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		font-size: 0.7rem;
 		font-weight: 500;
-		white-space: nowrap;
+	}
+
+	.subsite-status.active {
+		color: #10b981;
+	}
+
+	.subsite-status.under_construction {
+		color: #f59e0b;
+	}
+
+	.subsite-status svg {
+		width: 12px;
+		height: 12px;
+	}
+
+	.subsite-item.under-construction {
+		opacity: 0.7;
+	}
+
+	.subsite-item.under-construction:hover {
+		opacity: 1;
 	}
 
 	.sidebar-footer {
-		padding: var(--space-lg);
+		padding: 1.5rem;
 		border-top: 1px solid rgba(255, 255, 255, 0.1);
 	}
 
 	.user-info {
 		display: flex;
 		align-items: center;
-		gap: var(--space-md);
-		margin-bottom: var(--space-lg);
+		gap: 0.75rem;
+		margin-bottom: 1rem;
 	}
 
 	.user-avatar {
 		width: 40px;
 		height: 40px;
-		background: var(--primary-gradient);
+		background: var(--bg-glass-dark);
 		border-radius: 50%;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-weight: 600;
-		color: var(--white);
-		font-size: var(--text-sm);
+		flex-shrink: 0;
+	}
+
+	.user-avatar svg {
+		width: 20px;
+		height: 20px;
+		color: var(--text-secondary);
 	}
 
 	.user-details {
 		flex: 1;
+		min-width: 0;
 	}
 
 	.user-name {
 		font-weight: 600;
 		color: var(--text-primary);
-		font-size: var(--text-sm);
+		font-size: 0.9rem;
+		margin-bottom: 0.125rem;
 	}
 
-	.user-role {
-		font-size: var(--text-xs);
+	.user-email {
+		font-size: 0.8rem;
 		color: var(--text-secondary);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
-	.super-admin-badge {
-		background: linear-gradient(135deg, #dc2626, #991b1b);
-		color: white;
-		padding: var(--space-1) var(--space-2);
-		border-radius: var(--radius-sm);
-		font-size: var(--text-xs);
-		font-weight: 600;
-		margin-top: var(--space-1);
-		text-align: center;
-		box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
-		animation: glow 2s ease-in-out infinite alternate;
-	}
-
-	@keyframes glow {
-		from {
-			box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
-		}
-		to {
-			box-shadow: 0 2px 8px rgba(220, 38, 38, 0.4), 0 0 16px rgba(220, 38, 38, 0.1);
-		}
-	}
-
-	.logout-btn {
-		display: flex;
-		align-items: center;
-		gap: var(--space-md);
+	.logout-button {
 		width: 100%;
-		padding: var(--space-md);
-		border: none;
-		background: var(--bg-glass);
-		border-radius: var(--radius-lg);
-		color: var(--text-secondary);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		padding: 0.75rem;
+		background: rgba(239, 68, 68, 0.1);
+		border: 1px solid rgba(239, 68, 68, 0.3);
+		border-radius: 8px;
+		color: #fca5a5;
 		cursor: pointer;
-		transition: all var(--transition-normal);
+		transition: all 0.3s ease;
+		font-size: 0.9rem;
 	}
 
-	.logout-btn:hover {
-		background: var(--error);
-		color: var(--white);
-		transform: translateY(-2px);
+	.logout-button:hover {
+		background: #ef4444;
+		color: white;
+		border-color: #ef4444;
 	}
 
-	.logout-btn svg {
-		width: 18px;
-		height: 18px;
+	.logout-button svg {
+		width: 16px;
+		height: 16px;
 	}
 
-	/* Main Content */
-	.main-content {
+	.admin-main {
 		flex: 1;
-		margin-left: 280px;
-		transition: all var(--transition-normal);
+		margin-left: 320px;
+		overflow-y: auto;
 	}
 
-	.main-content.sidebar-open {
-		margin-left: 280px;
-	}
-
-	.main-content:not(.sidebar-open) {
-		margin-left: 80px;
-	}
-
-	.content-header {
-		position: sticky;
-		top: 0;
-		z-index: var(--z-sticky);
-		padding: var(--space-xl);
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-	}
-
-	.header-left {
-		display: flex;
-		align-items: center;
-		gap: var(--space-lg);
-	}
-
-	.mobile-toggle {
-		display: none;
-		width: 40px;
-		height: 40px;
-		border: none;
-		background: var(--bg-glass);
-		border-radius: var(--radius-lg);
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-		transition: all var(--transition-normal);
-		color: var(--text-primary);
-	}
-
-	.mobile-toggle:hover {
-		background: var(--bg-glass-dark);
-		transform: scale(1.05);
-	}
-
-	.mobile-toggle svg {
-		width: 20px;
-		height: 20px;
-	}
-
-	.page-title {
-		font-size: var(--text-3xl);
-		font-weight: 700;
-		color: var(--text-primary);
-		margin: 0;
-	}
-
-	.header-right {
-		display: flex;
-		align-items: center;
-		gap: var(--space-md);
-	}
-
-	.home-btn {
+	.redirect-message {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 40px;
-		height: 40px;
-		border-radius: var(--radius-lg);
-		background: var(--bg-glass);
+		min-height: 100vh;
+		background: var(--bg-primary);
 		color: var(--text-primary);
-		text-decoration: none;
-		transition: all var(--transition-normal);
-		cursor: pointer;
-	}
-
-	.home-btn:hover {
-		background: var(--bg-glass-dark);
-		transform: translateY(-2px);
-		box-shadow: var(--shadow-md);
-	}
-
-	.home-btn svg {
-		width: 20px;
-		height: 20px;
-	}
-
-	.content-area {
-		padding: var(--space-2xl);
-	}
-
-	/* Responsive */
-	@media (max-width: 1024px) {
-		.sidebar {
-			transform: translateX(-100%);
-		}
-
-		.sidebar.open {
-			transform: translateX(0);
-		}
-
-		.main-content {
-			margin-left: 0;
-		}
-
-		.mobile-toggle {
-			display: flex;
-		}
-
-		.sidebar-toggle {
-			display: none;
-		}
 	}
 
 	@media (max-width: 768px) {
-		.content-header {
-			padding: var(--space-lg);
+		.admin-sidebar {
+			transform: translateX(-100%);
+			transition: transform 0.3s ease;
 		}
 
-		.content-area {
-			padding: var(--space-lg);
+		.admin-sidebar.open {
+			transform: translateX(0);
 		}
 
-		.page-title {
-			font-size: var(--text-2xl);
-		}
-	}
-
-	@media (max-width: 480px) {
-		.content-header {
-			padding: var(--space-md);
-		}
-
-		.content-area {
-			padding: var(--space-md);
-		}
-
-		.page-title {
-			font-size: var(--text-xl);
+		.admin-main {
+			margin-left: 0;
 		}
 	}
 </style> 

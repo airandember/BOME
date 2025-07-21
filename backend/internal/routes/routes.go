@@ -97,7 +97,13 @@ func SetupRoutes(
 	// Admin routes
 	admin := v1.Group("/admin")
 	SetupAdminRoutes(admin, db)
-	SetupAnalyticsRoutes(admin)
+	SetupAnalyticsRoutes(admin, db)
+	SetupMonitoringRoutes(admin, db)
+
+	// Create admin cache service
+	adminCache := services.NewAdminCacheService(nil)
+	SetupAdminStreamingRoutes(admin, db, bunnyService, adminCache)
+	SetupMasterVideoRoutes(admin, db, bunnyService)
 	fmt.Printf("Admin routes setup complete\n")
 
 	// Setup all mock data routes for development/testing
@@ -122,8 +128,93 @@ func SetupRoutes(
 	{
 		fmt.Printf("Setting up video routes...\n")
 
-		videos.GET("", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"message": "Videos endpoint - use /bunny for Bunny.net videos"})
+		// Get all videos with pagination and filtering
+		videos.GET("", middleware.AuthRequired(), middleware.SessionActivityTracker(db), func(c *gin.Context) {
+			// Parse query parameters
+			page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+			category := c.DefaultQuery("category", "")
+
+			// Validate parameters
+			if limit > 100 {
+				limit = 100
+			}
+			if limit < 1 {
+				limit = 20
+			}
+
+			// Calculate offset
+			offset := (page - 1) * limit
+
+			// Get videos from database
+			videos, err := db.GetVideos(limit, offset, category, "")
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error":   "Failed to fetch videos",
+					"details": err.Error(),
+				})
+				return
+			}
+
+			// Transform videos to API response format
+			var responseVideos []gin.H
+			for _, video := range videos {
+				// Get play data from Bunny.net if available
+				var playData *services.VideoPlayData
+				if video.BunnyVideoID != "" {
+					playData, _ = bunnyService.GetVideoPlayData(video.BunnyVideoID)
+				}
+
+				responseVideo := gin.H{
+					"id":           video.ID,
+					"title":        video.Title,
+					"description":  video.Description,
+					"bunnyVideoId": video.BunnyVideoID,
+					"thumbnailUrl": video.ThumbnailURL,
+					"duration":     video.Duration,
+					"fileSize":     video.FileSize,
+					"status":       video.Status,
+					"category":     video.Category,
+					"tags":         video.Tags,
+					"viewCount":    video.ViewCount,
+					"likeCount":    video.LikeCount,
+					"createdAt":    video.CreatedAt.Format(time.RFC3339),
+					"updatedAt":    video.UpdatedAt.Format(time.RFC3339),
+				}
+
+				// Add Bunny.net play data if available
+				if playData != nil {
+					responseVideo["playData"] = playData
+					responseVideo["iframeSrc"] = playData.IframeSrc
+					responseVideo["directPlayUrl"] = playData.DirectPlayURL
+					responseVideo["playbackUrl"] = playData.DirectPlayURL
+					responseVideo["resolutions"] = playData.ResolutionOptions
+				}
+
+				responseVideos = append(responseVideos, responseVideo)
+			}
+
+			// Get total count for pagination
+			totalCount, err := db.GetVideoCount()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error":   "Failed to get video count",
+					"details": err.Error(),
+				})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"videos":  responseVideos,
+				"pagination": gin.H{
+					"current_page": page,
+					"per_page":     limit,
+					"total":        totalCount,
+					"total_pages":  (totalCount + limit - 1) / limit,
+					"has_more":     page*limit < totalCount,
+				},
+			})
 		})
 
 		// Test endpoint to verify route registration
@@ -132,7 +223,7 @@ func SetupRoutes(
 		})
 
 		videos.GET("/categories", GetMockCategoriesHandler) // Must come before /:id
-		videos.GET("/:id", func(c *gin.Context) {
+		videos.GET("/:id", middleware.AuthRequired(), middleware.SessionActivityTracker(db), func(c *gin.Context) {
 			videoID := c.Param("id")
 			if videoID == "" {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Video ID is required"})
@@ -418,7 +509,7 @@ func SetupRoutes(
 		}
 
 		// Get video play data
-		playData, err := bunnyService.GetVideoPlayData(videoID)
+		_, err = bunnyService.GetVideoPlayData(videoID)
 		if err != nil {
 			fmt.Printf("Failed to get video play data: %v\n", err)
 			// Don't return error, just continue without play data
@@ -512,45 +603,95 @@ func SetupRoutes(
 
 		// Return the full Bunny.net response
 		response := gin.H{
-			"videoLibraryId":       bunnyVideo.VideoLibraryID,
-			"guid":                 bunnyVideo.GUID,
-			"title":                bunnyVideo.Title,
-			"description":          description,
-			"dateUploaded":         bunnyVideo.DateUploaded,
-			"views":                bunnyVideo.Views,
-			"isPublic":             bunnyVideo.IsPublic,
-			"length":               bunnyVideo.Length,
-			"status":               bunnyVideo.Status,
-			"framerate":            bunnyVideo.Framerate,
-			"width":                bunnyVideo.Width,
-			"height":               bunnyVideo.Height,
-			"availableResolutions": bunnyVideo.AvailableResolutions,
-			"outputCodecs":         "x264",
-			"thumbnailCount":       bunnyVideo.ThumbnailCount,
-			"encodeProgress":       bunnyVideo.EncodeProgress,
-			"storageSize":          bunnyVideo.StorageSize,
-			"captions":             []interface{}{},
-			"hasMP4Fallback":       bunnyVideo.HasMP4Fallback,
-			"collectionId":         bunnyVideo.CollectionID,
-			"thumbnailFileName":    bunnyVideo.ThumbnailFileName,
-			"averageWatchTime":     bunnyVideo.AverageWatchTime,
-			"totalWatchTime":       bunnyVideo.TotalWatchTime,
-			"category":             bunnyVideo.Category,
-			"chapters":             []interface{}{},
-			"moments":              []interface{}{},
-			"metaTags":             []interface{}{},
-			"jitEncodingEnabled":   false,
-		}
-
-		if playData != nil {
-			response["playData"] = playData
-			response["iframeSrc"] = playData.IframeSrc
-			response["directPlayUrl"] = playData.DirectPlayURL
-			response["thumbnailUrl"] = playData.ThumbnailURL
-			response["resolutions"] = playData.ResolutionOptions
+			"id":             bunnyVideo.GUID,
+			"title":          bunnyVideo.Title,
+			"description":    description,
+			"status":         status,
+			"duration":       bunnyVideo.Length,
+			"views":          bunnyVideo.Views,
+			"thumbnailUrl":   bunnyService.GetThumbnailURL(bunnyVideo.GUID),
+			"videoUrl":       bunnyService.GetStreamURL(bunnyVideo.GUID),
+			"iframeSrc":      bunnyService.GetIframeURL(bunnyVideo.GUID),
+			"playbackUrl":    bunnyService.GetStreamURL(bunnyVideo.GUID),
+			"createdAt":      bunnyVideo.DateUploaded,
+			"updatedAt":      bunnyVideo.DateUploaded,
+			"fileSize":       bunnyVideo.StorageSize,
+			"resolution":     fmt.Sprintf("%dx%d", bunnyVideo.Width, bunnyVideo.Height),
+			"category":       bunnyVideo.Category,
+			"tags":           []string{}, // Bunny.net doesn't provide tags
+			"encodeProgress": 0,          // Bunny.net doesn't provide this
+			"storageSize":    bunnyVideo.StorageSize,
 		}
 
 		c.JSON(http.StatusOK, response)
+	})
+
+	// Add PUT route for updating Bunny.net video metadata
+	v1.PUT("/bunny-videos/:id", middleware.AuthRequired(), middleware.SessionActivityTracker(db), func(c *gin.Context) {
+		videoID := c.Param("id")
+		if videoID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Video ID is required"})
+			return
+		}
+
+		var updateData map[string]interface{}
+		if err := c.ShouldBindJSON(&updateData); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Get video from database by Bunny ID
+		dbVideo, err := db.GetVideoByBunnyID(videoID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Video not found in database"})
+			return
+		}
+
+		// Update video in database
+		if err := db.UpdateVideo(dbVideo.ID, updateData); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update video"})
+			return
+		}
+
+		// Log admin action
+		userID := c.GetInt("user_id")
+		go db.CreateAdminLog(&userID, "bunny_video_updated", "video", &dbVideo.ID, updateData, c.ClientIP(), c.GetHeader("User-Agent"))
+
+		c.JSON(http.StatusOK, gin.H{"message": "Video updated successfully"})
+	})
+
+	// Add DELETE route for deleting Bunny.net videos
+	v1.DELETE("/bunny-videos/:id", middleware.AuthRequired(), middleware.SessionActivityTracker(db), func(c *gin.Context) {
+		videoID := c.Param("id")
+		if videoID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Video ID is required"})
+			return
+		}
+
+		// Get video from database by Bunny ID
+		dbVideo, err := db.GetVideoByBunnyID(videoID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Video not found in database"})
+			return
+		}
+
+		// Delete from Bunny.net first
+		if err := bunnyService.DeleteVideo(videoID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete video from Bunny.net"})
+			return
+		}
+
+		// Delete from database
+		if err := db.DeleteVideo(dbVideo.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete video from database"})
+			return
+		}
+
+		// Log admin action
+		userID := c.GetInt("user_id")
+		go db.CreateAdminLog(&userID, "bunny_video_deleted", "video", &dbVideo.ID, map[string]interface{}{"title": dbVideo.Title}, c.ClientIP(), c.GetHeader("User-Agent"))
+
+		c.JSON(http.StatusOK, gin.H{"message": "Video deleted successfully"})
 	})
 
 	// Bunny.net collections endpoints
@@ -1614,226 +1755,6 @@ func handleDownloadInvoice(db *database.DB, stripeService *services.StripeServic
 	}
 }
 
-// Admin analytics handlers
-func handleAdminGetAnalytics(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin analytics endpoint - TODO"})
-	}
-}
-
-func handleAdminGetUserAnalytics(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin user analytics endpoint - TODO"})
-	}
-}
-
-func handleAdminGetVideoAnalytics(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin video analytics endpoint - TODO"})
-	}
-}
-
-func handleAdminGetRevenueAnalytics(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin revenue analytics endpoint - TODO"})
-	}
-}
-
-func handleAdminGetSystemHealth(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin system health endpoint - TODO"})
-	}
-}
-
-func handleAdminCreateBackup(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin create backup endpoint - TODO"})
-	}
-}
-
-func handleAdminGetLogs(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Admin get logs endpoint - TODO"})
-	}
-}
-
-func handleGetRefunds(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID := c.GetInt("user_id")
-		if userID == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-			return
-		}
-
-		// Get pagination parameters
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-		if limit < 1 || limit > 100 {
-			limit = 20
-		}
-
-		// Get user to find their Stripe customer ID
-		user, err := db.GetUserByID(userID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
-			return
-		}
-
-		if !user.StripeCustomerID.Valid || user.StripeCustomerID.String == "" {
-			// User has no Stripe customer ID, return empty refunds
-			c.JSON(http.StatusOK, gin.H{
-				"refunds": []interface{}{},
-				"total":   0,
-			})
-			return
-		}
-
-		// Get refunds from Stripe
-		refunds, err := stripeService.ListCustomerRefunds(user.StripeCustomerID.String, limit)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get refunds"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"refunds": refunds,
-			"total":   len(refunds),
-		})
-	}
-}
-
-func handleGetRefund(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID := c.GetInt("user_id")
-		if userID == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-			return
-		}
-
-		refundID := c.Param("id")
-		if refundID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Refund ID is required"})
-			return
-		}
-
-		// Get user to verify ownership
-		user, err := db.GetUserByID(userID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
-			return
-		}
-
-		if !user.StripeCustomerID.Valid || user.StripeCustomerID.String == "" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Refund not found"})
-			return
-		}
-
-		// Get refund from Stripe
-		refund, err := stripeService.GetRefund(refundID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Refund not found"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"refund": refund})
-	}
-}
-
-func handleCreateRefund(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID := c.GetInt("user_id")
-		if userID == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-			return
-		}
-
-		var refundReq struct {
-			PaymentIntentID string `json:"payment_intent_id" binding:"required"`
-			Amount          int64  `json:"amount"`
-			Reason          string `json:"reason"`
-		}
-
-		if err := c.ShouldBindJSON(&refundReq); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		// Validate refund reason
-		validReasons := []string{"duplicate", "fraudulent", "requested_by_customer"}
-		if refundReq.Reason == "" {
-			refundReq.Reason = "requested_by_customer"
-		}
-
-		reasonValid := false
-		for _, validReason := range validReasons {
-			if refundReq.Reason == validReason {
-				reasonValid = true
-				break
-			}
-		}
-
-		if !reasonValid {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid refund reason"})
-			return
-		}
-
-		// Get user to verify ownership
-		user, err := db.GetUserByID(userID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
-			return
-		}
-
-		if !user.StripeCustomerID.Valid || user.StripeCustomerID.String == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "No payment methods found"})
-			return
-		}
-
-		// Create refund through Stripe
-		refund, err := stripeService.CreateRefund(refundReq.PaymentIntentID, refundReq.Amount, refundReq.Reason)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create refund"})
-			return
-		}
-
-		c.JSON(http.StatusCreated, gin.H{"refund": refund})
-	}
-}
-
-// RoleRequired middleware that requires specific roles
-func RoleRequired(allowedRoles ...string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userRole, exists := c.Get("user_role")
-		if !exists {
-			c.JSON(401, gin.H{"error": "Authentication required"})
-			c.Abort()
-			return
-		}
-
-		roleStr := userRole.(string)
-		for _, role := range allowedRoles {
-			if roleStr == role {
-				c.Next()
-				return
-			}
-		}
-
-		c.JSON(403, gin.H{"error": "Insufficient permissions"})
-		c.Abort()
-	}
-}
-
-// HealthHandler returns the health status of the API
-func HealthHandler() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status":    "healthy",
-			"service":   "bome-backend",
-			"version":   "1.0.0",
-			"timestamp": time.Now(),
-		})
-	}
-}
-
 // UploadVideoHandler handles secure video uploads via backend - ADMIN/CONTENT MANAGER ONLY
 func UploadVideoHandler(db *database.DB, bunnyService *services.BunnyService) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -1970,7 +1891,28 @@ func isValidVideoFile(filename string) bool {
 	return false
 }
 
-// This StreamVideoHandler is now handled in video.go
+// RoleRequired middleware that requires specific roles
+func RoleRequired(allowedRoles ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userRole, exists := c.Get("user_role")
+		if !exists {
+			c.JSON(401, gin.H{"error": "Authentication required"})
+			c.Abort()
+			return
+		}
+
+		roleStr := userRole.(string)
+		for _, role := range allowedRoles {
+			if roleStr == role {
+				c.Next()
+				return
+			}
+		}
+
+		c.JSON(403, gin.H{"error": "Insufficient permissions"})
+		c.Abort()
+	}
+}
 
 // BunnyVideo represents a video in Bunny Stream
 type BunnyVideo struct {

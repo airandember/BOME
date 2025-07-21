@@ -78,6 +78,14 @@ func main() {
 	// Store optimized service globally for metrics access
 	services.SetGlobalOptimizedBunnyService(optimizedBunnyService)
 
+	// Initialize analytics service and start system monitoring
+	var analyticsService *services.AnalyticsService
+	if db != nil {
+		analyticsService = services.NewAnalyticsService(db)
+		analyticsService.StartSystemMonitoring()
+		log.Println("Analytics service and system monitoring started")
+	}
+
 	stripeService := services.NewStripeService()
 	spacesService, err := services.NewSpacesService()
 	if err != nil {
@@ -125,13 +133,14 @@ func main() {
 	routes.SetupRoutes(router, cfg, db, redis, optimizedBunnyService.GetBunnyService(), stripeService, spacesService, emailService)
 	log.Println("Routes setup completed successfully")
 
-	// Create HTTP server
+	// Create HTTP server with optimized settings for high traffic
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%s", cfg.ServerPort),
-		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:           fmt.Sprintf(":%s", cfg.ServerPort),
+		Handler:        router,
+		ReadTimeout:    30 * time.Second,  // Increased from 15s
+		WriteTimeout:   30 * time.Second,  // Increased from 15s
+		IdleTimeout:    120 * time.Second, // Increased from 60s
+		MaxHeaderBytes: 1 << 20,           // 1MB max header size
 	}
 
 	// Start server in a goroutine

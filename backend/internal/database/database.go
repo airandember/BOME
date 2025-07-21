@@ -9,6 +9,7 @@ import (
 	"bome-backend/internal/config"
 
 	_ "github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -17,6 +18,7 @@ import (
 type DB struct {
 	*sql.DB
 	GormDB *gorm.DB // Add GORM support for design system features
+	Redis  *Redis   // Add Redis client for caching and session management
 }
 
 // New creates a new database connection
@@ -31,12 +33,16 @@ func New(cfg *config.Config) (*DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Configure connection pool for production
-	// These settings are optimized for production load
-	db.SetMaxOpenConns(50)                  // Maximum number of open connections (increased for production)
-	db.SetMaxIdleConns(10)                  // Maximum number of idle connections (increased for production)
-	db.SetConnMaxLifetime(10 * time.Minute) // Maximum connection lifetime (increased for production)
-	db.SetConnMaxIdleTime(5 * time.Minute)  // Maximum idle time for connections
+	// Configure connection pool for high-traffic production load
+	// Optimized for 3,000-5,000 concurrent users
+	db.SetMaxOpenConns(200)                 // Increased from 50 to 200 for high concurrency
+	db.SetMaxIdleConns(50)                  // Increased from 10 to 50 for better reuse
+	db.SetConnMaxLifetime(30 * time.Minute) // Increased from 10 to 30 minutes
+	db.SetConnMaxIdleTime(10 * time.Minute) // Increased from 5 to 10 minutes
+
+	// Add connection pool monitoring
+	log.Printf("Database pool configured: MaxOpen=%d, MaxIdle=%d, MaxLifetime=%v, MaxIdleTime=%v",
+		200, 50, 30*time.Minute, 10*time.Minute)
 
 	// Test the connection
 	if err := db.Ping(); err != nil {
@@ -49,11 +55,21 @@ func New(cfg *config.Config) (*DB, error) {
 		return nil, fmt.Errorf("failed to initialize GORM: %w", err)
 	}
 
+	// Initialize Redis connection
+	redisClient, err := NewRedis(cfg)
+	if err != nil {
+		log.Printf("Warning: Failed to initialize Redis: %v", err)
+		redisClient = nil
+	}
+
 	log.Printf("PostgreSQL database connection established: %s:%s/%s", cfg.DBHost, cfg.DBPort, cfg.DBName)
 	log.Printf("GORM database connection established successfully")
+	if redisClient != nil {
+		log.Printf("Redis connection established successfully")
+	}
 	log.Printf("Database pool configured: MaxOpen=%d, MaxIdle=%d, MaxLifetime=%v", 50, 10, 10*time.Minute)
 
-	return &DB{DB: db, GormDB: gormDB}, nil
+	return &DB{DB: db, GormDB: gormDB, Redis: redisClient}, nil
 }
 
 // Close closes the database connection
@@ -103,8 +119,10 @@ func (db *DB) RunMigrations() error {
 		createAdImpressionsTable,
 		createAdBillingTable,
 		createAdAuditLogTable,
+		createAnalyticsTables, // Add analytics tables migration
 		createIndexes,
 		applyPerformanceOptimizations, // Add the new optimization migration
+		createMasterVideoList,         // Add master video list migration
 	}
 
 	for i, migration := range migrations {
@@ -138,6 +156,54 @@ func (db *DB) RunMigrations() error {
 	}
 
 	log.Println("Database migrations completed")
+	return nil
+}
+
+// GetPoolStats returns database connection pool statistics
+func (db *DB) GetPoolStats() map[string]interface{} {
+	stats := db.DB.Stats()
+	return map[string]interface{}{
+		"max_open_connections": stats.MaxOpenConnections,
+		"open_connections":     stats.OpenConnections,
+		"in_use":               stats.InUse,
+		"idle":                 stats.Idle,
+		"wait_count":           stats.WaitCount,
+		"wait_duration":        stats.WaitDuration.String(),
+		"max_idle_closed":      stats.MaxIdleClosed,
+		"max_idle_time_closed": stats.MaxIdleTimeClosed,
+		"max_lifetime_closed":  stats.MaxLifetimeClosed,
+	}
+}
+
+// GetRedisClient returns the Redis client
+func (db *DB) GetRedisClient() *redis.Client {
+	if db.Redis == nil {
+		return nil
+	}
+	return db.Redis.Client
+}
+
+// CreateAlert creates a new system alert
+func (db *DB) CreateAlert(alert *Alert) error {
+	query := `
+		INSERT INTO alerts (severity, title, message, created_at, acknowledged)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id
+	`
+
+	err := db.QueryRow(
+		query,
+		alert.Severity,
+		alert.Title,
+		alert.Message,
+		alert.CreatedAt,
+		alert.Acknowledged,
+	).Scan(&alert.ID)
+
+	if err != nil {
+		return fmt.Errorf("failed to create alert: %w", err)
+	}
+
 	return nil
 }
 
@@ -590,6 +656,140 @@ CREATE TABLE IF NOT EXISTS ad_audit_log (
 );
 `
 
+const createAnalyticsTables = `
+-- Analytics Events Table
+CREATE TABLE IF NOT EXISTS analytics_events (
+    id SERIAL PRIMARY KEY,
+    event_type VARCHAR(100) NOT NULL,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    session_id VARCHAR(255),
+    subsite VARCHAR(50) DEFAULT 'streaming',
+    event_data TEXT, -- JSON string
+    ip_address INET,
+    user_agent TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- User Metrics Table
+CREATE TABLE IF NOT EXISTS user_metrics (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    session_count INTEGER DEFAULT 0,
+    session_duration INTEGER DEFAULT 0, -- in seconds
+    page_views INTEGER DEFAULT 0,
+    video_views INTEGER DEFAULT 0,
+    video_watch_time INTEGER DEFAULT 0, -- in seconds
+    likes_given INTEGER DEFAULT 0,
+    comments_made INTEGER DEFAULT 0,
+    shares_made INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, date)
+);
+
+-- Video Metrics Table
+CREATE TABLE IF NOT EXISTS video_metrics (
+    id SERIAL PRIMARY KEY,
+    video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    views INTEGER DEFAULT 0,
+    unique_views INTEGER DEFAULT 0,
+    watch_time INTEGER DEFAULT 0, -- in seconds
+    completion_rate DECIMAL(5,2) DEFAULT 0.00,
+    likes INTEGER DEFAULT 0,
+    comments INTEGER DEFAULT 0,
+    shares INTEGER DEFAULT 0,
+    bounce_rate DECIMAL(5,2) DEFAULT 0.00,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(video_id, date)
+);
+
+-- System Metrics Table
+CREATE TABLE IF NOT EXISTS system_metrics (
+    id SERIAL PRIMARY KEY,
+    timestamp TIMESTAMP NOT NULL,
+    cpu_usage DECIMAL(5,2) DEFAULT 0.00,
+    memory_usage DECIMAL(5,2) DEFAULT 0.00,
+    disk_usage DECIMAL(5,2) DEFAULT 0.00,
+    network_in BIGINT DEFAULT 0, -- bytes
+    network_out BIGINT DEFAULT 0, -- bytes
+    active_sessions INTEGER DEFAULT 0,
+    error_rate DECIMAL(5,4) DEFAULT 0.0000,
+    response_time INTEGER DEFAULT 0, -- milliseconds
+    database_size BIGINT DEFAULT 0, -- bytes
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Webhook Events Table
+CREATE TABLE IF NOT EXISTS webhook_events (
+    id SERIAL PRIMARY KEY,
+    event_type VARCHAR(100) NOT NULL,
+    subsite VARCHAR(50) DEFAULT 'streaming',
+    endpoint VARCHAR(500) NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('success', 'failed', 'pending')),
+    response_time INTEGER DEFAULT 0, -- milliseconds
+    payload_size INTEGER DEFAULT 0, -- bytes
+    status_code INTEGER,
+    error_message TEXT,
+    retry_count INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Alerts Table
+CREATE TABLE IF NOT EXISTS alerts (
+    id SERIAL PRIMARY KEY,
+    severity VARCHAR(20) NOT NULL CHECK (severity IN ('info', 'warning', 'critical')),
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    subsite VARCHAR(50),
+    acknowledged BOOLEAN DEFAULT FALSE,
+    acknowledged_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    acknowledged_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Cross Subsite Stats Table
+CREATE TABLE IF NOT EXISTS cross_subsite_stats (
+    id SERIAL PRIMARY KEY,
+    date DATE NOT NULL,
+    subsite VARCHAR(50) NOT NULL,
+    users INTEGER DEFAULT 0,
+    content INTEGER DEFAULT 0,
+    views INTEGER DEFAULT 0,
+    revenue DECIMAL(10,2) DEFAULT 0.00,
+    engagement_rate DECIMAL(5,4) DEFAULT 0.0000,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(date, subsite)
+);
+
+-- Analytics Indexes
+CREATE INDEX IF NOT EXISTS idx_analytics_events_type ON analytics_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_user_id ON analytics_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_subsite ON analytics_events(subsite);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_created_at ON analytics_events(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_user_metrics_user_id ON user_metrics(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_metrics_date ON user_metrics(date);
+
+CREATE INDEX IF NOT EXISTS idx_video_metrics_video_id ON video_metrics(video_id);
+CREATE INDEX IF NOT EXISTS idx_video_metrics_date ON video_metrics(date);
+
+CREATE INDEX IF NOT EXISTS idx_system_metrics_timestamp ON system_metrics(timestamp);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_events_type ON webhook_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_webhook_events_status ON webhook_events(status);
+CREATE INDEX IF NOT EXISTS idx_webhook_events_created_at ON webhook_events(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);
+CREATE INDEX IF NOT EXISTS idx_alerts_acknowledged ON alerts(acknowledged);
+CREATE INDEX IF NOT EXISTS idx_alerts_created_at ON alerts(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_cross_subsite_stats_date ON cross_subsite_stats(date);
+CREATE INDEX IF NOT EXISTS idx_cross_subsite_stats_subsite ON cross_subsite_stats(subsite);
+`
+
 const createIndexes = `
 -- User indexes
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -695,39 +895,150 @@ const applyPerformanceOptimizations = `
 -- =====================================================
 
 -- Video-related indexes
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_videos_status_category_created 
+CREATE INDEX IF NOT EXISTS idx_videos_status_category_created 
 ON videos(status, category, created_at DESC);
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_videos_ready_views 
+CREATE INDEX IF NOT EXISTS idx_videos_ready_views 
 ON videos(status, view_count DESC) WHERE status = 'ready';
 
 -- Enable pg_trgm extension for better text search if not exists
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- Full-text search index for videos
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_videos_search_text 
+CREATE INDEX IF NOT EXISTS idx_videos_search_text 
 ON videos USING gin(to_tsvector('english', title || ' ' || COALESCE(description, '')));
 
 -- User session optimization
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_sessions_active_expires 
+CREATE INDEX IF NOT EXISTS idx_user_sessions_active_expires 
 ON user_sessions(is_active, expires_at) WHERE is_active = TRUE;
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_sessions_user_activity 
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user_activity 
 ON user_sessions(user_id, last_activity DESC) WHERE is_active = TRUE;
 
 -- Analytics and audit logs
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_audit_logs_composite 
+CREATE INDEX IF NOT EXISTS idx_audit_logs_composite 
 ON audit_logs(user_id, action, created_at DESC);
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_activity_type_created 
+CREATE INDEX IF NOT EXISTS idx_user_activity_type_created 
 ON user_activity(activity_type, created_at DESC);
 
 -- Advertisement system indexes
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ad_campaigns_active_dates 
+CREATE INDEX IF NOT EXISTS idx_ad_campaigns_active_dates 
 ON ad_campaigns(status, start_date, end_date) WHERE status = 'active';
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ad_schedules_active_time 
+CREATE INDEX IF NOT EXISTS idx_ad_schedules_active_time 
 ON ad_schedules(is_active, start_date, end_date) WHERE is_active = TRUE;
+
+-- =====================================================
+-- ANALYTICS-SPECIFIC INDEXES FOR PERFORMANCE
+-- =====================================================
+
+-- Analytics events indexes for fast querying
+CREATE INDEX IF NOT EXISTS idx_analytics_events_subsite_created 
+ON analytics_events(subsite, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_events_type_created 
+ON analytics_events(event_type, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_events_user_session 
+ON analytics_events(user_id, session_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_events_video_view 
+ON analytics_events(event_type, created_at DESC) WHERE event_type = 'video_view';
+
+-- User metrics indexes
+CREATE INDEX IF NOT EXISTS idx_user_metrics_user_date 
+ON user_metrics(user_id, date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_user_metrics_date_range 
+ON user_metrics(date) WHERE date >= CURRENT_DATE - INTERVAL '90 days';
+
+-- Video metrics indexes
+CREATE INDEX IF NOT EXISTS idx_video_metrics_video_date 
+ON video_metrics(video_id, date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_video_metrics_views_date 
+ON video_metrics(views DESC, date DESC);
+
+-- System metrics indexes
+CREATE INDEX IF NOT EXISTS idx_system_metrics_timestamp 
+ON system_metrics(timestamp DESC);
+
+CREATE INDEX IF NOT EXISTS idx_system_metrics_recent 
+ON system_metrics(timestamp DESC) WHERE timestamp >= NOW() - INTERVAL '24 hours';
+
+-- Webhook events indexes
+CREATE INDEX IF NOT EXISTS idx_webhook_events_status_created 
+ON webhook_events(status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_events_subsite_type 
+ON webhook_events(subsite, event_type, created_at DESC);
+
+-- Alerts indexes
+CREATE INDEX IF NOT EXISTS idx_alerts_severity_created 
+ON alerts(severity, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_unacknowledged 
+ON alerts(acknowledged, created_at DESC) WHERE acknowledged = FALSE;
+
+-- Cross-subsite stats indexes
+CREATE INDEX IF NOT EXISTS idx_cross_subsite_stats_date_subsite 
+ON cross_subsite_stats(date DESC, subsite);
+
+-- Users table indexes for analytics queries
+CREATE INDEX IF NOT EXISTS idx_users_created_at 
+ON users(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_users_role_created 
+ON users(role, created_at DESC);
+
+-- Subscriptions indexes for revenue analytics
+CREATE INDEX IF NOT EXISTS idx_subscriptions_status_created 
+ON subscriptions(status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_subscriptions_billing_cycle 
+ON subscriptions(billing_cycle, status) WHERE status = 'active';
+
+-- Payments indexes for revenue tracking
+CREATE INDEX IF NOT EXISTS idx_payments_status_created 
+ON payments(status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_payments_amount_status 
+ON payments(amount DESC, status) WHERE status = 'completed';
+
+-- Video ratings indexes
+CREATE INDEX IF NOT EXISTS idx_video_ratings_video_rating 
+ON video_ratings(video_id, rating DESC);
+
+CREATE INDEX IF NOT EXISTS idx_video_ratings_user_video 
+ON video_ratings(user_id, video_id);
+
+-- =====================================================
+-- PARTITIONING FOR LARGE ANALYTICS TABLES
+-- =====================================================
+
+-- Partition analytics_events by month for better performance
+-- Note: This requires PostgreSQL 10+ and careful planning
+-- Uncomment when table size exceeds 10M rows
+
+/*
+CREATE TABLE IF NOT EXISTS analytics_events_partitioned (
+    LIKE analytics_events INCLUDING ALL
+) PARTITION BY RANGE (created_at);
+
+-- Create partitions for current and next 3 months
+CREATE TABLE analytics_events_2024_01 PARTITION OF analytics_events_partitioned
+    FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
+
+CREATE TABLE analytics_events_2024_02 PARTITION OF analytics_events_partitioned
+    FOR VALUES FROM ('2024-02-01') TO ('2024-03-01');
+
+CREATE TABLE analytics_events_2024_03 PARTITION OF analytics_events_partitioned
+    FOR VALUES FROM ('2024-03-01') TO ('2024-04-01');
+
+CREATE TABLE analytics_events_2024_04 PARTITION OF analytics_events_partitioned
+    FOR VALUES FROM ('2024-04-01') TO ('2024-05-01');
+*/
 
 -- =====================================================
 -- OPTIMIZED VIEWS FOR COMMON QUERIES
@@ -882,4 +1193,208 @@ SELECT
 FROM pg_tables
 WHERE schemaname = 'public'
 ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
+`
+
+const createMasterVideoList = `
+-- Migration: Create master video list table
+-- Description: Master list for video metadata with Bunny.net synchronization
+
+CREATE TABLE IF NOT EXISTS master_video_list (
+    id SERIAL PRIMARY KEY,
+    bunny_video_id VARCHAR(255) UNIQUE NOT NULL,
+    title VARCHAR(500) NOT NULL,
+    description TEXT,
+    category VARCHAR(100),
+    tags JSONB DEFAULT '[]',
+    duration INTEGER DEFAULT 0,
+    file_size BIGINT DEFAULT 0,
+    resolution VARCHAR(50),
+    framerate DECIMAL(5,2),
+    thumbnail_url TEXT,
+    video_url TEXT,
+    iframe_src TEXT,
+    playback_url TEXT,
+    status VARCHAR(50) DEFAULT 'processing',
+    views INTEGER DEFAULT 0,
+    likes INTEGER DEFAULT 0,
+    is_public BOOLEAN DEFAULT true,
+    encode_progress INTEGER DEFAULT 0,
+    available_resolutions JSONB DEFAULT '[]',
+    collection_id VARCHAR(255),
+    average_watch_time INTEGER DEFAULT 0,
+    total_watch_time BIGINT DEFAULT 0,
+    
+    -- Sync tracking fields
+    last_bunny_sync TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_master_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    sync_status VARCHAR(50) DEFAULT 'synced', -- synced, needs_attention, conflict
+    sync_notes TEXT,
+    
+    -- Metadata tracking
+    metadata_version INTEGER DEFAULT 1,
+    created_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for performance
+CREATE INDEX IF NOT EXISTS idx_master_video_bunny_id ON master_video_list(bunny_video_id);
+CREATE INDEX IF NOT EXISTS idx_master_video_status ON master_video_list(status);
+CREATE INDEX IF NOT EXISTS idx_master_video_category ON master_video_list(category);
+CREATE INDEX IF NOT EXISTS idx_master_video_sync_status ON master_video_list(sync_status);
+CREATE INDEX IF NOT EXISTS idx_master_video_created_at ON master_video_list(created_at);
+CREATE INDEX IF NOT EXISTS idx_master_video_views ON master_video_list(views DESC);
+CREATE INDEX IF NOT EXISTS idx_master_video_collection ON master_video_list(collection_id);
+
+-- Create sync conflicts table for tracking discrepancies
+CREATE TABLE IF NOT EXISTS video_sync_conflicts (
+    id SERIAL PRIMARY KEY,
+    master_video_id INTEGER REFERENCES master_video_list(id) ON DELETE CASCADE,
+    bunny_video_id VARCHAR(255) NOT NULL,
+    conflict_type VARCHAR(50) NOT NULL, -- field_mismatch, missing_field, status_mismatch
+    field_name VARCHAR(100),
+    master_value TEXT,
+    bunny_value TEXT,
+    proposed_action VARCHAR(50) NOT NULL, -- update_master, update_bunny, update_both, manual_review
+    admin_notes TEXT,
+    resolved BOOLEAN DEFAULT false,
+    resolved_by INTEGER REFERENCES users(id),
+    resolved_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for sync conflicts
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_master_id ON video_sync_conflicts(master_video_id);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_bunny_id ON video_sync_conflicts(bunny_video_id);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_resolved ON video_sync_conflicts(resolved);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_type ON video_sync_conflicts(conflict_type);
+
+-- Create sync audit log table
+CREATE TABLE IF NOT EXISTS video_sync_audit_log (
+    id SERIAL PRIMARY KEY,
+    master_video_id INTEGER REFERENCES master_video_list(id) ON DELETE CASCADE,
+    bunny_video_id VARCHAR(255) NOT NULL,
+    sync_action VARCHAR(50) NOT NULL, -- sync_from_bunny, sync_to_bunny, conflict_resolved, manual_update
+    sync_result VARCHAR(50) NOT NULL, -- success, failed, partial, conflict
+    changes_made JSONB DEFAULT '{}',
+    error_message TEXT,
+    performed_by INTEGER REFERENCES users(id),
+    performed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for audit log
+CREATE INDEX IF NOT EXISTS idx_sync_audit_master_id ON video_sync_audit_log(master_video_id);
+CREATE INDEX IF NOT EXISTS idx_sync_audit_bunny_id ON video_sync_audit_log(bunny_video_id);
+CREATE INDEX IF NOT EXISTS idx_sync_audit_action ON video_sync_audit_log(sync_action);
+CREATE INDEX IF NOT EXISTS idx_sync_audit_performed_at ON video_sync_audit_log(performed_at);
+
+-- Create function to update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_master_video_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger for updated_at
+DROP TRIGGER IF EXISTS trigger_master_video_updated_at ON master_video_list;
+CREATE TRIGGER trigger_master_video_updated_at
+    BEFORE UPDATE ON master_video_list
+    FOR EACH ROW
+    EXECUTE FUNCTION update_master_video_updated_at();
+
+-- Create function to log sync conflicts
+CREATE OR REPLACE FUNCTION log_sync_conflict(
+    p_master_video_id INTEGER,
+    p_bunny_video_id VARCHAR(255),
+    p_conflict_type VARCHAR(50),
+    p_field_name VARCHAR(100),
+    p_master_value TEXT,
+    p_bunny_value TEXT,
+    p_proposed_action VARCHAR(50)
+) RETURNS INTEGER AS $$
+DECLARE
+    conflict_id INTEGER;
+BEGIN
+    INSERT INTO video_sync_conflicts (
+        master_video_id, bunny_video_id, conflict_type, field_name,
+        master_value, bunny_value, proposed_action
+    ) VALUES (
+        p_master_video_id, p_bunny_video_id, p_conflict_type, p_field_name,
+        p_master_value, p_bunny_value, p_proposed_action
+    ) RETURNING id INTO conflict_id;
+    
+    RETURN conflict_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create function to log sync audit
+CREATE OR REPLACE FUNCTION log_sync_audit(
+    p_master_video_id INTEGER,
+    p_bunny_video_id VARCHAR(255),
+    p_sync_action VARCHAR(50),
+    p_sync_result VARCHAR(50),
+    p_changes_made JSONB,
+    p_error_message TEXT,
+    p_performed_by INTEGER
+) RETURNS INTEGER AS $$
+DECLARE
+    audit_id INTEGER;
+BEGIN
+    INSERT INTO video_sync_audit_log (
+        master_video_id, bunny_video_id, sync_action, sync_result,
+        changes_made, error_message, performed_by
+    ) VALUES (
+        p_master_video_id, p_bunny_video_id, p_sync_action, p_sync_result,
+        p_changes_made, p_error_message, p_performed_by
+    ) RETURNING id INTO audit_id;
+    
+    RETURN audit_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create view for easy access to sync status
+CREATE OR REPLACE VIEW video_sync_status AS
+SELECT 
+    mvl.id,
+    mvl.bunny_video_id,
+    mvl.title,
+    mvl.status as master_status,
+    mvl.sync_status,
+    mvl.last_bunny_sync,
+    mvl.last_master_update,
+    COUNT(vsc.id) as pending_conflicts,
+    COUNT(vsc.id) FILTER (WHERE vsc.resolved = false) as unresolved_conflicts
+FROM master_video_list mvl
+LEFT JOIN video_sync_conflicts vsc ON mvl.id = vsc.master_video_id
+GROUP BY mvl.id, mvl.bunny_video_id, mvl.title, mvl.status, mvl.sync_status, 
+         mvl.last_bunny_sync, mvl.last_master_update;
+
+-- Create view for admin dashboard
+CREATE OR REPLACE VIEW admin_video_dashboard AS
+SELECT 
+    mvl.id,
+    mvl.bunny_video_id,
+    mvl.title,
+    mvl.category,
+    mvl.status,
+    mvl.views,
+    mvl.duration,
+    mvl.file_size,
+    mvl.sync_status,
+    mvl.last_bunny_sync,
+    mvl.last_master_update,
+    COUNT(vsc.id) FILTER (WHERE vsc.resolved = false) as needs_attention,
+    CASE 
+        WHEN mvl.sync_status = 'needs_attention' THEN '⚠️ Needs Review'
+        WHEN mvl.sync_status = 'conflict' THEN '🚨 Conflict'
+        WHEN mvl.sync_status = 'synced' THEN '✅ Synced'
+        ELSE '❓ Unknown'
+    END as sync_status_display
+FROM master_video_list mvl
+LEFT JOIN video_sync_conflicts vsc ON mvl.id = vsc.master_video_id
+GROUP BY mvl.id, mvl.bunny_video_id, mvl.title, mvl.category, mvl.status, 
+         mvl.views, mvl.duration, mvl.file_size, mvl.sync_status, 
+         mvl.last_bunny_sync, mvl.last_master_update;
 `

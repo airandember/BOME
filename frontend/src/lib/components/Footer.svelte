@@ -100,6 +100,7 @@
 					<a href="/privacy">Privacy</a>
 					<a href="/terms">Terms</a>
 					<a href="/cookies">Cookies</a>
+					
 				</div>
 			</div>
 		</div>
@@ -279,6 +280,25 @@
 
 	.footer-links a:hover {
 		color: var(--primary);
+	}
+
+	/* Admin link styling */
+	.admin-link {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		opacity: 0.6;
+		transition: opacity var(--transition-normal);
+	}
+
+	.admin-link:hover {
+		opacity: 1;
+		color: var(--primary);
+	}
+
+	.admin-link svg {
+		width: 14px;
+		height: 14px;
 	}
 
 	/* Responsive Design */
