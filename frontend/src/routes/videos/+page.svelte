@@ -1079,14 +1079,18 @@
 	}
 
 	.collections-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+		display: flex;
+		flex-wrap: wrap;
+		flex-direction: row;
 		gap: 2rem;
 		margin-bottom: 2rem;
 		width: 100%;
+		justify-content: center;
 	}
 
 	.collection-card {
+		max-height: 400px;
+		max-width: 500px;
 		background: var(--color-surface);
 		border-radius: 16px;
 		overflow: hidden;

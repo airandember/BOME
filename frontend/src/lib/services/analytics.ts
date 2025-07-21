@@ -203,14 +203,112 @@ export class AnalyticsService {
     private wsReconnectAttempts: number = 0;
     private maxReconnectAttempts: number = 5;
     private realTimeInterval: number | null = null;
-    private isProduction: boolean;
+    private isProduction: boolean = false;
+    
+    // Enhanced retry and persistence properties
+    private retryAttempts: number = 0;
+    private maxRetryAttempts: number = 3;
+    private baseRetryDelay: number = 1000; // 1 second
+    private maxRetryDelay: number = 30000; // 30 seconds
+    private localStorageKey: string = 'bome_analytics_queue';
+    private isOnline: boolean = browser ? navigator.onLine : true;
 
     private constructor() {
-        this.isProduction = !browser || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        if (browser) {
-            this.startPeriodicFlush();
-            this.trackSessionStart();
+        // Only initialize if we're in the browser
+        if (!browser) {
+            console.warn('AnalyticsService: Running in SSR mode, skipping initialization');
+            return;
+        }
+
+        this.isProduction = import.meta.env.PROD;
+        
+        // Load persisted events from localStorage
+        this.loadPersistedEvents();
+        
+        // Start periodic flush
+        this.startPeriodicFlush();
+        
+        // Track session start
+        this.trackSessionStart();
+        
+        // Handle visibility change
+        this.handleVisibilityChange();
+        
+        // Handle online/offline events
+        this.handleOnlineOffline();
+        
+        // Initialize WebSocket for real-time updates
+        if (this.isProduction) {
             this.initializeWebSocket();
+        }
+    }
+
+    private handleVisibilityChange(): void {
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    this.flushEvents();
+                }
+            });
+        }
+    }
+
+    private handleOnlineOffline(): void {
+        if (typeof window !== 'undefined') {
+            window.addEventListener('online', () => {
+                this.isOnline = true;
+                this.flushEvents();
+            });
+            
+            window.addEventListener('offline', () => {
+                this.isOnline = false;
+            });
+        }
+    }
+
+    // Load persisted events from localStorage
+    private loadPersistedEvents(): void {
+        if (!browser) return;
+        
+        try {
+            const persisted = localStorage.getItem(this.localStorageKey);
+            if (persisted) {
+                const rawEvents = JSON.parse(persisted) as any[];
+                if (Array.isArray(rawEvents) && rawEvents.length > 0) {
+                    // Convert timestamps back to Date objects
+                    const events = rawEvents.map(event => ({
+                        ...event,
+                        timestamp: new Date(event.timestamp)
+                    })) as AnalyticsEvent[];
+                    
+                    this.eventQueue.push(...events);
+                    console.log(`📊 Analytics: Loaded ${events.length} persisted events`);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load persisted analytics events:', error);
+        }
+    }
+
+    // Persist events to localStorage
+    private persistEvents(): void {
+        if (!browser) return;
+        
+        try {
+            localStorage.setItem(this.localStorageKey, JSON.stringify(this.eventQueue));
+        } catch (error) {
+            console.error('Failed to persist analytics events:', error);
+        }
+    }
+
+    // Clear persisted events
+    private clearPersistedEvents(): void {
+        if (!browser) return;
+        
+        try {
+            localStorage.removeItem(this.localStorageKey);
+        } catch (error) {
+            console.error('Failed to clear persisted analytics events:', error);
         }
     }
 
@@ -231,32 +329,13 @@ export class AnalyticsService {
         }
 
         try {
-            this.ws = new WebSocket(getWebSocketUrl(WS_CONFIG.ENDPOINTS.ANALYTICS, tokens.access_token));
+            const wsUrl = getWebSocketUrl(WS_CONFIG.ENDPOINTS.ANALYTICS, tokens.access_token);
+            this.ws = new WebSocket(wsUrl);
 
             this.ws.onopen = () => {
-                console.debug('Analytics WebSocket connection established');
+                console.log('📊 Analytics: WebSocket connected');
                 this.wsReconnectAttempts = 0;
-                this.ws?.send(JSON.stringify({
-                    type: WS_CONFIG.MESSAGE_TYPES.SUBSCRIBE,
-                    metrics: [WS_CONFIG.METRICS.REALTIME]
-                }));
-            };
-
-            this.ws.onclose = () => {
-                console.debug('Analytics WebSocket connection closed');
-                this.ws = null;
-                // Only attempt to reconnect if we're still on a page that needs analytics
-                if (document.visibilityState === 'visible') {
-                    this.scheduleReconnect();
-                }
-            };
-
-            this.ws.onerror = (error) => {
-                console.debug('Analytics WebSocket error:', error);
-                // Don't log the full error in production
-                if (!this.isProduction) {
-                    console.error('WebSocket error details:', error);
-                }
+                this.resubscribeToMetrics();
             };
 
             this.ws.onmessage = (event) => {
@@ -264,29 +343,47 @@ export class AnalyticsService {
                     const data = JSON.parse(event.data);
                     this.handleWebSocketMessage(data);
                 } catch (error) {
-                    console.error('Failed to parse WebSocket message:', error);
+                    console.error('📊 Analytics: Failed to parse WebSocket message:', error);
                 }
             };
+
+            this.ws.onclose = (event) => {
+                console.log(`📊 Analytics: WebSocket closed (code: ${event.code}, reason: ${event.reason})`);
+                this.ws = null;
+                
+                // Implement exponential backoff reconnection
+                if (this.wsReconnectAttempts < this.maxReconnectAttempts) {
+                    this.scheduleReconnect();
+                } else {
+                    console.error('📊 Analytics: Max WebSocket reconnection attempts exceeded');
+                }
+            };
+
+            this.ws.onerror = (error) => {
+                console.error('📊 Analytics: WebSocket error:', error);
+            };
+
         } catch (error) {
-            console.debug('Failed to initialize WebSocket connection');
-            this.scheduleReconnect();
+            console.error('📊 Analytics: Failed to initialize WebSocket:', error);
         }
     }
 
     private scheduleReconnect() {
-        if (this.wsReconnectAttempts >= this.maxReconnectAttempts) {
-            console.log('Max WebSocket reconnection attempts reached');
-            return;
-        }
-
         if (this.wsReconnectTimeout) {
             clearTimeout(this.wsReconnectTimeout);
         }
 
-        const delay = Math.min(1000 * Math.pow(2, this.wsReconnectAttempts), 30000);
         this.wsReconnectAttempts++;
-
+        
+        // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (max)
+        const baseDelay = 1000; // 1 second
+        const maxDelay = 30000; // 30 seconds
+        const delay = Math.min(baseDelay * Math.pow(2, this.wsReconnectAttempts - 1), maxDelay);
+        
+        console.log(`📊 Analytics: Scheduling WebSocket reconnection in ${delay}ms (attempt ${this.wsReconnectAttempts}/${this.maxReconnectAttempts})`);
+        
         this.wsReconnectTimeout = window.setTimeout(() => {
+            this.wsReconnectTimeout = null;
             this.initializeWebSocket();
         }, delay);
     }
@@ -401,38 +498,338 @@ export class AnalyticsService {
     }
 
     public async trackEvent(type: string, data: Record<string, any> = {}, userId?: string): Promise<void> {
-        if (!browser) return;
+        try {
+            // Enhanced validation
+            if (!this.isValidEventType(type)) {
+                console.error('Invalid event type:', type);
+                return;
+            }
 
-        const event: AnalyticsEvent = {
-            type,
-            timestamp: new Date(),
-            user_id: userId,
-            data,
+            // Sanitize data
+            const sanitizedData = this.sanitizeEventData(data);
+
+            const event: AnalyticsEvent = {
+                type,
+                timestamp: new Date(),
+                user_id: userId,
+                data: sanitizedData
+            };
+
+            // Validate event
+            if (!this.validateEvent(event)) {
+                console.error('Event validation failed:', event);
+                return;
+            }
+
+            // Check rate limiting
+            if (this.isRateLimited(event)) {
+                console.warn('Rate limit exceeded for event:', type);
+                return;
+            }
+
+            this.eventQueue.push(event);
+            this.persistEvents();
+
+            // Flush immediately if queue is full
+            if (this.eventQueue.length >= this.maxQueueSize) {
+                await this.flushEvents();
+            }
+        } catch (error) {
+            console.error('Error tracking event:', error);
+            this.logError('track_failed', error, { type, data });
+        }
+    }
+
+    // Enhanced validation methods
+    private isValidEventType(eventType: string): boolean {
+        const validEventTypes = new Set([
+            'page_view', 'video_view', 'video_like', 'video_comment', 'video_share',
+            'user_signup', 'user_login', 'subscription_created', 'subscription_cancelled',
+            'payment_processed', 'search_performed', 'session_start', 'session_end',
+            'error_occurred', 'video_play', 'video_pause', 'video_seek', 'video_complete',
+            'form_submit', 'button_click', 'link_click', 'scroll', 'time_on_page'
+        ]);
+
+        return validEventTypes.has(eventType);
+    }
+
+    private sanitizeEventData(data: Record<string, any>): Record<string, any> {
+        const sanitized: Record<string, any> = {};
+
+        for (const [key, value] of Object.entries(data)) {
+            const sanitizedKey = this.sanitizeKey(key);
+            sanitized[sanitizedKey] = this.sanitizeValue(value);
+        }
+
+        return sanitized;
+    }
+
+    private sanitizeKey(key: string): string {
+        const dangerousChars = ['<', '>', '"', "'", '&', 'javascript:', 'onload=', 'onerror='];
+        let sanitized = key;
+        
+        for (const char of dangerousChars) {
+            sanitized = sanitized.replaceAll(char, '');
+        }
+
+        if (sanitized.length > 100) {
+            sanitized = sanitized.substring(0, 100);
+        }
+
+        return sanitized;
+    }
+
+    private sanitizeValue(value: any, depth: number = 0): any {
+        if (depth > 5) return '[truncated]';
+
+        if (typeof value === 'string') {
+            return this.sanitizeString(value);
+        } else if (Array.isArray(value)) {
+            if (value.length > 100) value = value.slice(0, 100);
+            return value.map((item: any) => this.sanitizeValue(item, depth + 1));
+        } else if (value && typeof value === 'object') {
+            const sanitized: Record<string, any> = {};
+            let count = 0;
+            
+            for (const [key, val] of Object.entries(value)) {
+                if (count >= 50) break;
+                sanitized[this.sanitizeKey(key)] = this.sanitizeValue(val, depth + 1);
+                count++;
+            }
+            
+            return sanitized;
+        } else if (typeof value === 'number') {
+            if (isNaN(value) || !isFinite(value) || value < -999999999 || value > 999999999) {
+                return 0;
+            }
+            return value;
+        }
+
+        return value;
+    }
+
+    private sanitizeString(str: string): string {
+        if (!str) return '';
+
+        let sanitized = str.replace(/<[^>]*>/g, '');
+
+        const dangerousPatterns = [
+            '<script>', '</script>', 'javascript:', 'vbscript:',
+            'onload=', 'onerror=', 'onclick=', 'onmouseover=',
+            '<iframe>', '</iframe>', '<object>', '</object>',
+            '<embed>', '</embed>', '<form>', '</form>',
+            'union select', 'drop table', 'delete from',
+            'insert into', 'update set', 'alter table',
+            'exec(', 'eval(', 'system(', 'shell_exec(',
+            'document.cookie', 'localStorage', 'sessionStorage',
+            'window.location', 'history.pushState'
+        ];
+
+        for (const pattern of dangerousPatterns) {
+            sanitized = sanitized.replaceAll(pattern, '');
+        }
+
+        sanitized = sanitized.replace(/[\x00-\x1F\x7F]/g, '');
+
+        if (sanitized.length > 1000) {
+            sanitized = sanitized.substring(0, 1000);
+        }
+
+        return sanitized;
+    }
+
+    private validateEvent(event: AnalyticsEvent): boolean {
+        if (!event.type || !event.timestamp) {
+            return false;
+        }
+
+        const timestamp = new Date(event.timestamp);
+        if (isNaN(timestamp.getTime())) {
+            return false;
+        }
+
+        const now = new Date();
+        const futureLimit = new Date(now.getTime() + 60000);
+        if (timestamp > futureLimit) {
+            return false;
+        }
+
+        if (this.detectSuspiciousActivity(event)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private detectSuspiciousActivity(event: AnalyticsEvent): boolean {
+        const recentEvents = this.eventQueue.filter(e => 
+            e.timestamp > new Date(Date.now() - 60000)
+        );
+
+        if (recentEvents.length > 100) {
+            return true;
+        }
+
+        const userAgent = navigator.userAgent.toLowerCase();
+        const suspiciousPatterns = [
+            'bot', 'crawler', 'spider', 'scraper',
+            'curl', 'wget', 'python', 'java',
+            'sqlmap', 'nikto', 'nmap'
+        ];
+
+        for (const pattern of suspiciousPatterns) {
+            if (userAgent.includes(pattern)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private isRateLimited(event: AnalyticsEvent): boolean {
+        const now = Date.now();
+        const windowStart = now - 60000;
+
+        const recentEvents = this.eventQueue.filter(e => {
+            // Handle both Date objects and string timestamps
+            let eventTime: number;
+            if (e.timestamp instanceof Date) {
+                eventTime = e.timestamp.getTime();
+            } else if (typeof e.timestamp === 'string') {
+                eventTime = new Date(e.timestamp).getTime();
+            } else {
+                eventTime = e.timestamp as number;
+            }
+            
+            return e.type === event.type && eventTime > windowStart;
+        });
+
+        return recentEvents.length >= 50;
+    }
+
+    private logError(errorType: string, error: any, context: Record<string, any> = {}) {
+        const logEntry = {
+            timestamp: new Date().toISOString(),
+            error_type: errorType,
+            component: 'analytics_service',
+            error: error?.message || String(error),
+            context,
+            user_agent: navigator.userAgent,
+            url: window.location.href
         };
 
-        this.eventQueue.push(event);
+        console.error('Analytics Error:', logEntry);
+        this.sendErrorToBackend(logEntry);
+    }
 
-        if (this.eventQueue.length >= this.maxQueueSize) {
-            await this.flushEvents();
+    private async sendErrorToBackend(logEntry: any) {
+        try {
+            await fetch('/api/analytics/errors', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.getAuthToken()}`
+                },
+                body: JSON.stringify(logEntry)
+            });
+        } catch (error) {
+            console.error('Failed to send error to backend:', error);
         }
     }
 
     private async flushEvents(): Promise<void> {
-        if (this.isProcessing || this.eventQueue.length === 0) return;
+        if (this.isProcessing || this.eventQueue.length === 0 || !this.isOnline) return;
 
         this.isProcessing = true;
         const events = [...this.eventQueue];
         this.eventQueue = [];
+        this.persistEvents(); // Persist immediately
 
         try {
-            await this.makeAuthenticatedRequest('/admin/dashboard/analytics/batch', {
+            // Transform events from frontend format to backend format
+            const transformedEvents = events.map(event => this.transformEventForBackend(event));
+
+            const response = await this.makeAuthenticatedRequest('/admin/dashboard/analytics/batch', {
                 method: 'POST',
-                body: JSON.stringify(events),
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(transformedEvents),
             });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                
+                // Handle rate limiting
+                if (response.status === 429) {
+                    const retryAfter = errorData.retry_after || 60;
+                    console.warn(`📊 Analytics: Rate limited, retrying in ${retryAfter} seconds`);
+                    
+                    // Re-queue events and wait
+                    this.eventQueue.unshift(...events);
+                    this.persistEvents();
+                    
+                    setTimeout(() => {
+                        this.flushEvents();
+                    }, retryAfter * 1000);
+                    return;
+                }
+                
+                // Handle validation errors
+                if (response.status === 400 && errorData.validation_errors) {
+                    console.error('📊 Analytics: Validation errors:', errorData.validation_errors);
+                    
+                    // Re-queue only valid events if any were processed
+                    if (errorData.valid_events > 0) {
+                        const validEvents = events.slice(0, errorData.valid_events);
+                        this.eventQueue.unshift(...validEvents);
+                        this.persistEvents();
+                    }
+                    return;
+                }
+                
+                throw new Error(`HTTP ${response.status}: ${errorData.error || response.statusText}`);
+            }
+
+            const result = await response.json();
+            console.log(`📊 Analytics: Successfully processed ${result.processed}/${result.total} events`);
+            
+            // Reset retry attempts on success
+            this.retryAttempts = 0;
+            
+            // Clear persisted events on successful flush
+            this.clearPersistedEvents();
+            
         } catch (error) {
-            console.error('Failed to flush analytics events:', error);
-            // Re-queue events on failure
-            this.eventQueue.unshift(...events);
+            console.error('📊 Analytics: Failed to flush events:', error);
+            
+            // Implement exponential backoff retry
+            if (this.retryAttempts < this.maxRetryAttempts) {
+                this.retryAttempts++;
+                const delay = Math.min(
+                    this.baseRetryDelay * Math.pow(2, this.retryAttempts - 1),
+                    this.maxRetryDelay
+                );
+                
+                console.log(`📊 Analytics: Retrying in ${delay}ms (attempt ${this.retryAttempts}/${this.maxRetryAttempts})`);
+                
+                // Re-queue events
+                this.eventQueue.unshift(...events);
+                this.persistEvents();
+                
+                // Schedule retry
+                setTimeout(() => {
+                    this.isProcessing = false;
+                    this.flushEvents();
+                }, delay);
+                return;
+            } else {
+                // Max retries exceeded, re-queue events
+                console.error('📊 Analytics: Max retry attempts exceeded, re-queueing events');
+                this.eventQueue.unshift(...events);
+                this.persistEvents();
+                this.retryAttempts = 0; // Reset for next time
+            }
         } finally {
             this.isProcessing = false;
         }
@@ -447,6 +844,8 @@ export class AnalyticsService {
     }
 
     private trackSessionStart(): void {
+        if (!browser) return;
+        
         this.trackEvent('session_start', {
             user_agent: navigator.userAgent,
             screen_resolution: `${screen.width}x${screen.height}`,
@@ -514,11 +913,50 @@ export class AnalyticsService {
         }
 
         this.flushEvents();
+        this.clearPersistedEvents(); // Clear persisted events on destroy
     }
 
     private getAuthToken(): string | null {
         const tokens = SecureTokenStorage.getTokens();
         return tokens?.access_token || null;
+    }
+
+    private generateSessionId(): string {
+        // Generate a valid session ID that matches backend validation
+        const timestamp = this.sessionStartTime;
+        const random = Math.random().toString(36).substr(2, 9);
+        return `session_${timestamp}_${random}`;
+    }
+
+    private transformEventForBackend(event: AnalyticsEvent): any {
+        // Transform frontend event format to backend format
+        const transformed: any = {
+            event_type: event.type,
+            timestamp: event.timestamp.toISOString(),
+            session_id: this.generateSessionId(),
+            subsite: 'streaming',
+            user_agent: navigator.userAgent,
+            ip_address: '' // Will be set by backend
+        };
+
+        // Add user_id if present
+        if (event.user_id) {
+            transformed.user_id = event.user_id;
+        }
+
+        // Add event-specific data
+        if (event.data) {
+            // For page_view events, ensure path starts with "/"
+            if (event.type === 'page_view' && event.data.path) {
+                const path = event.data.path;
+                transformed.path = path.startsWith('/') ? path : `/${path}`;
+            }
+            
+            // Merge all data into the transformed event
+            Object.assign(transformed, event.data);
+        }
+
+        return transformed;
     }
 }
 

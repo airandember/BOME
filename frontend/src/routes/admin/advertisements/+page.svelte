@@ -59,13 +59,13 @@
 
 	onMount(async () => {
 		if (!$auth.isAuthenticated) {
-			goto('/login');
+			goto('/admin');
 			return;
 		}
 
 		const user = $auth.user;
-		if (!user || user.role !== 'admin') {
-			goto('/');
+		if (!user || !isAdminUser(user)) {
+			goto('/admin');
 			return;
 		}
 
@@ -77,6 +77,17 @@
 			loading = false;
 		}
 	});
+
+	function isAdminUser(user: any): boolean {
+		if (!user) return false;
+		const adminRoles = [
+			'super_admin', 'system_admin', 'content_manager', 
+			'articles_manager', 'youtube_manager', 'streaming_manager',
+			'events_manager', 'advertisement_manager', 'user_manager',
+			'analytics_manager', 'financial_admin', 'admin'
+		];
+		return adminRoles.includes(user.role);
+	}
 
 	async function loadData() {
 		// Always load advertiser accounts first to have them available for campaign display
@@ -724,7 +735,7 @@
 									<div class="card-header">
 										<div class="company-info">
 											<div class="company-avatar">
-												{account.company_name.charAt(0)}
+												{account.company_name?.charAt(0) || '?'}
 											</div>
 											<div class="company-details">
 												<h3>{account.company_name}</h3>
@@ -984,7 +995,7 @@
 												<div class="card-header">
 													<div class="company-info">
 														<div class="company-avatar">
-															{account.company_name.charAt(0)}
+															{account.company_name?.charAt(0) || '?'}
 														</div>
 														<div class="company-details">
 															<h3>{account.company_name}</h3>
@@ -1094,7 +1105,7 @@
 												<div class="card-header">
 													<div class="company-info">
 														<div class="company-avatar">
-															{account.company_name.charAt(0)}
+															{account.company_name?.charAt(0) || '?'}
 														</div>
 														<div class="company-details">
 															<h3>{account.company_name}</h3>
@@ -1241,7 +1252,7 @@
 												<div class="card-header">
 													<div class="company-info">
 														<div class="company-avatar">
-															{account.company_name.charAt(0)}
+															{account.company_name?.charAt(0) || '?'}
 														</div>
 														<div class="company-details">
 															<h3>{account.company_name}</h3>
@@ -1384,7 +1395,7 @@
 												<div class="card-header">
 													<div class="company-info">
 														<div class="company-avatar">
-															{account.company_name.charAt(0)}
+															{account.company_name?.charAt(0) || '?'}
 														</div>
 														<div class="company-details">
 															<h3>{account.company_name}</h3>
@@ -1588,7 +1599,7 @@
 												<label>Advertiser</label>
 												<div class="advertiser-card">
 													<div class="advertiser-avatar">
-														{advertiserInfo.company_name.charAt(0)}
+														{advertiserInfo.company_name?.charAt(0) || '?'}
 													</div>
 													<div class="advertiser-details">
 														<h4>{advertiserInfo.company_name}</h4>
@@ -1871,7 +1882,7 @@
 															<label>Advertiser</label>
 															<div class="advertiser-card">
 																<div class="advertiser-avatar">
-																	{advertiserInfo.company_name.charAt(0)}
+																	{advertiserInfo.company_name?.charAt(0) || '?'}
 																</div>
 																<div class="advertiser-details">
 																	<h4>{advertiserInfo.company_name}</h4>
@@ -2035,7 +2046,7 @@
 															<label>Advertiser</label>
 															<div class="advertiser-card">
 																<div class="advertiser-avatar">
-																	{advertiserInfo.company_name.charAt(0)}
+																	{advertiserInfo.company_name?.charAt(0) || '?'}
 																</div>
 																<div class="advertiser-details">
 																	<h4>{advertiserInfo.company_name}</h4>
@@ -2203,7 +2214,7 @@
 															<label>Advertiser</label>
 															<div class="advertiser-card">
 																<div class="advertiser-avatar">
-																	{advertiserInfo.company_name.charAt(0)}
+																	{advertiserInfo.company_name?.charAt(0) || '?'}
 																</div>
 																<div class="advertiser-details">
 																	<h4>{advertiserInfo.company_name}</h4>
@@ -2368,7 +2379,7 @@
 															<label>Advertiser</label>
 															<div class="advertiser-card">
 																<div class="advertiser-avatar">
-																	{advertiserInfo.company_name.charAt(0)}
+																	{advertiserInfo.company_name?.charAt(0) || '?'}
 																</div>
 																<div class="advertiser-details">
 																	<h4>{advertiserInfo.company_name}</h4>

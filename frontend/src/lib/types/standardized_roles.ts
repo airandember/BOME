@@ -24,8 +24,19 @@ export interface StandardizedPermission {
 	subsystem: Subsystem | 'all';
 }
 
+export interface Department {
+	id: number;
+	name: string;
+	icon: string;
+	color: string;
+	description: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
 export interface StandardizedRole {
 	id: string;
+	dbId?: number; // Database primary key
 	name: string;
 	slug: string;
 	description: string;
@@ -36,6 +47,8 @@ export interface StandardizedRole {
 	color: string;
 	icon: string;
 	subsystemAccess: Subsystem[];
+	department?: Department; // Associated department
+	dept_id?: number; // Department ID for easy access
 	createdAt: string;
 	updatedAt: string;
 }

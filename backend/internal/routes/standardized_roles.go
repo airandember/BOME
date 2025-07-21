@@ -6,21 +6,33 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Department represents a department in the system
+type Department struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Icon        string `json:"icon"`
+	Color       string `json:"color"`
+	Description string `json:"description"`
+	CreatedAt   string `json:"createdAt"`
+	UpdatedAt   string `json:"updatedAt"`
+}
+
 // StandardizedRole represents a user role in the standardized system
 type StandardizedRole struct {
-	ID              string   `json:"id"`
-	Name            string   `json:"name"`
-	Slug            string   `json:"slug"`
-	Description     string   `json:"description"`
-	Category        string   `json:"category"`
-	Level           int      `json:"level"`
-	Permissions     []string `json:"permissions"`
-	IsSystemRole    bool     `json:"isSystemRole"`
-	Color           string   `json:"color"`
-	Icon            string   `json:"icon"`
-	SubsystemAccess []string `json:"subsystemAccess"` // Which subsystems this role can access
-	CreatedAt       string   `json:"createdAt"`
-	UpdatedAt       string   `json:"updatedAt"`
+	ID              string      `json:"id"`
+	Name            string      `json:"name"`
+	Slug            string      `json:"slug"`
+	Description     string      `json:"description"`
+	Category        string      `json:"category"`
+	Level           int         `json:"level"`
+	Permissions     []string    `json:"permissions"`
+	IsSystemRole    bool        `json:"isSystemRole"`
+	Color           string      `json:"color"`
+	Icon            string      `json:"icon"`
+	SubsystemAccess []string    `json:"subsystemAccess"`      // Which subsystems this role can access
+	Department      *Department `json:"department,omitempty"` // Associated department
+	CreatedAt       string      `json:"createdAt"`
+	UpdatedAt       string      `json:"updatedAt"`
 }
 
 // StandardizedPermission represents a system permission

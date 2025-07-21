@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -403,30 +404,52 @@ func (db *DB) CleanupExpiredTokens() error {
 
 // GetUsers retrieves a list of users with pagination and filtering
 func (db *DB) GetUsers(limit, offset int, role, search string) ([]*User, error) {
-	query := `SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
+	// First, check if max_sessions column exists
+	var maxSessionsExists bool
+	err := db.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns 
+			WHERE table_name = 'users' AND column_name = 'max_sessions'
+		)
+	`).Scan(&maxSessionsExists)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check max_sessions column: %w", err)
+	}
+
+	// Build query based on whether max_sessions column exists
+	var query string
+	if maxSessionsExists {
+		query = `SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
               stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, 
               location, website, phone, avatar_url, preferences, last_login, last_logout, 
               max_sessions, created_at, updated_at 
               FROM users WHERE 1=1`
+	} else {
+		query = `SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
+              stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, 
+              location, website, phone, avatar_url, preferences, last_login, last_logout, 
+              5 as max_sessions, created_at, updated_at 
+              FROM users WHERE 1=1`
+	}
 
 	args := []interface{}{}
-	argCount := 0
+	argCount := 1
 
 	if role != "" {
-		argCount++
 		query += fmt.Sprintf(" AND role = $%d", argCount)
 		args = append(args, role)
+		argCount++
 	}
 
 	if search != "" {
-		argCount++
 		query += fmt.Sprintf(" AND (email ILIKE $%d OR first_name ILIKE $%d OR last_name ILIKE $%d)",
 			argCount, argCount, argCount)
 		searchTerm := "%" + search + "%"
 		args = append(args, searchTerm)
+		argCount++
 	}
 
-	query += " ORDER BY created_at DESC LIMIT $%d OFFSET $%d"
+	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", argCount, argCount+1)
 	args = append(args, limit, offset)
 
 	rows, err := db.Query(query, args...)
@@ -469,5 +492,150 @@ func (db *DB) DeleteUser(userID int) error {
 func (db *DB) GetUserCount() (int, error) {
 	var count int
 	err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count)
+	return count, err
+}
+
+// GetFilteredUserCount returns the total number of users with filters applied
+func (db *DB) GetFilteredUserCount(role, search string) (int, error) {
+	query := `SELECT COUNT(*) FROM users WHERE 1=1`
+	args := []interface{}{}
+	argCount := 1
+
+	if role != "" {
+		query += fmt.Sprintf(" AND role = $%d", argCount)
+		args = append(args, role)
+		argCount++
+	}
+
+	if search != "" {
+		query += fmt.Sprintf(" AND (email ILIKE $%d OR first_name ILIKE $%d OR last_name ILIKE $%d)",
+			argCount, argCount, argCount)
+		searchTerm := "%" + search + "%"
+		args = append(args, searchTerm)
+		argCount++
+	}
+
+	var count int
+	err := db.QueryRow(query, args...).Scan(&count)
+	return count, err
+}
+
+// GetUsersWithRoles retrieves a list of users with their roles using the roles table
+func (db *DB) GetUsersWithRoles(limit, offset int, role, search, status string) ([]*User, error) {
+	// First, check if max_sessions column exists
+	var maxSessionsExists bool
+	err := db.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns 
+			WHERE table_name = 'users' AND column_name = 'max_sessions'
+		)
+	`).Scan(&maxSessionsExists)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check max_sessions column: %w", err)
+	}
+
+	// Build query based on whether max_sessions column exists
+	var query string
+	if maxSessionsExists {
+		query = `SELECT DISTINCT u.id, u.email, u.password_hash, u.first_name, u.last_name, 
+              COALESCE(ur.role_id, u.role_id, 'user') as role, u.email_verified, 
+              u.stripe_customer_id, u.reset_token, u.reset_token_expiry, u.verification_token, u.bio, 
+              u.location, u.website, u.phone, u.avatar_url, u.preferences, u.last_login, u.last_logout, 
+              u.max_sessions, u.created_at, u.updated_at 
+              FROM users u 
+              LEFT JOIN user_roles ur ON u.id = ur.user_id 
+              WHERE 1=1`
+	} else {
+		query = `SELECT DISTINCT u.id, u.email, u.password_hash, u.first_name, u.last_name, 
+              COALESCE(ur.role_id, u.role_id, 'user') as role, u.email_verified, 
+              u.stripe_customer_id, u.reset_token, u.reset_token_expiry, u.verification_token, u.bio, 
+              u.location, u.website, u.phone, u.avatar_url, u.preferences, u.last_login, u.last_logout, 
+              5 as max_sessions, u.created_at, u.updated_at 
+              FROM users u 
+              LEFT JOIN user_roles ur ON u.id = ur.user_id 
+              WHERE 1=1`
+	}
+
+	args := []interface{}{}
+	argCount := 1
+
+	if role != "" {
+		query += fmt.Sprintf(" AND (ur.role_id = $%d OR u.role_id = $%d)", argCount, argCount)
+		args = append(args, role)
+		argCount++
+		log.Printf("🔍 GetUsersWithRoles Debug - Adding role filter: '%s'", role)
+	}
+
+	if search != "" {
+		query += fmt.Sprintf(" AND (u.email ILIKE $%d OR u.first_name ILIKE $%d OR u.last_name ILIKE $%d)",
+			argCount, argCount, argCount)
+		searchTerm := "%" + search + "%"
+		args = append(args, searchTerm)
+		argCount++
+	}
+
+	if status != "" {
+		if status == "verified" {
+			query += fmt.Sprintf(" AND u.email_verified = true")
+		} else if status == "pending" {
+			query += fmt.Sprintf(" AND u.email_verified = false")
+		}
+	}
+
+	query += fmt.Sprintf(" ORDER BY u.created_at DESC LIMIT $%d OFFSET $%d", argCount, argCount+1)
+	args = append(args, limit, offset)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*User
+	for rows.Next() {
+		user := &User{}
+		err := rows.Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName,
+			&user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken,
+			&user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location,
+			&user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin,
+			&user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, nil
+}
+
+// GetFilteredUserCountWithRoles returns the total number of users with filters applied using roles table
+func (db *DB) GetFilteredUserCountWithRoles(role, search, status string) (int, error) {
+	query := `SELECT COUNT(DISTINCT u.id) FROM users u LEFT JOIN user_roles ur ON u.id = ur.user_id WHERE 1=1`
+	args := []interface{}{}
+	argCount := 1
+
+	if role != "" {
+		query += fmt.Sprintf(" AND (ur.role_id = $%d OR u.role_id = $%d)", argCount, argCount)
+		args = append(args, role)
+		argCount++
+	}
+
+	if search != "" {
+		query += fmt.Sprintf(" AND (u.email ILIKE $%d OR u.first_name ILIKE $%d OR u.last_name ILIKE $%d)",
+			argCount, argCount, argCount)
+		searchTerm := "%" + search + "%"
+		args = append(args, searchTerm)
+		argCount++
+	}
+
+	if status != "" {
+		if status == "verified" {
+			query += " AND u.email_verified = true"
+		} else if status == "pending" {
+			query += " AND u.email_verified = false"
+		}
+	}
+
+	var count int
+	err := db.QueryRow(query, args...).Scan(&count)
 	return count, err
 }

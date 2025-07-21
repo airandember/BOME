@@ -45,13 +45,13 @@
 
 	onMount(async () => {
 		if (!$auth.isAuthenticated) {
-			goto('/login');
+			goto('/admin');
 			return;
 		}
 
 		const user = $auth.user;
-		if (!user || user.role !== 'admin') {
-			goto('/');
+		if (!user || !isAdminUser(user)) {
+			goto('/admin');
 			return;
 		}
 
@@ -63,6 +63,17 @@
 			loading = false;
 		}
 	});
+
+	function isAdminUser(user: any): boolean {
+		if (!user) return false;
+		const adminRoles = [
+			'super_admin', 'system_admin', 'content_manager', 
+			'articles_manager', 'youtube_manager', 'streaming_manager',
+			'events_manager', 'advertisement_manager', 'user_manager',
+			'analytics_manager', 'financial_admin', 'admin'
+		];
+		return adminRoles.includes(user.role);
+	}
 
 	async function loadAdvertiserData() {
 		// Mock API call - load advertiser data
@@ -544,7 +555,7 @@
 			<div class="header-content">
 				<div class="advertiser-header">
 					<div class="advertiser-avatar">
-						{advertiser.company_name.charAt(0)}
+						{advertiser.company_name?.charAt(0) || '?'}
 					</div>
 					<div class="advertiser-info">
 						<h1>{advertiser.company_name}</h1>

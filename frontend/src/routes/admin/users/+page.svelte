@@ -1,79 +1,268 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api } from '$lib/auth';
+	import { browser } from '$app/environment';
+	import { auth } from '$lib/auth';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import { 
+		type StandardizedRole,
+		type StandardizedPermission,
+		type Department
+	} from '$lib/types/standardized_roles';
+	import { slide } from 'svelte/transition';
+	import { 
+		FALLBACK_ROLES, 
+		FALLBACK_DEPARTMENTS, 
+		FALLBACK_USERS,
+		getDepartmentsWithRoles,
+		getDepartmentUserCount
+	} from '$lib/mockData/adminUsers';
 
-	interface User {
-		id: number;
-		email: string;
-		firstName: string;
-		lastName: string;
-		role: string;
-		emailVerified: boolean;
-		createdAt: string;
-		lastLogin: string | null;
-		status: string;
-		subscriptionStatus: string;
-	}
-
-	interface Pagination {
-		page: number;
-		limit: number;
-		total: number;
-		totalPages: number;
-	}
-
-	let users: User[] = [];
-	let pagination: Pagination = { page: 1, limit: 10, total: 0, totalPages: 0 };
-	let loading = true;
+	// Tab management
+	let activeTab = 'overview';
+	
+	// Data state
+	let users: any[] = [];
+	let totalUsers = 0;
+	let userStats = {
+		total: 0,
+		admins: 0,
+		verified: 0,
+		pending: 0,
+		active: 0
+	};
+	let loading = false;
+	let error = '';
+	
+	// Pagination state
+	let currentPage = 1;
+	let itemsPerPage = 50;
+	let totalPages = 0;
+	
+	// Filter state
 	let searchTerm = '';
 	let roleFilter = '';
 	let statusFilter = '';
-	let selectedUsers: number[] = [];
+	
+	// User management state
+	let selectedUsers = new Set<number>();
+	let showUserModal = false;
+	let editingUser: any = null;
+	let userForm = {
+		firstName: '',
+		lastName: '',
+		email: '',
+		role: '',
+		emailVerified: false
+	};
 
-	onMount(() => {
-		loadUsers();
-	});
+	// State for database-driven roles and departments
+	let roles: StandardizedRole[] = [];
+	let departments: Department[] = [];
+	let rolesLoading = true;
+	let rolesError: string | null = null;
+	let expandedDepartments = new Set<number>();
 
-	async function loadUsers() {
+	// Fetch roles and departments from backend
+	async function fetchRolesAndDepartments() {
 		try {
-			loading = true;
-			const params = new URLSearchParams({
-				page: pagination.page.toString(),
-				limit: pagination.limit.toString(),
-				...(searchTerm && { search: searchTerm }),
-				...(roleFilter && { role: roleFilter }),
-				...(statusFilter && { status: statusFilter })
+			rolesLoading = true;
+			rolesError = null;
+			
+			const token = $auth.token;
+			if (!token) {
+				throw new Error('No authentication token available');
+			}
+
+			const response = await fetch('/api/v1/admin/rolesAndDepartments', {
+				headers: {
+					'Authorization': `Bearer ${token}`,
+					'Content-Type': 'application/json'
+				}
 			});
 
-			const response = await api.get(`/api/v1/admin/users?${params}`);
-			users = response.users || [];
-			pagination = response.pagination || pagination;
-		} catch (error) {
-			showToast('Failed to load users', 'error');
-			console.error('Error loading users:', error);
+			if (!response.ok) {
+				throw new Error(`HTTP error! status: ${response.status}`);
+			}
+
+			const data = await response.json();
+			
+			if (data.success && data.data) {
+				roles = data.data.roles || [];
+				departments = data.data.departments || [];
+			} else {
+				throw new Error('Invalid response format');
+			}
+			
+		} catch (err) {
+			console.error('❌ Admin Users: Error fetching roles and departments:', err);
+			rolesError = err instanceof Error ? err.message : 'Unknown error occurred';
+			// Fallback to mock data if API fails
+			//roles = FALLBACK_ROLES;
+			//departments = FALLBACK_DEPARTMENTS;
+		} finally {
+			rolesLoading = false;
+		}
+	}
+
+	// Load user statistics from backend
+	async function loadUserStats() {
+		const token = $auth.token;
+		if (!token) {
+			console.error('❌ Admin Users: No authentication token available');
+			return;
+		}
+
+		try {
+			const response = await fetch('/api/v1/admin/users/stats', {
+				headers: {
+					'Authorization': `Bearer ${token}`
+				}
+			});
+
+			if (response.ok) {
+				const data = await response.json();
+				userStats = data.stats || {
+					total: 225,
+					admins: 0,
+					verified: 0,
+					pending: 0,
+					active: 0
+				};
+				console.log(userStats);
+			} else {
+				console.error('❌ Admin Users: Failed to load user statistics:', response.status);
+			}
+		} catch (err) {
+			console.error('💥 Admin Users: Error loading user statistics:', err);
+		}
+	}
+
+	// Load users from backend
+	async function loadUsers() {
+		const token = $auth.token;
+		if (!token) {
+			console.error('❌ Admin Users: No authentication token available');
+			return;
+		}
+
+		try {
+			loading = true;
+			error = '';
+
+			const params = new URLSearchParams({
+				page: currentPage.toString(),
+				limit: itemsPerPage.toString()
+			});
+
+			if (searchTerm) params.append('search', searchTerm);
+			if (roleFilter) params.append('role', roleFilter);
+			if (statusFilter) params.append('status', statusFilter);
+
+			const response = await fetch(`/api/v1/admin/users?${params}`, {
+				headers: {
+					'Authorization': `Bearer ${token}`
+				}
+			});
+
+			if (response.ok) {
+				const data = await response.json();
+				console.log(data);
+				users = data.users || [];
+				totalUsers = data.total || 0;
+				totalPages = Math.ceil(totalUsers / itemsPerPage);
+			} else {
+				throw new Error(`HTTP error! status: ${response.status}`);
+			}
+		} catch (err) {
+			console.error('❌ Admin Users: Error loading users:', err);
+			error = err instanceof Error ? err.message : 'Failed to load users';
+			// Fallback to mock data
+			users = FALLBACK_USERS;
+			totalUsers = FALLBACK_USERS.length;
+			totalPages = 1;
 		} finally {
 			loading = false;
 		}
 	}
 
-	function handleSearch() {
-		pagination.page = 1;
-		loadUsers();
+	// Load data on mount
+	onMount(async () => {
+		console.log('🚀 Admin Users: Component mounted');
+		
+		// Check authentication
+		if (!$auth.isAuthenticated) {
+			console.log('❌ Admin Users: User not authenticated, redirecting to login');
+			window.location.href = '/login';
+			return;
+		}
+
+		// Load all data
+		await Promise.all([
+			fetchRolesAndDepartments(),
+			loadUserStats(),
+			loadUsers()
+		]);
+	});
+
+	// Function to handle page changes
+	async function changePage(newPage: number) {
+		currentPage = newPage;
+		await loadUsers();
 	}
 
-	function handleFilterChange() {
-		pagination.page = 1;
-		loadUsers();
+	// Function to handle page size changes
+	async function changePageSize(newSize: number) {
+		itemsPerPage = newSize;
+		currentPage = 1; // Reset to first page
+		await loadUsers();
 	}
 
-	function handlePageChange(newPage: number) {
-		pagination.page = newPage;
-		loadUsers();
+	// Function to handle search changes with debouncing
+	let searchTimeout: ReturnType<typeof setTimeout>;
+	async function handleSearch() {
+		clearTimeout(searchTimeout);
+		searchTimeout = setTimeout(async () => {
+			try {
+				if (searchTerm === '' || searchTerm.length >= 3) {
+					currentPage = 1; // Reset to first page when searching
+					await loadUsers();
+				}
+			} catch (error) {
+				console.error('Search error:', error);
+				showToast('Search failed. Please try again.', 'error');
+			}
+		}, 500);
 	}
 
-	function formatDate(dateString: string | null) {
+	// Function to handle filter changes
+	async function handleFilterChange() {
+		currentPage = 1; // Reset to first page when filtering
+		await loadUsers();
+	}
+
+	// Accordion functions for roles tab
+	function toggleDepartment(deptId: number) {
+		if (expandedDepartments.has(deptId)) {
+			expandedDepartments.delete(deptId);
+		} else {
+			expandedDepartments.add(deptId);
+		}
+		expandedDepartments = expandedDepartments; // Trigger reactivity
+	}
+
+	// Helper functions
+	function getRoleColor(roleId: string): string {
+		const role = roles.find(r => r.id === roleId);
+		return role?.color || '#6b7280';
+	}
+
+	function getRoleIcon(roleId: string): string {
+		const role = roles.find(r => r.id === roleId);
+		return role?.icon || 'user';
+	}
+
+	function formatDate(dateString: string | null): string {
 		if (!dateString) return 'Never';
 		return new Date(dateString).toLocaleDateString('en-US', {
 			year: 'numeric',
@@ -84,382 +273,671 @@
 		});
 	}
 
-	function getStatusBadge(status: string) {
-		switch (status) {
-			case 'active':
-				return 'badge-success';
-			case 'pending':
-				return 'badge-warning';
-			case 'suspended':
-				return 'badge-error';
-			default:
-				return 'badge-neutral';
-		}
+	function getStatusBadgeClass(status: string): string {
+		const statusClasses: { [key: string]: string } = {
+			'active': 'bg-green-100 text-green-800',
+			'inactive': 'bg-gray-100 text-gray-800',
+			'pending': 'bg-yellow-100 text-yellow-800',
+			'suspended': 'bg-red-100 text-red-800'
+		};
+		return statusClasses[status] || 'bg-gray-100 text-gray-800';
 	}
 
-	function getRoleBadge(role: string) {
-		switch (role) {
-			case 'admin':
-				return 'badge-primary';
-			case 'moderator':
-				return 'badge-info';
-			default:
-				return 'badge-neutral';
-		}
+	function getSubscriptionBadgeClass(subscription: string): string {
+		const subscriptionClasses: { [key: string]: string } = {
+			'premium': 'bg-purple-100 text-purple-800',
+			'standard': 'bg-blue-100 text-blue-800',
+			'free': 'bg-gray-100 text-gray-800'
+		};
+		return subscriptionClasses[subscription] || 'bg-gray-100 text-gray-800';
 	}
 
-	function toggleUserSelection(userId: number) {
-		if (selectedUsers.includes(userId)) {
-			selectedUsers = selectedUsers.filter(id => id !== userId);
-		} else {
-			selectedUsers = [...selectedUsers, userId];
-		}
-	}
-
-	function selectAllUsers() {
-		if (selectedUsers.length === users.length) {
-			selectedUsers = [];
-		} else {
-			selectedUsers = users.map(user => user.id);
-		}
-	}
-
-	async function updateUserRole(userId: number, newRole: string) {
-		try {
-			await api.put(`/api/v1/admin/users/${userId}`, { role: newRole });
-			showToast('User role updated successfully', 'success');
-			loadUsers();
-		} catch (error) {
-			showToast('Failed to update user role', 'error');
-		}
-	}
-
-	async function deleteUser(userId: number) {
-		if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
-			return;
-		}
-
-		try {
-			await api.delete(`/api/v1/admin/users/${userId}`);
-			showToast('User deleted successfully', 'success');
-			loadUsers();
-		} catch (error) {
-			showToast('Failed to delete user', 'error');
-		}
-	}
+	// Reactive statements
+	$: departmentsWithRoles = getDepartmentsWithRoles(roles, departments);
+	$: roleStats = {
+		total: roles.length,
+		systemRoles: roles.filter(r => r.isSystemRole).length,
+		customRoles: roles.filter(r => !r.isSystemRole).length,
+		activeRoles: roles.filter(r => users.some(u => u.role === r.id)).length
+	};
 </script>
 
 <svelte:head>
-	<title>User Management - Admin Dashboard</title>
+	<title>User Management - BOME Admin</title>
 </svelte:head>
 
-<div class="users-page">
+<div class="admin-page">
 	<div class="page-header">
-		<h1>User Management</h1>
-		<p>Manage users, roles, and permissions</p>
-	</div>
-
-	<!-- Filters and Search -->
-	<div class="filters-section glass">
-		<div class="search-box">
-			<input
-				type="text"
-				placeholder="Search users by name or email..."
-				bind:value={searchTerm}
-				on:keydown={(e) => e.key === 'Enter' && handleSearch()}
-				class="search-input"
-			/>
-			<button class="btn btn-primary" on:click={handleSearch}>
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<circle cx="11" cy="11" r="8"></circle>
-					<path d="m21 21-4.35-4.35"></path>
-				</svg>
-				Search
+		<div class="header-content">
+			<h1 class="page-title">User Management</h1>
+			<p class="page-description">Manage users, roles, and access control across the platform</p>
+		</div>
+		<div class="header-actions">
+			<button class="btn btn-primary" on:click={() => showUserModal = true}>
+				<span class="btn-icon">➕</span>
+				Add User
 			</button>
 		</div>
-
-		<div class="filter-controls">
-			<select bind:value={roleFilter} on:change={handleFilterChange} class="filter-select">
-				<option value="">All Roles</option>
-				<option value="admin">Admin</option>
-				<option value="moderator">Moderator</option>
-				<option value="user">User</option>
-			</select>
-
-			<select bind:value={statusFilter} on:change={handleFilterChange} class="filter-select">
-				<option value="">All Status</option>
-				<option value="active">Active</option>
-				<option value="pending">Pending</option>
-				<option value="suspended">Suspended</option>
-			</select>
-		</div>
 	</div>
 
-	<!-- Users Table -->
-	{#if loading}
-		<div class="loading-container">
-			<LoadingSpinner size="large" color="primary" />
-			<p>Loading users...</p>
-		</div>
-	{:else if users.length === 0}
-		<div class="empty-state glass">
-			<div class="empty-icon">
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-					<circle cx="9" cy="7" r="4"></circle>
-					<path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-					<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-				</svg>
-			</div>
-			<h3>No users found</h3>
-			<p>Try adjusting your search or filter criteria</p>
-		</div>
-	{:else}
-		<div class="users-table-container glass">
-			<div class="table-header">
-				<div class="bulk-actions">
-					<label class="checkbox-container">
-						<input
-							type="checkbox"
-							checked={selectedUsers.length === users.length}
-							indeterminate={selectedUsers.length > 0 && selectedUsers.length < users.length}
-							on:change={selectAllUsers}
-						/>
-						<span class="checkmark"></span>
-					</label>
-					{#if selectedUsers.length > 0}
-						<span class="selected-count">{selectedUsers.length} selected</span>
-						<button class="btn btn-outline btn-small">Bulk Actions</button>
-					{/if}
+	<!-- Tab Navigation -->
+	<div class="tab-navigation">
+		<button 
+			class="tab-button" 
+			class:active={activeTab === 'overview'}
+			on:click={() => activeTab = 'overview'}
+		>
+			<span class="tab-icon">📊</span>
+			Overview
+		</button>
+		<button 
+			class="tab-button" 
+			class:active={activeTab === 'users'}
+			on:click={() => activeTab = 'users'}
+		>
+			<span class="tab-icon">👥</span>
+			Users ({userStats.total})
+		</button>
+		<button 
+			class="tab-button" 
+			class:active={activeTab === 'roles'}
+			on:click={() => activeTab = 'roles'}
+		>
+			<span class="tab-icon">🎭</span>
+			Roles ({roles.length})
+		</button>
+	</div>
+
+	<!-- Tab Content -->
+	<div class="tab-content">
+		{#if activeTab === 'overview'}
+			<!-- Overview Tab -->
+			<div class="overview-grid">
+				<!-- User Statistics Cards -->
+				<div class="stats-section">
+					<h2 class="section-title">User Statistics</h2>
+					<div class="stats-grid">
+						<div class="stat-card">
+							<div class="stat-icon">👥</div>
+							<div class="stat-content">
+								<div class="stat-value">{userStats.total}</div>
+								<div class="stat-label">Total Users</div>
+							</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-icon">✅</div>
+							<div class="stat-content">
+								<div class="stat-value">{userStats.verified}</div>
+								<div class="stat-label">Verified</div>
+							</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-icon">⏳</div>
+							<div class="stat-content">
+								<div class="stat-value">{userStats.pending}</div>
+								<div class="stat-label">Pending</div>
+							</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-icon">🟢</div>
+							<div class="stat-content">
+								<div class="stat-value">{userStats.active}</div>
+								<div class="stat-label">Active</div>
+							</div>
+						</div>
+					</div>
 				</div>
-			</div>
 
-			<div class="table-wrapper">
-				<table class="users-table">
-					<thead>
-						<tr>
-							<th></th>
-							<th>User</th>
-							<th>Role</th>
-							<th>Status</th>
-							<th>Subscription</th>
-							<th>Created</th>
-							<th>Last Login</th>
-							<th>Actions</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each users as user}
-							<tr class="user-row">
-								<td>
-									<label class="checkbox-container">
-										<input
-											type="checkbox"
-											checked={selectedUsers.includes(user.id)}
-											on:change={() => toggleUserSelection(user.id)}
-										/>
-										<span class="checkmark"></span>
-									</label>
-								</td>
-								<td>
-									<div class="user-info">
-										<div class="user-avatar">
-											{user.firstName.charAt(0)}{user.lastName.charAt(0)}
-										</div>
-										<div class="user-details">
-											<div class="user-name">{user.firstName} {user.lastName}</div>
-											<div class="user-email">{user.email}</div>
-											{#if !user.emailVerified}
-												<span class="unverified-badge">Unverified</span>
-											{/if}
-										</div>
-									</div>
-								</td>
-								<td>
-									<span class="badge {getRoleBadge(user.role)}">{user.role}</span>
-								</td>
-								<td>
-									<span class="badge {getStatusBadge(user.status)}">{user.status}</span>
-								</td>
-								<td>
-									<span class="subscription-status">{user.subscriptionStatus}</span>
-								</td>
-								<td>{formatDate(user.createdAt)}</td>
-								<td>{formatDate(user.lastLogin)}</td>
-								<td>
-									<div class="actions">
-										<button class="btn btn-ghost btn-small" title="Edit User">
-											<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-												<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-												<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-											</svg>
-										</button>
-										<button 
-											class="btn btn-ghost btn-small" 
-											title="Delete User"
-											on:click={() => deleteUser(user.id)}
-										>
-											<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-												<polyline points="3,6 5,6 21,6"></polyline>
-												<path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"></path>
-											</svg>
-										</button>
-									</div>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+				<!-- Role Statistics -->
+				<div class="stats-section">
+					<h2 class="section-title">Role Statistics</h2>
+					<div class="stats-grid">
+						<div class="stat-card">
+							<div class="stat-icon">🎭</div>
+							<div class="stat-content">
+								<div class="stat-value">{roleStats.total}</div>
+								<div class="stat-label">Total Roles</div>
+							</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-icon">🔧</div>
+							<div class="stat-content">
+								<div class="stat-value">{roleStats.systemRoles}</div>
+								<div class="stat-label">System Roles</div>
+							</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-icon">⚙️</div>
+							<div class="stat-content">
+								<div class="stat-value">{roleStats.customRoles}</div>
+								<div class="stat-label">Custom Roles</div>
+							</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-icon">🎯</div>
+							<div class="stat-content">
+								<div class="stat-value">{roleStats.activeRoles}</div>
+								<div class="stat-label">Active Roles</div>
+							</div>
+						</div>
+					</div>
+				</div>
 
-			<!-- Pagination -->
-			{#if pagination.totalPages > 1}
-				<div class="pagination">
-					<button 
-						class="btn btn-ghost" 
-						disabled={pagination.page === 1}
-						on:click={() => handlePageChange(pagination.page - 1)}
-					>
-						Previous
-					</button>
-					
-					<div class="page-numbers">
-						{#each Array(pagination.totalPages) as _, i}
-							<button 
-								class="btn {pagination.page === i + 1 ? 'btn-primary' : 'btn-ghost'}"
-								on:click={() => handlePageChange(i + 1)}
-							>
-								{i + 1}
-							</button>
+				<!-- Department Distribution -->
+				<div class="stats-section">
+					<h2 class="section-title">Department Distribution</h2>
+					<div class="department-grid">
+						{#each departmentsWithRoles as dept, index (dept.id || `overview-dept-${index}`)}
+							<div class="department-card">
+								<div class="department-header">
+                                    <h3 class="department-name">{dept.name}
+										<span class="department-icon">{dept.icon}</span>
+	                                </h3>
+								</div>	
+								<div class="department-info">
+										
+										<p class="department-description">{dept.description}</p>
+								</div>	
+								<div class="department-stats">
+									<span class="role-count">{dept.roles.length} roles</span>
+									<span class="user-count">{getDepartmentUserCount(users, dept.name)} users</span>
+								</div>
+								
+							</div>
 						{/each}
 					</div>
-					
-					<button 
-						class="btn btn-ghost" 
-						disabled={pagination.page === pagination.totalPages}
-						on:click={() => handlePageChange(pagination.page + 1)}
-					>
-						Next
-					</button>
 				</div>
-			{/if}
-		</div>
-	{/if}
+			</div>
+
+		{:else if activeTab === 'users'}
+			<!-- Users Tab -->
+			<div class="users-section">
+				<!-- Search and Filter Bar -->
+				<div class="filter-bar">
+					<div class="search-container">
+						<input
+							type="text"
+							placeholder="Search users by name or email..."
+							bind:value={searchTerm}
+							on:input={handleSearch}
+							class="search-input"
+						/>
+						<span class="search-icon">🔍</span>
+					</div>
+
+					<div class="filter-container">
+						<select bind:value={roleFilter} on:change={handleFilterChange} class="filter-select">
+							<option value="">All Roles</option>
+							{#each roles as role}
+								<option value={role.id}>{role.name}</option>
+							{/each}
+						</select>
+
+						<select bind:value={statusFilter} on:change={handleFilterChange} class="filter-select">
+							<option value="">All Status</option>
+							<option value="active">Active</option>
+							<option value="pending">Pending</option>
+							<option value="inactive">Inactive</option>
+							<option value="suspended">Suspended</option>
+						</select>
+					</div>
+				</div>
+
+				<!-- Users Table -->
+				{#if loading}
+					<div class="loading-container">
+						<LoadingSpinner />
+						<p>Loading users...</p>
+					</div>
+				{:else if error}
+					<div class="error-container">
+						<p class="error-message">{error}</p>
+						<button class="btn btn-secondary" on:click={loadUsers}>Retry</button>
+					</div>
+				{:else}
+					<div class="table-container">
+						<table class="users-table">
+							<thead>
+								<tr>
+									<th>User</th>
+									<th>Email</th>
+									<th>Verified</th>
+									<th>Role</th>
+									<!--<th>Department</th>-->
+									<th>Status</th>
+									<th>Subscription</th>
+									<th>Last Login</th>
+									<th>Actions</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each users as user, index (user.id || `user-${index}`)}
+									<tr>
+										<td>
+											<div class="user-info">
+												<div class="user-avatar">
+													{(user.FirstName || '').charAt(0)}{(user.LastName || '').charAt(0)}
+												</div>
+												<div class="user-details">
+													<div class="user-name">{user.FirstName || 'Unknown'} {user.LastName || 'User'}</div>
+													<div class="user-id">ID: {user.ID}</div>
+												</div>
+											</div>
+										</td>
+										<td>
+											<div class="email-cell">
+												<span class="email">{user.Email}</span>
+												
+											</div>
+										</td>
+										<td>
+											<div class="status-cell">
+												{#if user.EmailVerified}
+													<span class="verified-badge">✓</span>
+												{:else} 
+													<span class="unverified-badge">🚫</span>
+												{/if}
+											</div>
+										</td>
+										<td>
+											<div class="role-badge" style="background: {getRoleColor(user.Role)}20; color: {getRoleColor(user.Role)}">
+												{getRoleIcon(user.Role)} {roles.find(r => r.id === user.Role)?.name || user.Role}
+											</div>
+										</td>
+										<!--<td>
+											<span class="department-badge">{user.Department}</span>
+										</td>-->
+										<td>
+											<div class="status-cell">
+												<span class="status-badge {getStatusBadgeClass(user.Status)}">
+													{user.Status}
+												</span>
+											</div>
+										</td>
+										<td>
+											<span class="subscription-badge {getSubscriptionBadgeClass(user.subscription)}">
+												{user.subscription}
+											</span>
+										</td>
+										<td>
+											<span class="last-login">{formatDate(user.lastLogin)}</span>
+										</td>
+										<td>
+											<div class="action-buttons">
+												<button class="btn btn-sm btn-secondary" on:click={() => { editingUser = user; showUserModal = true; }}>
+													Edit
+												</button>
+											</div>
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+
+					<!-- Pagination -->
+					{#if totalPages > 1}
+						<div class="pagination">
+							<button 
+								class="btn btn-secondary" 
+								disabled={currentPage === 1}
+								on:click={() => changePage(currentPage - 1)}
+							>
+								Previous
+							</button>
+							
+							<div class="page-numbers">
+								{#each Array.from({length: totalPages}, (_, i) => i + 1) as pageNum}
+									<button 
+										class="page-number" 
+										class:active={pageNum === currentPage}
+										on:click={() => changePage(pageNum)}
+									>
+										{pageNum}
+									</button>
+								{/each}
+							</div>
+							
+							<button 
+								class="btn btn-secondary" 
+								disabled={currentPage === totalPages}
+								on:click={() => changePage(currentPage + 1)}
+							>
+								Next
+							</button>
+						</div>
+					{/if}
+				{/if}
+			</div>
+
+		{:else if activeTab === 'roles'}
+			<!-- Roles Tab -->
+			<div class="roles-section">
+				{#if rolesLoading}
+					<div class="loading-container">
+						<LoadingSpinner />
+						<p>Loading roles and departments...</p>
+					</div>
+				{:else if rolesError}
+					<div class="error-container">
+						<p class="error-message">Error loading roles: {rolesError}</p>
+						<button class="btn btn-secondary" on:click={fetchRolesAndDepartments}>Retry</button>
+					</div>
+				{:else}
+					<div class="departments-accordion">
+						{#each departmentsWithRoles as dept, index (dept.id || `dept-${index}`)}
+							<div class="department-accordion">
+								<button 
+									class="department-header"
+									on:click={() => toggleDepartment(dept.id)}
+									aria-expanded={expandedDepartments.has(dept.id)}
+									aria-controls="dept-{dept.id}"
+								>
+									<div class="department-info">
+										<span class="department-icon">{dept.icon}</span>
+										<div class="department-details">
+											<h3 class="department-name">{dept.name}</h3>
+											<p class="department-description">{dept.description}</p>
+										</div>
+									</div>
+									<div class="department-stats">
+										<span class="role-count">{dept.roles.length} roles</span>
+										<span class="user-count">{getDepartmentUserCount(users, dept.name)} users</span>
+									</div>
+									<span class="accordion-icon">
+										{expandedDepartments.has(dept.id) ? '▼' : '▶'}
+									</span>
+								</button>
+								
+								{#if expandedDepartments.has(dept.id)}
+									<div 
+										class="department-content"
+										id="dept-{dept.id}"
+										transition:slide={{ duration: 300 }}
+									>
+										<div class="roles-grid">
+											{#each dept.roles as role, roleIndex (role.id || `role-${dept.id}-${roleIndex}`)}
+												<div class="role-card">
+													<div class="role-header">
+														<div class="role-icon" style="color: {role.color}">
+															{role.icon}
+														</div>
+														<div class="role-info">
+															<h4 class="role-name">{role.name}</h4>
+															<p class="role-description">{role.description}</p>
+														</div>
+														{#if role.isSystemRole}
+															<div class="system-badge">System</div>
+														{/if}
+													</div>
+													
+													<div class="role-stats">
+														<div class="stat">
+															<span class="stat-label">Level</span>
+															<span class="stat-value">{role.level}/10</span>
+														</div>
+														<div class="stat">
+															<span class="stat-label">Permissions</span>
+															<span class="stat-value">{role.permissions.length}</span>
+														</div>
+														<div class="stat">
+															<span class="stat-label">Category</span>
+															<span class="stat-value category-badge" style="background: {role.color}20">
+																{role.category}
+															</span>
+														</div>
+													</div>
+
+													<div class="role-footer">
+														<span class="role-updated">Updated {formatDate(role.updatedAt)}</span>
+														<div class="role-actions">
+															<button class="btn btn-sm btn-secondary">View Details</button>
+														</div>
+													</div>
+												</div>
+											{/each}
+										</div>
+									</div>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
+	</div>
 </div>
 
 <style>
-	.users-page {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-2xl);
+	.admin-page {
+		max-width: 100%;
+		margin: 0 auto;
+		padding: 2rem;
 	}
 
-	.page-header h1 {
-		font-size: var(--text-3xl);
+	.page-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 2rem;
+		padding-bottom: 1rem;
+		border-bottom: 1px solid #e5e7eb;
+	}
+
+	.page-title {
+		font-size: 2rem;
 		font-weight: 700;
-		color: var(--text-primary);
-		margin-bottom: var(--space-sm);
+		color: #111827;
+		margin: 0;
 	}
 
-	.page-header p {
-		color: var(--text-secondary);
-		font-size: var(--text-lg);
+	.page-description {
+		color: #6b7280;
+		margin: 0.5rem 0 0 0;
 	}
 
-	.filters-section {
-		padding: var(--space-xl);
-		border-radius: var(--radius-xl);
+	.header-actions {
 		display: flex;
-		gap: var(--space-xl);
+		gap: 1rem;
+	}
+
+	/* Tab Navigation */
+	.tab-navigation {
+		display: flex;
+		gap: 0.5rem;
+		margin-bottom: 2rem;
+		border-bottom: 1px solid #e5e7eb;
+	}
+
+	.tab-button {
+		display: flex;
 		align-items: center;
-		flex-wrap: wrap;
-	}
-
-	.search-box {
-		display: flex;
-		gap: var(--space-md);
-		flex: 1;
-		min-width: 300px;
-	}
-
-	.search-input {
-		flex: 1;
-		padding: var(--space-md);
+		gap: 0.5rem;
+		padding: 0.75rem 1.5rem;
+		background: none;
 		border: none;
-		border-radius: var(--radius-lg);
-		background: var(--bg-glass);
-		color: var(--text-primary);
-		font-size: var(--text-base);
+		border-bottom: 2px solid transparent;
+		color: #6b7280;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s;
 	}
 
-	.search-input:focus {
-		outline: 2px solid var(--primary);
-		outline-offset: 2px;
+	.tab-button:hover {
+		color: #374151;
+		background-color: #f9fafb;
 	}
 
-	.filter-controls {
+	.tab-button.active {
+		color: #2563eb;
+		border-bottom-color: #2563eb;
+	}
+
+	.tab-icon {
+		font-size: 1.1rem;
+	}
+
+	/* Overview Tab */
+	.overview-grid {
+		display: grid;
+		gap: 2rem;
+	}
+
+	.stats-section {
+		background: white;
+		border-radius: 0.5rem;
+		padding: 1.5rem;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	}
+
+	.section-title {
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: #111827;
+		margin: 0 0 1rem 0;
+	}
+
+	.stats-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		gap: 1rem;
+	}
+
+	.stat-card {
 		display: flex;
-		gap: var(--space-md);
-	}
-
-	.filter-select {
-		padding: var(--space-md);
-		border: none;
-		border-radius: var(--radius-lg);
-		background: var(--bg-glass);
-		color: var(--text-primary);
-		min-width: 120px;
-	}
-
-	.loading-container {
-		display: flex;
-		flex-direction: column;
 		align-items: center;
-		gap: var(--space-lg);
-		padding: var(--space-3xl);
+		gap: 1rem;
+		padding: 1rem;
+		background: #f9fafb;
+		border-radius: 0.5rem;
+		border: 1px solid #e5e7eb;
 	}
 
-	.empty-state {
-		padding: var(--space-3xl);
+	.stat-icon {
+		font-size: 2rem;
+	}
+
+	.stat-value {
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: #111827;
+	}
+
+	.stat-label {
+		color: #6b7280;
+		font-size: 0.875rem;
+	}
+
+	.department-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+		gap: 1rem;
 		text-align: center;
-		border-radius: var(--radius-xl);
+		align-items: center;
 	}
 
-	.empty-icon {
-		width: 64px;
-		height: 64px;
-		margin: 0 auto var(--space-lg);
-		opacity: 0.5;
+	.department-card {
+		padding: 1rem;
+		background: #f9fafb;
+		border-radius: 0.5rem;
+		border: 1px solid #e5e7eb;
 	}
 
-	.empty-icon svg {
-		width: 100%;
-		height: 100%;
-		color: var(--text-secondary);
+	/*.department-header {
+		align-items: center;
+		justify-items: center;
+		gap: 1rem;
+		flex-wrap: nowrap;
+		padding: 0.25rem !important;
+		text-align: center !important;
+	}*/
+
+	.department-icon {
+		font-size: 1.5rem;
 	}
 
-	.users-table-container {
-		border-radius: var(--radius-xl);
+	.department-name {
+		font-weight: 600;
+		color: #111827;
+		margin: 0;
+	}
+
+	.department-description {
+		color: #6b7280;
+		font-size: 0.875rem;
+		margin: 0.25rem 0 0 0;
+	}
+
+	.department-stats {
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		height: 4vh;
+		gap: 0.5rem;
+		margin-left: auto;
+	}
+
+	.role-count, .user-count {
+		font-size: 0.75rem;
+		color: #6b7280;
+		background: white;
+		padding: 0.25rem 0.5rem;
+		border-radius: 0.25rem;
+	}
+
+	/* Users Tab */
+	.users-section {
+		background: white;
+		border-radius: 0.5rem;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 		overflow: hidden;
 	}
 
-	.table-header {
-		padding: var(--space-lg);
-		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-	}
-
-	.bulk-actions {
+	.filter-bar {
 		display: flex;
+		justify-content: space-between;
 		align-items: center;
-		gap: var(--space-md);
+		padding: 1rem 1.5rem;
+		border-bottom: 1px solid #e5e7eb;
+		background: #f9fafb;
 	}
 
-	.selected-count {
-		color: var(--text-secondary);
-		font-size: var(--text-sm);
+	.search-container {
+		position: relative;
+		flex: 1;
+		max-width: 400px;
 	}
 
-	.table-wrapper {
+	.search-input {
+		width: 100%;
+		padding: 0.5rem 1rem 0.5rem 2.5rem;
+		border: 1px solid #d1d5db;
+		border-radius: 0.375rem;
+		font-size: 0.875rem;
+	}
+
+	.search-icon {
+		position: absolute;
+		left: 0.75rem;
+		top: 50%;
+		transform: translateY(-50%);
+		color: #6b7280;
+	}
+
+	.filter-container {
+		display: flex;
+		gap: 1rem;
+	}
+
+	.filter-select {
+		padding: 0.5rem;
+		border: 1px solid #d1d5db;
+		border-radius: 0.375rem;
+		font-size: 0.875rem;
+		background: white;
+	}
+
+	.table-container {
 		overflow-x: auto;
 	}
 
@@ -470,263 +948,397 @@
 
 	.users-table th,
 	.users-table td {
-		padding: var(--space-lg);
+		padding: 1rem;
 		text-align: left;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+		border-bottom: 1px solid #e5e7eb;
 	}
 
 	.users-table th {
+		background: #f9fafb;
 		font-weight: 600;
-		color: var(--text-secondary);
-		font-size: var(--text-sm);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-
-	.user-row:hover {
-		background: rgba(255, 255, 255, 0.02);
+		color: #374151;
+		font-size: 0.875rem;
 	}
 
 	.user-info {
 		display: flex;
 		align-items: center;
-		gap: var(--space-md);
+		gap: 0.75rem;
 	}
 
 	.user-avatar {
-		width: 40px;
-		height: 40px;
+		width: 2.5rem;
+		height: 2.5rem;
 		border-radius: 50%;
-		background: var(--primary-gradient);
+		background: #3b82f6;
+		color: white;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		font-weight: 600;
-		color: var(--white);
-		font-size: var(--text-sm);
+		font-size: 0.875rem;
 	}
 
 	.user-name {
-		font-weight: 600;
-		color: var(--text-primary);
+		font-weight: 500;
+		color: #111827;
 	}
 
-	.user-email {
-		color: var(--text-secondary);
-		font-size: var(--text-sm);
+	.user-id {
+		font-size: 0.75rem;
+		color: #6b7280;
 	}
 
-	.unverified-badge {
-		display: inline-block;
-		padding: 2px 6px;
-		background: var(--warning);
-		color: var(--white);
-		border-radius: var(--radius-sm);
-		font-size: var(--text-xs);
-		margin-top: 2px;
-	}
-
-	.badge {
-		display: inline-block;
-		padding: 4px 8px;
-		border-radius: var(--radius-md);
-		font-size: var(--text-xs);
-		font-weight: 600;
-		text-transform: uppercase;
-	}
-
-	.badge-success {
-		background: var(--success);
-		color: var(--white);
-	}
-
-	.badge-warning {
-		background: var(--warning);
-		color: var(--white);
-	}
-
-	.badge-error {
-		background: var(--error);
-		color: var(--white);
-	}
-
-	.badge-primary {
-		background: var(--primary);
-		color: var(--white);
-	}
-
-	.badge-info {
-		background: var(--info);
-		color: var(--white);
-	}
-
-	.badge-neutral {
-		background: var(--bg-glass);
-		color: var(--text-secondary);
-	}
-
-	.subscription-status {
-		text-transform: capitalize;
-		color: var(--text-primary);
-	}
-
-	.actions {
-		display: flex;
-		gap: var(--space-sm);
-	}
-
-	.checkbox-container {
-		position: relative;
-		display: inline-block;
-		cursor: pointer;
-	}
-
-	.checkbox-container input {
-		opacity: 0;
-		position: absolute;
-		cursor: pointer;
-	}
-
-	.checkmark {
-		position: relative;
-		top: 0;
-		left: 0;
-		height: 20px;
-		width: 20px;
-		background: var(--bg-glass);
-		border-radius: var(--radius-sm);
-		border: 2px solid var(--border-color);
-		display: inline-block;
-		transition: all var(--transition-normal);
-	}
-
-	.checkbox-container input:checked ~ .checkmark {
-		background: var(--primary);
-		border-color: var(--primary);
-	}
-
-	.checkmark:after {
-		content: "";
-		position: absolute;
-		display: none;
-		left: 6px;
-		top: 2px;
-		width: 5px;
-		height: 10px;
-		border: solid var(--white);
-		border-width: 0 2px 2px 0;
-		transform: rotate(45deg);
-	}
-
-	.checkbox-container input:checked ~ .checkmark:after {
-		display: block;
-	}
-
-	.pagination {
+	.email-cell {
 		display: flex;
 		align-items: center;
+		gap: 0.5rem;
+		
+	}
+
+	.status-cell {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		text-align: center;
 		justify-content: center;
-		gap: var(--space-md);
-		padding: var(--space-xl);
-		border-top: 1px solid rgba(255, 255, 255, 0.1);
+	}
+
+	.verified-badge {
+		color: #059669;
+		font-weight: bold;
+	}
+
+	.role-badge, .department-badge, .status-badge, .subscription-badge {
+		padding: 0.25rem 0.5rem;
+		border-radius: 0.25rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+	}
+
+	.last-login {
+		font-size: 0.875rem;
+		color: #6b7280;
+	}
+
+	.action-buttons {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	/* Pagination */
+	.pagination {
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		gap: 1rem;
+		padding: 1rem;
+		border-top: 1px solid #e5e7eb;
 	}
 
 	.page-numbers {
 		display: flex;
-		gap: var(--space-sm);
+		gap: 0.25rem;
 	}
 
-	.btn {
-		padding: var(--space-sm) var(--space-md);
-		border: none;
-		border-radius: var(--radius-lg);
-		font-weight: 500;
+	.page-number {
+		padding: 0.5rem 0.75rem;
+		border: 1px solid #d1d5db;
+		background: white;
+		color: #374151;
+		border-radius: 0.25rem;
 		cursor: pointer;
-		transition: all var(--transition-normal);
+		transition: all 0.2s;
+	}
+
+	.page-number:hover {
+		background: #f3f4f6;
+	}
+
+	.page-number.active {
+		background: #2563eb;
+		color: white;
+		border-color: #2563eb;
+	}
+
+	/* Roles Tab */
+	.roles-section {
+		background: white;
+		border-radius: 0.5rem;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		overflow: hidden;
+	}
+
+	.departments-accordion {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.department-accordion {
+		border-bottom: 1px solid #e5e7eb;
+	}
+
+	.department-header {
+		width: 100%;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1.5rem;
+		background: none;
+		border: none;
+		cursor: pointer;
+		transition: background-color 0.2s;
+	}
+
+	.department-header:hover {
+		background: #f9fafb;
+	}
+
+	.department-info {
 		display: flex;
 		align-items: center;
-		gap: var(--space-sm);
+		gap: 1rem;
+		flex: 1;
+	}
+
+	.department-icon {
+		font-size: 1.5rem;
+	}
+
+	.department-name {
+		font-size: 1.125rem;
+		font-weight: 600;
+		color: #111827;
+		margin: 0;
+	}
+
+	.department-description {
+		color: #6b7280;
+		font-size: 0.875rem;
+		margin: 0.25rem 0 0 0;
+	}
+
+	.department-stats {
+		display: flex;
+		gap: 1rem;
+		margin-right: 1rem;
+	}
+
+	.accordion-icon {
+		font-size: 0.875rem;
+		color: #6b7280;
+	}
+
+	.department-content {
+		padding: 0 1.5rem 1.5rem 1.5rem;
+		background: #f9fafb;
+	}
+
+	.roles-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+		gap: 1rem;
+	}
+
+	.role-card {
+		background: white;
+		border-radius: 0.5rem;
+		padding: 1rem;
+		border: 1px solid #e5e7eb;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+	}
+
+	.role-header {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+		margin-bottom: 1rem;
+	}
+
+	.role-icon {
+		font-size: 1.5rem;
+		flex-shrink: 0;
+	}
+
+	.role-info {
+		flex: 1;
+	}
+
+	.role-name {
+		font-weight: 600;
+		color: #111827;
+		margin: 0 0 0.25rem 0;
+	}
+
+	.role-description {
+		color: #6b7280;
+		font-size: 0.875rem;
+		margin: 0;
+		line-height: 1.4;
+	}
+
+	.system-badge {
+		background: #dc2626;
+		color: white;
+		padding: 0.25rem 0.5rem;
+		border-radius: 0.25rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+	}
+
+	.role-stats {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 0.75rem;
+		margin-bottom: 1rem;
+	}
+
+	.stat {
+		text-align: center;
+	}
+
+	.stat-label {
+		display: block;
+		font-size: 0.75rem;
+		color: #6b7280;
+		margin-bottom: 0.25rem;
+	}
+
+	.stat-value {
+		font-weight: 600;
+		color: #111827;
+	}
+
+	.category-badge {
+		padding: 0.25rem 0.5rem;
+		border-radius: 0.25rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+	}
+
+	.role-footer {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding-top: 1rem;
+		border-top: 1px solid #e5e7eb;
+	}
+
+	.role-updated {
+		font-size: 0.75rem;
+		color: #6b7280;
+	}
+
+	.role-actions {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	/* Loading and Error States */
+	.loading-container, .error-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 3rem;
+		text-align: center;
+	}
+
+	.error-message {
+		color: #dc2626;
+		margin-bottom: 1rem;
+	}
+
+	/* Buttons */
+	.btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 1rem;
+		border: none;
+		border-radius: 0.375rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s;
 		text-decoration: none;
-		font-size: var(--text-sm);
 	}
 
 	.btn-primary {
-		background: var(--primary-gradient);
-		color: var(--white);
-		box-shadow: var(--shadow-md);
+		background: #2563eb;
+		color: white;
 	}
 
 	.btn-primary:hover {
-		transform: translateY(-2px);
-		box-shadow: var(--shadow-lg);
+		background: #1d4ed8;
 	}
 
-	.btn-ghost {
-		background: var(--bg-glass);
-		color: var(--text-primary);
+	.btn-secondary {
+		background: #f3f4f6;
+		color: #374151;
+		border: 1px solid #d1d5db;
 	}
 
-	.btn-ghost:hover {
-		background: var(--bg-glass-dark);
+	.btn-secondary:hover {
+		background: #e5e7eb;
 	}
 
-	.btn-outline {
-		background: transparent;
-		color: var(--text-primary);
-		border: 1px solid var(--border-color);
-	}
-
-	.btn-outline:hover {
-		background: var(--bg-glass);
-	}
-
-	.btn-small {
-		padding: var(--space-xs) var(--space-sm);
-		font-size: var(--text-xs);
+	.btn-sm {
+		padding: 0.25rem 0.5rem;
+		font-size: 0.75rem;
 	}
 
 	.btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
-		transform: none;
 	}
 
-	.btn svg {
-		width: 16px;
-		height: 16px;
+	.btn-icon {
+		font-size: 1rem;
 	}
 
+	/* Responsive Design */
 	@media (max-width: 768px) {
-		.filters-section {
-			flex-direction: column;
-			align-items: stretch;
+		.admin-page {
+			padding: 1rem;
 		}
 
-		.search-box {
-			min-width: auto;
-		}
-
-		.filter-controls {
-			justify-content: space-between;
-		}
-
-		.table-wrapper {
-			font-size: var(--text-sm);
-		}
-
-		.users-table th,
-		.users-table td {
-			padding: var(--space-md);
-		}
-
-		.user-info {
+		.page-header {
 			flex-direction: column;
 			align-items: flex-start;
-			gap: var(--space-sm);
+			gap: 1rem;
 		}
 
-		.actions {
+		.tab-navigation {
+			flex-wrap: wrap;
+		}
+
+		.filter-bar {
 			flex-direction: column;
+			gap: 1rem;
+		}
+
+		.search-container {
+			max-width: none;
+		}
+
+		.filter-container {
+			width: 100%;
+		}
+
+		.filter-select {
+			flex: 1;
+		}
+
+		.stats-grid {
+			grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+		}
+
+		.roles-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.role-stats {
+			grid-template-columns: 1fr;
 		}
 	}
 </style> 

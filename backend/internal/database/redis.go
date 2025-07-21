@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"bome-backend/internal/config"
 
@@ -15,12 +16,18 @@ type Redis struct {
 	*redis.Client
 }
 
-// NewRedis creates a new Redis connection
+// NewRedis creates a new Redis connection with optimized settings
 func NewRedis(cfg *config.Config) (*Redis, error) {
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
+		Addr:         fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
+		Password:     cfg.RedisPassword,
+		DB:           cfg.RedisDB,
+		PoolSize:     50,               // Connection pool size
+		MinIdleConns: 10,               // Minimum idle connections
+		MaxIdleConns: 20,               // Maximum idle connections
+		PoolTimeout:  30 * time.Second, // Pool timeout
+		ReadTimeout:  5 * time.Second,  // Read timeout
+		WriteTimeout: 5 * time.Second,  // Write timeout
 	})
 
 	// Test the connection
@@ -29,8 +36,7 @@ func NewRedis(cfg *config.Config) (*Redis, error) {
 		return nil, fmt.Errorf("failed to ping Redis: %w", err)
 	}
 
-	log.Println("Redis connection established")
-
+	log.Printf("Redis connection established with pool size: %d", 50)
 	return &Redis{rdb}, nil
 }
 
