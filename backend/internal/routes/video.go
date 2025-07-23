@@ -370,7 +370,8 @@ func syncVideoToDatabase(db *database.DB, bunnyService *services.BunnyService, b
 		bunnyVideo.Length,
 		bunnyVideo.StorageSize,
 		extractTagsFromBunnyVideo(bunnyVideo),
-		0, // createdBy - system
+		0,    // createdBy - system
+		true, // vid_status
 	)
 	return err
 }

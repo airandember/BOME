@@ -113,6 +113,23 @@ class ApiClient {
 				return { error: 'Authentication required' };
 			}
 			
+			// Check if response is JSON
+			const contentType = response.headers.get('content-type');
+			if (!contentType || !contentType.includes('application/json')) {
+				// Handle non-JSON responses (like HTML error pages)
+				const text = await response.text();
+				console.error('Non-JSON response received:', {
+					status: response.status,
+					contentType,
+					url,
+					text: text.substring(0, 200) // Log first 200 chars
+				});
+				
+				return {
+					error: `Expected JSON response but got ${contentType || 'unknown content type'} (HTTP ${response.status})`
+				};
+			}
+			
 			const data = await response.json();
 			
 			if (!response.ok) {

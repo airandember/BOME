@@ -46,6 +46,7 @@ func main() {
 		fileSize,
 		tags,
 		userID,
+		true, // vid_status
 	)
 	if err != nil {
 		log.Fatal("Failed to create video:", err)

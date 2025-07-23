@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -271,6 +272,496 @@ func AdminRequired() gin.HandlerFunc {
 			})
 			c.Abort()
 			return
+		}
+
+		c.Next()
+	}
+}
+
+// StreamingAdminRequired middleware that requires streaming manager role or higher
+func StreamingAdminRequired() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Get user role from context (set by AuthRequired)
+		role, exists := c.Get("user_role")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Authentication required",
+			})
+			c.Abort()
+			return
+		}
+
+		// Streaming admin roles include streaming manager and higher roles
+		streamingAdminRoles := []string{
+			"super_admin",       // Level 10: Super Administrator
+			"system_admin",      // Level 9: System Administrator
+			"content_manager",   // Level 8: Content Manager
+			"streaming_manager", // Level 7: Video Streaming Manager
+		}
+
+		roleStr := role.(string)
+		isStreamingAdmin := false
+		for _, adminRole := range streamingAdminRoles {
+			if roleStr == adminRole {
+				isStreamingAdmin = true
+				break
+			}
+		}
+
+		if !isStreamingAdmin {
+			userEmail, _ := c.Get("user_email")
+			log.Printf("Streaming admin access denied for user: %v (role: %s)", userEmail, roleStr)
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "Streaming admin access required",
+			})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// SubscriptionAccessRequired middleware that requires active subscription for protected content
+func SubscriptionAccessRequired() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetInt("user_id")
+		if userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Authentication required",
+			})
+			c.Abort()
+			return
+		}
+
+		// Get user role from context
+		role, exists := c.Get("user_role")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "User role not found",
+			})
+			c.Abort()
+			return
+		}
+
+		// Admin roles get automatic access
+		adminRoles := []string{
+			"super_admin",           // Level 10: Super Administrator
+			"system_admin",          // Level 9: System Administrator
+			"content_manager",       // Level 8: Content Manager
+			"articles_manager",      // Level 7: Articles Manager
+			"youtube_manager",       // Level 7: YouTube Manager
+			"streaming_manager",     // Level 7: Video Streaming Manager
+			"events_manager",        // Level 7: Events Manager
+			"advertisement_manager", // Level 7: Advertisement Manager
+			"user_manager",          // Level 7: User Account Manager
+			"analytics_manager",     // Level 7: Analytics Manager
+			"financial_admin",       // Level 7: Financial Administrator
+			"admin",                 // Legacy admin role
+		}
+
+		roleStr := role.(string)
+		isAdmin := false
+		for _, adminRole := range adminRoles {
+			if roleStr == adminRole {
+				isAdmin = true
+				break
+			}
+		}
+
+		if isAdmin {
+			c.Next()
+			return
+		}
+
+		// For non-admin users, check subscription status
+		// TODO: Implement subscription status check from database
+		// For now, allow access (this should be implemented with actual subscription checking)
+		c.Next()
+	}
+}
+
+// SubscriptionPlanRequired middleware that requires specific subscription plan
+func SubscriptionPlanRequired(requiredPlan string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetInt("user_id")
+		if userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Authentication required",
+			})
+			c.Abort()
+			return
+		}
+
+		// Get user role from context
+		role, exists := c.Get("user_role")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "User role not found",
+			})
+			c.Abort()
+			return
+		}
+
+		// Admin roles get automatic access
+		adminRoles := []string{
+			"super_admin",       // Level 10: Super Administrator
+			"system_admin",      // Level 9: System Administrator
+			"content_manager",   // Level 8: Content Manager
+			"streaming_manager", // Level 7: Video Streaming Manager
+		}
+
+		roleStr := role.(string)
+		isAdmin := false
+		for _, adminRole := range adminRoles {
+			if roleStr == adminRole {
+				isAdmin = true
+				break
+			}
+		}
+
+		if isAdmin {
+			c.Next()
+			return
+		}
+
+		// For non-admin users, check subscription plan
+		// TODO: Implement subscription plan check from database
+		// For now, allow access (this should be implemented with actual plan checking)
+		c.Next()
+	}
+}
+
+// SubscriptionAuditLog middleware that logs subscription-related operations
+func SubscriptionAuditLog(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Start timer for operation duration
+		start := time.Now()
+
+		// Process request
+		c.Next()
+
+		// Log subscription-related operations
+		userID := c.GetInt("user_id")
+		userEmail, _ := c.Get("user_email")
+		role, _ := c.Get("user_role")
+		method := c.Request.Method
+		path := c.Request.URL.Path
+		statusCode := c.Writer.Status()
+		duration := time.Since(start)
+
+		// Check if this is a subscription-related operation
+		subscriptionPaths := []string{
+			"/api/subscriptions",
+			"/api/admin/subscriptions",
+			"/api/admin/streaming",
+			"/api/subscription",
+		}
+
+		isSubscriptionOperation := false
+		for _, subscriptionPath := range subscriptionPaths {
+			if strings.HasPrefix(path, subscriptionPath) {
+				isSubscriptionOperation = true
+				break
+			}
+		}
+
+		if isSubscriptionOperation {
+			log.Printf("SUBSCRIPTION_AUDIT: user_id=%d, email=%v, role=%v, method=%s, path=%s, status=%d, duration=%v, ip=%s",
+				userID, userEmail, role, method, path, statusCode, duration, c.ClientIP())
+
+			// TODO: Store audit log in database for compliance and analytics
+			// This would integrate with the subscription_events table
+		}
+	}
+}
+
+// SubscriptionRateLimit middleware that applies rate limiting to subscription operations
+func SubscriptionRateLimit() gin.HandlerFunc {
+	// Create a rate limiter for subscription operations
+	// This is a simplified implementation - in production, use a proper rate limiting library
+	return func(c *gin.Context) {
+		userID := c.GetInt("user_id")
+		if userID == 0 {
+			c.Next()
+			return
+		}
+
+		// Check if this is a subscription-related operation
+		path := c.Request.URL.Path
+		subscriptionPaths := []string{
+			"/api/subscriptions",
+			"/api/admin/subscriptions",
+			"/api/admin/streaming",
+			"/api/subscription",
+		}
+
+		isSubscriptionOperation := false
+		for _, subscriptionPath := range subscriptionPaths {
+			if strings.HasPrefix(path, subscriptionPath) {
+				isSubscriptionOperation = true
+				break
+			}
+		}
+
+		if isSubscriptionOperation {
+			// TODO: Implement proper rate limiting
+			// For now, just continue
+			c.Next()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// SubscriptionValidation middleware that validates subscription access
+func SubscriptionValidation(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetInt("user_id")
+		if userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Authentication required",
+			})
+			c.Abort()
+			return
+		}
+
+		// Get user role from context
+		role, exists := c.Get("user_role")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "User role not found",
+			})
+			c.Abort()
+			return
+		}
+
+		// Admin roles get automatic access
+		adminRoles := []string{
+			"super_admin",       // Level 10: Super Administrator
+			"system_admin",      // Level 9: System Administrator
+			"content_manager",   // Level 8: Content Manager
+			"streaming_manager", // Level 7: Video Streaming Manager
+		}
+
+		roleStr := role.(string)
+		isAdmin := false
+		for _, adminRole := range adminRoles {
+			if roleStr == adminRole {
+				isAdmin = true
+				break
+			}
+		}
+
+		if isAdmin {
+			c.Next()
+			return
+		}
+
+		// For non-admin users, validate subscription
+		if db != nil {
+			subscription, err := db.GetSubscriptionByUserID(userID)
+			if err != nil || subscription == nil {
+				c.JSON(http.StatusForbidden, gin.H{
+					"error": "Active subscription required",
+					"code":  "SUBSCRIPTION_REQUIRED",
+				})
+				c.Abort()
+				return
+			}
+
+			// Check if subscription is active
+			if subscription.Status != "active" {
+				c.JSON(http.StatusForbidden, gin.H{
+					"error":  "Subscription is not active",
+					"code":   "SUBSCRIPTION_INACTIVE",
+					"status": subscription.Status,
+				})
+				c.Abort()
+				return
+			}
+
+			// Check if subscription has expired
+			if subscription.CurrentPeriodEnd != nil && time.Now().After(*subscription.CurrentPeriodEnd) {
+				c.JSON(http.StatusForbidden, gin.H{
+					"error":      "Subscription has expired",
+					"code":       "SUBSCRIPTION_EXPIRED",
+					"expired_at": subscription.CurrentPeriodEnd,
+				})
+				c.Abort()
+				return
+			}
+
+			// Store subscription info in context for later use
+			c.Set("user_subscription", subscription)
+		}
+
+		c.Next()
+	}
+}
+
+// SubscriptionPlanValidation middleware that validates specific subscription plan access
+func SubscriptionPlanValidation(db *database.DB, requiredPlan string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetInt("user_id")
+		if userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Authentication required",
+			})
+			c.Abort()
+			return
+		}
+
+		// Get user role from context
+		role, exists := c.Get("user_role")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "User role not found",
+			})
+			c.Abort()
+			return
+		}
+
+		// Admin roles get automatic access
+		adminRoles := []string{
+			"super_admin",       // Level 10: Super Administrator
+			"system_admin",      // Level 9: System Administrator
+			"content_manager",   // Level 8: Content Manager
+			"streaming_manager", // Level 7: Video Streaming Manager
+		}
+
+		roleStr := role.(string)
+		isAdmin := false
+		for _, adminRole := range adminRoles {
+			if roleStr == adminRole {
+				isAdmin = true
+				break
+			}
+		}
+
+		if isAdmin {
+			c.Next()
+			return
+		}
+
+		// For non-admin users, validate subscription plan
+		if db != nil {
+			subscription, err := db.GetSubscriptionByUserID(userID)
+			if err != nil || subscription == nil {
+				c.JSON(http.StatusForbidden, gin.H{
+					"error": "Active subscription required",
+					"code":  "SUBSCRIPTION_REQUIRED",
+				})
+				c.Abort()
+				return
+			}
+
+			// Check if subscription is active
+			if subscription.Status != "active" {
+				c.JSON(http.StatusForbidden, gin.H{
+					"error":  "Subscription is not active",
+					"code":   "SUBSCRIPTION_INACTIVE",
+					"status": subscription.Status,
+				})
+				c.Abort()
+				return
+			}
+
+			// Check if subscription has expired
+			if subscription.CurrentPeriodEnd != nil && time.Now().After(*subscription.CurrentPeriodEnd) {
+				c.JSON(http.StatusForbidden, gin.H{
+					"error":      "Subscription has expired",
+					"code":       "SUBSCRIPTION_EXPIRED",
+					"expired_at": subscription.CurrentPeriodEnd,
+				})
+				c.Abort()
+				return
+			}
+
+			// Check if user has the required plan
+			if subscription.PlanID.Valid {
+				plan, err := db.GetSubscriptionPlanByID(int(subscription.PlanID.Int32))
+				if err == nil && plan != nil {
+					// TODO: Implement plan hierarchy checking
+					// For now, just check if the plan name matches
+					if plan.Name != requiredPlan {
+						c.JSON(http.StatusForbidden, gin.H{
+							"error":         "Higher subscription plan required",
+							"code":          "PLAN_UPGRADE_REQUIRED",
+							"required_plan": requiredPlan,
+							"current_plan":  plan.Name,
+						})
+						c.Abort()
+						return
+					}
+				}
+			}
+
+			// Store subscription info in context for later use
+			c.Set("user_subscription", subscription)
+		}
+
+		c.Next()
+	}
+}
+
+// SubscriptionExpirationWarning middleware that adds expiration warnings to responses
+func SubscriptionExpirationWarning(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetInt("user_id")
+		if userID == 0 {
+			c.Next()
+			return
+		}
+
+		// Get user role from context
+		role, exists := c.Get("user_role")
+		if !exists {
+			c.Next()
+			return
+		}
+
+		// Admin roles don't need expiration warnings
+		adminRoles := []string{
+			"super_admin",       // Level 10: Super Administrator
+			"system_admin",      // Level 9: System Administrator
+			"content_manager",   // Level 8: Content Manager
+			"streaming_manager", // Level 7: Video Streaming Manager
+		}
+
+		roleStr := role.(string)
+		isAdmin := false
+		for _, adminRole := range adminRoles {
+			if roleStr == adminRole {
+				isAdmin = true
+				break
+			}
+		}
+
+		if isAdmin {
+			c.Next()
+			return
+		}
+
+		// For non-admin users, check subscription expiration
+		if db != nil {
+			subscription, err := db.GetSubscriptionByUserID(userID)
+			if err == nil && subscription != nil && subscription.CurrentPeriodEnd != nil {
+				daysUntilExpiration := int(time.Until(*subscription.CurrentPeriodEnd).Hours() / 24)
+
+				// Add warning headers for expiring subscriptions
+				if daysUntilExpiration <= 7 && daysUntilExpiration > 0 {
+					c.Header("X-Subscription-Warning", "expiring_soon")
+					c.Header("X-Subscription-Expires-In", strconv.Itoa(daysUntilExpiration)+" days")
+				} else if daysUntilExpiration <= 0 {
+					c.Header("X-Subscription-Warning", "expired")
+					c.Header("X-Subscription-Expired", subscription.CurrentPeriodEnd.Format(time.RFC3339))
+				}
+
+				// Store expiration info in context
+				c.Set("subscription_expiration_days", daysUntilExpiration)
+			}
 		}
 
 		c.Next()

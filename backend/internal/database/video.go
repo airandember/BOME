@@ -25,6 +25,7 @@ type Video struct {
 	ScheduledPublishDate *time.Time
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+	Vid_Status           bool
 
 	// Bunny.net play data
 	PlayData      map[string]interface{} `json:"play_data,omitempty"`
@@ -35,7 +36,7 @@ type Video struct {
 }
 
 // CreateVideo inserts a new video into the database
-func (db *DB) CreateVideo(title, description, bunnyVideoID, thumbnailURL, category string, duration int, fileSize int64, tags []string, createdBy int) (*Video, error) {
+func (db *DB) CreateVideo(title, description, bunnyVideoID, thumbnailURL, category string, duration int, fileSize int64, tags []string, createdBy int, vid_status bool) (*Video, error) {
 	// Convert tags to JSON string
 	tagsJSON, err := json.Marshal(tags)
 	if err != nil {
@@ -44,8 +45,8 @@ func (db *DB) CreateVideo(title, description, bunnyVideoID, thumbnailURL, catego
 
 	var id int
 	err = db.QueryRow(
-		`INSERT INTO videos (title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW()) RETURNING id`,
-		title, description, bunnyVideoID, thumbnailURL, duration, fileSize, "processing", category, string(tagsJSON), createdBy,
+		`INSERT INTO videos (title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, created_by, vid_status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW()) RETURNING id`,
+		title, description, bunnyVideoID, thumbnailURL, duration, fileSize, "processing", category, string(tagsJSON), createdBy, vid_status,
 	).Scan(&id)
 	if err != nil {
 		return nil, err
@@ -58,9 +59,9 @@ func (db *DB) GetVideoByID(id int) (*Video, error) {
 	video := &Video{}
 	var tagsStr string
 	err := db.QueryRow(
-		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at FROM videos WHERE id = $1`,
+		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at, vid_status FROM videos WHERE id = $1`,
 		id,
-	).Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
+	).Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
 	if err != nil {
 		return nil, err
 	}
@@ -80,9 +81,9 @@ func (db *DB) GetVideoByBunnyID(bunnyVideoID string) (*Video, error) {
 	video := &Video{}
 	var tagsStr string
 	err := db.QueryRow(
-		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at FROM videos WHERE bunny_video_id = $1`,
+		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at, vid_status FROM videos WHERE bunny_video_id = $1`,
 		bunnyVideoID,
-	).Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
+	).Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +100,7 @@ func (db *DB) GetVideoByBunnyID(bunnyVideoID string) (*Video, error) {
 
 // GetVideos retrieves videos with pagination and filtering
 func (db *DB) GetVideos(limit, offset int, category, status string) ([]*Video, error) {
-	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at FROM videos WHERE 1=1`
+	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at, vid_status FROM videos WHERE 1=1`
 	args := []interface{}{}
 	argCount := 0
 
@@ -133,7 +134,7 @@ func (db *DB) GetVideos(limit, offset int, category, status string) ([]*Video, e
 	for rows.Next() {
 		video := &Video{}
 		var tagsStr string
-		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
+		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
 		if err != nil {
 			return nil, err
 		}
@@ -191,7 +192,7 @@ func (db *DB) GetVideoCategories() ([]string, error) {
 func (db *DB) SearchVideos(query string, limit, offset int) ([]*Video, error) {
 	searchQuery := `%` + query + `%`
 	rows, err := db.Query(
-		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at FROM videos WHERE (title ILIKE $1 OR description ILIKE $1) AND status = 'ready' ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at, vid_status FROM videos WHERE (title ILIKE $1 OR description ILIKE $1) AND status = 'ready' ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
 		searchQuery, limit, offset,
 	)
 	if err != nil {
@@ -202,7 +203,7 @@ func (db *DB) SearchVideos(query string, limit, offset int) ([]*Video, error) {
 	var videos []*Video
 	for rows.Next() {
 		video := &Video{}
-		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &video.Tags, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
+		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &video.Tags, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
 		if err != nil {
 			return nil, err
 		}
@@ -260,7 +261,7 @@ func (db *DB) ScheduleVideo(videoID int, publishDate time.Time) error {
 
 // GetScheduledVideos retrieves videos scheduled to be published before the given time
 func (db *DB) GetScheduledVideos(beforeTime time.Time) ([]*Video, error) {
-	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, scheduled_publish_date, created_at, updated_at FROM videos WHERE status = 'scheduled' AND scheduled_publish_date <= $1`
+	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, scheduled_publish_date, created_at, updated_at, vid_status FROM videos WHERE status = 'scheduled' AND scheduled_publish_date <= $1`
 
 	rows, err := db.Query(query, beforeTime)
 	if err != nil {
@@ -271,7 +272,7 @@ func (db *DB) GetScheduledVideos(beforeTime time.Time) ([]*Video, error) {
 	var videos []*Video
 	for rows.Next() {
 		video := &Video{}
-		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &video.Tags, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.ScheduledPublishDate, &video.CreatedAt, &video.UpdatedAt)
+		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &video.Tags, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.ScheduledPublishDate, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
 		if err != nil {
 			return nil, err
 		}

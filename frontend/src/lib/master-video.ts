@@ -33,6 +33,7 @@ export interface MasterVideo {
 	CreatedBy: number;
 	CreatedAt: string;
 	UpdatedAt: string;
+	Vid_Status: boolean;
 }
 
 export interface SyncConflict {
@@ -113,6 +114,7 @@ export class MasterVideoService {
 		category?: string;
 		status?: string;
 		sync_status?: string;
+		vid_status?: string;
 		search?: string;
 		sort_field?: string;
 		sort_direction?: 'asc' | 'desc';
@@ -133,6 +135,7 @@ export class MasterVideoService {
 		if (params.category) searchParams.append('category', params.category);
 		if (params.status) searchParams.append('status', params.status);
 		if (params.sync_status) searchParams.append('sync_status', params.sync_status);
+		if (params.vid_status) searchParams.append('vid_status', params.vid_status);
 		if (params.search) searchParams.append('search', params.search);
 		if (params.sort_field) searchParams.append('sort_field', params.sort_field);
 		if (params.sort_direction) searchParams.append('sort_direction', params.sort_direction);
@@ -166,16 +169,32 @@ export class MasterVideoService {
 		return response.json();
 	}
 
-	// Delete master video
-	async deleteMasterVideo(id: number): Promise<{
+	// Toggle video status (vid_status only)
+	async toggleVideoStatus(id: number, vidStatus: boolean): Promise<{
 		success: boolean;
 		message: string;
+		video: MasterVideo;
 	}> {
-		const response = await apiRequest(`/admin/master-videos/${id}`, {
-			method: 'DELETE'
+		const response = await apiRequest(`/admin/master-videos/${id}/toggle-status`, {
+			method: 'PUT',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({ vid_status: vidStatus })
 		});
 		return response.json();
 	}
+
+	// Delete master video
+	// async deleteMasterVideo(id: number): Promise<{
+	// 	success: boolean;
+	// 	message: string;
+	// }> {
+	// 	const response = await apiRequest(`/admin/master-videos/${id}`, {
+	// 		method: 'DELETE'
+	// 	});
+	// 	return response.json();
+	// }
 
 	// Sync from Bunny.net to master list
 	async syncFromBunny(): Promise<{
@@ -241,6 +260,36 @@ export class MasterVideoService {
 	}> {
 		const response = await apiRequest('/admin/stats/master-videos');
 		return response.json();
+	}
+
+	// Upload video
+	async uploadVideo(formData: FormData): Promise<{
+		success: boolean;
+		message: string;
+		video?: MasterVideo;
+		error?: string;
+	}> {
+		try {
+			const response = await apiRequest('/videos/upload', {
+				method: 'POST',
+				body: formData
+			});
+			
+			const data = await response.json();
+			
+			return {
+				success: data.success || false,
+				message: data.message || 'Upload completed',
+				video: data.video,
+				error: data.error
+			};
+		} catch (error) {
+			return {
+				success: false,
+				message: 'Upload failed',
+				error: error instanceof Error ? error.message : 'Unknown error'
+			};
+		}
 	}
 
 	// Get comprehensive dashboard analytics (extends the working stats method)

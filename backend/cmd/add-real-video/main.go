@@ -41,7 +41,8 @@ func main() {
 		0,                  // Duration (will be updated from Bunny.net)
 		0,                  // File size (will be updated)
 		[]string{"archaeology", "book-of-mormon", "evidence", "history"}, // Your tags
-		1, // Created by user ID 1
+		1,    // Created by user ID 1
+		true, // vid_status
 	)
 	if err != nil {
 		log.Fatal("Failed to create video:", err)

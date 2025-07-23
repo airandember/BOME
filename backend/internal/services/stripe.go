@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -10,6 +11,9 @@ import (
 	"github.com/stripe/stripe-go/v74/customer"
 	"github.com/stripe/stripe-go/v74/invoice"
 	"github.com/stripe/stripe-go/v74/paymentintent"
+	"github.com/stripe/stripe-go/v74/price"
+	"github.com/stripe/stripe-go/v74/product"
+	"github.com/stripe/stripe-go/v74/refund"
 	"github.com/stripe/stripe-go/v74/subscription"
 	"github.com/stripe/stripe-go/v74/webhook"
 )
@@ -22,6 +26,47 @@ type StripeService struct {
 	priceIDMonthly    string
 	priceIDYearly     string
 	customerPortalURL string
+	isEnabled         bool
+	environment       string
+}
+
+// StripeConfig represents Stripe configuration
+type StripeConfig struct {
+	SecretKey         string `json:"secret_key"`
+	PublishableKey    string `json:"publishable_key"`
+	WebhookSecret     string `json:"webhook_secret"`
+	PriceIDMonthly    string `json:"price_id_monthly"`
+	PriceIDYearly     string `json:"price_id_yearly"`
+	CustomerPortalURL string `json:"customer_portal_url"`
+	Environment       string `json:"environment"`
+}
+
+// StripePrice represents a Stripe price object
+type StripePrice struct {
+	ID         string            `json:"id"`
+	ProductID  string            `json:"product_id"`
+	Active     bool              `json:"active"`
+	Currency   string            `json:"currency"`
+	UnitAmount int64             `json:"unit_amount"`
+	Recurring  *StripeRecurring  `json:"recurring,omitempty"`
+	Metadata   map[string]string `json:"metadata"`
+	CreatedAt  time.Time         `json:"created_at"`
+}
+
+// StripeRecurring represents recurring billing configuration
+type StripeRecurring struct {
+	Interval      string `json:"interval"`
+	IntervalCount int    `json:"interval_count"`
+}
+
+// StripeProduct represents a Stripe product object
+type StripeProduct struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Active      bool              `json:"active"`
+	Metadata    map[string]string `json:"metadata"`
+	CreatedAt   time.Time         `json:"created_at"`
 }
 
 // SubscriptionPlan represents a subscription plan
@@ -89,57 +134,289 @@ type Refund struct {
 	FailureReason   string `json:"failure_reason,omitempty"`
 }
 
+// StripeError represents a Stripe-specific error
+type StripeError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Type    string `json:"type"`
+}
+
 // NewStripeService creates a new Stripe service instance
 func NewStripeService() *StripeService {
-	stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
+	secretKey := os.Getenv("STRIPE_SECRET_KEY")
+	publishableKey := os.Getenv("STRIPE_PUBLISHABLE_KEY")
+	webhookSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
+	environment := os.Getenv("STRIPE_ENVIRONMENT")
+
+	// Default to test environment if not specified
+	if environment == "" {
+		environment = "test"
+	}
+
+	// Check if Stripe is enabled (has required keys)
+	isEnabled := secretKey != "" && publishableKey != ""
+
+	if isEnabled {
+		stripe.Key = secretKey
+		log.Printf("Stripe service initialized in %s mode", environment)
+	} else {
+		log.Printf("Stripe service initialized in DISABLED mode - missing environment variables")
+	}
 
 	return &StripeService{
-		secretKey:         os.Getenv("STRIPE_SECRET_KEY"),
-		publishableKey:    os.Getenv("STRIPE_PUBLISHABLE_KEY"),
-		webhookSecret:     os.Getenv("STRIPE_WEBHOOK_SECRET"),
+		secretKey:         secretKey,
+		publishableKey:    publishableKey,
+		webhookSecret:     webhookSecret,
 		priceIDMonthly:    os.Getenv("STRIPE_PRICE_ID_MONTHLY"),
 		priceIDYearly:     os.Getenv("STRIPE_PRICE_ID_YEARLY"),
 		customerPortalURL: os.Getenv("STRIPE_CUSTOMER_PORTAL_URL"),
+		isEnabled:         isEnabled,
+		environment:       environment,
 	}
+}
+
+// IsEnabled returns whether Stripe is properly configured
+func (s *StripeService) IsEnabled() bool {
+	return s.isEnabled
+}
+
+// GetConfig returns the current Stripe configuration
+func (s *StripeService) GetConfig() *StripeConfig {
+	return &StripeConfig{
+		SecretKey:         s.secretKey,
+		PublishableKey:    s.publishableKey,
+		WebhookSecret:     s.webhookSecret,
+		PriceIDMonthly:    s.priceIDMonthly,
+		PriceIDYearly:     s.priceIDYearly,
+		CustomerPortalURL: s.customerPortalURL,
+		Environment:       s.environment,
+	}
+}
+
+// GetPublishableKey returns the publishable key for frontend use
+func (s *StripeService) GetPublishableKey() string {
+	return s.publishableKey
+}
+
+// CreateProduct creates a new Stripe product
+func (s *StripeService) CreateProduct(name, description string, metadata map[string]string) (*StripeProduct, error) {
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
+	}
+
+	params := &stripe.ProductParams{
+		Name:        stripe.String(name),
+		Description: stripe.String(description),
+		Active:      stripe.Bool(true),
+	}
+
+	if metadata != nil {
+		params.Metadata = metadata
+	}
+
+	product, err := product.New(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stripe product: %w", err)
+	}
+
+	return &StripeProduct{
+		ID:          product.ID,
+		Name:        product.Name,
+		Description: product.Description,
+		Active:      product.Active,
+		Metadata:    product.Metadata,
+		CreatedAt:   time.Unix(product.Created, 0),
+	}, nil
+}
+
+// CreatePrice creates a new Stripe price
+func (s *StripeService) CreatePrice(productID, currency string, unitAmount int64, interval string, intervalCount int, metadata map[string]string) (*StripePrice, error) {
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
+	}
+
+	params := &stripe.PriceParams{
+		Product:    stripe.String(productID),
+		Currency:   stripe.String(currency),
+		UnitAmount: stripe.Int64(unitAmount),
+		Recurring: &stripe.PriceRecurringParams{
+			Interval:      stripe.String(interval),
+			IntervalCount: stripe.Int64(int64(intervalCount)),
+		},
+		Active: stripe.Bool(true),
+	}
+
+	if metadata != nil {
+		params.Metadata = metadata
+	}
+
+	stripePrice, err := price.New(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stripe price: %w", err)
+	}
+
+	return &StripePrice{
+		ID:         stripePrice.ID,
+		ProductID:  stripePrice.Product.ID,
+		Active:     stripePrice.Active,
+		Currency:   string(stripePrice.Currency),
+		UnitAmount: stripePrice.UnitAmount,
+		Recurring: &StripeRecurring{
+			Interval:      string(stripePrice.Recurring.Interval),
+			IntervalCount: int(stripePrice.Recurring.IntervalCount),
+		},
+		Metadata:  stripePrice.Metadata,
+		CreatedAt: time.Unix(stripePrice.Created, 0),
+	}, nil
+}
+
+// UpdatePrice updates an existing Stripe price
+func (s *StripeService) UpdatePrice(priceID string, active bool, metadata map[string]string) (*StripePrice, error) {
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
+	}
+
+	params := &stripe.PriceParams{
+		Active: stripe.Bool(active),
+	}
+
+	if metadata != nil {
+		params.Metadata = metadata
+	}
+
+	stripePrice, err := price.Update(priceID, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update stripe price: %w", err)
+	}
+
+	return &StripePrice{
+		ID:         stripePrice.ID,
+		ProductID:  stripePrice.Product.ID,
+		Active:     stripePrice.Active,
+		Currency:   string(stripePrice.Currency),
+		UnitAmount: stripePrice.UnitAmount,
+		Recurring: &StripeRecurring{
+			Interval:      string(stripePrice.Recurring.Interval),
+			IntervalCount: int(stripePrice.Recurring.IntervalCount),
+		},
+		Metadata:  stripePrice.Metadata,
+		CreatedAt: time.Unix(stripePrice.Created, 0),
+	}, nil
+}
+
+// GetPrice retrieves a Stripe price by ID
+func (s *StripeService) GetPrice(priceID string) (*StripePrice, error) {
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
+	}
+
+	stripePrice, err := price.Get(priceID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stripe price: %w", err)
+	}
+
+	return &StripePrice{
+		ID:         stripePrice.ID,
+		ProductID:  stripePrice.Product.ID,
+		Active:     stripePrice.Active,
+		Currency:   string(stripePrice.Currency),
+		UnitAmount: stripePrice.UnitAmount,
+		Recurring: &StripeRecurring{
+			Interval:      string(stripePrice.Recurring.Interval),
+			IntervalCount: int(stripePrice.Recurring.IntervalCount),
+		},
+		Metadata:  stripePrice.Metadata,
+		CreatedAt: time.Unix(stripePrice.Created, 0),
+	}, nil
+}
+
+// ListPrices retrieves all prices for a product
+func (s *StripeService) ListPrices(productID string, active bool) ([]*StripePrice, error) {
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
+	}
+
+	params := &stripe.PriceListParams{
+		Product: stripe.String(productID),
+		Active:  stripe.Bool(active),
+	}
+
+	iter := price.List(params)
+	var prices []*StripePrice
+
+	for iter.Next() {
+		stripePrice := iter.Current().(*stripe.Price)
+		prices = append(prices, &StripePrice{
+			ID:         stripePrice.ID,
+			ProductID:  stripePrice.Product.ID,
+			Active:     stripePrice.Active,
+			Currency:   string(stripePrice.Currency),
+			UnitAmount: stripePrice.UnitAmount,
+			Recurring: &StripeRecurring{
+				Interval:      string(stripePrice.Recurring.Interval),
+				IntervalCount: int(stripePrice.Recurring.IntervalCount),
+			},
+			Metadata:  stripePrice.Metadata,
+			CreatedAt: time.Unix(stripePrice.Created, 0),
+		})
+	}
+
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("failed to list stripe prices: %w", err)
+	}
+
+	return prices, nil
 }
 
 // CreateCustomer creates a new Stripe customer
 func (s *StripeService) CreateCustomer(email, name string) (*Customer, error) {
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
+	}
+
 	params := &stripe.CustomerParams{
 		Email: stripe.String(email),
 		Name:  stripe.String(name),
 	}
 
-	customer, err := customer.New(params)
+	stripeCustomer, err := customer.New(params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create customer: %w", err)
+		return nil, fmt.Errorf("failed to create stripe customer: %w", err)
 	}
 
 	return &Customer{
-		ID:        customer.ID,
-		Email:     customer.Email,
-		Name:      customer.Name,
-		CreatedAt: time.Unix(customer.Created, 0),
+		ID:        stripeCustomer.ID,
+		Email:     stripeCustomer.Email,
+		Name:      stripeCustomer.Name,
+		CreatedAt: time.Unix(stripeCustomer.Created, 0),
 	}, nil
 }
 
-// GetCustomer retrieves a customer by ID
+// GetCustomer retrieves a Stripe customer by ID
 func (s *StripeService) GetCustomer(customerID string) (*Customer, error) {
-	customer, err := customer.Get(customerID, nil)
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
+	}
+
+	stripeCustomer, err := customer.Get(customerID, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get customer: %w", err)
+		return nil, fmt.Errorf("failed to get stripe customer: %w", err)
 	}
 
 	return &Customer{
-		ID:        customer.ID,
-		Email:     customer.Email,
-		Name:      customer.Name,
-		CreatedAt: time.Unix(customer.Created, 0),
+		ID:        stripeCustomer.ID,
+		Email:     stripeCustomer.Email,
+		Name:      stripeCustomer.Name,
+		CreatedAt: time.Unix(stripeCustomer.Created, 0),
 	}, nil
 }
 
-// CreateSubscription creates a new subscription for a customer
+// CreateSubscription creates a new subscription
 func (s *StripeService) CreateSubscription(customerID, priceID string) (*Subscription, error) {
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
+	}
+
 	params := &stripe.SubscriptionParams{
 		Customer: stripe.String(customerID),
 		Items: []*stripe.SubscriptionItemsParams{
@@ -147,25 +424,23 @@ func (s *StripeService) CreateSubscription(customerID, priceID string) (*Subscri
 				Price: stripe.String(priceID),
 			},
 		},
-		PaymentSettings: &stripe.SubscriptionPaymentSettingsParams{
-			PaymentMethodTypes: []*string{
-				stripe.String("card"),
-			},
-		},
 	}
 
-	sub, err := subscription.New(params)
+	stripeSubscription, err := subscription.New(params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create subscription: %w", err)
+		return nil, fmt.Errorf("failed to create stripe subscription: %w", err)
 	}
 
-	return s.convertSubscription(sub), nil
+	return s.convertSubscription(stripeSubscription), nil
 }
 
 // CancelSubscription cancels a subscription
 func (s *StripeService) CancelSubscription(subscriptionID string, atPeriodEnd bool) error {
-	params := &stripe.SubscriptionParams{}
+	if !s.isEnabled {
+		return fmt.Errorf("stripe service is disabled")
+	}
 
+	params := &stripe.SubscriptionParams{}
 	if atPeriodEnd {
 		params.CancelAtPeriodEnd = stripe.Bool(true)
 	} else {
@@ -174,7 +449,7 @@ func (s *StripeService) CancelSubscription(subscriptionID string, atPeriodEnd bo
 
 	_, err := subscription.Update(subscriptionID, params)
 	if err != nil {
-		return fmt.Errorf("failed to cancel subscription: %w", err)
+		return fmt.Errorf("failed to cancel stripe subscription: %w", err)
 	}
 
 	return nil
@@ -182,20 +457,28 @@ func (s *StripeService) CancelSubscription(subscriptionID string, atPeriodEnd bo
 
 // ReactivateSubscription reactivates a cancelled subscription
 func (s *StripeService) ReactivateSubscription(subscriptionID string) error {
+	if !s.isEnabled {
+		return fmt.Errorf("stripe service is disabled")
+	}
+
 	params := &stripe.SubscriptionParams{
 		CancelAtPeriodEnd: stripe.Bool(false),
 	}
 
 	_, err := subscription.Update(subscriptionID, params)
 	if err != nil {
-		return fmt.Errorf("failed to reactivate subscription: %w", err)
+		return fmt.Errorf("failed to reactivate stripe subscription: %w", err)
 	}
 
 	return nil
 }
 
-// CreatePaymentIntent creates a payment intent for one-time payments
+// CreatePaymentIntent creates a new payment intent
 func (s *StripeService) CreatePaymentIntent(amount int64, currency, customerID string) (*PaymentIntent, error) {
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
+	}
+
 	params := &stripe.PaymentIntentParams{
 		Amount:   stripe.Int64(amount),
 		Currency: stripe.String(currency),
@@ -218,16 +501,24 @@ func (s *StripeService) CreatePaymentIntent(amount int64, currency, customerID s
 
 // GetSubscription retrieves a subscription by ID
 func (s *StripeService) GetSubscription(subscriptionID string) (*Subscription, error) {
-	sub, err := subscription.Get(subscriptionID, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get subscription: %w", err)
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
 	}
 
-	return s.convertSubscription(sub), nil
+	stripeSubscription, err := subscription.Get(subscriptionID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stripe subscription: %w", err)
+	}
+
+	return s.convertSubscription(stripeSubscription), nil
 }
 
 // GetCustomerSubscriptions retrieves all subscriptions for a customer
 func (s *StripeService) GetCustomerSubscriptions(customerID string) ([]*Subscription, error) {
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
+	}
+
 	params := &stripe.SubscriptionListParams{
 		Customer: stripe.String(customerID),
 	}
@@ -236,11 +527,11 @@ func (s *StripeService) GetCustomerSubscriptions(customerID string) ([]*Subscrip
 	var subscriptions []*Subscription
 
 	for iter.Next() {
-		subscriptions = append(subscriptions, s.convertSubscription(iter.Subscription()))
+		subscriptions = append(subscriptions, s.convertSubscription(iter.Current().(*stripe.Subscription)))
 	}
 
 	if err := iter.Err(); err != nil {
-		return nil, fmt.Errorf("failed to list subscriptions: %w", err)
+		return nil, fmt.Errorf("failed to list customer subscriptions: %w", err)
 	}
 
 	return subscriptions, nil
@@ -248,13 +539,25 @@ func (s *StripeService) GetCustomerSubscriptions(customerID string) ([]*Subscrip
 
 // CreateCustomerPortalSession creates a customer portal session
 func (s *StripeService) CreateCustomerPortalSession(customerID, returnURL string) (string, error) {
-	// This would typically use the Stripe Customer Portal API
-	// For now, return the configured portal URL
-	return s.customerPortalURL, nil
+	if !s.isEnabled {
+		return "", fmt.Errorf("stripe service is disabled")
+	}
+
+	// This would require the customer portal to be configured in Stripe
+	// For now, return an error indicating this needs to be implemented
+	return "", fmt.Errorf("customer portal session creation not implemented")
 }
 
-// ValidateWebhookSignature validates the webhook signature
+// ValidateWebhookSignature validates a webhook signature
 func (s *StripeService) ValidateWebhookSignature(payload []byte, signature string) (*stripe.Event, error) {
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
+	}
+
+	if s.webhookSecret == "" {
+		return nil, fmt.Errorf("webhook secret not configured")
+	}
+
 	event, err := webhook.ConstructEvent(payload, signature, s.webhookSecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate webhook signature: %w", err)
@@ -263,8 +566,14 @@ func (s *StripeService) ValidateWebhookSignature(payload []byte, signature strin
 	return &event, nil
 }
 
-// ProcessWebhook processes webhook events
+// ProcessWebhook processes a Stripe webhook event
 func (s *StripeService) ProcessWebhook(event *stripe.Event) error {
+	if !s.isEnabled {
+		return fmt.Errorf("stripe service is disabled")
+	}
+
+	log.Printf("Processing Stripe webhook: %s", event.Type)
+
 	switch event.Type {
 	case "customer.subscription.created":
 		return s.handleSubscriptionCreated(event)
@@ -277,121 +586,150 @@ func (s *StripeService) ProcessWebhook(event *stripe.Event) error {
 	case "invoice.payment_failed":
 		return s.handlePaymentFailed(event)
 	default:
-		return fmt.Errorf("unhandled event type: %s", event.Type)
+		log.Printf("Unhandled webhook event type: %s", event.Type)
+		return nil
 	}
 }
 
-// GetSubscriptionPlans returns available subscription plans
+// GetSubscriptionPlans returns hardcoded subscription plans for now
 func (s *StripeService) GetSubscriptionPlans() []*SubscriptionPlan {
 	return []*SubscriptionPlan{
 		{
-			ID:          s.priceIDMonthly,
+			ID:          "basic_monthly",
 			Name:        "Basic Monthly",
 			Price:       9.99,
-			Currency:    "usd",
+			Currency:    "USD",
 			Interval:    "month",
-			Description: "Access to basic content",
-			Features:    []string{"Basic video access", "Standard quality", "Email support"},
+			Description: "Access to basic streaming content",
+			Features:    []string{"HD Streaming", "Basic Support", "Ad-free Experience"},
 		},
 		{
-			ID:          s.priceIDYearly,
-			Name:        "Premium Yearly",
+			ID:          "premium_monthly",
+			Name:        "Premium Monthly",
 			Price:       19.99,
-			Currency:    "usd",
+			Currency:    "USD",
 			Interval:    "month",
-			Description: "Full access with exclusive content",
-			Features:    []string{"All video content", "HD quality", "Exclusive content", "Priority support"},
+			Description: "Full access to all streaming content",
+			Features:    []string{"4K Streaming", "Premium Support", "Ad-free Experience", "Offline Downloads", "Multiple Devices"},
+		},
+		{
+			ID:          "basic_annual",
+			Name:        "Basic Annual",
+			Price:       99.99,
+			Currency:    "USD",
+			Interval:    "year",
+			Description: "Access to basic streaming content (annual)",
+			Features:    []string{"HD Streaming", "Basic Support", "Ad-free Experience", "2 Months Free"},
+		},
+		{
+			ID:          "premium_annual",
+			Name:        "Premium Annual",
+			Price:       199.99,
+			Currency:    "USD",
+			Interval:    "year",
+			Description: "Full access to all streaming content (annual)",
+			Features:    []string{"4K Streaming", "Premium Support", "Ad-free Experience", "Offline Downloads", "Multiple Devices", "3 Months Free"},
 		},
 	}
 }
 
-// Helper methods
+// convertSubscription converts a Stripe subscription to our format
 func (s *StripeService) convertSubscription(sub *stripe.Subscription) *Subscription {
+	var plan *SubscriptionPlan
+	if len(sub.Items.Data) > 0 {
+		item := sub.Items.Data[0]
+		plan = &SubscriptionPlan{
+			ID:       item.Price.ID,
+			Name:     item.Price.Nickname,
+			Price:    float64(item.Price.UnitAmount) / 100,
+			Currency: string(item.Price.Currency),
+			Interval: string(item.Price.Recurring.Interval),
+		}
+	}
+
 	return &Subscription{
 		ID:                sub.ID,
 		Status:            string(sub.Status),
 		CurrentPeriodEnd:  time.Unix(sub.CurrentPeriodEnd, 0),
 		CancelAtPeriodEnd: sub.CancelAtPeriodEnd,
-		Plan: &SubscriptionPlan{
-			ID:       sub.Items.Data[0].Price.ID,
-			Price:    float64(sub.Items.Data[0].Price.UnitAmount) / 100,
-			Currency: string(sub.Items.Data[0].Price.Currency),
-			Interval: string(sub.Items.Data[0].Price.Recurring.Interval),
-		},
+		Plan:              plan,
 	}
 }
 
+// handleSubscriptionCreated handles subscription created events
 func (s *StripeService) handleSubscriptionCreated(event *stripe.Event) error {
-	var sub stripe.Subscription
-	if err := json.Unmarshal(event.Data.Raw, &sub); err != nil {
+	var subscription stripe.Subscription
+	err := json.Unmarshal(event.Data.Raw, &subscription)
+	if err != nil {
 		return fmt.Errorf("failed to unmarshal subscription: %w", err)
 	}
 
-	// Update database with new subscription
-	// Send welcome email
-	// Update user access permissions
-
+	log.Printf("Subscription created: %s", subscription.ID)
+	// TODO: Update local database with subscription information
 	return nil
 }
 
+// handleSubscriptionUpdated handles subscription updated events
 func (s *StripeService) handleSubscriptionUpdated(event *stripe.Event) error {
-	var sub stripe.Subscription
-	if err := json.Unmarshal(event.Data.Raw, &sub); err != nil {
+	var subscription stripe.Subscription
+	err := json.Unmarshal(event.Data.Raw, &subscription)
+	if err != nil {
 		return fmt.Errorf("failed to unmarshal subscription: %w", err)
 	}
 
-	// Update database with subscription changes
-	// Update user access permissions
-	// Send notification if needed
-
+	log.Printf("Subscription updated: %s", subscription.ID)
+	// TODO: Update local database with subscription information
 	return nil
 }
 
+// handleSubscriptionDeleted handles subscription deleted events
 func (s *StripeService) handleSubscriptionDeleted(event *stripe.Event) error {
-	var sub stripe.Subscription
-	if err := json.Unmarshal(event.Data.Raw, &sub); err != nil {
+	var subscription stripe.Subscription
+	err := json.Unmarshal(event.Data.Raw, &subscription)
+	if err != nil {
 		return fmt.Errorf("failed to unmarshal subscription: %w", err)
 	}
 
-	// Update database with subscription cancellation
-	// Revoke user access permissions
-	// Send cancellation email
-
+	log.Printf("Subscription deleted: %s", subscription.ID)
+	// TODO: Update local database with subscription information
 	return nil
 }
 
+// handlePaymentSucceeded handles payment succeeded events
 func (s *StripeService) handlePaymentSucceeded(event *stripe.Event) error {
-	var inv stripe.Invoice
-	if err := json.Unmarshal(event.Data.Raw, &inv); err != nil {
+	var invoice stripe.Invoice
+	err := json.Unmarshal(event.Data.Raw, &invoice)
+	if err != nil {
 		return fmt.Errorf("failed to unmarshal invoice: %w", err)
 	}
 
-	// Update payment status in database
-	// Send payment confirmation email
-	// Update subscription status if needed
-
+	log.Printf("Payment succeeded for invoice: %s", invoice.ID)
+	// TODO: Update local database with payment information
 	return nil
 }
 
+// handlePaymentFailed handles payment failed events
 func (s *StripeService) handlePaymentFailed(event *stripe.Event) error {
-	var inv stripe.Invoice
-	if err := json.Unmarshal(event.Data.Raw, &inv); err != nil {
+	var invoice stripe.Invoice
+	err := json.Unmarshal(event.Data.Raw, &invoice)
+	if err != nil {
 		return fmt.Errorf("failed to unmarshal invoice: %w", err)
 	}
 
-	// Update payment status in database
-	// Send payment failure notification
-	// Handle retry logic
-
+	log.Printf("Payment failed for invoice: %s", invoice.ID)
+	// TODO: Update local database with payment information
 	return nil
 }
 
-// GetCustomerInvoices retrieves invoices for a customer with pagination
+// GetCustomerInvoices retrieves invoices for a customer
 func (s *StripeService) GetCustomerInvoices(customerID string, limit int, startingAfter string) ([]*Invoice, bool, error) {
+	if !s.isEnabled {
+		return nil, false, fmt.Errorf("stripe service is disabled")
+	}
+
 	params := &stripe.InvoiceListParams{
 		Customer: stripe.String(customerID),
 	}
-	params.Limit = stripe.Int64(int64(limit))
 
 	if startingAfter != "" {
 		params.StartingAfter = stripe.String(startingAfter)
@@ -402,122 +740,135 @@ func (s *StripeService) GetCustomerInvoices(customerID string, limit int, starti
 	hasMore := false
 
 	for iter.Next() {
-		stripeInvoice := iter.Invoice()
-		inv := &Invoice{
-			ID:          stripeInvoice.ID,
-			Amount:      stripeInvoice.AmountPaid,
-			Currency:    string(stripeInvoice.Currency),
-			Status:      string(stripeInvoice.Status),
-			CreatedAt:   time.Unix(stripeInvoice.Created, 0).Format(time.RFC3339),
-			DueDate:     time.Unix(stripeInvoice.DueDate, 0).Format(time.RFC3339),
-			PeriodStart: time.Unix(stripeInvoice.PeriodStart, 0).Format(time.RFC3339),
-			PeriodEnd:   time.Unix(stripeInvoice.PeriodEnd, 0).Format(time.RFC3339),
-		}
-
-		if stripeInvoice.InvoicePDF != "" {
-			inv.DownloadURL = stripeInvoice.InvoicePDF
-		}
-
-		invoices = append(invoices, inv)
+		inv := iter.Current().(*stripe.Invoice)
+		invoices = append(invoices, &Invoice{
+			ID:          inv.ID,
+			Amount:      inv.AmountDue,
+			Currency:    string(inv.Currency),
+			Status:      string(inv.Status),
+			CreatedAt:   time.Unix(inv.Created, 0).Format(time.RFC3339),
+			DueDate:     time.Unix(inv.DueDate, 0).Format(time.RFC3339),
+			PeriodStart: time.Unix(inv.PeriodStart, 0).Format(time.RFC3339),
+			PeriodEnd:   time.Unix(inv.PeriodEnd, 0).Format(time.RFC3339),
+		})
 	}
 
 	if err := iter.Err(); err != nil {
-		return nil, false, fmt.Errorf("failed to list invoices: %w", err)
+		return nil, false, fmt.Errorf("failed to list customer invoices: %w", err)
 	}
 
 	hasMore = iter.Meta().HasMore
-
 	return invoices, hasMore, nil
 }
 
-// GetInvoice retrieves a specific invoice by ID
+// GetInvoice retrieves a specific invoice
 func (s *StripeService) GetInvoice(invoiceID string) (*Invoice, error) {
-	stripeInvoice, err := invoice.Get(invoiceID, nil)
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
+	}
+
+	inv, err := invoice.Get(invoiceID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get invoice: %w", err)
 	}
 
-	inv := &Invoice{
-		ID:          stripeInvoice.ID,
-		Amount:      stripeInvoice.AmountPaid,
-		Currency:    string(stripeInvoice.Currency),
-		Status:      string(stripeInvoice.Status),
-		CreatedAt:   time.Unix(stripeInvoice.Created, 0).Format(time.RFC3339),
-		DueDate:     time.Unix(stripeInvoice.DueDate, 0).Format(time.RFC3339),
-		PeriodStart: time.Unix(stripeInvoice.PeriodStart, 0).Format(time.RFC3339),
-		PeriodEnd:   time.Unix(stripeInvoice.PeriodEnd, 0).Format(time.RFC3339),
-	}
-
-	if stripeInvoice.InvoicePDF != "" {
-		inv.DownloadURL = stripeInvoice.InvoicePDF
-	}
-
-	return inv, nil
-}
-
-// CreateRefund creates a refund for a payment
-func (s *StripeService) CreateRefund(paymentIntentID string, amount int64, reason string) (*Refund, error) {
-	params := &stripe.RefundParams{
-		PaymentIntent: stripe.String(paymentIntentID),
-		Reason:        stripe.String(reason),
-	}
-
-	if amount > 0 {
-		params.Amount = stripe.Int64(amount)
-	}
-
-	// This would use: refund, err := refund.New(params)
-	// For now, return a mock refund
-	return &Refund{
-		ID:              "re_mock_" + paymentIntentID,
-		Amount:          amount,
-		Currency:        "usd",
-		Status:          "succeeded",
-		Reason:          reason,
-		PaymentIntentID: paymentIntentID,
-		CreatedAt:       time.Now().Format(time.RFC3339),
+	return &Invoice{
+		ID:          inv.ID,
+		Amount:      inv.AmountDue,
+		Currency:    string(inv.Currency),
+		Status:      string(inv.Status),
+		CreatedAt:   time.Unix(inv.Created, 0).Format(time.RFC3339),
+		DueDate:     time.Unix(inv.DueDate, 0).Format(time.RFC3339),
+		PeriodStart: time.Unix(inv.PeriodStart, 0).Format(time.RFC3339),
+		PeriodEnd:   time.Unix(inv.PeriodEnd, 0).Format(time.RFC3339),
 	}, nil
 }
 
-// GetRefund retrieves a refund by ID
-func (s *StripeService) GetRefund(refundID string) (*Refund, error) {
-	// This would use: refund, err := refund.Get(refundID, nil)
-	// For now, return a mock refund
+// CreateRefund creates a refund for a payment intent
+func (s *StripeService) CreateRefund(paymentIntentID string, amount int64, reason string) (*Refund, error) {
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
+	}
+
+	params := &stripe.RefundParams{
+		PaymentIntent: stripe.String(paymentIntentID),
+		Amount:        stripe.Int64(amount),
+		Reason:        stripe.String(reason),
+	}
+
+	refund, err := refund.New(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create refund: %w", err)
+	}
+
 	return &Refund{
-		ID:        refundID,
-		Amount:    2999, // $29.99
-		Currency:  "usd",
-		Status:    "succeeded",
-		Reason:    "requested_by_customer",
-		CreatedAt: time.Now().Format(time.RFC3339),
+		ID:              refund.ID,
+		Amount:          refund.Amount,
+		Currency:        string(refund.Currency),
+		Status:          string(refund.Status),
+		Reason:          string(refund.Reason),
+		PaymentIntentID: refund.PaymentIntent.ID,
+		ChargeID:        refund.Charge.ID,
+		CreatedAt:       time.Unix(refund.Created, 0).Format(time.RFC3339),
+		ReceiptNumber:   refund.ReceiptNumber,
+		FailureReason:   string(refund.FailureReason),
+	}, nil
+}
+
+// GetRefund retrieves a specific refund
+func (s *StripeService) GetRefund(refundID string) (*Refund, error) {
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
+	}
+
+	refund, err := refund.Get(refundID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get refund: %w", err)
+	}
+
+	return &Refund{
+		ID:              refund.ID,
+		Amount:          refund.Amount,
+		Currency:        string(refund.Currency),
+		Status:          string(refund.Status),
+		Reason:          string(refund.Reason),
+		PaymentIntentID: refund.PaymentIntent.ID,
+		ChargeID:        refund.Charge.ID,
+		CreatedAt:       time.Unix(refund.Created, 0).Format(time.RFC3339),
+		ReceiptNumber:   refund.ReceiptNumber,
+		FailureReason:   string(refund.FailureReason),
 	}, nil
 }
 
 // ListCustomerRefunds retrieves refunds for a customer
 func (s *StripeService) ListCustomerRefunds(customerID string, limit int) ([]*Refund, error) {
-	// This would use Stripe's refund list API with customer filter
-	// For now, return mock refunds
-	refunds := []*Refund{
-		{
-			ID:        "re_1",
-			Amount:    2999,
-			Currency:  "usd",
-			Status:    "succeeded",
-			Reason:    "requested_by_customer",
-			CreatedAt: time.Now().AddDate(0, 0, -7).Format(time.RFC3339),
-		},
-		{
-			ID:        "re_2",
-			Amount:    1999,
-			Currency:  "usd",
-			Status:    "pending",
-			Reason:    "fraudulent",
-			CreatedAt: time.Now().AddDate(0, 0, -14).Format(time.RFC3339),
-		},
+	if !s.isEnabled {
+		return nil, fmt.Errorf("stripe service is disabled")
 	}
 
-	if limit > 0 && len(refunds) > limit {
-		refunds = refunds[:limit]
+	params := &stripe.RefundListParams{}
+
+	iter := refund.List(params)
+	var refunds []*Refund
+
+	for iter.Next() {
+		refundItem := iter.Current().(*stripe.Refund)
+		refunds = append(refunds, &Refund{
+			ID:              refundItem.ID,
+			Amount:          refundItem.Amount,
+			Currency:        string(refundItem.Currency),
+			Status:          string(refundItem.Status),
+			Reason:          string(refundItem.Reason),
+			PaymentIntentID: refundItem.PaymentIntent.ID,
+			ChargeID:        refundItem.Charge.ID,
+			CreatedAt:       time.Unix(refundItem.Created, 0).Format(time.RFC3339),
+			ReceiptNumber:   refundItem.ReceiptNumber,
+			FailureReason:   string(refundItem.FailureReason),
+		})
+	}
+
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("failed to list customer refunds: %w", err)
 	}
 
 	return refunds, nil

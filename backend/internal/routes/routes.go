@@ -101,8 +101,8 @@ func SetupRoutes(
 	SetupMonitoringRoutes(admin, db)
 
 	// Create admin cache service
-	adminCache := services.NewAdminCacheService(nil)
-	SetupAdminStreamingRoutes(admin, db, bunnyService, adminCache)
+	analyticsService := services.NewSubscriptionAnalyticsService(db)
+	SetupAdminStreamingRoutes(router, db, stripeService, analyticsService)
 	SetupMasterVideoRoutes(admin, db, bunnyService)
 	fmt.Printf("Admin routes setup complete\n")
 
@@ -559,7 +559,8 @@ func SetupRoutes(
 				bunnyVideo.Length,
 				bunnyVideo.StorageSize,
 				[]string{},
-				1,
+				1,    // createdBy - system //SHOULD WE CONSIDER CHANGING THIS TO USER ID?
+				true, // vid_status
 			)
 			if err != nil {
 				fmt.Printf("Failed to create video in database: %v\n", err)
@@ -805,8 +806,8 @@ func SetupRoutes(
 	{
 		subscriptions.GET("/plans", GetSubscriptionPlansHandler(stripeService))
 		subscriptions.GET("/current", middleware.AuthRequired(), middleware.SessionActivityTracker(db), GetSubscriptionHandler(db))
-		subscriptions.POST("", middleware.AuthRequired(), middleware.SessionActivityTracker(db), CreateSubscriptionHandler(db))
-		subscriptions.POST("/:id/cancel", middleware.AuthRequired(), middleware.SessionActivityTracker(db), CancelSubscriptionHandler(db))
+		subscriptions.POST("", middleware.AuthRequired(), middleware.SessionActivityTracker(db), CreateSubscriptionHandler(db, stripeService))
+		subscriptions.POST("/:id/cancel", middleware.AuthRequired(), middleware.SessionActivityTracker(db), CancelSubscriptionHandler(db, stripeService))
 		subscriptions.POST("/checkout", CreateCheckoutSessionHandler(stripeService))
 	}
 
@@ -1848,7 +1849,8 @@ func UploadVideoHandler(db *database.DB, bunnyService *services.BunnyService) gi
 			0, // duration will be updated when processing is complete
 			header.Size,
 			tags,
-			userID,
+			1,    // createdBy - system //SHOULD WE CONSIDER CHANGING THIS TO USER ID?
+			true, // vid_status
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save video metadata"})
