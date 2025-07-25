@@ -357,7 +357,8 @@ func UpdateSubscriptionHandler(db *database.DB, stripeService *services.StripeSe
 		updates := map[string]interface{}{
 			"plan_id": plan.ID,
 		}
-		if err := db.UpdateSubscriptionPlan(subscription.ID, updates); err != nil {
+		_, err = db.UpdateSubscriptionPlan(subscription.ID, updates)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update subscription", "details": err.Error()})
 			return
 		}
@@ -611,7 +612,8 @@ func UpdateSubscriptionAdminHandler(db *database.DB, stripeService *services.Str
 		updates := map[string]interface{}{
 			"plan_id": plan.ID,
 		}
-		if err := db.UpdateSubscriptionPlan(id, updates); err != nil {
+		_, err = db.UpdateSubscriptionPlan(id, updates)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update subscription", "details": err.Error()})
 			return
 		}

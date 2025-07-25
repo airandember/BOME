@@ -3,16 +3,23 @@
 	import { fade, fly } from 'svelte/transition';
 	import { StreamingSubscriptionService, type SubscriptionPlan, type CreateSubscriptionPlanData } from '$lib/services/streaming-subscriptions';
 	import { showToast } from '$lib/toast';
+	import { auth } from '$lib/auth';
+	
+	// Components
+	import SubscriptionHeader from './components/SubscriptionHeader.svelte';
+	import SubscriptionAccordion from './components/SubscriptionAccordion.svelte';
+	import PlanCard from './components/PlanCard.svelte';
+	import PlanModal from './components/PlanModal.svelte';
 
-	// Reactive variables
+	// State
 	let isLoading = true;
 	let subscriptionPlans: SubscriptionPlan[] = [];
-	let error: string | null = null;
 	let showCreateModal = false;
 	let showEditModal = false;
 	let showDeleteModal = false;
 	let selectedPlan: SubscriptionPlan | null = null;
 	let isSubmitting = false;
+	let activeAccordion: string | null = 'active';
 
 	// Form data
 	let formData: CreateSubscriptionPlanData = {
@@ -21,7 +28,7 @@
 		short_desc: '',
 		price: 0,
 		currency: 'USD',
-		interval: 'monthly',
+		interval: 'month',
 		interval_count: 1,
 		features: [],
 		is_active: true,
@@ -30,143 +37,264 @@
 		sort_order: 0
 	};
 
-	// New feature input
-	let newFeature = '';
+	// Optimistic updates
+	let optimisticUpdates = new Map();
 
-	// Load subscription plans
-	async function loadSubscriptionPlans() {
+	// --- CRUD: CREATE ---
+	async function addPlan(formData: CreateSubscriptionPlanData) {
+		try {
+			const newPlan = await StreamingSubscriptionService.create(formData);
+			subscriptionPlans = [...subscriptionPlans, newPlan]; // Immutable update
+			showToast('Plan created successfully', 'success');
+		} catch (err) {
+			console.error('Add plan error', err);
+			showToast('Failed to create plan', 'error');
+		}
+	}
+
+	// --- CRUD: READ ---
+	async function loadPlans() {
 		try {
 			isLoading = true;
-			error = null;
-
-			const response = await StreamingSubscriptionService.getSubscriptionPlans();
-			subscriptionPlans = response.subscription_plans;
-		} catch (err: unknown) {
-			console.error('Error loading subscription plans:', err);
-			error = err instanceof Error ? err.message : 'An unknown error occurred';
+			console.log('loadPlans: Starting to load plans');
+			console.log('loadPlans: Auth state:', $auth);
+			console.log('loadPlans: Is authenticated:', $auth.isAuthenticated);
+			console.log('loadPlans: User role:', $auth.user?.role);
+			
+			const allPlans = await StreamingSubscriptionService.getAll();
+			console.log('loadPlans: Received plans:', allPlans);
+			subscriptionPlans = [...allPlans]; // Immutable update
+		} catch (err) {
+			console.error('Load plans error', err);
+			showToast('Failed to load plans', 'error');
 		} finally {
 			isLoading = false;
 		}
 	}
 
-	// Create new subscription plan
+	// --- CRUD: UPDATE ---
+	async function editPlan(id: string, updates: Partial<SubscriptionPlan>) {
+		try {
+			const updatedPlan = await StreamingSubscriptionService.update({ id, ...updates });
+			subscriptionPlans = subscriptionPlans.map(p => p.id === id ? updatedPlan : p); // Immutable update
+			showToast('Plan updated successfully', 'success');
+		} catch (err) {
+			console.error('Edit plan error', err);
+			showToast('Failed to update plan', 'error');
+		}
+	}
+
+	// --- CRUD: DELETE (Soft Delete) ---
+	async function deletePlan(id: string) {
+		try {
+			await StreamingSubscriptionService.delete(id);
+			subscriptionPlans = subscriptionPlans.filter(p => p.id !== id); // Immutable update
+			showToast('Plan deleted successfully', 'success');
+		} catch (err) {
+			console.error('Delete plan error', err);
+			showToast('Failed to delete plan', 'error');
+		}
+	}
+
+	// --- GROUPING LOGIC ---
+	// Group plans by sub_type and is_active for display
+	$: groupedPlans = {
+		promoted: subscriptionPlans.filter(p => p.sub_type === 300 && p.is_active),
+		active: subscriptionPlans.filter(p => p.sub_type === 100 && p.is_active),
+		inactive: subscriptionPlans.filter(p => !p.is_active),
+	};
+
+	// --- DOCUMENTATION ---
+	// addPlan: Handles creation of new plans (standard or promo)
+	// loadPlans: Loads all plans from backend
+	// editPlan: Edits a plan, updates state immutably
+	// deletePlan: Soft deletes a plan
+	// togglePromotionStatus: Moves plan between promo/standard/inactive
+	// groupedPlans: Reactive grouping for UI accordions
+	// All state updates are immutable. All errors are logged and surfaced to user.
+
+	// Toggle accordion
+	function toggleAccordion(section: string) {
+		activeAccordion = activeAccordion === section ? null : section;
+	}
+
+	// Optimistic update helpers
+	function addOptimisticUpdate(planId: string, updates: Partial<SubscriptionPlan>) {
+		optimisticUpdates.set(planId, updates);
+	}
+
+	function removeOptimisticUpdate(planId: string) {
+		optimisticUpdates.delete(planId);
+	}
+
+	$: isOptimisticallyUpdating = (planId: string) => optimisticUpdates.has(planId);
+
+	// Plan actions
 	async function createSubscriptionPlan() {
 		try {
 			isSubmitting = true;
-
-			await StreamingSubscriptionService.createSubscriptionPlan(formData);
-			
+			const newPlan = await StreamingSubscriptionService.create(formData);
 			showCreateModal = false;
 			resetForm();
-			await loadSubscriptionPlans();
+			subscriptionPlans = [...subscriptionPlans, newPlan];
 			showToast('Subscription plan created successfully', 'success');
-		} catch (err: unknown) {
+		} catch (err) {
 			console.error('Error creating subscription plan:', err);
-			error = err instanceof Error ? err.message : 'An unknown error occurred';
 			showToast('Failed to create subscription plan', 'error');
 		} finally {
 			isSubmitting = false;
 		}
 	}
 
-	// Update subscription plan
 	async function updateSubscriptionPlan() {
 		if (!selectedPlan) return;
 		
 		try {
 			isSubmitting = true;
-
-			await StreamingSubscriptionService.updateSubscriptionPlan({
+			const updatedPlan = await StreamingSubscriptionService.update({
 				id: selectedPlan.id,
 				...formData
 			});
-			
 			showEditModal = false;
 			resetForm();
-			await loadSubscriptionPlans();
+			subscriptionPlans = subscriptionPlans.map(plan => 
+				plan.id === selectedPlan?.id ? updatedPlan : plan
+			);
 			showToast('Subscription plan updated successfully', 'success');
-		} catch (err: unknown) {
+		} catch (err) {
 			console.error('Error updating subscription plan:', err);
-			error = err instanceof Error ? err.message : 'An unknown error occurred';
 			showToast('Failed to update subscription plan', 'error');
 		} finally {
 			isSubmitting = false;
 		}
 	}
 
-	// Delete subscription plan
 	async function deleteSubscriptionPlan() {
 		if (!selectedPlan) return;
 		
 		try {
 			isSubmitting = true;
-
-			await StreamingSubscriptionService.deleteSubscriptionPlan(selectedPlan.id);
-			
+			await StreamingSubscriptionService.delete(selectedPlan.id);
 			showDeleteModal = false;
+			subscriptionPlans = subscriptionPlans.filter(plan => plan.id !== selectedPlan?.id);
 			selectedPlan = null;
-			await loadSubscriptionPlans();
 			showToast('Subscription plan deleted successfully', 'success');
-		} catch (err: unknown) {
+		} catch (err) {
 			console.error('Error deleting subscription plan:', err);
-			error = err instanceof Error ? err.message : 'An unknown error occurred';
 			showToast('Failed to delete subscription plan', 'error');
 		} finally {
 			isSubmitting = false;
 		}
 	}
 
-	// Toggle subscription plan status
+	// Toggle plan status with optimistic updates
 	async function togglePlanStatus(plan: SubscriptionPlan) {
+		const newStatus = !plan.is_active;
+		addOptimisticUpdate(plan.id, { is_active: newStatus });
+		
 		try {
-			await StreamingSubscriptionService.toggleSubscriptionPlanStatus(plan.id, !plan.is_active);
-			await loadSubscriptionPlans();
-			showToast(`Plan ${plan.is_active ? 'deactivated' : 'activated'} successfully`, 'success');
-		} catch (err: unknown) {
+			const updatedPlan = await StreamingSubscriptionService.toggleStatus(plan.id, newStatus);
+			removeOptimisticUpdate(plan.id);
+			subscriptionPlans = subscriptionPlans.map(p => p?.id === plan.id ? updatedPlan : p);
+			showToast(`Plan ${newStatus ? 'activated' : 'deactivated'} successfully`, 'success');
+		} catch (err) {
 			console.error('Error toggling plan status:', err);
+			removeOptimisticUpdate(plan.id);
 			showToast('Failed to update plan status', 'error');
 		}
 	}
 
-	// Toggle promotion status
+	// Toggle promotion status with optimistic updates
 	async function togglePromotionStatus(plan: SubscriptionPlan) {
+		const planId = plan.id;
+		const newPromotionStatus = !plan.is_promoted;
+		
+		console.log(`=== Toggle Promotion Status ===`);
+		console.log(`Plan ID: ${planId}`);
+		console.log(`Current is_promoted: ${plan.is_promoted}`);
+		console.log(`New is_promoted: ${newPromotionStatus}`);
+		console.log(`Current sub_type: ${plan.sub_type}`);
+
+		// Optimistic update
+		const optimisticUpdate = {
+			...plan,
+			is_promoted: newPromotionStatus,
+			sub_type: newPromotionStatus ? 300 : 100, // Set sub_type based on promotion status
+			is_active: newPromotionStatus ? true : false // When ending promotion, set to inactive
+		};
+
+		optimisticUpdates.set(planId, optimisticUpdate);
+		subscriptionPlans = subscriptionPlans.map(p => 
+			p.id === planId ? optimisticUpdate : p
+		);
+
 		try {
-			await StreamingSubscriptionService.updatePromotionStatus(plan.id, !plan.is_promoted);
-			await loadSubscriptionPlans();
-			showToast(`Promotion ${plan.is_promoted ? 'removed' : 'added'} successfully`, 'success');
-		} catch (err: unknown) {
-			console.error('Error toggling promotion status:', err);
-			showToast('Failed to update promotion status', 'error');
+			const updatedPlan = await StreamingSubscriptionService.togglePromotion(planId, newPromotionStatus);
+			
+			// Check if we got a valid response
+			if (!updatedPlan) {
+				throw new Error('No response received from server');
+			}
+			
+			// Update with real data from server
+			subscriptionPlans = subscriptionPlans.map(p => 
+				p.id === planId ? updatedPlan : p
+			);
+			
+			console.log(`Promotion status updated successfully for plan ${planId}`);
+			console.log(`Updated plan:`, updatedPlan);
+			
+			showToast(`Plan ${newPromotionStatus ? 'promoted' : 'promotion ended'} successfully`, 'success');
+		} catch (error) {
+			console.error('Error toggling promotion status:', error);
+			
+			// Revert optimistic update - restore the original plan
+			subscriptionPlans = subscriptionPlans.map(p => 
+				p.id === planId ? plan : p
+			);
+			
+			showToast(`Failed to ${newPromotionStatus ? 'promote' : 'end promotion for'} plan`, 'error');
+		} finally {
+			optimisticUpdates.delete(planId);
 		}
 	}
 
-	// Edit subscription plan
-	function editPlan(plan: SubscriptionPlan) {
-		selectedPlan = plan;
+	// Event handlers
+	function handleEdit(event: CustomEvent) {
+		selectedPlan = event.detail.plan;
+		if (!selectedPlan) return;
+		
 		formData = {
-			name: plan.name,
-			description: plan.description,
-			short_desc: plan.short_desc,
-			price: plan.price,
-			currency: plan.currency,
-			interval: plan.interval,
-			interval_count: plan.interval_count,
-			features: [...plan.features],
-			is_active: plan.is_active,
-			is_promoted: plan.is_promoted,
-			promotion_end_date: plan.promotion_end_date,
-			sort_order: plan.sort_order
+			name: selectedPlan.name,
+			description: selectedPlan.description,
+			short_desc: selectedPlan.short_desc,
+			price: selectedPlan.price,
+			currency: selectedPlan.currency,
+			interval: selectedPlan.interval,
+			interval_count: selectedPlan.interval_count,
+			features: [...selectedPlan.features],
+			is_active: selectedPlan.is_active,
+			is_promoted: selectedPlan.is_promoted,
+			promotion_end_date: selectedPlan.promotion_end_date,
+			sort_order: selectedPlan.sort_order
 		};
 		showEditModal = true;
 	}
 
-	// Delete subscription plan
-	function deletePlan(plan: SubscriptionPlan) {
-		selectedPlan = plan;
+	function handleDelete(event: CustomEvent) {
+		selectedPlan = event.detail.plan;
 		showDeleteModal = true;
 	}
 
-	// Reset form
+	function handleToggleStatus(event: CustomEvent) {
+		togglePlanStatus(event.detail.plan);
+	}
+
+	function handleTogglePromotion(event: CustomEvent) {
+		console.log("Here we GO!")
+		togglePromotionStatus(event.detail.plan);
+	}
+
 	function resetForm() {
 		formData = {
 			name: '',
@@ -174,7 +302,7 @@
 			short_desc: '',
 			price: 0,
 			currency: 'USD',
-			interval: 'monthly',
+			interval: 'month',
 			interval_count: 1,
 			features: [],
 			is_active: true,
@@ -182,589 +310,145 @@
 			promotion_end_date: null,
 			sort_order: 0
 		};
-		selectedPlan = null;
-		newFeature = '';
 	}
 
-	// Add feature
-	function addFeature() {
-		if (newFeature.trim()) {
-			formData.features = [...formData.features, newFeature.trim()];
-			newFeature = '';
-		}
-	}
-
-	// Remove feature
-	function removeFeature(index: number) {
-		formData.features = formData.features.filter((_, i) => i !== index);
-	}
-
-	// Format currency
-	function formatCurrency(amount: number, currency: string = 'USD'): string {
-		return new Intl.NumberFormat('en-US', {
-			style: 'currency',
-			currency: currency
-		}).format(amount);
-	}
-
-	// Format interval
-	function formatInterval(interval: string, count: number): string {
-		if (count === 1) {
-			return interval.charAt(0).toUpperCase() + interval.slice(1);
-		}
-		return `${count} ${interval}s`;
-	}
-
-	// Get status badge
-	function getStatusBadge(plan: SubscriptionPlan) {
-		if (!plan.is_active) {
-			return { text: 'Inactive', class: 'bg-gray-100 text-gray-800' };
-		}
-		if (plan.is_promoted) {
-			return { text: 'Promoted', class: 'bg-yellow-100 text-yellow-800' };
-		}
-		return { text: 'Active', class: 'bg-green-100 text-green-800' };
-	}
-
+	// Load data on mount
 	onMount(() => {
-		loadSubscriptionPlans();
+		loadPlans();
 	});
 </script>
 
-<svelte:head>
-	<title>Subscription Plans - Streaming Admin</title>
-</svelte:head>
-
-{#if isLoading}
-	<div class="flex items-center justify-center py-12">
-		<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-	</div>
-{:else if error}
-	<div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-		<div class="flex items-center">
-			<svg class="h-5 w-5 text-red-400 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-				<line x1="12" y1="9" x2="12" y2="13"/>
-				<line x1="12" y1="17" x2="12.01" y2="17"/>
-			</svg>
-			<p class="text-red-800">{error}</p>
+<div class="subscription-content" transition:fade>
+	{#if isLoading}
+		<div class="loading-state">
+			<div class="loading-spinner"></div>
+			<p>Loading subscription plans...</p>
 		</div>
-	</div>
-{:else}
-	<div class="space-y-6" in:fade={{ duration: 300 }}>
-		<!-- Header -->
-		<div class="flex justify-between items-center">
-			<div>
-				<h1 class="text-2xl font-bold text-gray-900">Subscription Plans</h1>
-				<p class="text-gray-600">Manage subscription plans and promotions</p>
-			</div>
-			<button
-				class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-				on:click={() => showCreateModal = true}
+	{:else}
+		<SubscriptionHeader 
+			{subscriptionPlans} 
+			onCreateClick={() => showCreateModal = true} 
+		/>
+
+		<div class="subscription-accordions">
+			<!-- Promoted Plans -->
+			<SubscriptionAccordion
+				title="Promoted Plans"
+				icon="<svg class='w-6 h-6' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z'></path></svg>"
+				count={groupedPlans.promoted.length}
+				isActive={activeAccordion === 'promoted'}
+				plans={groupedPlans.promoted}
+				on:toggle={() => toggleAccordion('promoted')}
 			>
-				<svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<line x1="12" y1="5" x2="12" y2="19"/>
-					<line x1="5" y1="12" x2="19" y2="12"/>
-				</svg>
-				<span>Create Plan</span>
-			</button>
+				{#each groupedPlans.promoted as plan (plan.id)}
+					<PlanCard 
+						{plan} 
+						{isOptimisticallyUpdating}
+						on:edit={handleEdit}
+						on:toggleStatus={handleToggleStatus}
+						on:togglePromotion={handleTogglePromotion}
+					/>
+				{/each}
+			</SubscriptionAccordion>
+
+			<!-- Active Plans -->
+			<SubscriptionAccordion
+				title="Active Plans"
+				icon="<svg class='w-6 h-6' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'></path></svg>"
+				count={groupedPlans.active.length}
+				isActive={activeAccordion === 'active'}
+				plans={groupedPlans.active}
+				on:toggle={() => toggleAccordion('active')}
+			>
+				{#each groupedPlans.active as plan (plan.id)}
+					<PlanCard 
+						{plan} 
+						{isOptimisticallyUpdating}
+						on:edit={handleEdit}
+						on:toggleStatus={handleToggleStatus}
+						on:togglePromotion={handleTogglePromotion}
+					/>
+				{/each}
+			</SubscriptionAccordion>
+
+			<!-- Inactive Plans -->
+			<SubscriptionAccordion
+				title="Inactive Plans"
+				icon="<svg class='w-6 h-6' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z'></path></svg>"
+				count={groupedPlans.inactive.length}
+				isActive={activeAccordion === 'inactive'}
+				plans={groupedPlans.inactive}
+				on:toggle={() => toggleAccordion('inactive')}
+			>
+				{#each groupedPlans.inactive as plan (plan.id)}
+					<PlanCard 
+						{plan} 
+						{isOptimisticallyUpdating}
+						on:edit={handleEdit}
+						on:delete={handleDelete}
+						on:toggleStatus={handleToggleStatus}
+						on:togglePromotion={handleTogglePromotion}
+					/>
+				{/each}
+			</SubscriptionAccordion>
 		</div>
+	{/if}
+</div>
 
-		<!-- Plans Grid -->
-		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-			{#each subscriptionPlans as plan (plan.id)}
-				<div class="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow" in:fly={{ y: 20, duration: 300 }}>
-					<!-- Plan Header -->
-					<div class="flex justify-between items-start mb-4">
-						<div class="flex-1">
-							<h3 class="text-lg font-semibold text-gray-900">{plan.name}</h3>
-							{#if plan.short_desc}
-								<p class="text-sm text-gray-600">{plan.short_desc}</p>
-							{/if}
-						</div>
-						<div class="flex items-center space-x-2">
-							{#if plan.is_promoted}
-								<svg class="h-5 w-5 text-yellow-500" viewBox="0 0 24 24" fill="currentColor">
-									<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-								</svg>
-							{/if}
-							<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {getStatusBadge(plan).class}">
-								{getStatusBadge(plan).text}
-							</span>
-						</div>
-					</div>
+<!-- Modals -->
+<PlanModal
+	isOpen={showCreateModal}
+	title="Create Subscription Plan"
+	{formData}
+	{isSubmitting}
+	mode="create"
+	on:submit={createSubscriptionPlan}
+	on:cancel={() => showCreateModal = false}
+/>
 
-					<!-- Price -->
-					<div class="mb-4">
-						<div class="text-2xl font-bold text-gray-900">
-							{formatCurrency(plan.price, plan.currency)}
-						</div>
-						<div class="text-sm text-gray-600">
-							per {formatInterval(plan.interval, plan.interval_count)}
-						</div>
-					</div>
+<PlanModal
+	isOpen={showEditModal}
+	title="Edit Subscription Plan"
+	{formData}
+	{isSubmitting}
+	mode="edit"
+	on:submit={updateSubscriptionPlan}
+	on:cancel={() => showEditModal = false}
+/>
 
-					<!-- Description -->
-					<p class="text-gray-700 text-sm mb-4 line-clamp-3">{plan.description}</p>
-
-					<!-- Features -->
-					{#if plan.features && plan.features.length > 0}
-						<div class="mb-4">
-							<ul class="space-y-1">
-								{#each plan.features.slice(0, 3) as feature}
-									<li class="flex items-center text-sm text-gray-600">
-										<svg class="h-4 w-4 text-green-500 mr-2 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-											<polyline points="20,6 9,17 4,12"/>
-										</svg>
-										{feature}
-									</li>
-								{/each}
-								{#if plan.features.length > 3}
-									<li class="text-sm text-gray-500">
-										+{plan.features.length - 3} more features
-									</li>
-								{/if}
-							</ul>
-						</div>
-					{/if}
-
-					<!-- Actions -->
-					<div class="flex items-center space-x-2 pt-4 border-t border-gray-200">
-						<button
-							class="flex-1 bg-gray-100 text-gray-700 px-3 py-2 rounded-md hover:bg-gray-200 transition-colors flex items-center justify-center space-x-1"
-							on:click={() => editPlan(plan)}
-						>
-							<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-								<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-							</svg>
-							<span>Edit</span>
-						</button>
-						<button
-							class="bg-red-100 text-red-700 px-3 py-2 rounded-md hover:bg-red-200 transition-colors flex items-center justify-center space-x-1"
-							on:click={() => deletePlan(plan)}
-						>
-							<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<polyline points="3,6 5,6 21,6"/>
-								<path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"/>
-							</svg>
-							<span>Delete</span>
-						</button>
-					</div>
-				</div>
-			{/each}
-		</div>
-
-		{#if subscriptionPlans.length === 0}
-			<div class="text-center py-12">
-				<svg class="h-12 w-12 text-gray-400 mx-auto mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-				</svg>
-				<h3 class="text-lg font-medium text-gray-900 mb-2">No subscription plans</h3>
-				<p class="text-gray-600 mb-4">Get started by creating your first subscription plan.</p>
-				<button
-					class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-					on:click={() => showCreateModal = true}
-				>
-					Create Plan
-				</button>
-			</div>
-		{/if}
-	</div>
-{/if}
-
-<!-- Create Modal -->
-{#if showCreateModal}
-	<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" in:fade={{ duration: 200 }}>
-		<div class="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto" in:fly={{ y: 20, duration: 200 }}>
-			<div class="flex justify-between items-center mb-6">
-				<h2 class="text-xl font-semibold text-gray-900">Create Subscription Plan</h2>
-				<button
-					class="text-gray-400 hover:text-gray-600"
-					on:click={() => showCreateModal = false}
-				>
-					<svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<line x1="18" y1="6" x2="6" y2="18"/>
-						<line x1="6" y1="6" x2="18" y2="18"/>
-					</svg>
-				</button>
-			</div>
-
-			<form on:submit|preventDefault={createSubscriptionPlan} class="space-y-6">
-				<!-- Basic Information -->
-				<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-					<div>
-						<label for="name" class="block text-sm font-medium text-gray-700 mb-2">Plan Name</label>
-						<input
-							id="name"
-							type="text"
-							bind:value={formData.name}
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-							required
-						/>
-					</div>
-					<div>
-						<label for="short_desc" class="block text-sm font-medium text-gray-700 mb-2">Short Description</label>
-						<input
-							id="short_desc"
-							type="text"
-							bind:value={formData.short_desc}
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-						/>
-					</div>
-				</div>
-
-				<div>
-					<label for="description" class="block text-sm font-medium text-gray-700 mb-2">Description</label>
-					<textarea
-						id="description"
-						bind:value={formData.description}
-						rows="3"
-						class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-						required
-					></textarea>
-				</div>
-
-				<!-- Pricing -->
-				<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-					<div>
-						<label for="price" class="block text-sm font-medium text-gray-700 mb-2">Price</label>
-						<input
-							id="price"
-							type="number"
-							step="0.01"
-							min="0"
-							bind:value={formData.price}
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-							required
-						/>
-					</div>
-					<div>
-						<label for="currency" class="block text-sm font-medium text-gray-700 mb-2">Currency</label>
-						<select
-							id="currency"
-							bind:value={formData.currency}
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-						>
-							<option value="USD">USD</option>
-							<option value="EUR">EUR</option>
-							<option value="GBP">GBP</option>
-						</select>
-					</div>
-					<div>
-						<label for="interval" class="block text-sm font-medium text-gray-700 mb-2">Billing Interval</label>
-						<select
-							id="interval"
-							bind:value={formData.interval}
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-						>
-							<option value="monthly">Monthly</option>
-							<option value="annual">Annual</option>
-							<option value="weekly">Weekly</option>
-						</select>
-					</div>
-				</div>
-
-				<!-- Features -->
-				<div>
-					<label class="block text-sm font-medium text-gray-700 mb-2">Features</label>
-					<div class="space-y-2">
-						{#each formData.features as feature, index}
-							<div class="flex items-center space-x-2">
-								<span class="flex-1 text-sm text-gray-700">{feature}</span>
-								<button
-									type="button"
-									class="text-red-600 hover:text-red-800"
-									on:click={() => removeFeature(index)}
-								>
-									<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<line x1="18" y1="6" x2="6" y2="18"/>
-										<line x1="6" y1="6" x2="18" y2="18"/>
-									</svg>
-								</button>
-							</div>
-						{/each}
-						<div class="flex space-x-2">
-							<input
-								type="text"
-								bind:value={newFeature}
-								placeholder="Add a feature..."
-								class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-								on:keydown={(e) => e.key === 'Enter' && (e.preventDefault(), addFeature())}
-							/>
-							<button
-								type="button"
-								class="bg-blue-600 text-white px-3 py-2 rounded-md hover:bg-blue-700 transition-colors"
-								on:click={addFeature}
-							>
-								Add
-							</button>
-						</div>
-					</div>
-				</div>
-
-				<!-- Settings -->
-				<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-					<div class="space-y-4">
-						<div class="flex items-center">
-							<input
-								id="is_active"
-								type="checkbox"
-								bind:checked={formData.is_active}
-								class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-							/>
-							<label for="is_active" class="ml-2 text-sm text-gray-700">Active</label>
-						</div>
-						<div class="flex items-center">
-							<input
-								id="is_promoted"
-								type="checkbox"
-								bind:checked={formData.is_promoted}
-								class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-							/>
-							<label for="is_promoted" class="ml-2 text-sm text-gray-700">Promoted</label>
-						</div>
-					</div>
-					<div>
-						<label for="sort_order" class="block text-sm font-medium text-gray-700 mb-2">Sort Order</label>
-						<input
-							id="sort_order"
-							type="number"
-							bind:value={formData.sort_order}
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-						/>
-					</div>
-				</div>
-
-				<!-- Actions -->
-				<div class="flex justify-end space-x-3 pt-6 border-t border-gray-200">
-					<button
-						type="button"
-						class="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
-						on:click={() => showCreateModal = false}
-					>
-						Cancel
-					</button>
-					<button
-						type="submit"
-						disabled={isSubmitting}
-						class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
-					>
-						{isSubmitting ? 'Creating...' : 'Create Plan'}
-					</button>
-				</div>
-			</form>
-		</div>
-	</div>
-{/if}
-
-<!-- Edit Modal -->
-{#if showEditModal}
-	<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" in:fade={{ duration: 200 }}>
-		<div class="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto" in:fly={{ y: 20, duration: 200 }}>
-			<div class="flex justify-between items-center mb-6">
-				<h2 class="text-xl font-semibold text-gray-900">Edit Subscription Plan</h2>
-				<button
-					class="text-gray-400 hover:text-gray-600"
-					on:click={() => showEditModal = false}
-				>
-					<svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<line x1="18" y1="6" x2="6" y2="18"/>
-						<line x1="6" y1="6" x2="18" y2="18"/>
-					</svg>
-				</button>
-			</div>
-
-			<form on:submit|preventDefault={updateSubscriptionPlan} class="space-y-6">
-				<!-- Same form fields as create modal -->
-				<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-					<div>
-						<label for="edit-name" class="block text-sm font-medium text-gray-700 mb-2">Plan Name</label>
-						<input
-							id="edit-name"
-							type="text"
-							bind:value={formData.name}
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-							required
-						/>
-					</div>
-					<div>
-						<label for="edit-short_desc" class="block text-sm font-medium text-gray-700 mb-2">Short Description</label>
-						<input
-							id="edit-short_desc"
-							type="text"
-							bind:value={formData.short_desc}
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-						/>
-					</div>
-				</div>
-
-				<div>
-					<label for="edit-description" class="block text-sm font-medium text-gray-700 mb-2">Description</label>
-					<textarea
-						id="edit-description"
-						bind:value={formData.description}
-						rows="3"
-						class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-						required
-					></textarea>
-				</div>
-
-				<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-					<div>
-						<label for="edit-price" class="block text-sm font-medium text-gray-700 mb-2">Price</label>
-						<input
-							id="edit-price"
-							type="number"
-							step="0.01"
-							min="0"
-							bind:value={formData.price}
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-							required
-						/>
-					</div>
-					<div>
-						<label for="edit-currency" class="block text-sm font-medium text-gray-700 mb-2">Currency</label>
-						<select
-							id="edit-currency"
-							bind:value={formData.currency}
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-						>
-							<option value="USD">USD</option>
-							<option value="EUR">EUR</option>
-							<option value="GBP">GBP</option>
-						</select>
-					</div>
-					<div>
-						<label for="edit-interval" class="block text-sm font-medium text-gray-700 mb-2">Billing Interval</label>
-						<select
-							id="edit-interval"
-							bind:value={formData.interval}
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-						>
-							<option value="monthly">Monthly</option>
-							<option value="annual">Annual</option>
-							<option value="weekly">Weekly</option>
-						</select>
-					</div>
-				</div>
-
-				<div>
-					<label class="block text-sm font-medium text-gray-700 mb-2">Features</label>
-					<div class="space-y-2">
-						{#each formData.features as feature, index}
-							<div class="flex items-center space-x-2">
-								<span class="flex-1 text-sm text-gray-700">{feature}</span>
-								<button
-									type="button"
-									class="text-red-600 hover:text-red-800"
-									on:click={() => removeFeature(index)}
-								>
-									<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<line x1="18" y1="6" x2="6" y2="18"/>
-										<line x1="6" y1="6" x2="18" y2="18"/>
-									</svg>
-								</button>
-							</div>
-						{/each}
-						<div class="flex space-x-2">
-							<input
-								type="text"
-								bind:value={newFeature}
-								placeholder="Add a feature..."
-								class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-								on:keydown={(e) => e.key === 'Enter' && (e.preventDefault(), addFeature())}
-							/>
-							<button
-								type="button"
-								class="bg-blue-600 text-white px-3 py-2 rounded-md hover:bg-blue-700 transition-colors"
-								on:click={addFeature}
-							>
-								Add
-							</button>
-						</div>
-					</div>
-				</div>
-
-				<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-					<div class="space-y-4">
-						<div class="flex items-center">
-							<input
-								id="edit-is_active"
-								type="checkbox"
-								bind:checked={formData.is_active}
-								class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-							/>
-							<label for="edit-is_active" class="ml-2 text-sm text-gray-700">Active</label>
-						</div>
-						<div class="flex items-center">
-							<input
-								id="edit-is_promoted"
-								type="checkbox"
-								bind:checked={formData.is_promoted}
-								class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-							/>
-							<label for="edit-is_promoted" class="ml-2 text-sm text-gray-700">Promoted</label>
-						</div>
-					</div>
-					<div>
-						<label for="edit-sort_order" class="block text-sm font-medium text-gray-700 mb-2">Sort Order</label>
-						<input
-							id="edit-sort_order"
-							type="number"
-							bind:value={formData.sort_order}
-							class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-						/>
-					</div>
-				</div>
-
-				<div class="flex justify-end space-x-3 pt-6 border-t border-gray-200">
-					<button
-						type="button"
-						class="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
-						on:click={() => showEditModal = false}
-					>
-						Cancel
-					</button>
-					<button
-						type="submit"
-						disabled={isSubmitting}
-						class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
-					>
-						{isSubmitting ? 'Updating...' : 'Update Plan'}
-					</button>
-				</div>
-			</form>
-		</div>
-	</div>
-{/if}
-
-<!-- Delete Modal -->
+<!-- Delete Confirmation Modal -->
 {#if showDeleteModal}
-	<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" in:fade={{ duration: 200 }}>
-		<div class="bg-white rounded-lg p-6 w-full max-w-md" in:fly={{ y: 20, duration: 200 }}>
-			<div class="flex items-center mb-4">
-				<svg class="h-6 w-6 text-red-600 mr-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-					<line x1="12" y1="9" x2="12" y2="13"/>
-					<line x1="12" y1="17" x2="12.01" y2="17"/>
-				</svg>
-				<h2 class="text-xl font-semibold text-gray-900">Delete Subscription Plan</h2>
+	<div class="modal-backdrop" transition:fade={{ duration: 200 }} on:click={() => showDeleteModal = false}>
+		<div class="modal-content delete-modal" transition:fly={{ y: 20, duration: 200 }} on:click|stopPropagation>
+			<div class="modal-header">
+				<div class="modal-title-with-icon">
+					<svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+					</svg>
+					<h2 class="modal-title">Delete Subscription Plan</h2>
+				</div>
+				<button type="button" class="modal-close" on:click={() => showDeleteModal = false} aria-label="Close">
+					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+					</svg>
+				</button>
 			</div>
 			
-			<p class="text-gray-600 mb-6">
-				Are you sure you want to delete "{selectedPlan?.name}"? This action will mark the plan as deleted but preserve all data for historical records.
-			</p>
+			<div class="modal-body">
+				<p class="delete-message">
+					Are you sure you want to delete "<strong>{selectedPlan?.name}</strong>"? This action will mark the plan as deleted but preserve all data for historical records.
+				</p>
+			</div>
 
-			<div class="flex justify-end space-x-3">
+			<div class="modal-actions">
 				<button
-					class="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+					class="btn btn-secondary"
 					on:click={() => showDeleteModal = false}
 				>
 					Cancel
 				</button>
 				<button
-					class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors disabled:opacity-50"
+					class="btn btn-danger"
 					disabled={isSubmitting}
 					on:click={deleteSubscriptionPlan}
 				>
@@ -776,155 +460,191 @@
 {/if}
 
 <style>
-	/* Glass morphism styling for consistency */
-	.bg-white {
-		background: var(--bg-glass, rgba(255, 255, 255, 0.1)) !important;
-		backdrop-filter: blur(20px);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+	.subscription-content {
+		margin: 0 auto;
 	}
 
-	.bg-gray-50 {
-		background: var(--bg-glass-dark, rgba(255, 255, 255, 0.05)) !important;
-		backdrop-filter: blur(20px);
-	}
-
-	.border-gray-200 {
-		border-color: rgba(255, 255, 255, 0.1) !important;
-	}
-
-	.border-gray-300 {
-		border-color: rgba(255, 255, 255, 0.2) !important;
-	}
-
-	/* Button styling */
-	.bg-blue-600 {
-		background: var(--primary-gradient, linear-gradient(135deg, #3b82f6, #1d4ed8)) !important;
-	}
-
-	.bg-blue-600:hover {
-		transform: translateY(-2px);
-		box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
-	}
-
-	.bg-red-600 {
-		background: var(--danger-gradient, linear-gradient(135deg, #ef4444, #dc2626)) !important;
-	}
-
-	.bg-red-600:hover {
-		transform: translateY(-2px);
-		box-shadow: 0 8px 20px rgba(239, 68, 68, 0.3);
-	}
-
-	.bg-gray-100 {
-		background: var(--bg-glass, rgba(255, 255, 255, 0.1)) !important;
-		backdrop-filter: blur(20px);
-	}
-
-	.bg-gray-100:hover {
-		background: rgba(255, 255, 255, 0.2) !important;
-		transform: translateY(-2px);
-	}
-
-	/* SVG styling */
-	svg {
-		color: inherit;
-	}
-
-	.text-red-600 svg {
-		color: #ef4444;
-	}
-
-	.text-green-600 svg {
-		color: #10b981;
-	}
-
-	.text-yellow-600 svg {
-		color: #f59e0b;
-	}
-
-	.text-blue-600 svg {
-		color: #3b82f6;
-	}
-
-	/* Status badge styling */
-	.status-badge {
-		display: inline-flex;
+	.loading-state {
+		display: flex;
+		flex-direction: column;
 		align-items: center;
-		gap: 0.25rem;
-		padding: 0.25rem 0.75rem;
-		border-radius: 20px;
-		font-size: 0.75rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-	}
-
-	.status-badge.active {
-		background: rgba(16, 185, 129, 0.2);
-		color: #10b981;
-	}
-
-	.status-badge.inactive {
-		background: rgba(107, 114, 128, 0.2);
+		justify-content: center;
+		min-height: 400px;
 		color: #6b7280;
 	}
 
-	.status-badge.promoted {
-		background: rgba(245, 158, 11, 0.2);
-		color: #f59e0b;
+	.loading-state p {
+		margin-top: 1rem;
+		font-size: 1.125rem;
 	}
 
-	/* Card styling */
-	.card {
-		background: var(--bg-glass, rgba(255, 255, 255, 0.1));
-		backdrop-filter: blur(20px);
-		border-radius: 15px;
-		border: 1px solid rgba(255, 255, 255, 0.1);
-		transition: all 0.3s ease;
+	.loading-spinner {
+		width: 40px;
+		height: 40px;
+		border: 3px solid #e5e7eb;
+		border-top: 3px solid #2563eb;
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
 	}
 
-	.card:hover {
-		transform: translateY(-2px);
-		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+	@keyframes spin {
+		0% { transform: rotate(0deg); }
+		100% { transform: rotate(360deg); }
 	}
 
-	/* Form styling */
-	input, select, textarea {
-		background: var(--bg-primary, rgba(255, 255, 255, 0.05)) !important;
-		border-color: rgba(255, 255, 255, 0.2) !important;
-		color: var(--text-primary, #ffffff) !important;
+	.subscription-accordions {
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
 	}
 
-	input:focus, select:focus, textarea:focus {
-		border-color: var(--primary-color, #3b82f6) !important;
-		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+	/* Delete Modal Styles */
+	.modal-backdrop {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 50;
+		padding: 1rem;
 	}
 
-	/* Text colors */
-	.text-gray-700 {
-		color: var(--text-primary, #ffffff) !important;
+	.modal-content {
+		background: white;
+		border-radius: 0.5rem;
+		border: 1px solid #e5e7eb;
+		box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+		width: 100%;
+		max-width: 500px;
+		max-height: 90vh;
+		overflow-y: auto;
 	}
 
-	.text-gray-600 {
-		color: var(--text-secondary, #d1d5db) !important;
+	.delete-modal {
+		max-width: 450px;
 	}
 
-	.text-gray-900 {
-		color: var(--text-primary, #ffffff) !important;
+	.modal-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1.5rem 1.5rem 0 1.5rem;
+		border-bottom: 1px solid #e5e7eb;
+		margin-bottom: 1.5rem;
 	}
 
-	/* Line clamp utility */
-	.line-clamp-3 {
-		display: -webkit-box;
-		-webkit-line-clamp: 3;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
+	.modal-title-with-icon {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
 	}
 
-	/* Responsive design */
+	.modal-title {
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: #111827;
+		margin: 0;
+	}
+
+	.modal-close {
+		background: none;
+		border: none;
+		color: #6b7280;
+		cursor: pointer;
+		padding: 0.5rem;
+		border-radius: 0.375rem;
+		transition: all 0.2s ease;
+	}
+
+	.modal-close:hover {
+		background: #f3f4f6;
+		color: #374151;
+	}
+
+	.modal-body {
+		padding: 0 1.5rem;
+	}
+
+	.delete-message {
+		color: #374151;
+		font-size: 0.875rem;
+		line-height: 1.5;
+		margin: 0;
+	}
+
+	.modal-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.75rem;
+		padding: 1.5rem;
+		border-top: 1px solid #e5e7eb;
+		margin-top: 1.5rem;
+	}
+
+	.btn {
+		padding: 0.5rem 1rem;
+		border-radius: 0.375rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		border: none;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		text-decoration: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+	}
+
+	.btn:hover {
+		transform: translateY(-1px);
+	}
+
+	.btn:focus {
+		outline: 2px solid #2563eb;
+		outline-offset: 2px;
+	}
+
+	.btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+		transform: none !important;
+	}
+
+	.btn-secondary {
+		background: #f3f4f6;
+		color: #374151;
+		border: 1px solid #d1d5db;
+	}
+
+	.btn-secondary:hover {
+		background: #e5e7eb;
+		border-color: #9ca3af;
+	}
+
+	.btn-danger {
+		background: #dc2626;
+		color: white;
+	}
+
+	.btn-danger:hover {
+		background: #b91c1c;
+		box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+	}
+
 	@media (max-width: 768px) {
-		.card {
+		.modal-content {
 			margin: 0.5rem;
+			max-height: calc(100vh - 1rem);
+		}
+
+		.modal-actions {
+			flex-direction: column;
+		}
+
+		.modal-actions .btn {
+			width: 100%;
 		}
 	}
-</style> 
+</style>

@@ -22,6 +22,10 @@
 	// Conflict check results
 	let lastConflictCheck: any = null;
 
+	// Analytics data
+	let analytics: any = null;
+	let analyticsLoading = false;
+
 	// Loading state for individual video toggles
 	let togglingVideos = new Set<number>();
 
@@ -89,6 +93,39 @@
 		'Virtual Tour'
 	];
 
+	// Load analytics data
+	async function loadAnalytics() {
+		try {
+			analyticsLoading = true;
+			const response = await masterVideoService.getDashboardAnalytics();
+			if (response.success) {
+				analytics = response.data;
+			} else {
+				// Fallback to basic stats
+				const statsResponse = await masterVideoService.getStats();
+				if (statsResponse.success) {
+					analytics = {
+						video_stats: {
+							total_videos: statsResponse.stats.total_videos || 0,
+							synced_videos: statsResponse.stats.videos_by_sync_status?.synced || 0,
+							needs_attention: statsResponse.stats.videos_by_sync_status?.needs_attention || 0,
+							videos_by_sync_status: statsResponse.stats.videos_by_sync_status || {}
+						}
+					};
+				}
+			}
+		} catch (error) {
+			console.error('Error loading analytics:', error);
+		} finally {
+			analyticsLoading = false;
+		}
+	}
+
+	// Computed properties for video stats
+	$: syncedCount = analytics?.video_stats?.synced_videos || 0;
+	$: needsAttentionCount = analytics?.video_stats?.needs_attention || 0;
+	$: conflictCount = analytics?.video_stats?.videos_by_sync_status?.conflict || 0;
+
 	// Load videos using MasterVideoService
 	async function loadVideos() {
 		try {
@@ -117,6 +154,9 @@
 				} else {
 					AbsoluteTotalVideos = totalVideos;
 				};
+				
+				// Also refresh analytics when videos are loaded
+				await loadAnalytics();
 			} else {
 				error = 'Failed to load videos';
 			}
@@ -495,6 +535,7 @@
 	}
 
 	onMount(() => {
+		loadAnalytics();
 		loadVideos();
 	});
 </script>
@@ -569,7 +610,7 @@
 				<div class="stat-content">
 					<p class="stat-label">Total Videos</p>
 					<p class="stat-value">{AbsoluteTotalVideos}</p>
-					<p class="stat-change">View all</p>
+					<!--<p class="stat-change">View all</p>-->
 				</div>
 			</div>
 			<div class="stat-card success">
@@ -581,8 +622,8 @@
 				</div>
 				<div class="stat-content">
 					<p class="stat-label">Synced</p>
-					<p class="stat-value">{videos.filter(v => v.SyncStatus === 'synced').length}</p>
-					<p class="stat-change positive">+2.5%</p>
+					<p class="stat-value">{syncedCount}</p>
+					<!--<p class="stat-change positive">+2.5%</p>-->
 				</div>
 			</div>
 			<div class="stat-card warning">
@@ -593,15 +634,10 @@
 						<line x1="12" y1="17" x2="12.01" y2="17"/>
 					</svg>
 				</div>
-				<!--<div class="stat-content">
-					<p class="stat-label">Needs Attention</p>
-					<p class="stat-value">{videos.filter(v => v.SyncStatus === 'needs_attention').length}</p>
-					<p class="stat-change negative">-1.2%</p>
-				</div>-->
 				<div class="stat-content">
 					<p class="stat-label">Found Conflict</p>
-					<p class="stat-value">{videos.filter(v => v.SyncStatus === 'conflict').length}</p>
-					<p class="stat-change positive">+0.8%</p>
+					<p class="stat-value">{conflictCount}</p>
+					<!--<p class="stat-change positive">+0.8%</p>-->
 				</div>
 			</div>
 			<button 
@@ -618,18 +654,6 @@
 					<span style="color: white !important; font-size: clamp(12px, 2vw, 2.5rem">Run Check<br> 🐇</span>
 				{/if}
 			</button>
-			<!--<div class="stat-card info">
-				<div class="stat-icon">
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"/>
-					</svg>
-				</div>
-				<div class="stat-content">
-					<p class="stat-label">Conflicts</p>
-					<p class="stat-value">{videos.filter(v => v.SyncStatus === 'conflict').length}</p>
-					<p class="stat-change positive">+0.8%</p>
-				</div>
-			</div>-->
 				<a
 						href="/admin/streaming/upload"
 						class="btn bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
@@ -1348,7 +1372,7 @@
 		background: var(--bg-glass, rgba(255, 255, 255, 0.1));
 		backdrop-filter: blur(20px);
 		border-radius: 15px;
-		padding: 0.5rem 1.5rem 0 1.5rem ;
+		padding: 0.75rem 1.5rem 0 1.5rem ;
 		border: 1px solid rgba(255, 255, 255, 0.1);
 		display: flex;
 		align-items: center;

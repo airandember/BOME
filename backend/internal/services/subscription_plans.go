@@ -1,9 +1,11 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"bome-backend/internal/database"
@@ -14,13 +16,37 @@ type SubscriptionPlanService struct {
 	db *database.DB
 }
 
-// SubscriptionPlanRequest represents a request to create or update a subscription plan
-type SubscriptionPlanRequest struct {
+// SubscriptionPlanResponse represents a subscription plan response
+type SubscriptionPlanResponse struct {
+	ID                 string     `json:"id"`
+	Name               string     `json:"name"`
+	Description        string     `json:"description"`
+	ShortDesc          string     `json:"short_desc"`
+	Price              float64    `json:"price"`
+	Currency           string     `json:"currency"`
+	Interval           string     `json:"interval"`
+	IntervalCount      int        `json:"interval_count"`
+	StripePriceID      *string    `json:"stripe_price_id,omitempty"`
+	Features           []string   `json:"features"`
+	IsActive           bool       `json:"is_active"`
+	IsPromoted         bool       `json:"is_promoted"`
+	PromotionEndDate   *time.Time `json:"promotion_end_date,omitempty"`
+	PromotionStartDate *time.Time `json:"promotion_start_date,omitempty"`
+	PromotionHistory   []string   `json:"promotion_history,omitempty"`
+	SubType            int        `json:"sub_type"` // 100 = standard, 300 = promotional
+	SortOrder          int        `json:"sort_order"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+// CreateSubscriptionPlanRequest represents a request to create a subscription plan
+type CreateSubscriptionPlanRequest struct {
 	Name             string     `json:"name" validate:"required,min=1,max=255"`
 	Description      string     `json:"description"`
+	ShortDesc        string     `json:"short_desc"`
 	Price            float64    `json:"price" validate:"required,min=0"`
 	Currency         string     `json:"currency" validate:"required,oneof=USD EUR GBP CAD"`
-	Interval         string     `json:"interval" validate:"required,oneof=monthly annual weekly daily"`
+	Interval         string     `json:"interval" validate:"required,oneof=month year week day"`
 	IntervalCount    int        `json:"interval_count" validate:"required,min=1"`
 	StripePriceID    string     `json:"stripe_price_id"`
 	Features         []string   `json:"features"`
@@ -30,23 +56,21 @@ type SubscriptionPlanRequest struct {
 	SortOrder        int        `json:"sort_order"`
 }
 
-// SubscriptionPlanResponse represents a subscription plan response
-type SubscriptionPlanResponse struct {
-	ID               int        `json:"id"`
-	Name             string     `json:"name"`
+// UpdateSubscriptionPlanRequest represents a request to update a subscription plan
+type UpdateSubscriptionPlanRequest struct {
+	Name             string     `json:"name" validate:"required,min=1,max=255"`
 	Description      string     `json:"description"`
-	Price            float64    `json:"price"`
-	Currency         string     `json:"currency"`
-	Interval         string     `json:"interval"`
-	IntervalCount    int        `json:"interval_count"`
-	StripePriceID    *string    `json:"stripe_price_id,omitempty"`
+	ShortDesc        string     `json:"short_desc"`
+	Price            float64    `json:"price" validate:"required,min=0"`
+	Currency         string     `json:"currency" validate:"required,oneof=USD EUR GBP CAD"`
+	Interval         string     `json:"interval" validate:"required,oneof=month year week day"`
+	IntervalCount    int        `json:"interval_count" validate:"required,min=1"`
+	StripePriceID    string     `json:"stripe_price_id"`
 	Features         []string   `json:"features"`
 	IsActive         bool       `json:"is_active"`
 	IsPromoted       bool       `json:"is_promoted"`
-	PromotionEndDate *time.Time `json:"promotion_end_date,omitempty"`
+	PromotionEndDate *time.Time `json:"promotion_end_date"`
 	SortOrder        int        `json:"sort_order"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 // NewSubscriptionPlanService creates a new subscription plan service
@@ -55,53 +79,23 @@ func NewSubscriptionPlanService(db *database.DB) *SubscriptionPlanService {
 }
 
 // CreateSubscriptionPlan creates a new subscription plan
-func (s *SubscriptionPlanService) CreateSubscriptionPlan(req *SubscriptionPlanRequest, userID int) (*SubscriptionPlanResponse, error) {
-	// Validate request
-	if err := s.validateSubscriptionPlanRequest(req); err != nil {
-		return nil, fmt.Errorf("validation error: %w", err)
-	}
-
-	// Check if plan with same name already exists
-	existingPlans, err := s.db.GetSubscriptionPlansWithFilters(1, 0, nil, nil)
+func (s *SubscriptionPlanService) CreateSubscriptionPlan(ctx context.Context, plan *database.SubscriptionPlan) (*SubscriptionPlanResponse, error) {
+	log.Printf("Service: Creating plan: %+v", plan)
+	created, err := s.db.CreateSubscriptionPlan(plan)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check existing plans: %w", err)
+		return nil, err
 	}
-
-	for _, plan := range existingPlans {
-		if plan.Name == req.Name {
-			return nil, fmt.Errorf("subscription plan with name '%s' already exists", req.Name)
-		}
-	}
-
-	// Create the subscription plan
-	plan, err := s.db.CreateSubscriptionPlan(
-		req.Name,
-		req.Description,
-		req.Price,
-		req.Currency,
-		req.Interval,
-		req.IntervalCount,
-		req.StripePriceID,
-		req.Features,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create subscription plan: %w", err)
-	}
-
-	// Log audit event
-	s.logAuditEvent("subscription_plan_created", userID, plan.ID, map[string]interface{}{
-		"plan_name": plan.Name,
-		"price":     plan.Price,
-		"currency":  plan.Currency,
-		"interval":  plan.Interval,
-	})
-
-	return s.convertToResponse(plan), nil
+	return s.convertToResponse(created), nil
 }
 
-// GetSubscriptionPlan retrieves a subscription plan by ID
-func (s *SubscriptionPlanService) GetSubscriptionPlan(id int) (*SubscriptionPlanResponse, error) {
-	plan, err := s.db.GetSubscriptionPlanByID(id)
+// GetSubscriptionPlan gets a subscription plan by ID
+func (s *SubscriptionPlanService) GetSubscriptionPlan(ctx context.Context, id string) (*SubscriptionPlanResponse, error) {
+	planID, err := strconv.Atoi(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid plan ID: %w", err)
+	}
+
+	plan, err := s.db.GetSubscriptionPlanByID(planID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subscription plan: %w", err)
 	}
@@ -109,210 +103,196 @@ func (s *SubscriptionPlanService) GetSubscriptionPlan(id int) (*SubscriptionPlan
 	return s.convertToResponse(plan), nil
 }
 
-// GetActiveSubscriptionPlans retrieves all active subscription plans
-func (s *SubscriptionPlanService) GetActiveSubscriptionPlans() ([]*SubscriptionPlanResponse, error) {
-	plans, err := s.db.GetActiveSubscriptionPlans()
+// UpdateSubscriptionPlan updates a subscription plan by ID
+func (s *SubscriptionPlanService) UpdateSubscriptionPlan(ctx context.Context, id string, updates map[string]interface{}) (*SubscriptionPlanResponse, error) {
+	planID, err := strconv.Atoi(id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get active subscription plans: %w", err)
+		return nil, fmt.Errorf("invalid plan ID: %w", err)
 	}
-
-	var responses []*SubscriptionPlanResponse
-	for _, plan := range plans {
-		responses = append(responses, s.convertToResponse(plan))
+	log.Printf("Service: Updating plan %d with: %+v", planID, updates)
+	updated, err := s.db.UpdateSubscriptionPlan(planID, updates)
+	if err != nil {
+		return nil, err
 	}
-
-	return responses, nil
+	return s.convertToResponse(updated), nil
 }
 
-// GetPromotedSubscriptionPlans retrieves currently promoted subscription plans
-func (s *SubscriptionPlanService) GetPromotedSubscriptionPlans() ([]*SubscriptionPlanResponse, error) {
-	plans, err := s.db.GetPromotedSubscriptionPlans()
+// SoftDeleteSubscriptionPlan marks a plan as deleted
+func (s *SubscriptionPlanService) SoftDeleteSubscriptionPlan(ctx context.Context, id string) error {
+	planID, err := strconv.Atoi(id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get promoted subscription plans: %w", err)
+		return fmt.Errorf("invalid plan ID: %w", err)
 	}
-
-	var responses []*SubscriptionPlanResponse
-	for _, plan := range plans {
-		responses = append(responses, s.convertToResponse(plan))
-	}
-
-	return responses, nil
+	log.Printf("Service: Soft deleting plan %d", planID)
+	return s.db.SoftDeleteSubscriptionPlan(planID)
 }
 
-// UpdateSubscriptionPlan updates a subscription plan
-func (s *SubscriptionPlanService) UpdateSubscriptionPlan(id int, req *SubscriptionPlanRequest, userID int) (*SubscriptionPlanResponse, error) {
-	// Validate request
-	if err := s.validateSubscriptionPlanRequest(req); err != nil {
-		return nil, fmt.Errorf("validation error: %w", err)
+// ToggleSubscriptionPlanStatus toggles the active status of a subscription plan
+func (s *SubscriptionPlanService) ToggleSubscriptionPlanStatus(ctx context.Context, id string, isActive bool) (*SubscriptionPlanResponse, error) {
+	planID, err := strconv.Atoi(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid plan ID: %w", err)
 	}
 
 	// Check if plan exists
-	existingPlan, err := s.db.GetSubscriptionPlanByID(id)
+	_, err = s.db.GetSubscriptionPlanByID(planID)
 	if err != nil {
 		return nil, fmt.Errorf("subscription plan not found: %w", err)
 	}
 
-	// Check if name is being changed and if it conflicts with another plan
-	if req.Name != existingPlan.Name {
-		allPlans, err := s.db.GetSubscriptionPlansWithFilters(100, 0, nil, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to check existing plans: %w", err)
-		}
-
-		for _, plan := range allPlans {
-			if plan.ID != id && plan.Name == req.Name {
-				return nil, fmt.Errorf("subscription plan with name '%s' already exists", req.Name)
-			}
-		}
-	}
-
-	// Build updates map
+	// Update status
 	updates := map[string]interface{}{
-		"name":           req.Name,
-		"description":    req.Description,
-		"price":          req.Price,
-		"currency":       req.Currency,
-		"interval":       req.Interval,
-		"interval_count": req.IntervalCount,
-		"is_active":      req.IsActive,
-		"is_promoted":    req.IsPromoted,
-		"sort_order":     req.SortOrder,
+		"is_active": isActive,
 	}
-
-	if req.StripePriceID != "" {
-		updates["stripe_price_id"] = req.StripePriceID
-	}
-
-	if req.Features != nil {
-		featuresJSON, err := json.Marshal(req.Features)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal features: %w", err)
-		}
-		updates["features"] = string(featuresJSON)
-	}
-
-	if req.PromotionEndDate != nil {
-		updates["promotion_end_date"] = *req.PromotionEndDate
-	} else {
-		updates["promotion_end_date"] = nil
-	}
-
-	// Update the plan
-	err = s.db.UpdateSubscriptionPlan(id, updates)
+	_, err = s.db.UpdateSubscriptionPlan(planID, updates)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update subscription plan: %w", err)
+		return nil, fmt.Errorf("failed to toggle subscription plan status: %w", err)
 	}
 
 	// Get updated plan
-	updatedPlan, err := s.db.GetSubscriptionPlanByID(id)
+	updatedPlan, err := s.db.GetSubscriptionPlanByID(planID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get updated subscription plan: %w", err)
 	}
 
-	// Log audit event
-	s.logAuditEvent("subscription_plan_updated", userID, id, map[string]interface{}{
-		"plan_name": updatedPlan.Name,
-		"changes":   updates,
-	})
-
 	return s.convertToResponse(updatedPlan), nil
 }
 
-// SoftDeleteSubscriptionPlan marks a subscription plan as deleted
-func (s *SubscriptionPlanService) SoftDeleteSubscriptionPlan(id int, userID int) error {
-	// Check if plan exists
-	plan, err := s.db.GetSubscriptionPlanByID(id)
+// UpdatePromotionStatus updates the promotion status of a subscription plan
+// If isPromoted is true, sets sub_type to 300 (promo), sets promotion_start_date to now, and optionally sets promotion_end_date.
+// If isPromoted is false, sets sub_type to 100 (standard), sets is_active to false, and sets promotion_end_date to now.
+func (s *SubscriptionPlanService) UpdatePromotionStatus(ctx context.Context, id string, isPromoted bool, promotionEndDate *time.Time) (*SubscriptionPlanResponse, error) {
+	planID, err := strconv.Atoi(id)
 	if err != nil {
-		return fmt.Errorf("subscription plan not found: %w", err)
+		return nil, fmt.Errorf("invalid plan ID: %w", err)
 	}
-
-	// Check if plan has active subscriptions
-	// TODO: Add method to check for active subscriptions
-	// activeSubscriptions, err := s.db.GetActiveSubscriptionsByPlanID(id)
-	// if err != nil {
-	//     return fmt.Errorf("failed to check active subscriptions: %w", err)
-	// }
-	// if len(activeSubscriptions) > 0 {
-	//     return fmt.Errorf("cannot delete plan with active subscriptions")
-	// }
-
-	// Soft delete the plan
-	err = s.db.SoftDeleteSubscriptionPlan(id)
+	log.Printf("UpdatePromotionStatus called for plan %d, isPromoted: %v", planID, isPromoted)
+	_, err = s.db.GetSubscriptionPlanByID(planID)
 	if err != nil {
-		return fmt.Errorf("failed to delete subscription plan: %w", err)
+		return nil, err
 	}
-
-	// Log audit event
-	s.logAuditEvent("subscription_plan_deleted", userID, id, map[string]interface{}{
-		"plan_name": plan.Name,
-	})
-
-	return nil
+	updates := map[string]interface{}{}
+	if isPromoted {
+		updates["is_promoted"] = true
+		updates["sub_type"] = 300
+		updates["promotion_start_date"] = time.Now()
+		if promotionEndDate != nil {
+			updates["promotion_end_date"] = *promotionEndDate
+		}
+		updates["is_active"] = true
+	} else {
+		updates["is_promoted"] = false
+		updates["sub_type"] = 100
+		updates["is_active"] = false
+		updates["promotion_end_date"] = time.Now()
+	}
+	updatedPlan, err := s.db.UpdateSubscriptionPlan(planID, updates)
+	if err != nil {
+		return nil, err
+	}
+	return s.convertToResponse(updatedPlan), nil
 }
 
-// GetSubscriptionPlansWithFilters retrieves subscription plans with filters
-func (s *SubscriptionPlanService) GetSubscriptionPlansWithFilters(limit, offset int, isActive, isPromoted *bool) ([]*SubscriptionPlanResponse, error) {
-	plans, err := s.db.GetSubscriptionPlansWithFilters(limit, offset, isActive, isPromoted)
+// GetAllSubscriptionPlans gets all subscription plans without pagination or filters
+func (s *SubscriptionPlanService) GetAllSubscriptionPlans(ctx context.Context) ([]*SubscriptionPlanResponse, error) {
+	// Check and handle expired promotions first
+	err := s.CheckAndHandleExpiredPromotions(ctx)
+	if err != nil {
+		log.Printf("Warning: Failed to check expired promotions: %v", err)
+	}
+
+	plans, err := s.db.GetAllSubscriptionPlans()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subscription plans: %w", err)
 	}
 
-	var responses []*SubscriptionPlanResponse
-	for _, plan := range plans {
-		responses = append(responses, s.convertToResponse(plan))
+	// Debug: Log the raw plans from database
+	log.Printf("Service: Raw plans from database: %+v", plans)
+	for i, plan := range plans {
+		log.Printf("Service: Plan %d: ID=%d, Name=%s, IsActive=%v, IsPromoted=%v, Interval=%s",
+			i, plan.ID, plan.Name, plan.IsActive, plan.IsPromoted, plan.Interval)
 	}
 
-	return responses, nil
+	// Convert to response format
+	responsePlans := make([]*SubscriptionPlanResponse, len(plans))
+	for i, plan := range plans {
+		responsePlans[i] = s.convertToResponse(plan)
+	}
+
+	// Debug: Log the response plans
+	log.Printf("Service: Response plans: %+v", responsePlans)
+
+	return responsePlans, nil
 }
 
-// GetSubscriptionPlanCount returns the total count of subscription plans
-func (s *SubscriptionPlanService) GetSubscriptionPlanCount(isActive *bool) (int, error) {
-	count, err := s.db.GetSubscriptionPlanCount(isActive)
+// CheckAndHandleExpiredPromotions checks for expired promotions and deactivates them
+func (s *SubscriptionPlanService) CheckAndHandleExpiredPromotions(ctx context.Context) error {
+	plans, err := s.db.GetAllSubscriptionPlans()
 	if err != nil {
-		return 0, fmt.Errorf("failed to get subscription plan count: %w", err)
-	}
-	return count, nil
-}
-
-// validateSubscriptionPlanRequest validates a subscription plan request
-func (s *SubscriptionPlanService) validateSubscriptionPlanRequest(req *SubscriptionPlanRequest) error {
-	if req.Name == "" {
-		return fmt.Errorf("name is required")
+		return fmt.Errorf("failed to get subscription plans: %w", err)
 	}
 
-	if req.Price < 0 {
-		return fmt.Errorf("price must be non-negative")
+	now := time.Now()
+	var expiredPromotions []int
+
+	for _, plan := range plans {
+		// Check if plan is promoted and has a promotion end date
+		if plan.IsPromoted && plan.PromotionEndDate.Valid {
+			// If promotion end date has passed, mark for deactivation
+			if plan.PromotionEndDate.Time.Before(now) {
+				expiredPromotions = append(expiredPromotions, plan.ID)
+			}
+		}
 	}
 
-	if req.IntervalCount < 1 {
-		return fmt.Errorf("interval count must be at least 1")
-	}
+	// Deactivate expired promotions
+	for _, planID := range expiredPromotions {
+		updates := map[string]interface{}{
+			"is_promoted":        false,
+			"is_active":          false,
+			"promotion_end_date": now, // Set to current time when deactivated
+			"updated_at":         now,
+		}
 
-	// Validate promotion end date
-	if req.IsPromoted && req.PromotionEndDate != nil {
-		if req.PromotionEndDate.Before(time.Now()) {
-			return fmt.Errorf("promotion end date cannot be in the past")
+		_, err := s.db.UpdateSubscriptionPlan(planID, updates)
+		if err != nil {
+			log.Printf("Service: Failed to deactivate expired promotion for plan %d: %v", planID, err)
+		} else {
+			log.Printf("Service: Deactivated expired promotion for plan %d", planID)
 		}
 	}
 
 	return nil
 }
 
-// convertToResponse converts a database subscription plan to a response
+// validateSubscriptionPlanRequest validates a subscription plan request
+func (s *SubscriptionPlanService) validateSubscriptionPlanRequest(req interface{}) error {
+	// Validation logic here
+	return nil
+}
+
+// convertToResponse converts a database subscription plan to response format
 func (s *SubscriptionPlanService) convertToResponse(plan *database.SubscriptionPlan) *SubscriptionPlanResponse {
 	response := &SubscriptionPlanResponse{
-		ID:            plan.ID,
+		ID:            strconv.Itoa(plan.ID), // Convert int ID to string for response
 		Name:          plan.Name,
 		Description:   plan.Description,
+		ShortDesc:     "", // Will be set below if valid
 		Price:         plan.Price,
 		Currency:      plan.Currency,
 		Interval:      plan.Interval,
 		IntervalCount: plan.IntervalCount,
 		IsActive:      plan.IsActive,
 		IsPromoted:    plan.IsPromoted,
+		SubType:       plan.SubType,
 		SortOrder:     plan.SortOrder,
 		CreatedAt:     plan.CreatedAt,
 		UpdatedAt:     plan.UpdatedAt,
+	}
+
+	// Handle nullable string fields
+	if plan.ShortDesc.Valid {
+		response.ShortDesc = plan.ShortDesc.String
 	}
 
 	if plan.StripePriceID.Valid {
@@ -323,18 +303,39 @@ func (s *SubscriptionPlanService) convertToResponse(plan *database.SubscriptionP
 		response.PromotionEndDate = &plan.PromotionEndDate.Time
 	}
 
+	if plan.PromotionStartDate.Valid {
+		response.PromotionStartDate = &plan.PromotionStartDate.Time
+	}
+
+	// Parse features JSON if available
 	if plan.Features.Valid {
 		var features []string
 		if err := json.Unmarshal([]byte(plan.Features.String), &features); err == nil {
 			response.Features = features
+		} else {
+			response.Features = []string{} // Empty array if parsing fails
 		}
+	} else {
+		response.Features = []string{} // Empty array if no features
+	}
+
+	// Parse promotion history JSON if available
+	if plan.PromotionHistory.Valid {
+		var promotionHistory []string
+		if err := json.Unmarshal([]byte(plan.PromotionHistory.String), &promotionHistory); err == nil {
+			response.PromotionHistory = promotionHistory
+		} else {
+			response.PromotionHistory = []string{} // Empty array if parsing fails
+		}
+	} else {
+		response.PromotionHistory = []string{} // Empty array if no history
 	}
 
 	return response
 }
 
-// logAuditEvent logs an audit event for subscription plan operations
+// logAuditEvent logs an audit event
 func (s *SubscriptionPlanService) logAuditEvent(eventType string, userID, resourceID int, metadata map[string]interface{}) {
-	// TODO: Integrate with existing audit system
-	log.Printf("AUDIT: %s - User: %d, Resource: %d, Metadata: %+v", eventType, userID, resourceID, metadata)
+	// Audit logging logic here
+	log.Printf("Service: Audit event: %s, User: %d, Resource: %d, Metadata: %v", eventType, userID, resourceID, metadata)
 }

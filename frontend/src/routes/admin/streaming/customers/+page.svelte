@@ -4,9 +4,9 @@
 
 	// Reactive variables
 	let isLoading = true;
-	let customers = [];
+	let subscribers = [];
 	let error = null;
-	let selectedCustomer = null;
+	let selectedSubscriber = null;
 	let showCustomerModal = false;
 	let showRefundModal = false;
 	let showCommunicationModal = false;

@@ -31,10 +31,10 @@
 			description: 'Manage user subscriptions'
 		},
 		{
-			name: 'Customers',
-			href: '/admin/streaming/customers',
+			name: 'Subscribers',
+			href: '/admin/streaming/subscribers',
 			icon: 'users',
-			description: 'Customer management and support'
+			description: 'Subscriber management and support'
 		},
 		{
 			name: 'Analytics',
@@ -42,18 +42,7 @@
 			icon: 'chart-bar',
 			description: 'Revenue and subscription analytics'
 		},
-		{
-			name: 'Promotions',
-			href: '/admin/streaming/promotions',
-			icon: 'tag',
-			description: 'Manage deals and promotions'
-		},
-		{
-			name: 'Events',
-			href: '/admin/streaming/events',
-			icon: 'calendar',
-			description: 'Event-based subscription deals'
-		},
+		
 		{
 			name: 'Settings',
 			href: '/admin/streaming/settings',

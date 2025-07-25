@@ -1,4 +1,8 @@
+import { onMount } from 'svelte';
+import { goto } from '$app/navigation';
+import { auth, initializeAuth, isAdmin } from '$lib/auth';
 import { api } from '$lib/api';
+import { showToast } from '$lib/toast';
 
 export interface AnalyticsPeriod {
 	period: '7d' | '30d' | '90d' | '1y';
@@ -55,20 +59,21 @@ export interface PlanMetrics {
 }
 
 export class StreamingAnalyticsService {
+	private static readonly BASE_PATH = '/admin/streaming/analytics';
+
 	/**
 	 * Get analytics overview data
 	 */
 	static async getAnalyticsOverview(params: AnalyticsPeriod): Promise<AnalyticsOverview> {
 		try {
-			const queryParams = new URLSearchParams({
-				period: params.period,
-				metric: params.metric
-			});
+			const queryParams = new URLSearchParams();
+			queryParams.append('period', params.period);
+			queryParams.append('metric', params.metric);
 
-			const response = await api.get(`/api/admin/streaming/analytics/overview?${queryParams}`);
+			const response = await api.get(`${this.BASE_PATH}/overview?${queryParams}`);
 			
 			if (response.data) {
-				return response.data;
+				return response.data as AnalyticsOverview;
 			} else {
 				throw new Error(response.error || 'Failed to load analytics data');
 			}
@@ -79,14 +84,14 @@ export class StreamingAnalyticsService {
 	}
 
 	/**
-	 * Get customer metrics
+	 * Get customer analytics
 	 */
 	static async getCustomerMetrics(): Promise<CustomerMetrics> {
 		try {
-			const response = await api.get('/api/admin/streaming/analytics/customers');
+			const response = await api.get(`${this.BASE_PATH}/customers`);
 			
 			if (response.data) {
-				return response.data;
+				return response.data as CustomerMetrics;
 			} else {
 				throw new Error(response.error || 'Failed to load customer metrics');
 			}
@@ -97,14 +102,14 @@ export class StreamingAnalyticsService {
 	}
 
 	/**
-	 * Get plan performance metrics
+	 * Get plan analytics
 	 */
 	static async getPlanMetrics(): Promise<PlanMetrics[]> {
 		try {
-			const response = await api.get('/api/admin/streaming/analytics/plans');
+			const response = await api.get(`${this.BASE_PATH}/plans`);
 			
 			if (response.data) {
-				return response.data.plans;
+				return (response.data as { plans: PlanMetrics[] }).plans;
 			} else {
 				throw new Error(response.error || 'Failed to load plan metrics');
 			}
@@ -115,14 +120,17 @@ export class StreamingAnalyticsService {
 	}
 
 	/**
-	 * Get revenue breakdown by period
+	 * Get revenue analytics
 	 */
 	static async getRevenueBreakdown(period: '7d' | '30d' | '90d' | '1y'): Promise<RevenueData[]> {
 		try {
-			const response = await api.get(`/api/admin/streaming/analytics/revenue?period=${period}`);
+			const queryParams = new URLSearchParams();
+			queryParams.append('period', period);
+
+			const response = await api.get(`${this.BASE_PATH}/revenue?${queryParams}`);
 			
 			if (response.data) {
-				return response.data.revenue_data;
+				return (response.data as { revenue_data: RevenueData[] }).revenue_data;
 			} else {
 				throw new Error(response.error || 'Failed to load revenue breakdown');
 			}
@@ -133,16 +141,19 @@ export class StreamingAnalyticsService {
 	}
 
 	/**
-	 * Get subscription growth data
+	 * Get subscription analytics
 	 */
 	static async getSubscriptionGrowth(period: '7d' | '30d' | '90d' | '1y'): Promise<SubscriptionData[]> {
 		try {
-			const response = await api.get(`/api/admin/streaming/analytics/subscriptions?period=${period}`);
+			const queryParams = new URLSearchParams();
+			queryParams.append('period', period);
+
+			const response = await api.get(`${this.BASE_PATH}/subscriptions?${queryParams}`);
 			
 			if (response.data) {
-				return response.data.subscription_data;
+				return (response.data as { subscription_data: SubscriptionData[] }).subscription_data;
 			} else {
-				throw new Error(response.error || 'Failed to load subscription growth data');
+				throw new Error(response.error || 'Failed to load subscription growth');
 			}
 		} catch (error) {
 			console.error('Error fetching subscription growth:', error);
@@ -151,14 +162,17 @@ export class StreamingAnalyticsService {
 	}
 
 	/**
-	 * Get churn analysis data
+	 * Get churn analytics
 	 */
 	static async getChurnAnalysis(period: '7d' | '30d' | '90d' | '1y'): Promise<ChurnData[]> {
 		try {
-			const response = await api.get(`/api/admin/streaming/analytics/churn?period=${period}`);
+			const queryParams = new URLSearchParams();
+			queryParams.append('period', period);
+
+			const response = await api.get(`${this.BASE_PATH}/churn?${queryParams}`);
 			
 			if (response.data) {
-				return response.data.churn_data;
+				return (response.data as { churn_data: ChurnData[] }).churn_data;
 			} else {
 				throw new Error(response.error || 'Failed to load churn analysis');
 			}
@@ -169,54 +183,61 @@ export class StreamingAnalyticsService {
 	}
 
 	/**
-	 * Export analytics report
+	 * Export analytics data
 	 */
-	static async exportAnalyticsReport(params: {
-		period: '7d' | '30d' | '90d' | '1y';
-		format: 'csv' | 'excel' | 'pdf';
-		include_charts?: boolean;
+	static async exportAnalyticsData(params: {
+		format: 'csv' | 'json' | 'excel';
+		period: string;
+		metrics?: string[];
 	}): Promise<Blob> {
 		try {
-			const queryParams = new URLSearchParams({
-				period: params.period,
-				format: params.format,
-				include_charts: params.include_charts?.toString() || 'false'
-			});
+			const queryParams = new URLSearchParams();
+			queryParams.append('format', params.format);
+			queryParams.append('period', params.period);
+			
+			if (params.metrics && params.metrics.length > 0) {
+				params.metrics.forEach(metric => {
+					queryParams.append('metrics', metric);
+				});
+			}
 
-			const response = await api.get(`/api/admin/streaming/analytics/export?${queryParams}`, {
-				responseType: 'blob'
-			});
+			const response = await api.get(`${this.BASE_PATH}/export?${queryParams}`);
 			
 			if (response.data) {
-				return response.data;
+				return response.data as Blob;
 			} else {
-				throw new Error(response.error || 'Failed to export analytics report');
+				throw new Error('Failed to export analytics data');
 			}
 		} catch (error) {
-			console.error('Error exporting analytics report:', error);
+			console.error('Error exporting analytics data:', error);
 			throw error;
 		}
 	}
 
 	/**
-	 * Get real-time metrics
+	 * Get real-time analytics
 	 */
-	static async getRealTimeMetrics(): Promise<{
+	static async getRealTimeAnalytics(): Promise<{
 		active_users: number;
 		revenue_today: number;
 		new_subscriptions_today: number;
 		cancellations_today: number;
 	}> {
 		try {
-			const response = await api.get('/api/admin/streaming/analytics/realtime');
+			const response = await api.get(`${this.BASE_PATH}/realtime`);
 			
 			if (response.data) {
-				return response.data;
+				return response.data as {
+					active_users: number;
+					revenue_today: number;
+					new_subscriptions_today: number;
+					cancellations_today: number;
+				};
 			} else {
 				throw new Error(response.error || 'Failed to load real-time metrics');
 			}
 		} catch (error) {
-			console.error('Error fetching real-time metrics:', error);
+			console.error('Error fetching real-time analytics:', error);
 			throw error;
 		}
 	}

@@ -7,15 +7,19 @@ export interface SubscriptionPlan {
 	short_desc: string;
 	price: number;
 	currency: string;
-	interval: 'monthly' | 'yearly' | 'weekly' | 'daily';
+	interval: 'month' | 'year' | 'week' | 'day';
 	interval_count: number;
 	features: string[];
 	is_active: boolean;
 	is_promoted: boolean;
 	promotion_end_date: string | null;
+	promotion_start_date: string | null;
+	promotion_history: string[];
+	sub_type: number; // 100 = standard plan, 300 = promotional plan
 	sort_order: number;
 	created_at: string;
 	updated_at: string;
+	is_deleted: boolean;
 }
 
 export interface CreateSubscriptionPlanData {
@@ -24,7 +28,7 @@ export interface CreateSubscriptionPlanData {
 	short_desc: string;
 	price: number;
 	currency: string;
-	interval: 'monthly' | 'yearly' | 'weekly' | 'daily';
+	interval: 'month' | 'year' | 'week' | 'day';
 	interval_count: number;
 	features: string[];
 	is_active: boolean;
@@ -37,39 +41,21 @@ export interface UpdateSubscriptionPlanData extends Partial<CreateSubscriptionPl
 	id: string;
 }
 
-export interface SubscriptionPlansResponse {
-	subscription_plans: SubscriptionPlan[];
-	total: number;
-	page: number;
-	limit: number;
-}
-
 export class StreamingSubscriptionService {
-	/**
-	 * Get all subscription plans with optional pagination and filters
-	 */
-	static async getSubscriptionPlans(params?: {
-		page?: number;
-		limit?: number;
-		search?: string;
-		status?: 'active' | 'inactive' | 'all';
-	}): Promise<SubscriptionPlansResponse> {
-		try {
-			const queryParams = new URLSearchParams();
-			if (params?.page) queryParams.append('page', params.page.toString());
-			if (params?.limit) queryParams.append('limit', params.limit.toString());
-			if (params?.search) queryParams.append('search', params.search);
-			if (params?.status) queryParams.append('status', params.status);
+	private static readonly BASE_PATH = '/admin/subscription-plans';
 
-			const response = await api.get(`/api/admin/subscription-plans?${queryParams}`);
-			
-			if (response.data) {
-				return response.data as SubscriptionPlansResponse;
-			} else {
-				throw new Error(response.error || 'Failed to load subscription plans');
-			}
-		} catch (error) {
-			console.error('Error fetching subscription plans:', error);
+	/**
+	 * Get all subscription plans
+	 */
+	static async getAll(): Promise<SubscriptionPlan[]> {
+		try {
+			console.log('StreamingSubscriptionService: Making request to:', this.BASE_PATH);
+			const response = await api.get(this.BASE_PATH);
+
+			console.log('StreamingSubscriptionService: Response received:', response);
+			return response.data as SubscriptionPlan[];
+		} catch (error) {	
+			console.error('StreamingSubscriptionService: Error fetching subscription plans:', error);
 			throw error;
 		}
 	}
@@ -77,15 +63,10 @@ export class StreamingSubscriptionService {
 	/**
 	 * Get a single subscription plan by ID
 	 */
-	static async getSubscriptionPlan(id: string): Promise<SubscriptionPlan> {
+	static async getById(id: string): Promise<SubscriptionPlan> {
 		try {
-			const response = await api.get(`/api/admin/subscription-plans/${id}`);
-			
-			if (response.data) {
-				return (response.data as { subscription_plan: SubscriptionPlan }).subscription_plan;
-			} else {
-				throw new Error(response.error || 'Failed to load subscription plan');
-			}
+			const response = await api.get(`${this.BASE_PATH}/${id}`);
+			return response.data as SubscriptionPlan;
 		} catch (error) {
 			console.error('Error fetching subscription plan:', error);
 			throw error;
@@ -95,15 +76,10 @@ export class StreamingSubscriptionService {
 	/**
 	 * Create a new subscription plan
 	 */
-	static async createSubscriptionPlan(data: CreateSubscriptionPlanData): Promise<SubscriptionPlan> {
+	static async create(data: CreateSubscriptionPlanData): Promise<SubscriptionPlan> {
 		try {
-			const response = await api.post('/api/admin/subscription-plans', data);
-			
-			if (response.data) {
-				return (response.data as { subscription_plan: SubscriptionPlan }).subscription_plan;
-			} else {
-				throw new Error(response.error || 'Failed to create subscription plan');
-			}
+			const response = await api.post(this.BASE_PATH, data);
+			return response.data as SubscriptionPlan;
 		} catch (error) {
 			console.error('Error creating subscription plan:', error);
 			throw error;
@@ -113,16 +89,10 @@ export class StreamingSubscriptionService {
 	/**
 	 * Update an existing subscription plan
 	 */
-	static async updateSubscriptionPlan(data: UpdateSubscriptionPlanData): Promise<SubscriptionPlan> {
+	static async update(data: UpdateSubscriptionPlanData): Promise<SubscriptionPlan> {
 		try {
-			const { id, ...updateData } = data;
-			const response = await api.put(`/api/admin/subscription-plans/${id}`, updateData);
-			
-			if (response.data) {
-				return (response.data as { subscription_plan: SubscriptionPlan }).subscription_plan;
-			} else {
-				throw new Error(response.error || 'Failed to update subscription plan');
-			}
+			const response = await api.put(`${this.BASE_PATH}/${data.id}`, data);
+			return response.data as SubscriptionPlan;
 		} catch (error) {
 			console.error('Error updating subscription plan:', error);
 			throw error;
@@ -130,15 +100,11 @@ export class StreamingSubscriptionService {
 	}
 
 	/**
-	 * Delete a subscription plan
+	 * Soft delete a subscription plan (creates a timestamp in DB "deleted_at" column and "is_deleted" boolean to true)
 	 */
-	static async deleteSubscriptionPlan(id: string): Promise<void> {
+	static async delete(id: string): Promise<void> {
 		try {
-			const response = await api.delete(`/api/admin/subscription-plans/${id}`);
-			
-			if (!response.data) {
-				throw new Error(response.error || 'Failed to delete subscription plan');
-			}
+			await api.delete(`${this.BASE_PATH}/${id}`);
 		} catch (error) {
 			console.error('Error deleting subscription plan:', error);
 			throw error;
@@ -148,92 +114,25 @@ export class StreamingSubscriptionService {
 	/**
 	 * Toggle subscription plan active status
 	 */
-	static async toggleSubscriptionPlanStatus(id: string, isActive: boolean): Promise<SubscriptionPlan> {
+	static async toggleStatus(id: string, isActive: boolean): Promise<SubscriptionPlan> {
 		try {
-			const response = await api.put(`/api/admin/subscription-plans/${id}/status`, {
-				is_active: isActive
-			});
-			
-			if (response.data) {
-				return (response.data as { subscription_plan: SubscriptionPlan }).subscription_plan;
-			} else {
-				throw new Error(response.error || 'Failed to update subscription plan status');
-			}
+			const response = await api.put(`${this.BASE_PATH}/${id}/status`, { is_active: isActive });
+			return response.data as SubscriptionPlan;
 		} catch (error) {
-			console.error('Error updating subscription plan status:', error);
+			console.error('Error toggling subscription plan status:', error);
 			throw error;
 		}
 	}
 
 	/**
-	 * Update subscription plan promotion status
+	 * Toggle promotion status
 	 */
-	static async updatePromotionStatus(
-		id: string, 
-		isPromoted: boolean, 
-		promotionEndDate?: string
-	): Promise<SubscriptionPlan> {
+	static async togglePromotion(id: string, isPromoted: boolean): Promise<SubscriptionPlan> {
 		try {
-			const response = await api.put(`/api/admin/subscription-plans/${id}/promotion`, {
-				is_promoted: isPromoted,
-				promotion_end_date: promotionEndDate
-			});
-			
-			if (response.data) {
-				return (response.data as { subscription_plan: SubscriptionPlan }).subscription_plan;
-			} else {
-				throw new Error(response.error || 'Failed to update promotion status');
-			}
+			const response = await api.put(`${this.BASE_PATH}/${id}/promotion`, { is_promoted: isPromoted });
+			return response.data as SubscriptionPlan;
 		} catch (error) {
-			console.error('Error updating promotion status:', error);
-			throw error;
-		}
-	}
-
-	/**
-	 * Reorder subscription plans
-	 */
-	static async reorderSubscriptionPlans(planIds: string[]): Promise<void> {
-		try {
-			const response = await api.post('/api/admin/subscription-plans/reorder', {
-				plan_ids: planIds
-			});
-			
-			if (!response.data) {
-				throw new Error(response.error || 'Failed to reorder subscription plans');
-			}
-		} catch (error) {
-			console.error('Error reordering subscription plans:', error);
-			throw error;
-		}
-	}
-
-	/**
-	 * Get subscription plan statistics
-	 */
-	static async getSubscriptionPlanStats(): Promise<{
-		total_plans: number;
-		active_plans: number;
-		promoted_plans: number;
-		total_subscribers: number;
-		revenue_this_month: number;
-	}> {
-		try {
-			const response = await api.get('/api/admin/subscription-plans/stats');
-			
-			if (response.data) {
-				return response.data as {
-					total_plans: number;
-					active_plans: number;
-					promoted_plans: number;
-					total_subscribers: number;
-					revenue_this_month: number;
-				};
-			} else {
-				throw new Error(response.error || 'Failed to load subscription plan stats');
-			}
-		} catch (error) {
-			console.error('Error fetching subscription plan stats:', error);
+			console.error('Error toggling promotion status:', error);
 			throw error;
 		}
 	}

@@ -241,7 +241,8 @@ func UpdateStreamingSubscriptionHandler(db *database.DB, stripeService *services
 			updates["plan_id"] = req.PlanID
 		}
 
-		if err := db.UpdateSubscriptionPlan(id, updates); err != nil {
+		_, err = db.UpdateSubscriptionPlan(id, updates)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update subscription", "details": err.Error()})
 			return
 		}

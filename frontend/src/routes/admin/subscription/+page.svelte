@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { fly } from 'svelte/transition';
 	import { auth } from '$lib/auth';
 	import { subscriptionService, subscriptionUtils, type SubscriptionPlan } from '$lib/subscription';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import Navigation from '$lib/components/Navigation.svelte';
 	import Footer from '$lib/components/Footer.svelte';
-	import { StarIcon, CheckIcon, XMarkIcon, ExclamationTriangleIcon } from '@heroicons/svelte/24/outline';
 
 	let plans: SubscriptionPlan[] = [];
 	let loading = true;
@@ -168,7 +168,9 @@
 		{#if showPromotionBanner}
 			<div class="promotion-banner" in:fly={{ y: -20, duration: 300 }}>
 				<div class="promotion-content">
-					<StarIcon class="star-icon" />
+					<svg class="star-icon" viewBox="0 0 24 24" fill="currentColor">
+						<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+					</svg>
 					<div class="promotion-text">
 						<h3>Limited Time Offers!</h3>
 						<p>Special deals on premium plans - {promotionEndDate ? formatPromotionEndDate(promotionEndDate) : 'Limited time only'}</p>
@@ -247,9 +249,11 @@
 
 						<div class="plan-features">
 							<ul>
-								{#each plan.features as feature}
+								{#each (plan.features || []) as feature}
 									<li>
-										<CheckIcon class="check-icon" />
+										<svg class="check-icon" viewBox="0 0 24 24" fill="currentColor">
+											<path d="M20 6L9 17l-5-5" />
+										</svg>
 										{feature}
 									</li>
 								{/each}
