@@ -167,35 +167,24 @@
 				</div>
 
 				<!-- Settings -->
-				<div class="form-grid">
-					<div class="form-group">
-						<div class="checkbox-group">
-							<input
-								id="is_active"
-								type="checkbox"
-								bind:checked={formData.is_active}
-								class="form-checkbox"
-							/>
-							<label for="is_active" class="checkbox-label">Active</label>
-						</div>
-						<div class="checkbox-group">
-							<input
-								id="is_promoted"
-								type="checkbox"
-								bind:checked={formData.is_promoted}
-								class="form-checkbox"
-							/>
-							<label for="is_promoted" class="checkbox-label">Promoted</label>
-						</div>
-					</div>
-					<div class="form-group">
-						<label for="sort_order" class="form-label">Sort Order</label>
+				<div class="form-group">
+					<div class="checkbox-group">
 						<input
-							id="sort_order"
-							type="number"
-							bind:value={formData.sort_order}
-							class="form-input"
+							id="is_active"
+							type="checkbox"
+							bind:checked={formData.is_active}
+							class="form-checkbox"
 						/>
+						<label for="is_active" class="checkbox-label">Active</label>
+					</div>
+					<div class="checkbox-group">
+						<input
+							id="is_promoted"
+							type="checkbox"
+							bind:checked={formData.is_promoted}
+							class="form-checkbox"
+						/>
+						<label for="is_promoted" class="checkbox-label">Promoted</label>
 					</div>
 				</div>
 

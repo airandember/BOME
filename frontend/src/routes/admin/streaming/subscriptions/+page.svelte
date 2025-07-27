@@ -33,8 +33,7 @@
 		features: [],
 		is_active: true,
 		is_promoted: false,
-		promotion_end_date: null,
-		sort_order: 0
+		promotion_end_date: null
 	};
 
 	// Optimistic updates
@@ -99,8 +98,8 @@
 	// --- GROUPING LOGIC ---
 	// Group plans by sub_type and is_active for display
 	$: groupedPlans = {
-		promoted: subscriptionPlans.filter(p => p.sub_type === 300 && p.is_active),
-		active: subscriptionPlans.filter(p => p.sub_type === 100 && p.is_active),
+		promoted: subscriptionPlans.filter(p => (p.sub_type === 300 || p.is_promoted) && p.is_active),
+		active: subscriptionPlans.filter(p => (p.sub_type === 100 || !p.sub_type) && p.is_active && !p.is_promoted),
 		inactive: subscriptionPlans.filter(p => !p.is_active),
 	};
 
@@ -275,8 +274,7 @@
 			features: [...selectedPlan.features],
 			is_active: selectedPlan.is_active,
 			is_promoted: selectedPlan.is_promoted,
-			promotion_end_date: selectedPlan.promotion_end_date,
-			sort_order: selectedPlan.sort_order
+			promotion_end_date: selectedPlan.promotion_end_date
 		};
 		showEditModal = true;
 	}
@@ -307,8 +305,7 @@
 			features: [],
 			is_active: true,
 			is_promoted: false,
-			promotion_end_date: null,
-			sort_order: 0
+			promotion_end_date: null
 		};
 	}
 

@@ -15,7 +15,7 @@ export interface SubscriptionPlan {
 	promotion_end_date: string | null;
 	promotion_start_date: string | null;
 	promotion_history: string[];
-	sub_type: number; // 100 = standard plan, 300 = promotional plan
+	sub_type?: number; // 100 = standard plan, 300 = promotional plan (optional for backward compatibility)
 	sort_order: number;
 	created_at: string;
 	updated_at: string;
@@ -34,7 +34,6 @@ export interface CreateSubscriptionPlanData {
 	is_active: boolean;
 	is_promoted: boolean;
 	promotion_end_date: string | null;
-	sort_order: number;
 }
 
 export interface UpdateSubscriptionPlanData extends Partial<CreateSubscriptionPlanData> {

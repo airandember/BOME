@@ -84,7 +84,7 @@
 			</button>
 			
 			<!-- Show Deactivate/Activate button only for standard plans (sub_type = 100) -->
-			{#if plan.sub_type === 100}
+			{#if plan.sub_type === 100 || !plan.sub_type}
 				<button 
 					class="btn" 
 					class:btn-secondary={plan.is_active} 
@@ -100,7 +100,7 @@
 			{/if}
 			
 			<!-- Show promotion button for promotional plans (sub_type = 300) -->
-			{#if plan.sub_type === 300}
+			{#if plan.sub_type === 300 || plan.is_promoted}
 				<button
 					class="btn {plan.is_active ? 'btn-secondary' : 'btn-primary'}"
 					on:click={handleTogglePromotion}

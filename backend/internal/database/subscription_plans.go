@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt" // Added for debugging
 
 	// Added for logging
@@ -209,11 +210,50 @@ func (db *DB) UpdateSubscriptionPlan(id int, updates map[string]interface{}) (*S
 	setParts := []string{}
 	args := []interface{}{}
 	argIdx := 1
+
+	// Process updates and handle special field conversions
 	for k, v := range updates {
-		setParts = append(setParts, fmt.Sprintf("%s = $%d", k, argIdx))
-		args = append(args, v)
+		// Handle features field - convert []string to JSON string
+		if k == "features" {
+			if features, ok := v.([]string); ok {
+				featuresJSON, err := json.Marshal(features)
+				if err != nil {
+					return nil, fmt.Errorf("failed to marshal features to JSON: %w", err)
+				}
+				setParts = append(setParts, fmt.Sprintf("%s = $%d", k, argIdx))
+				args = append(args, string(featuresJSON))
+			} else if features, ok := v.([]interface{}); ok {
+				// Handle empty array case
+				if len(features) == 0 {
+					setParts = append(setParts, fmt.Sprintf("%s = $%d", k, argIdx))
+					args = append(args, "[]")
+				} else {
+					// Convert []interface{} to []string then to JSON
+					featuresStr := make([]string, len(features))
+					for i, feature := range features {
+						if str, ok := feature.(string); ok {
+							featuresStr[i] = str
+						} else {
+							return nil, fmt.Errorf("invalid feature type at index %d", i)
+						}
+					}
+					featuresJSON, err := json.Marshal(featuresStr)
+					if err != nil {
+						return nil, fmt.Errorf("failed to marshal features to JSON: %w", err)
+					}
+					setParts = append(setParts, fmt.Sprintf("%s = $%d", k, argIdx))
+					args = append(args, string(featuresJSON))
+				}
+			} else {
+				return nil, fmt.Errorf("invalid features type: %T", v)
+			}
+		} else {
+			setParts = append(setParts, fmt.Sprintf("%s = $%d", k, argIdx))
+			args = append(args, v)
+		}
 		argIdx++
 	}
+
 	setParts = append(setParts, fmt.Sprintf("updated_at = NOW()"))
 	query := fmt.Sprintf(`
 		UPDATE subscription_plans SET %s WHERE id = $%d 
