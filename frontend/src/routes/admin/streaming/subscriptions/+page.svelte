@@ -4,12 +4,14 @@
 	import { StreamingSubscriptionService, type SubscriptionPlan, type CreateSubscriptionPlanData } from '$lib/services/streaming-subscriptions';
 	import { showToast } from '$lib/toast';
 	import { auth } from '$lib/auth';
+	import { isoToDateInput } from '$lib/utils/date';
 	
 	// Components
 	import SubscriptionHeader from './components/SubscriptionHeader.svelte';
 	import SubscriptionAccordion from './components/SubscriptionAccordion.svelte';
 	import PlanCard from './components/PlanCard.svelte';
 	import PlanModal from './components/PlanModal.svelte';
+	import PlanDetailsModal from './components/PlanDetailsModal.svelte';
 
 	// State
 	let isLoading = true;
@@ -21,7 +23,11 @@
 	let isSubmitting = false;
 	let activeAccordion: string | null = 'active';
 
-	// Form data
+	// Modal state
+	let showDetailsModal = false;
+	let detailsPlan: SubscriptionPlan | null = null;
+
+	// Initialize form data
 	let formData: CreateSubscriptionPlanData = {
 		name: '',
 		description: '',
@@ -30,9 +36,11 @@
 		currency: 'USD',
 		interval: 'month',
 		interval_count: 1,
+		stripe_price_id: '',
 		features: [],
 		is_active: true,
-		is_promoted: false,
+		sub_type: 'stnd',
+		promotion_start_date: null,
 		promotion_end_date: null
 	};
 
@@ -63,6 +71,9 @@
 			const allPlans = await StreamingSubscriptionService.getAll();
 			console.log('loadPlans: Received plans:', allPlans);
 			subscriptionPlans = [...allPlans]; // Immutable update
+			
+			// Check for expired promotions and deactivate them
+			await checkAndDeactivateExpiredPromotions();
 		} catch (err) {
 			console.error('Load plans error', err);
 			showToast('Failed to load plans', 'error');
@@ -71,10 +82,63 @@
 		}
 	}
 
+	// Check for expired promotions and deactivate them
+	async function checkAndDeactivateExpiredPromotions() {
+		const now = new Date();
+		const expiredPromotions = subscriptionPlans.filter(plan => {
+			if (plan.sub_type !== 'prmo' || !plan.is_active) return false;
+			
+			const endDate = plan.promotion_end_date ? new Date(plan.promotion_end_date) : null;
+			return endDate && now > endDate;
+		});
+
+		if (expiredPromotions.length > 0) {
+			console.log(`Found ${expiredPromotions.length} expired promotions, deactivating...`);
+			
+			for (const plan of expiredPromotions) {
+				try {
+					// Optimistic update
+					addOptimisticUpdate(plan.id, { is_active: false });
+					subscriptionPlans = subscriptionPlans.map(p => 
+						p.id === plan.id ? { ...p, is_active: false } : p
+					);
+
+					// Call backend to deactivate
+					const updatedPlan = await StreamingSubscriptionService.toggleStatus(plan.id, false);
+					removeOptimisticUpdate(plan.id);
+					
+					// Update with server response
+					subscriptionPlans = subscriptionPlans.map(p => 
+						p.id === plan.id ? updatedPlan : p
+					);
+					
+					console.log(`Deactivated expired promotion: ${plan.name}`);
+				} catch (err) {
+					console.error(`Failed to deactivate expired promotion ${plan.name}:`, err);
+					removeOptimisticUpdate(plan.id);
+					// Revert optimistic update
+					subscriptionPlans = subscriptionPlans.map(p => 
+						p.id === plan.id ? plan : p
+					);
+				}
+			}
+			
+			if (expiredPromotions.length > 0) {
+				showToast(`${expiredPromotions.length} expired promotion(s) deactivated`, 'info');
+			}
+		}
+	}
+
 	// --- CRUD: UPDATE ---
 	async function editPlan(id: string, updates: Partial<SubscriptionPlan>) {
 		try {
-			const updatedPlan = await StreamingSubscriptionService.update({ id, ...updates });
+			// Ensure sub_type is properly typed if it exists in updates
+			const typedUpdates: any = { ...updates };
+			if (typedUpdates.sub_type && typeof typedUpdates.sub_type === 'string') {
+				typedUpdates.sub_type = typedUpdates.sub_type as 'stnd' | 'prmo';
+			}
+			
+			const updatedPlan = await StreamingSubscriptionService.update({ id, ...typedUpdates });
 			subscriptionPlans = subscriptionPlans.map(p => p.id === id ? updatedPlan : p); // Immutable update
 			showToast('Plan updated successfully', 'success');
 		} catch (err) {
@@ -98,9 +162,9 @@
 	// --- GROUPING LOGIC ---
 	// Group plans by sub_type and is_active for display
 	$: groupedPlans = {
-		promoted: subscriptionPlans.filter(p => (p.sub_type === 300 || p.is_promoted) && p.is_active),
-		active: subscriptionPlans.filter(p => (p.sub_type === 100 || !p.sub_type) && p.is_active && !p.is_promoted),
-		inactive: subscriptionPlans.filter(p => !p.is_active),
+		promoted: subscriptionPlans.filter(p => p && p.sub_type === "prmo" && p.is_active),
+		active: subscriptionPlans.filter(p => p && p.sub_type === "stnd" && p.is_active),
+		inactive: subscriptionPlans.filter(p => p && !p.is_active),
 	};
 
 	// --- DOCUMENTATION ---
@@ -115,6 +179,12 @@
 	// Toggle accordion
 	function toggleAccordion(section: string) {
 		activeAccordion = activeAccordion === section ? null : section;
+	}
+
+	// Handle view details
+	function handleViewDetails(plan: SubscriptionPlan) {
+		detailsPlan = plan;
+		showDetailsModal = true;
 	}
 
 	// Optimistic update helpers
@@ -133,10 +203,16 @@
 		try {
 			isSubmitting = true;
 			const newPlan = await StreamingSubscriptionService.create(formData);
-			showCreateModal = false;
-			resetForm();
-			subscriptionPlans = [...subscriptionPlans, newPlan];
-			showToast('Subscription plan created successfully', 'success');
+			
+			// Only add to array if we got a valid response
+			if (newPlan && newPlan.id) {
+				showCreateModal = false;
+				resetForm();
+				subscriptionPlans = [...subscriptionPlans, newPlan];
+				showToast('Subscription plan created successfully', 'success');
+			} else {
+				throw new Error('Invalid response from server');
+			}
 		} catch (err) {
 			console.error('Error creating subscription plan:', err);
 			showToast('Failed to create subscription plan', 'error');
@@ -206,19 +282,63 @@
 	// Toggle promotion status with optimistic updates
 	async function togglePromotionStatus(plan: SubscriptionPlan) {
 		const planId = plan.id;
-		const newPromotionStatus = !plan.is_promoted;
+		const isCurrentlyPromoted = plan.sub_type === "prmo";
+		const isCurrentlyActive = plan.is_active;
 		
 		console.log(`=== Toggle Promotion Status ===`);
 		console.log(`Plan ID: ${planId}`);
-		console.log(`Current is_promoted: ${plan.is_promoted}`);
-		console.log(`New is_promoted: ${newPromotionStatus}`);
 		console.log(`Current sub_type: ${plan.sub_type}`);
+		console.log(`Current is_active: ${isCurrentlyActive}`);
+		console.log(`Is currently promoted: ${isCurrentlyPromoted}`);
 
-		// Optimistic update
+		// If plan is inactive, just activate it without changing sub_type
+		if (!isCurrentlyActive) {
+			console.log(`Plan is inactive, activating without changing sub_type`);
+			
+			// Optimistic update - only change is_active
+			const optimisticUpdate = {
+				...plan,
+				is_active: true
+			};
+
+			optimisticUpdates.set(planId, optimisticUpdate);
+			subscriptionPlans = subscriptionPlans.map(p => 
+				p.id === planId ? optimisticUpdate : p
+			);
+
+			try {
+				const updatedPlan = await StreamingSubscriptionService.toggleStatus(planId, true);
+				
+				if (!updatedPlan) {
+					throw new Error('No response received from server');
+				}
+				
+				subscriptionPlans = subscriptionPlans.map(p => 
+					p.id === planId ? updatedPlan : p
+				);
+				
+				console.log(`Plan activated successfully:`, updatedPlan);
+				showToast('Plan activated successfully', 'success');
+			} catch (error) {
+				console.error('Error activating plan:', error);
+				subscriptionPlans = subscriptionPlans.map(p => 
+					p.id === planId ? plan : p
+				);
+				showToast('Failed to activate plan', 'error');
+			} finally {
+				optimisticUpdates.delete(planId);
+			}
+			return;
+		}
+
+		// If plan is active, toggle promotion status (change sub_type)
+		const newPromotionStatus = !isCurrentlyPromoted;
+		console.log(`Plan is active, toggling promotion status to: ${newPromotionStatus}`);
+
+		// Optimistic update - change sub_type and set is_active to false when ending promotion
 		const optimisticUpdate = {
 			...plan,
-			is_promoted: newPromotionStatus,
-			sub_type: newPromotionStatus ? 300 : 100, // Set sub_type based on promotion status
+			sub_type: newPromotionStatus ? "prmo" : "stnd",
 			is_active: newPromotionStatus ? true : false // When ending promotion, set to inactive
 		};
 
@@ -230,12 +350,10 @@
 		try {
 			const updatedPlan = await StreamingSubscriptionService.togglePromotion(planId, newPromotionStatus);
 			
-			// Check if we got a valid response
 			if (!updatedPlan) {
 				throw new Error('No response received from server');
 			}
 			
-			// Update with real data from server
 			subscriptionPlans = subscriptionPlans.map(p => 
 				p.id === planId ? updatedPlan : p
 			);
@@ -246,12 +364,9 @@
 			showToast(`Plan ${newPromotionStatus ? 'promoted' : 'promotion ended'} successfully`, 'success');
 		} catch (error) {
 			console.error('Error toggling promotion status:', error);
-			
-			// Revert optimistic update - restore the original plan
 			subscriptionPlans = subscriptionPlans.map(p => 
 				p.id === planId ? plan : p
 			);
-			
 			showToast(`Failed to ${newPromotionStatus ? 'promote' : 'end promotion for'} plan`, 'error');
 		} finally {
 			optimisticUpdates.delete(planId);
@@ -259,8 +374,8 @@
 	}
 
 	// Event handlers
-	function handleEdit(event: CustomEvent) {
-		selectedPlan = event.detail.plan;
+	function handleEdit(plan: SubscriptionPlan) {
+		selectedPlan = plan;
 		if (!selectedPlan) return;
 		
 		formData = {
@@ -271,26 +386,28 @@
 			currency: selectedPlan.currency,
 			interval: selectedPlan.interval,
 			interval_count: selectedPlan.interval_count,
+			stripe_price_id: selectedPlan.stripe_price_id || '',
 			features: [...selectedPlan.features],
 			is_active: selectedPlan.is_active,
-			is_promoted: selectedPlan.is_promoted,
-			promotion_end_date: selectedPlan.promotion_end_date
+			sub_type: selectedPlan.sub_type as 'stnd' | 'prmo',
+			promotion_start_date: selectedPlan.promotion_start_date ? isoToDateInput(selectedPlan.promotion_start_date) : null,
+			promotion_end_date: selectedPlan.promotion_end_date ? isoToDateInput(selectedPlan.promotion_end_date) : null
 		};
 		showEditModal = true;
 	}
 
-	function handleDelete(event: CustomEvent) {
-		selectedPlan = event.detail.plan;
+	function handleDelete(plan: SubscriptionPlan) {
+		selectedPlan = plan;
 		showDeleteModal = true;
 	}
 
-	function handleToggleStatus(event: CustomEvent) {
-		togglePlanStatus(event.detail.plan);
+	function handleToggleStatus(plan: SubscriptionPlan) {
+		togglePlanStatus(plan);
 	}
 
-	function handleTogglePromotion(event: CustomEvent) {
+	function handleTogglePromotion(plan: SubscriptionPlan) {
 		console.log("Here we GO!")
-		togglePromotionStatus(event.detail.plan);
+		togglePromotionStatus(plan);
 	}
 
 	function resetForm() {
@@ -302,9 +419,11 @@
 			currency: 'USD',
 			interval: 'month',
 			interval_count: 1,
+			stripe_price_id: '',
 			features: [],
 			is_active: true,
-			is_promoted: false,
+			sub_type: 'stnd',
+			promotion_start_date: null,
 			promotion_end_date: null
 		};
 	}
@@ -315,7 +434,7 @@
 	});
 </script>
 
-<div class="subscription-content" transition:fade>
+<div class="subscription-content p-0" transition:fade>
 	{#if isLoading}
 		<div class="loading-state">
 			<div class="loading-spinner"></div>
@@ -341,9 +460,10 @@
 					<PlanCard 
 						{plan} 
 						{isOptimisticallyUpdating}
-						on:edit={handleEdit}
-						on:toggleStatus={handleToggleStatus}
-						on:togglePromotion={handleTogglePromotion}
+						onEdit={handleEdit}
+						onToggleStatus={handleToggleStatus}
+						onTogglePromotion={handleTogglePromotion}
+						onViewDetails={handleViewDetails}
 					/>
 				{/each}
 			</SubscriptionAccordion>
@@ -361,9 +481,10 @@
 					<PlanCard 
 						{plan} 
 						{isOptimisticallyUpdating}
-						on:edit={handleEdit}
-						on:toggleStatus={handleToggleStatus}
-						on:togglePromotion={handleTogglePromotion}
+						onEdit={handleEdit}
+						onToggleStatus={handleToggleStatus}
+						onTogglePromotion={handleTogglePromotion}
+						onViewDetails={handleViewDetails}
 					/>
 				{/each}
 			</SubscriptionAccordion>
@@ -381,10 +502,10 @@
 					<PlanCard 
 						{plan} 
 						{isOptimisticallyUpdating}
-						on:edit={handleEdit}
-						on:delete={handleDelete}
-						on:toggleStatus={handleToggleStatus}
-						on:togglePromotion={handleTogglePromotion}
+						onEdit={handleEdit}
+						onToggleStatus={handleToggleStatus}
+						onTogglePromotion={handleTogglePromotion}
+						onViewDetails={handleViewDetails}
 					/>
 				{/each}
 			</SubscriptionAccordion>
@@ -411,6 +532,11 @@
 	mode="edit"
 	on:submit={updateSubscriptionPlan}
 	on:cancel={() => showEditModal = false}
+/>
+
+<PlanDetailsModal
+	bind:isOpen={showDetailsModal}
+	plan={detailsPlan}
 />
 
 <!-- Delete Confirmation Modal -->

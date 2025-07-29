@@ -7,16 +7,16 @@
 	// Reactive statistics
 	$: totalPlans = subscriptionPlans?.length || 0;
 	$: activePlansCount = subscriptionPlans?.filter(p => p?.is_active)?.length || 0;
-	$: promotedPlansCount = subscriptionPlans?.filter(p => p?.is_promoted)?.length || 0;
+	$: promotedPlansCount = subscriptionPlans?.filter(p => p?.sub_type === "prmo")?.length || 0;
 	$: inactivePlansCount = subscriptionPlans?.filter(p => !p?.is_active)?.length || 0;
 </script>
 
-<div class="subscription-header">
-	<div class="header-content">
-		<div class="header-title">
+<div class="subscription-header p-0">
+	<div class="header-content p-0">
+		<!--<div class="header-title">
 			<h1>Subscription Plans</h1>
 			<p>Manage your streaming subscription plans and promotions</p>
-		</div>
+		</div>-->
 		
 		<div class="subscription-stats">
 			<div class="stat-item">

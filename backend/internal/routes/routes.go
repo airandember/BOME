@@ -78,6 +78,7 @@ func SetupRoutes(
 	stripeService *services.StripeService,
 	spacesService *services.SpacesService,
 	emailService *services.EmailService,
+	biService *services.BusinessIntelligenceService,
 ) {
 	// Debug logging
 	fmt.Printf("Setting up routes...\n")
@@ -98,12 +99,14 @@ func SetupRoutes(
 	// Admin routes
 	admin := v1.Group("/admin")
 	SetupAdminRoutes(admin, db)
-	SetupAnalyticsRoutes(admin, db)
-	SetupMonitoringRoutes(admin, db)
+
+	// Create plan history service for analytics
+	planHistoryService := services.NewPlanHistoryService(db)
+	SetupAnalyticsRoutes(admin, db, planHistoryService)
 
 	// Create admin cache service
 	analyticsService := services.NewSubscriptionAnalyticsService(db)
-	SetupAdminStreamingRoutes(router, db, stripeService, analyticsService)
+	SetupAdminStreamingRoutes(router, db, stripeService, analyticsService, biService)
 	SetupMasterVideoRoutes(admin, db, bunnyService)
 
 	// Initialize subscription services

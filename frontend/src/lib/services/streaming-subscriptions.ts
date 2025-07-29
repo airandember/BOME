@@ -9,14 +9,14 @@ export interface SubscriptionPlan {
 	currency: string;
 	interval: 'month' | 'year' | 'week' | 'day';
 	interval_count: number;
+	stripe_price_id: string | null;
 	features: string[];
 	is_active: boolean;
-	is_promoted: boolean;
 	promotion_end_date: string | null;
 	promotion_start_date: string | null;
-	promotion_history: string[];
-	sub_type?: number; // 100 = standard plan, 300 = promotional plan (optional for backward compatibility)
-	sort_order: number;
+	plan_change_history: string[]; // Renamed from promotion_history
+	promotion_metadata: Record<string, any>; // New field for promotion analytics
+	sub_type: string; // stnd = standard plan, prmo = promotional plan
 	created_at: string;
 	updated_at: string;
 	is_deleted: boolean;
@@ -30,14 +30,17 @@ export interface CreateSubscriptionPlanData {
 	currency: string;
 	interval: 'month' | 'year' | 'week' | 'day';
 	interval_count: number;
+	stripe_price_id: string;
 	features: string[];
 	is_active: boolean;
-	is_promoted: boolean;
+	promotion_start_date: string | null;
 	promotion_end_date: string | null;
+	sub_type: 'stnd' | 'prmo';
 }
 
 export interface UpdateSubscriptionPlanData extends Partial<CreateSubscriptionPlanData> {
 	id: string;
+	sub_type?: 'stnd' | 'prmo'; // Override to make sub_type optional for updates
 }
 
 export class StreamingSubscriptionService {
@@ -124,11 +127,12 @@ export class StreamingSubscriptionService {
 	}
 
 	/**
-	 * Toggle promotion status
+	 * Toggle promotion status (changes sub_type between 'stnd' and 'prmo')
 	 */
 	static async togglePromotion(id: string, isPromoted: boolean): Promise<SubscriptionPlan> {
 		try {
-			const response = await api.put(`${this.BASE_PATH}/${id}/promotion`, { is_promoted: isPromoted });
+			const subType = isPromoted ? 'prmo' : 'stnd';
+			const response = await api.put(`${this.BASE_PATH}/${id}/promotion`, { sub_type: subType });
 			return response.data as SubscriptionPlan;
 		} catch (error) {
 			console.error('Error toggling promotion status:', error);

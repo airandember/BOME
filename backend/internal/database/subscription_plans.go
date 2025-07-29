@@ -23,17 +23,16 @@ type SubscriptionPlan struct {
 	StripePriceID      sql.NullString
 	Features           sql.NullString // JSON array of features
 	IsActive           bool
-	IsPromoted         bool
 	PromotionEndDate   sql.NullTime
-	SortOrder          int
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	DeletedAt          sql.NullTime
 	ShortDesc          sql.NullString
 	IsDeleted          sql.NullBool // Nullable boolean for soft delete status
 	PromotionStartDate sql.NullTime
-	PromotionHistory   sql.NullString // JSON array of promotion history
-	SubType            int            // 100 = standard plan, 300 = promotional plan
+	PlanChangeHistory  sql.NullString // JSON array of plan change history (renamed from promotion_history)
+	PromotionMetadata  sql.NullString // JSON object of promotion-specific analytics
+	SubType            string         // stnd = standard plan, prmo = promotional plan
 }
 
 // CreateSubscriptionPlan creates a new subscription plan
@@ -42,30 +41,30 @@ func (db *DB) CreateSubscriptionPlan(plan *SubscriptionPlan) (*SubscriptionPlan,
 	query := `
 		INSERT INTO subscription_plans (
 			name, description, price, currency, interval, interval_count, stripe_price_id, features, 
-			is_active, is_promoted, promotion_end_date, sort_order, created_at, updated_at, deleted_at, 
-			short_desc, is_deleted, promotion_start_date, promotion_history, sub_type
+			is_active, promotion_end_date, created_at, updated_at, deleted_at,
+			short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
 		) RETURNING 
 			id, name, description, price, currency, interval, interval_count, stripe_price_id, features, 
-			is_active, is_promoted, promotion_end_date, sort_order, created_at, updated_at, deleted_at, 
-			short_desc, is_deleted, promotion_start_date, promotion_history, sub_type
+			is_active, promotion_end_date, created_at, updated_at, deleted_at,
+			short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 	`
 
 	row := db.QueryRow(query,
 		plan.Name, plan.Description, plan.Price, plan.Currency, plan.Interval, plan.IntervalCount,
-		plan.StripePriceID, plan.Features, plan.IsActive, plan.IsPromoted, plan.PromotionEndDate,
-		plan.SortOrder, plan.CreatedAt, plan.UpdatedAt, plan.DeletedAt, plan.ShortDesc, plan.IsDeleted,
-		plan.PromotionStartDate, plan.PromotionHistory, plan.SubType,
+		plan.StripePriceID, plan.Features, plan.IsActive, plan.PromotionEndDate, plan.CreatedAt,
+		plan.UpdatedAt, plan.DeletedAt, plan.ShortDesc, plan.IsDeleted, plan.PromotionStartDate,
+		plan.PlanChangeHistory, plan.PromotionMetadata, plan.SubType,
 	)
 
 	createdPlan := &SubscriptionPlan{}
 	err := row.Scan(
 		&createdPlan.ID, &createdPlan.Name, &createdPlan.Description, &createdPlan.Price, &createdPlan.Currency,
 		&createdPlan.Interval, &createdPlan.IntervalCount, &createdPlan.StripePriceID, &createdPlan.Features,
-		&createdPlan.IsActive, &createdPlan.IsPromoted, &createdPlan.PromotionEndDate, &createdPlan.SortOrder,
-		&createdPlan.CreatedAt, &createdPlan.UpdatedAt, &createdPlan.DeletedAt, &createdPlan.ShortDesc,
-		&createdPlan.IsDeleted, &createdPlan.PromotionStartDate, &createdPlan.PromotionHistory, &createdPlan.SubType,
+		&createdPlan.IsActive, &createdPlan.PromotionEndDate, &createdPlan.CreatedAt, &createdPlan.UpdatedAt,
+		&createdPlan.DeletedAt, &createdPlan.ShortDesc, &createdPlan.IsDeleted, &createdPlan.PromotionStartDate,
+		&createdPlan.PlanChangeHistory, &createdPlan.PromotionMetadata, &createdPlan.SubType,
 	)
 	if err != nil {
 		return nil, err
@@ -79,11 +78,11 @@ func (db *DB) CreateSubscriptionPlan(plan *SubscriptionPlan) (*SubscriptionPlan,
 func (db *DB) GetAllSubscriptionPlans() ([]*SubscriptionPlan, error) {
 	query := `
 		SELECT id, name, description, price, currency, interval, interval_count, stripe_price_id, features, 
-		       is_active, is_promoted, promotion_end_date, sort_order, created_at, updated_at, deleted_at, 
-		       short_desc, is_deleted, promotion_start_date, promotion_history, sub_type
+		       is_active, promotion_end_date, created_at, updated_at, deleted_at,
+		       short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 		FROM subscription_plans 
 		WHERE deleted_at IS NULL
-		ORDER BY sort_order ASC, created_at ASC
+		ORDER BY created_at ASC
 	`
 
 	rows, err := db.Query(query)
@@ -97,9 +96,9 @@ func (db *DB) GetAllSubscriptionPlans() ([]*SubscriptionPlan, error) {
 		plan := &SubscriptionPlan{}
 		err := rows.Scan(
 			&plan.ID, &plan.Name, &plan.Description, &plan.Price, &plan.Currency, &plan.Interval,
-			&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.IsPromoted,
-			&plan.PromotionEndDate, &plan.SortOrder, &plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt,
-			&plan.ShortDesc, &plan.IsDeleted, &plan.PromotionStartDate, &plan.PromotionHistory, &plan.SubType,
+			&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.PromotionEndDate,
+			&plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt, &plan.ShortDesc, &plan.IsDeleted,
+			&plan.PromotionStartDate, &plan.PlanChangeHistory, &plan.PromotionMetadata, &plan.SubType,
 		)
 		if err != nil {
 			return nil, err
@@ -120,14 +119,14 @@ func (db *DB) GetSubscriptionPlanByID(id int) (*SubscriptionPlan, error) {
 	plan := &SubscriptionPlan{}
 	err := db.QueryRow(`
 		SELECT id, name, description, price, currency, interval, interval_count, stripe_price_id, features, 
-		       is_active, is_promoted, promotion_end_date, sort_order, created_at, updated_at, deleted_at, 
-		       short_desc, is_deleted, promotion_start_date, promotion_history, sub_type
+		       is_active, promotion_end_date, created_at, updated_at, deleted_at,
+		       short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 		FROM subscription_plans WHERE id = $1
 	`, id).Scan(
 		&plan.ID, &plan.Name, &plan.Description, &plan.Price, &plan.Currency, &plan.Interval,
-		&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.IsPromoted,
-		&plan.PromotionEndDate, &plan.SortOrder, &plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt,
-		&plan.ShortDesc, &plan.IsDeleted, &plan.PromotionStartDate, &plan.PromotionHistory, &plan.SubType,
+		&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.PromotionEndDate,
+		&plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt, &plan.ShortDesc, &plan.IsDeleted,
+		&plan.PromotionStartDate, &plan.PlanChangeHistory, &plan.PromotionMetadata, &plan.SubType,
 	)
 	if err != nil {
 		return nil, err
@@ -140,11 +139,11 @@ func (db *DB) GetSubscriptionPlanByID(id int) (*SubscriptionPlan, error) {
 func (db *DB) GetActiveSubscriptionPlans() ([]*SubscriptionPlan, error) {
 	query := `
 		SELECT id, name, description, price, currency, interval, interval_count, stripe_price_id, features, 
-		       is_active, is_promoted, promotion_end_date, sort_order, created_at, updated_at, deleted_at, 
-		       short_desc, is_deleted, promotion_start_date, promotion_history, sub_type
+		       is_active, promotion_end_date, created_at, updated_at, deleted_at,
+		       short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 		FROM subscription_plans 
 		WHERE is_active = true AND deleted_at IS NULL
-		ORDER BY sort_order ASC, created_at ASC
+		ORDER BY created_at ASC
 	`
 
 	rows, err := db.Query(query)
@@ -158,9 +157,9 @@ func (db *DB) GetActiveSubscriptionPlans() ([]*SubscriptionPlan, error) {
 		plan := &SubscriptionPlan{}
 		err := rows.Scan(
 			&plan.ID, &plan.Name, &plan.Description, &plan.Price, &plan.Currency, &plan.Interval,
-			&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.IsPromoted,
-			&plan.PromotionEndDate, &plan.SortOrder, &plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt,
-			&plan.ShortDesc, &plan.IsDeleted, &plan.PromotionStartDate, &plan.PromotionHistory, &plan.SubType,
+			&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.PromotionEndDate,
+			&plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt, &plan.ShortDesc, &plan.IsDeleted,
+			&plan.PromotionStartDate, &plan.PlanChangeHistory, &plan.PromotionMetadata, &plan.SubType,
 		)
 		if err != nil {
 			return nil, err
@@ -174,11 +173,11 @@ func (db *DB) GetActiveSubscriptionPlans() ([]*SubscriptionPlan, error) {
 func (db *DB) GetPromotedSubscriptionPlans() ([]*SubscriptionPlan, error) {
 	query := `
 		SELECT id, name, description, price, currency, interval, interval_count, stripe_price_id, features, 
-		       is_active, is_promoted, promotion_end_date, sort_order, created_at, updated_at, deleted_at, 
-		       short_desc, is_deleted, promotion_start_date, promotion_history, sub_type
+		       is_active, promotion_end_date, created_at, updated_at, deleted_at, 
+		       short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 		FROM subscription_plans 
-		WHERE is_promoted = true AND deleted_at IS NULL
-		ORDER BY sort_order ASC, created_at ASC
+		WHERE sub_type = 'prmo' AND deleted_at IS NULL
+		ORDER BY created_at ASC
 	`
 
 	rows, err := db.Query(query)
@@ -192,9 +191,9 @@ func (db *DB) GetPromotedSubscriptionPlans() ([]*SubscriptionPlan, error) {
 		plan := &SubscriptionPlan{}
 		err := rows.Scan(
 			&plan.ID, &plan.Name, &plan.Description, &plan.Price, &plan.Currency, &plan.Interval,
-			&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.IsPromoted,
-			&plan.PromotionEndDate, &plan.SortOrder, &plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt,
-			&plan.ShortDesc, &plan.IsDeleted, &plan.PromotionStartDate, &plan.PromotionHistory, &plan.SubType,
+			&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.PromotionEndDate,
+			&plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt, &plan.ShortDesc, &plan.IsDeleted,
+			&plan.PromotionStartDate, &plan.PlanChangeHistory, &plan.PromotionMetadata, &plan.SubType,
 		)
 		if err != nil {
 			return nil, err
@@ -258,17 +257,17 @@ func (db *DB) UpdateSubscriptionPlan(id int, updates map[string]interface{}) (*S
 	query := fmt.Sprintf(`
 		UPDATE subscription_plans SET %s WHERE id = $%d 
 		RETURNING id, name, description, price, currency, interval, interval_count, stripe_price_id, features, 
-		          is_active, is_promoted, promotion_end_date, sort_order, created_at, updated_at, deleted_at, 
-		          short_desc, is_deleted, promotion_start_date, promotion_history, sub_type
+		          is_active, promotion_end_date, created_at, updated_at, deleted_at, 
+		          short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 	`, strings.Join(setParts, ", "), argIdx)
 	args = append(args, id)
 	row := db.QueryRow(query, args...)
 	plan := &SubscriptionPlan{}
 	if err := row.Scan(
 		&plan.ID, &plan.Name, &plan.Description, &plan.Price, &plan.Currency, &plan.Interval,
-		&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.IsPromoted,
-		&plan.PromotionEndDate, &plan.SortOrder, &plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt,
-		&plan.ShortDesc, &plan.IsDeleted, &plan.PromotionStartDate, &plan.PromotionHistory, &plan.SubType,
+		&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.PromotionEndDate,
+		&plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt, &plan.ShortDesc, &plan.IsDeleted,
+		&plan.PromotionStartDate, &plan.PlanChangeHistory, &plan.PromotionMetadata, &plan.SubType,
 	); err != nil {
 		log.Printf("UpdateSubscriptionPlan error: %v", err)
 		return nil, err
@@ -290,14 +289,14 @@ func (db *DB) GetSubscriptionPlanByStripePriceID(stripePriceID string) (*Subscri
 	plan := &SubscriptionPlan{}
 	err := db.QueryRow(`
 		SELECT id, name, description, price, currency, interval, interval_count, stripe_price_id, features, 
-		       is_active, is_promoted, promotion_end_date, sort_order, created_at, updated_at, deleted_at, 
-		       short_desc, is_deleted, promotion_start_date, promotion_history, sub_type
+		       is_active, promotion_end_date, created_at, updated_at, deleted_at, 
+		       short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 		FROM subscription_plans WHERE stripe_price_id = $1 AND deleted_at IS NULL
 	`, stripePriceID).Scan(
 		&plan.ID, &plan.Name, &plan.Description, &plan.Price, &plan.Currency, &plan.Interval,
-		&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.IsPromoted,
-		&plan.PromotionEndDate, &plan.SortOrder, &plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt,
-		&plan.ShortDesc, &plan.IsDeleted, &plan.PromotionStartDate, &plan.PromotionHistory, &plan.SubType,
+		&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.PromotionEndDate,
+		&plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt, &plan.ShortDesc, &plan.IsDeleted,
+		&plan.PromotionStartDate, &plan.PlanChangeHistory, &plan.PromotionMetadata, &plan.SubType,
 	)
 	if err != nil {
 		return nil, err
@@ -307,11 +306,11 @@ func (db *DB) GetSubscriptionPlanByStripePriceID(stripePriceID string) (*Subscri
 }
 
 // GetSubscriptionPlansWithFilters retrieves subscription plans with optional filters
-func (db *DB) GetSubscriptionPlansWithFilters(isActive *bool, isPromoted *bool, subType *int) ([]*SubscriptionPlan, error) {
+func (db *DB) GetSubscriptionPlansWithFilters(isActive *bool, subType *string) ([]*SubscriptionPlan, error) {
 	query := `
 		SELECT id, name, description, price, currency, interval, interval_count, stripe_price_id, features, 
-		       is_active, is_promoted, promotion_end_date, sort_order, created_at, updated_at, deleted_at, 
-		       short_desc, is_deleted, promotion_start_date, promotion_history, sub_type
+		       is_active, promotion_end_date, created_at, updated_at, deleted_at, 
+		       short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 		FROM subscription_plans WHERE deleted_at IS NULL
 	`
 
@@ -324,19 +323,13 @@ func (db *DB) GetSubscriptionPlansWithFilters(isActive *bool, isPromoted *bool, 
 		argCount++
 	}
 
-	if isPromoted != nil {
-		query += fmt.Sprintf(" AND is_promoted = $%d", argCount)
-		args = append(args, *isPromoted)
-		argCount++
-	}
-
 	if subType != nil {
 		query += fmt.Sprintf(" AND sub_type = $%d", argCount)
 		args = append(args, *subType)
 		argCount++
 	}
 
-	query += " ORDER BY sort_order ASC, created_at ASC"
+	query += " ORDER BY created_at ASC"
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -349,15 +342,20 @@ func (db *DB) GetSubscriptionPlansWithFilters(isActive *bool, isPromoted *bool, 
 		plan := &SubscriptionPlan{}
 		err := rows.Scan(
 			&plan.ID, &plan.Name, &plan.Description, &plan.Price, &plan.Currency, &plan.Interval,
-			&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.IsPromoted,
-			&plan.PromotionEndDate, &plan.SortOrder, &plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt,
-			&plan.ShortDesc, &plan.IsDeleted, &plan.PromotionStartDate, &plan.PromotionHistory, &plan.SubType,
+			&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.PromotionEndDate,
+			&plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt, &plan.ShortDesc, &plan.IsDeleted,
+			&plan.PromotionStartDate, &plan.PlanChangeHistory, &plan.PromotionMetadata, &plan.SubType,
 		)
 		if err != nil {
 			return nil, err
 		}
 		plans = append(plans, plan)
 	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return plans, nil
 }
 

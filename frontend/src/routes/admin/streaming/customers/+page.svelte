@@ -12,6 +12,7 @@
 	let showCommunicationModal = false;
 	let isSubmitting = false;
 
+
 	// Search and filters
 	let searchTerm = '';
 	let statusFilter = 'all';

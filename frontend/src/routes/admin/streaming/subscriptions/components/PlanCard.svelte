@@ -1,27 +1,15 @@
 <script lang="ts">
 	import type { SubscriptionPlan } from '$lib/services/streaming-subscriptions';
-	import { createEventDispatcher } from 'svelte';
+	import { formatDateForDisplay } from '$lib/utils/date';
 
 	export let plan: SubscriptionPlan;
 	export let isOptimisticallyUpdating: (planId: string) => boolean;
-
-	const dispatch = createEventDispatcher();
-
-	function handleEdit() {
-		dispatch('edit', { plan });
-	}
-
-	function handleDelete() {
-		dispatch('delete', { plan });
-	}
-
-	function handleToggleStatus() {
-		dispatch('toggleStatus', { plan });
-	}
-
-	function handleTogglePromotion() {
-		dispatch('togglePromotion', { plan });
-	}
+	
+	// Callback props for Svelte 5 compatibility
+	export let onEdit: (plan: SubscriptionPlan) => void;
+	export let onToggleStatus: (plan: SubscriptionPlan) => void;
+	export let onTogglePromotion: (plan: SubscriptionPlan) => void;
+	export let onViewDetails: (plan: SubscriptionPlan) => void;
 
 	// Format price
 	$: formattedPrice = new Intl.NumberFormat('en-US', {
@@ -31,9 +19,60 @@
 
 	// Format interval
 	$: intervalText = plan.interval === 'month' ? 'Monthly' : plan.interval === 'year' ? 'Annual' : plan.interval;
+
+	// Promotion status logic
+	$: promotionStatus = (() => {
+		if (plan.sub_type !== 'prmo') return null;
+		
+		const now = new Date();
+		const startDate = plan.promotion_start_date ? new Date(plan.promotion_start_date) : null;
+		const endDate = plan.promotion_end_date ? new Date(plan.promotion_end_date) : null;
+		
+		if (!startDate || !endDate) return null;
+		
+		if (now < startDate) {
+			return { status: 'upcoming', label: 'Upcoming', color: 'blue' };
+		} else if (now >= startDate && now <= endDate) {
+			return { status: 'promoted', label: 'Promoted', color: 'yellow' };
+		} else {
+			return { status: 'expired', label: 'Expired', color: 'red' };
+		}
+	})();
+
+	// Check if promotion is expired and should be deactivated
+	$: isExpired = promotionStatus?.status === 'expired';
+
+	// Format plan change history for display
+	$: formattedHistory = plan.plan_change_history?.map((event: any) => ({
+		...event,
+		formattedDate: new Date(event.timestamp).toLocaleDateString('en-US', {
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		})
+	})) || [];
+
+	// Get event type color
+	function getEventTypeColor(eventType: string): string {
+		const colors: Record<string, string> = {
+			'plan_created': 'bg-blue-100 text-blue-800',
+			'plan_updated': 'bg-yellow-100 text-yellow-800',
+			'promotion_started': 'bg-green-100 text-green-800',
+			'promotion_ended': 'bg-red-100 text-red-800',
+			'status_activated': 'bg-green-100 text-green-800',
+			'status_deactivated': 'bg-red-100 text-red-800',
+			'price_changed': 'bg-purple-100 text-purple-800',
+			'type_changed': 'bg-indigo-100 text-indigo-800',
+			'promotion_expired': 'bg-orange-100 text-orange-800',
+			'plan_deleted': 'bg-gray-100 text-gray-800'
+		};
+		return colors[eventType] || 'bg-gray-100 text-gray-800';
+	}
 </script>
 
-<div class="plan-card" class:updating={isOptimisticallyUpdating(plan.id)}>
+<div class="plan-card" class:updating={isOptimisticallyUpdating(plan.id)} class:expired={isExpired}>
 	{#if isOptimisticallyUpdating(plan.id)}
 		<div class="optimistic-overlay">
 			<div class="loading-spinner"></div>
@@ -47,14 +86,36 @@
 			<p class="plan-description">{plan.description}</p>
 		</div>
 		<div class="plan-status">
-			{#if plan.is_promoted}
-				<span class="status-badge promoted">Promoted</span>
+			{#if plan.sub_type === "prmo" && promotionStatus}
+				<span class="status-badge {promotionStatus.status}" class:upcoming={promotionStatus.status === 'upcoming'} class:promoted={promotionStatus.status === 'promoted'} class:expired={promotionStatus.status === 'expired'}>
+					{promotionStatus.label}
+				</span>
 			{/if}
-			<span class="status-badge" class:active={plan.is_active} class:inactive={!plan.is_active}>
-				{plan.is_active ? 'Active' : 'Inactive'}
-			</span>
+			<!-- Only show Active/Inactive badge for standard plans or currently promoted plans -->
+			{#if plan.sub_type === "stnd" || (plan.sub_type === "prmo" && promotionStatus?.status === 'promoted')}
+				<span class="status-badge" class:active={plan.is_active} class:inactive={!plan.is_active}>
+					{plan.is_active ? 'Active' : 'Inactive'}
+				</span>
+			{/if}
 		</div>
 	</div>
+
+	<!-- Promotion dates for promotional plans -->
+	{#if plan.sub_type === "prmo" && (plan.promotion_start_date || plan.promotion_end_date)}
+		<div class="promotion-dates">
+			<h4>Promotion Period:</h4>
+			<div class="date-range">
+				{#if plan.promotion_start_date}
+					<span class="date-label">Start:</span>
+					<span class="date-value">{formatDateForDisplay(plan.promotion_start_date)}</span>
+				{/if}
+				{#if plan.promotion_end_date}
+					<span class="date-label">End:</span>
+					<span class="date-value">{formatDateForDisplay(plan.promotion_end_date)}</span>
+				{/if}
+			</div>
+		</div>
+	{/if}
 
 	<div class="plan-details">
 		<div class="plan-price">
@@ -76,20 +137,28 @@
 
 	<div class="plan-footer">
 		<div class="plan-actions">
-			<button class="btn btn-secondary" on:click={handleEdit} disabled={isOptimisticallyUpdating(plan.id)}>
+			<button class="btn btn-secondary" on:click={() => onViewDetails(plan)} disabled={isOptimisticallyUpdating(plan.id)}>
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+				</svg>
+				Details
+			</button>
+			
+			<button class="btn btn-secondary" on:click={() => onEdit(plan)} disabled={isOptimisticallyUpdating(plan.id)}>
 				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
 				</svg>
 				Edit
 			</button>
 			
-			<!-- Show Deactivate/Activate button only for standard plans (sub_type = 100) -->
-			{#if plan.sub_type === 100 || !plan.sub_type}
+			<!-- Show Deactivate/Activate button only for standard plans (sub_type = stnd) -->
+			{#if plan.sub_type === "stnd" || !plan.sub_type}
 				<button 
 					class="btn" 
 					class:btn-secondary={plan.is_active} 
 					class:btn-primary={!plan.is_active}
-					on:click={handleToggleStatus} 
+					on:click={() => onToggleStatus(plan)} 
 					disabled={isOptimisticallyUpdating(plan.id)}
 				>
 					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -99,23 +168,23 @@
 				</button>
 			{/if}
 			
-			<!-- Show promotion button for promotional plans (sub_type = 300) -->
-			{#if plan.sub_type === 300 || plan.is_promoted}
+			<!-- Show promotion button for promotional plans (sub_type = prmo) -->
+			{#if plan.sub_type === "prmo"}
 				<button
 					class="btn {plan.is_active ? 'btn-secondary' : 'btn-primary'}"
-					on:click={handleTogglePromotion}
+					on:click={() => onToggleStatus(plan)}
 					disabled={isOptimisticallyUpdating(plan.id)}
 				>
 					{#if plan.is_active}
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
 						</svg>
-						End Promotion
+						Deactivate
 					{:else}
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path>
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path>
 						</svg>
-						Start Promotion
+						Activate
 					{/if}
 				</button>
 			{/if}
@@ -147,6 +216,12 @@
 		position: relative;
 		opacity: 0.7;
 		pointer-events: none;
+	}
+
+	.plan-card.expired {
+		opacity: 0.6;
+		border-color: #fca5a5;
+		background: #fef2f2;
 	}
 
 	.plan-card.updating::before {
@@ -242,10 +317,58 @@
 		border: 1px solid #e5e7eb;
 	}
 
+	.status-badge.upcoming {
+		background: #dbeafe;
+		color: #1e40af;
+		border: 1px solid #93c5fd;
+	}
+
 	.status-badge.promoted {
 		background: #fef3c7;
 		color: #92400e;
 		border: 1px solid #fde68a;
+	}
+
+	.status-badge.expired {
+		background: #fee2e2;
+		color: #991b1b;
+		border: 1px solid #fca5a5;
+	}
+
+	.promotion-dates {
+		margin-bottom: 1rem;
+		padding: 0.75rem;
+		background: #f8fafc;
+		border-radius: 0.375rem;
+		border: 1px solid #e2e8f0;
+	}
+
+	.promotion-dates h4 {
+		color: #374151;
+		font-size: 0.875rem;
+		font-weight: 600;
+		margin: 0 0 0.5rem 0;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.date-range {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.date-label {
+		color: #6b7280;
+		font-size: 0.75rem;
+		font-weight: 500;
+		min-width: 40px;
+	}
+
+	.date-value {
+		color: #111827;
+		font-size: 0.875rem;
+		font-weight: 600;
 	}
 
 	.plan-details {
@@ -297,6 +420,135 @@
 		left: 0;
 		color: #10b981;
 		font-weight: bold;
+	}
+
+	.plan-history {
+		margin-top: 1.5rem;
+		padding-top: 1rem;
+		border-top: 1px solid #e5e7eb;
+	}
+
+	.plan-history h4 {
+		color: #111827;
+		font-size: 0.875rem;
+		font-weight: 600;
+		margin: 0 0 0.5rem 0;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.history-timeline {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.history-event {
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: 0.375rem;
+		padding: 0.75rem;
+		position: relative;
+	}
+
+	.history-event::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: -10px; /* Adjust as needed for the line */
+		width: 2px;
+		height: 100%;
+		background: #d1d5db;
+		z-index: -1;
+	}
+
+	.event-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.5rem;
+	}
+
+	.event-type {
+		padding: 0.25rem 0.75rem;
+		border-radius: 0.25rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.event-date {
+		color: #6b7280;
+		font-size: 0.75rem;
+		font-weight: 500;
+	}
+
+	.event-description {
+		color: #374151;
+		font-size: 0.875rem;
+		line-height: 1.4;
+		margin-bottom: 0.25rem;
+	}
+
+	.analytics-tag {
+		background: #e0f2fe;
+		color: #1e40af;
+		padding: 0.25rem 0.75rem;
+		border-radius: 0.25rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.history-more {
+		text-align: center;
+		padding-top: 0.5rem;
+	}
+
+	.promotion-analytics {
+		margin-top: 1.5rem;
+		padding-top: 1rem;
+		border-top: 1px solid #e5e7eb;
+	}
+
+	.promotion-analytics h4 {
+		color: #111827;
+		font-size: 0.875rem;
+		font-weight: 600;
+		margin: 0 0 0.5rem 0;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.analytics-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+		gap: 0.75rem;
+	}
+
+	.analytics-item {
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: 0.375rem;
+		padding: 0.75rem;
+		text-align: center;
+	}
+
+	.analytics-label {
+		color: #6b7280;
+		font-size: 0.75rem;
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin-bottom: 0.25rem;
+	}
+
+	.analytics-value {
+		color: #111827;
+		font-size: 1.25rem;
+		font-weight: 700;
 	}
 
 	.plan-footer {

@@ -31,7 +31,6 @@ export interface MockSubscriptionPlan {
 	is_active: boolean;
 	is_promoted: boolean;
 	promotion_end_date: string | null;
-	sort_order: number;
 	created_at: string;
 	updated_at: string;
 }
@@ -104,7 +103,6 @@ export class MockDataService {
 					is_active: true,
 					is_promoted: false,
 					promotion_end_date: null,
-					sort_order: 1,
 					created_at: "2024-01-15T10:30:00Z",
 					updated_at: "2024-01-15T10:30:00Z"
 				},
@@ -128,7 +126,6 @@ export class MockDataService {
 					is_active: true,
 					is_promoted: true,
 					promotion_end_date: "2024-12-31T23:59:59Z",
-					sort_order: 2,
 					created_at: "2024-01-15T10:30:00Z",
 					updated_at: "2024-01-15T10:30:00Z"
 				},
@@ -154,7 +151,6 @@ export class MockDataService {
 					is_active: true,
 					is_promoted: false,
 					promotion_end_date: null,
-					sort_order: 3,
 					created_at: "2024-01-15T10:30:00Z",
 					updated_at: "2024-01-15T10:30:00Z"
 				},
@@ -177,7 +173,6 @@ export class MockDataService {
 					is_active: true,
 					is_promoted: false,
 					promotion_end_date: null,
-					sort_order: 4,
 					created_at: "2024-01-15T10:30:00Z",
 					updated_at: "2024-01-15T10:30:00Z"
 				},
@@ -200,7 +195,6 @@ export class MockDataService {
 					is_active: true,
 					is_promoted: false,
 					promotion_end_date: null,
-					sort_order: 5,
 					created_at: "2024-01-15T10:30:00Z",
 					updated_at: "2024-01-15T10:30:00Z"
 				}

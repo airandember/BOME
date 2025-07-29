@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -11,7 +13,6 @@ import (
 	"log"
 
 	"database/sql"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -73,23 +74,51 @@ func (h *SubscriptionPlanHandler) CreateSubscriptionPlanHandler(c *gin.Context) 
 		return
 	}
 
+	// Parse dates with flexible parser
+	promotionStartDate, err := services.ParseFlexibleDate(req.PromotionStartDate)
+	if err != nil {
+		log.Printf("CreateSubscriptionPlanHandler: invalid start date: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid promotion start date: %v", err)})
+		return
+	}
+
+	promotionEndDate, err := services.ParseFlexibleDate(req.PromotionEndDate)
+	if err != nil {
+		log.Printf("CreateSubscriptionPlanHandler: invalid end date: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid promotion end date: %v", err)})
+		return
+	}
+
+	// Format dates for database storage
+	promotionStartDateSQL := services.FormatDateForDatabase(promotionStartDate, false)
+	promotionEndDateSQL := services.FormatDateForDatabase(promotionEndDate, true)
+
+	// Convert features array to JSON string
+	featuresJSON, err := json.Marshal(req.Features)
+	if err != nil {
+		log.Printf("CreateSubscriptionPlanHandler: failed to marshal features: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid features format"})
+		return
+	}
+
 	// Convert request to database model
 	plan := &database.SubscriptionPlan{
-		Name:             req.Name,
-		Description:      req.Description,
-		ShortDesc:        sql.NullString{String: req.ShortDesc, Valid: req.ShortDesc != ""},
-		Price:            req.Price,
-		Currency:         req.Currency,
-		Interval:         req.Interval,
-		IntervalCount:    req.IntervalCount,
-		StripePriceID:    sql.NullString{String: req.StripePriceID, Valid: req.StripePriceID != ""},
-		Features:         sql.NullString{String: strings.Join(req.Features, ","), Valid: len(req.Features) > 0},
-		IsActive:         req.IsActive,
-		IsPromoted:       req.IsPromoted,
-		PromotionEndDate: sql.NullTime{Time: *req.PromotionEndDate, Valid: req.PromotionEndDate != nil},
-		SubType:          100, // Default to standard plan
-		SortOrder:        req.SortOrder,
-		IsDeleted:        sql.NullBool{Bool: false, Valid: true},
+		Name:               req.Name,
+		Description:        req.Description,
+		ShortDesc:          sql.NullString{String: req.ShortDesc, Valid: req.ShortDesc != ""},
+		Price:              req.Price,
+		Currency:           req.Currency,
+		Interval:           req.Interval,
+		IntervalCount:      req.IntervalCount,
+		StripePriceID:      sql.NullString{String: req.StripePriceID, Valid: req.StripePriceID != ""},
+		Features:           sql.NullString{String: string(featuresJSON), Valid: len(req.Features) > 0},
+		IsActive:           req.IsActive,
+		PromotionStartDate: promotionStartDateSQL,
+		PromotionEndDate:   promotionEndDateSQL,
+		SubType:            req.SubType,
+		IsDeleted:          sql.NullBool{Bool: false, Valid: true},
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 
 	createdPlan, err := h.service.CreateSubscriptionPlan(c.Request.Context(), plan)
@@ -207,57 +236,46 @@ func (h *SubscriptionPlanHandler) ToggleSubscriptionPlanStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, plan)
 }
 
+// UpdatePromotionStatusRequest represents a request to update promotion status
+type UpdatePromotionStatusRequest struct {
+	IsPromoted       bool   `json:"is_promoted"`
+	PromotionEndDate string `json:"promotion_end_date,omitempty"`
+}
+
 // UpdatePromotionStatusHandler handles PUT /api/subscription_plans/:id/promotion
-// Atomically updates promotion status and all relevant fields, returns updated plan
 func (h *SubscriptionPlanHandler) UpdatePromotionStatusHandler(c *gin.Context) {
-	log.Println("[ROUTE] UpdatePromotionStatusHandler called")
+	log.Println("UpdatePromotionStatusHandler called")
 	id := c.Param("id")
 
-	log.Printf("UpdatePromotionStatus route called for plan ID: %s\n", id)
-
-	var req struct {
-		IsPromoted       bool   `json:"is_promoted"`
-		PromotionEndDate string `json:"promotion_end_date,omitempty"`
-	}
+	var req UpdatePromotionStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Printf("UpdatePromotionStatusHandler: bad request: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request body",
-			"details": err.Error(),
-			"status":  "error",
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	log.Printf("Request received: IsPromoted=%v, PromotionEndDate=%s\n", req.IsPromoted, req.PromotionEndDate)
 
+	// Parse promotion end date if provided
 	var promotionEndDate *time.Time
 	if req.PromotionEndDate != "" {
-		parsed, err := time.Parse(time.RFC3339, req.PromotionEndDate)
+		parsedDate, err := time.Parse("2006-01-02", req.PromotionEndDate)
 		if err != nil {
-			log.Printf("UpdatePromotionStatusHandler: error parsing promotion end date: %v\n", err)
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "Invalid promotion end date format",
-				"details": err.Error(),
-				"status":  "error",
-			})
+			log.Printf("UpdatePromotionStatusHandler: invalid date format: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format. Use YYYY-MM-DD"})
 			return
 		}
-		promotionEndDate = &parsed
+		promotionEndDate = &parsedDate
 	}
 
 	plan, err := h.service.UpdatePromotionStatus(c.Request.Context(), id, req.IsPromoted, promotionEndDate)
 	if err != nil {
-		log.Printf("UpdatePromotionStatusHandler: error: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to update promotion status",
-			"details": err.Error(),
-			"status":  "error",
-		})
+		log.Printf("UpdatePromotionStatusHandler: error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	log.Printf("Plan updated successfully: ID=%s, IsPromoted=%v, IsActive=%v\n", plan.ID, plan.IsPromoted, plan.IsActive)
+	log.Printf("Plan updated successfully: ID=%s, SubType=%s, IsActive=%v\n", plan.ID, plan.SubType, plan.IsActive)
 	c.JSON(http.StatusOK, plan)
 }
 
@@ -278,7 +296,7 @@ func getActiveSubscriptionPlans(c *gin.Context, service *services.SubscriptionPl
 	// Filter for active plans only
 	var activePlans []*services.SubscriptionPlanResponse
 	for _, plan := range plans {
-		if plan.IsActive && !plan.IsPromoted {
+		if plan.IsActive && plan.SubType == "stnd" {
 			activePlans = append(activePlans, plan)
 		}
 	}
@@ -309,7 +327,7 @@ func getPromotedSubscriptionPlans(c *gin.Context, service *services.Subscription
 	// Filter for promoted plans only
 	var promotedPlans []*services.SubscriptionPlanResponse
 	for _, plan := range plans {
-		if plan.IsPromoted {
+		if plan.SubType == "prmo" {
 			promotedPlans = append(promotedPlans, plan)
 		}
 	}

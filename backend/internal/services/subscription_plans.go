@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -18,59 +19,58 @@ type SubscriptionPlanService struct {
 
 // SubscriptionPlanResponse represents a subscription plan response
 type SubscriptionPlanResponse struct {
-	ID                 string     `json:"id"`
-	Name               string     `json:"name"`
-	Description        string     `json:"description"`
-	ShortDesc          string     `json:"short_desc"`
-	Price              float64    `json:"price"`
-	Currency           string     `json:"currency"`
-	Interval           string     `json:"interval"`
-	IntervalCount      int        `json:"interval_count"`
-	StripePriceID      *string    `json:"stripe_price_id,omitempty"`
-	Features           []string   `json:"features"`
-	IsActive           bool       `json:"is_active"`
-	IsPromoted         bool       `json:"is_promoted"`
-	PromotionEndDate   *time.Time `json:"promotion_end_date,omitempty"`
-	PromotionStartDate *time.Time `json:"promotion_start_date,omitempty"`
-	PromotionHistory   []string   `json:"promotion_history,omitempty"`
-	SubType            int        `json:"sub_type"` // 100 = standard, 300 = promotional
-	SortOrder          int        `json:"sort_order"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
+	ID                 string                 `json:"id"`
+	Name               string                 `json:"name"`
+	Description        string                 `json:"description"`
+	ShortDesc          string                 `json:"short_desc"`
+	Price              float64                `json:"price"`
+	Currency           string                 `json:"currency"`
+	Interval           string                 `json:"interval"`
+	IntervalCount      int                    `json:"interval_count"`
+	StripePriceID      *string                `json:"stripe_price_id,omitempty"`
+	Features           []string               `json:"features"`
+	IsActive           bool                   `json:"is_active"`
+	PromotionEndDate   *time.Time             `json:"promotion_end_date,omitempty"`
+	PromotionStartDate *time.Time             `json:"promotion_start_date,omitempty"`
+	PlanChangeHistory  []string               `json:"plan_change_history,omitempty"` // Renamed from promotion_history
+	PromotionMetadata  map[string]interface{} `json:"promotion_metadata,omitempty"`  // New field for promotion analytics
+	SubType            string                 `json:"sub_type"`                      // stnd = standard, prmo = promotional
+	CreatedAt          time.Time              `json:"created_at"`
+	UpdatedAt          time.Time              `json:"updated_at"`
 }
 
 // CreateSubscriptionPlanRequest represents a request to create a subscription plan
 type CreateSubscriptionPlanRequest struct {
-	Name             string     `json:"name" validate:"required,min=1,max=255"`
-	Description      string     `json:"description"`
-	ShortDesc        string     `json:"short_desc"`
-	Price            float64    `json:"price" validate:"required,min=0"`
-	Currency         string     `json:"currency" validate:"required,oneof=USD EUR GBP CAD"`
-	Interval         string     `json:"interval" validate:"required,oneof=month year week day"`
-	IntervalCount    int        `json:"interval_count" validate:"required,min=1"`
-	StripePriceID    string     `json:"stripe_price_id"`
-	Features         []string   `json:"features"`
-	IsActive         bool       `json:"is_active"`
-	IsPromoted       bool       `json:"is_promoted"`
-	PromotionEndDate *time.Time `json:"promotion_end_date"`
-	SortOrder        int        `json:"sort_order"`
+	Name               string   `json:"name" validate:"required,min=1,max=255"`
+	Description        string   `json:"description"`
+	ShortDesc          string   `json:"short_desc"`
+	Price              float64  `json:"price" validate:"required,min=0"`
+	Currency           string   `json:"currency" validate:"required,oneof=USD EUR GBP CAD"`
+	Interval           string   `json:"interval" validate:"required,oneof=month year week day"`
+	IntervalCount      int      `json:"interval_count" validate:"required,min=1"`
+	StripePriceID      string   `json:"stripe_price_id"`
+	Features           []string `json:"features"`
+	IsActive           bool     `json:"is_active"`
+	PromotionStartDate string   `json:"promotion_start_date"`
+	PromotionEndDate   string   `json:"promotion_end_date"`
+	SubType            string   `json:"sub_type"`
 }
 
 // UpdateSubscriptionPlanRequest represents a request to update a subscription plan
 type UpdateSubscriptionPlanRequest struct {
-	Name             string     `json:"name" validate:"required,min=1,max=255"`
-	Description      string     `json:"description"`
-	ShortDesc        string     `json:"short_desc"`
-	Price            float64    `json:"price" validate:"required,min=0"`
-	Currency         string     `json:"currency" validate:"required,oneof=USD EUR GBP CAD"`
-	Interval         string     `json:"interval" validate:"required,oneof=month year week day"`
-	IntervalCount    int        `json:"interval_count" validate:"required,min=1"`
-	StripePriceID    string     `json:"stripe_price_id"`
-	Features         []string   `json:"features"`
-	IsActive         bool       `json:"is_active"`
-	IsPromoted       bool       `json:"is_promoted"`
-	PromotionEndDate *time.Time `json:"promotion_end_date"`
-	SortOrder        int        `json:"sort_order"`
+	Name               string   `json:"name" validate:"required,min=1,max=255"`
+	Description        string   `json:"description"`
+	ShortDesc          string   `json:"short_desc"`
+	Price              float64  `json:"price" validate:"required,min=0"`
+	Currency           string   `json:"currency" validate:"required,oneof=USD EUR GBP CAD"`
+	Interval           string   `json:"interval" validate:"required,oneof=month year week day"`
+	IntervalCount      int      `json:"interval_count" validate:"required,min=1"`
+	StripePriceID      string   `json:"stripe_price_id"`
+	Features           []string `json:"features"`
+	IsActive           bool     `json:"is_active"`
+	PromotionStartDate string   `json:"promotion_start_date"`
+	PromotionEndDate   string   `json:"promotion_end_date"`
+	SubType            string   `json:"sub_type"`
 }
 
 // NewSubscriptionPlanService creates a new subscription plan service
@@ -159,8 +159,8 @@ func (s *SubscriptionPlanService) ToggleSubscriptionPlanStatus(ctx context.Conte
 }
 
 // UpdatePromotionStatus updates the promotion status of a subscription plan
-// If isPromoted is true, sets sub_type to 300 (promo), sets promotion_start_date to now, and optionally sets promotion_end_date.
-// If isPromoted is false, sets sub_type to 100 (standard), sets is_active to false, and sets promotion_end_date to now.
+// If isPromoted is true, sets sub_type to prmo (promo), sets promotion_start_date to now, and optionally sets promotion_end_date.
+// If isPromoted is false, sets sub_type to stnd (standard), sets is_active to false, and sets promotion_end_date to now.
 func (s *SubscriptionPlanService) UpdatePromotionStatus(ctx context.Context, id string, isPromoted bool, promotionEndDate *time.Time) (*SubscriptionPlanResponse, error) {
 	planID, err := strconv.Atoi(id)
 	if err != nil {
@@ -173,16 +173,14 @@ func (s *SubscriptionPlanService) UpdatePromotionStatus(ctx context.Context, id 
 	}
 	updates := map[string]interface{}{}
 	if isPromoted {
-		updates["is_promoted"] = true
-		updates["sub_type"] = 300
+		updates["sub_type"] = "prmo"
 		updates["promotion_start_date"] = time.Now()
 		if promotionEndDate != nil {
 			updates["promotion_end_date"] = *promotionEndDate
 		}
 		updates["is_active"] = true
 	} else {
-		updates["is_promoted"] = false
-		updates["sub_type"] = 100
+		updates["sub_type"] = "stnd"
 		updates["is_active"] = false
 		updates["promotion_end_date"] = time.Now()
 	}
@@ -209,8 +207,8 @@ func (s *SubscriptionPlanService) GetAllSubscriptionPlans(ctx context.Context) (
 	// Debug: Log the raw plans from database
 	log.Printf("Service: Raw plans from database: %+v", plans)
 	for i, plan := range plans {
-		log.Printf("Service: Plan %d: ID=%d, Name=%s, IsActive=%v, IsPromoted=%v, Interval=%s",
-			i, plan.ID, plan.Name, plan.IsActive, plan.IsPromoted, plan.Interval)
+		log.Printf("Service: Plan %d: ID=%d, Name=%s, IsActive=%v, SubType=%s, Interval=%s",
+			i, plan.ID, plan.Name, plan.IsActive, plan.SubType, plan.Interval)
 	}
 
 	// Convert to response format
@@ -237,7 +235,7 @@ func (s *SubscriptionPlanService) CheckAndHandleExpiredPromotions(ctx context.Co
 
 	for _, plan := range plans {
 		// Check if plan is promoted and has a promotion end date
-		if plan.IsPromoted && plan.PromotionEndDate.Valid {
+		if plan.SubType == "prmo" && plan.PromotionEndDate.Valid {
 			// If promotion end date has passed, mark for deactivation
 			if plan.PromotionEndDate.Time.Before(now) {
 				expiredPromotions = append(expiredPromotions, plan.ID)
@@ -248,7 +246,7 @@ func (s *SubscriptionPlanService) CheckAndHandleExpiredPromotions(ctx context.Co
 	// Deactivate expired promotions
 	for _, planID := range expiredPromotions {
 		updates := map[string]interface{}{
-			"is_promoted":        false,
+			"sub_type":           "stnd",
 			"is_active":          false,
 			"promotion_end_date": now, // Set to current time when deactivated
 			"updated_at":         now,
@@ -283,9 +281,7 @@ func (s *SubscriptionPlanService) convertToResponse(plan *database.SubscriptionP
 		Interval:      plan.Interval,
 		IntervalCount: plan.IntervalCount,
 		IsActive:      plan.IsActive,
-		IsPromoted:    plan.IsPromoted,
 		SubType:       plan.SubType,
-		SortOrder:     plan.SortOrder,
 		CreatedAt:     plan.CreatedAt,
 		UpdatedAt:     plan.UpdatedAt,
 	}
@@ -320,15 +316,27 @@ func (s *SubscriptionPlanService) convertToResponse(plan *database.SubscriptionP
 	}
 
 	// Parse promotion history JSON if available
-	if plan.PromotionHistory.Valid {
+	if plan.PlanChangeHistory.Valid {
 		var promotionHistory []string
-		if err := json.Unmarshal([]byte(plan.PromotionHistory.String), &promotionHistory); err == nil {
-			response.PromotionHistory = promotionHistory
+		if err := json.Unmarshal([]byte(plan.PlanChangeHistory.String), &promotionHistory); err == nil {
+			response.PlanChangeHistory = promotionHistory
 		} else {
-			response.PromotionHistory = []string{} // Empty array if parsing fails
+			response.PlanChangeHistory = []string{} // Empty array if parsing fails
 		}
 	} else {
-		response.PromotionHistory = []string{} // Empty array if no history
+		response.PlanChangeHistory = []string{} // Empty array if no history
+	}
+
+	// Parse promotion metadata JSON if available
+	if plan.PromotionMetadata.Valid {
+		var metadata map[string]interface{}
+		if err := json.Unmarshal([]byte(plan.PromotionMetadata.String), &metadata); err == nil {
+			response.PromotionMetadata = metadata
+		} else {
+			response.PromotionMetadata = map[string]interface{}{} // Empty map if parsing fails
+		}
+	} else {
+		response.PromotionMetadata = map[string]interface{}{} // Empty map if no metadata
 	}
 
 	return response
@@ -338,4 +346,57 @@ func (s *SubscriptionPlanService) convertToResponse(plan *database.SubscriptionP
 func (s *SubscriptionPlanService) logAuditEvent(eventType string, userID, resourceID int, metadata map[string]interface{}) {
 	// Audit logging logic here
 	log.Printf("Service: Audit event: %s, User: %d, Resource: %d, Metadata: %v", eventType, userID, resourceID, metadata)
+}
+
+// ParseFlexibleDate handles multiple date formats
+func ParseFlexibleDate(dateStr string) (*time.Time, error) {
+	if dateStr == "" {
+		return nil, nil
+	}
+
+	// List of supported date formats
+	formats := []string{
+		"2006-01-02T15:04:05Z07:00",   // RFC3339
+		"2006-01-02T15:04:05",         // ISO without timezone
+		"2006-01-02 15:04:05",         // Space separated
+		"2006-01-02",                  // Date only (what frontend sends)
+		"01/02/2006",                  // MM/DD/YYYY
+		"02/01/2006",                  // DD/MM/YYYY
+		"2006-01-02T15:04:05.000Z",    // ISO with milliseconds
+		"2006-01-02T15:04:05.000000Z", // ISO with microseconds
+	}
+
+	for _, format := range formats {
+		if parsed, err := time.Parse(format, dateStr); err == nil {
+			return &parsed, nil
+		}
+	}
+
+	return nil, fmt.Errorf("unable to parse date '%s' with any supported format", dateStr)
+}
+
+// FormatDateForDatabase ensures consistent date formatting for database storage
+func FormatDateForDatabase(t *time.Time, isEndDate bool) sql.NullTime {
+	if t == nil {
+		return sql.NullTime{Valid: false}
+	}
+
+	var formattedTime time.Time
+	if isEndDate {
+		// Round up to end of day for end dates (23:59:59.999999999)
+		formattedTime = time.Date(
+			t.Year(), t.Month(), t.Day(),
+			23, 59, 59, 999999999,
+			t.Location(),
+		)
+	} else {
+		// Round down to start of day for start dates (00:00:00)
+		formattedTime = time.Date(
+			t.Year(), t.Month(), t.Day(),
+			0, 0, 0, 0,
+			t.Location(),
+		)
+	}
+
+	return sql.NullTime{Time: formattedTime, Valid: true}
 }

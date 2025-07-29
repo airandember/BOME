@@ -12,12 +12,14 @@ export interface SubscriptionPlan {
 	stripe_price_id?: string;
 	features: string[];
 	is_active: boolean;
-	is_promoted: boolean;
 	promotion_end_date?: string;
-	sort_order: number;
+	promotion_start_date?: string;
+	plan_change_history?: string[]; // Renamed from promotion_history
+	promotion_metadata?: Record<string, any>; // New field for promotion analytics
 	created_at: string;
 	updated_at: string;
 	popular?: boolean;
+	sub_type: string; // stnd = standard plan, prmo = promotional plan
 }
 
 export interface Subscription {

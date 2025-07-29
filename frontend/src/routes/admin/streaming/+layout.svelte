@@ -156,7 +156,7 @@
 			</div>
 		</header>
 
-		<div class="container p-5">
+		<div class="container p-0">
 			<div class="layout-content">
 				<!-- Sidebar Navigation -->
 				<nav class="sidebar">

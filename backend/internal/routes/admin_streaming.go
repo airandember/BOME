@@ -13,7 +13,7 @@ import (
 )
 
 // SetupAdminStreamingRoutes sets up streaming admin dashboard routes
-func SetupAdminStreamingRoutes(router *gin.Engine, db *database.DB, stripeService *services.StripeService, analyticsService *services.SubscriptionAnalyticsService) {
+func SetupAdminStreamingRoutes(router *gin.Engine, db *database.DB, stripeService *services.StripeService, analyticsService *services.SubscriptionAnalyticsService, biService *services.BusinessIntelligenceService) {
 	// Streaming admin routes - requires streaming manager role or higher
 	admin := router.Group("/api/admin/streaming")
 	admin.Use(middleware.AuthRequired())
@@ -41,6 +41,12 @@ func SetupAdminStreamingRoutes(router *gin.Engine, db *database.DB, stripeServic
 		admin.GET("/analytics/revenue", GetStreamingRevenueAnalyticsHandler(analyticsService))
 		admin.GET("/analytics/subscriptions", GetStreamingSubscriptionAnalyticsHandler(analyticsService))
 		admin.GET("/analytics/customers", GetStreamingCustomerAnalyticsHandler(analyticsService))
+
+		// Business Intelligence Analytics
+		admin.GET("/analytics/executive-summary", GetExecutiveSummaryHandler(biService))
+		admin.GET("/analytics/funnel-analysis", GetFunnelAnalysisHandler(biService))
+		admin.GET("/analytics/revenue-impact", GetRevenueImpactHandler(biService))
+		admin.GET("/analytics/customer-journey", GetCustomerJourneyHandler(biService))
 
 		// Promotions and deals
 		admin.GET("/promotions", GetStreamingPromotionsHandler(db))
@@ -599,6 +605,98 @@ func GetStreamingCustomerAnalyticsHandler(analyticsService *services.Subscriptio
 				"retention_rate":  0.0,
 			},
 		})
+	}
+}
+
+// GetExecutiveSummaryHandler handles retrieving the executive summary
+func GetExecutiveSummaryHandler(biService *services.BusinessIntelligenceService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if biService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Business Intelligence service not available"})
+			return
+		}
+
+		period := c.Query("period")
+		if period == "" {
+			period = "30d"
+		}
+
+		summary, err := biService.GetExecutiveSummary(period)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get executive summary", "details": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"executive_summary": summary})
+	}
+}
+
+// GetFunnelAnalysisHandler handles retrieving funnel analysis
+func GetFunnelAnalysisHandler(biService *services.BusinessIntelligenceService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if biService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Business Intelligence service not available"})
+			return
+		}
+
+		period := c.Query("period")
+		if period == "" {
+			period = "30d"
+		}
+
+		analysis, err := biService.GetFunnelAnalysis(period)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get funnel analysis", "details": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"funnel_analysis": analysis})
+	}
+}
+
+// GetRevenueImpactHandler handles retrieving revenue impact analysis
+func GetRevenueImpactHandler(biService *services.BusinessIntelligenceService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if biService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Business Intelligence service not available"})
+			return
+		}
+
+		period := c.Query("period")
+		if period == "" {
+			period = "30d"
+		}
+
+		impact, err := biService.GetRevenueImpact(period)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get revenue impact", "details": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"revenue_impact": impact})
+	}
+}
+
+// GetCustomerJourneyHandler handles retrieving customer journey analytics
+func GetCustomerJourneyHandler(biService *services.BusinessIntelligenceService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if biService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Business Intelligence service not available"})
+			return
+		}
+
+		period := c.Query("period")
+		if period == "" {
+			period = "30d"
+		}
+
+		journey, err := biService.GetCustomerJourney(period)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get customer journey", "details": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"customer_journey": journey})
 	}
 }
 

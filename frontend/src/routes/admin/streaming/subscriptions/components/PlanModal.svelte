@@ -2,6 +2,7 @@
 	import { fade, fly } from 'svelte/transition';
 	import { createEventDispatcher } from 'svelte';
 	import type { CreateSubscriptionPlanData } from '$lib/services/streaming-subscriptions';
+	import { isoToDateInput, dateInputToIso, getTodayDateInput, getDateInputFromToday } from '$lib/utils/date';
 
 	export let isOpen: boolean = false;
 	export let title: string = '';
@@ -13,8 +14,18 @@
 
 	let newFeature = '';
 
+	// Convert ISO dates to HTML date input format for the form
+	$: formData.promotion_start_date = isoToDateInput(formData.promotion_start_date);
+	$: formData.promotion_end_date = isoToDateInput(formData.promotion_end_date);
+
 	function handleSubmit() {
-		dispatch('submit', { formData });
+		// Convert date input values back to ISO format before submitting
+		const submitData = {
+			...formData,
+			promotion_start_date: dateInputToIso(formData.promotion_start_date),
+			promotion_end_date: dateInputToIso(formData.promotion_end_date)
+		};
+		dispatch('submit', { formData: submitData });
 	}
 
 	function handleCancel() {
@@ -37,6 +48,11 @@
 			event.preventDefault();
 			addFeature();
 		}
+	}
+
+	function setDefaultDates() {
+		formData.promotion_start_date = getTodayDateInput();
+		formData.promotion_end_date = getDateInputFromToday(7);
 	}
 </script>
 
@@ -126,6 +142,27 @@
 							<option value="day">Daily</option>
 						</select>
 					</div>
+					<div class="form-group">
+						<label for="interval_count" class="form-label">Interval Count</label>
+						<input
+							id="interval_count"
+							type="number"
+							min="1"
+							bind:value={formData.interval_count}
+							class="form-input"
+							required
+						/>
+					</div>
+					<div class="form-group">
+						<label for="stripe_price_id" class="form-label">Stripe Price ID</label>
+						<input
+							id="stripe_price_id"
+							type="text"
+							bind:value={formData.stripe_price_id}
+							class="form-input"
+							placeholder="price_..."
+						/>
+					</div>
 				</div>
 
 				<!-- Features -->
@@ -177,16 +214,77 @@
 						/>
 						<label for="is_active" class="checkbox-label">Active</label>
 					</div>
-					<div class="checkbox-group">
-						<input
-							id="is_promoted"
-							type="checkbox"
-							bind:checked={formData.is_promoted}
-							class="form-checkbox"
-						/>
-						<label for="is_promoted" class="checkbox-label">Promoted</label>
+					<div class="form-group">
+						<label for="sub_type" class="form-label">Plan Type</label>
+						<select
+							id="sub_type"
+							bind:value={formData.sub_type}
+							class="form-select"
+							required
+						>
+							<option value="stnd">Standard Plan</option>
+							<option value="prmo">Promotional Plan</option>
+						</select>
 					</div>
 				</div>
+
+				<!-- Promotion Dates (only show for promotional plans) -->
+				{#if formData.sub_type === 'prmo'}
+					<div class="form-group">
+						<label class="form-label">Promotion Settings</label>
+						<div class="promotion-options">
+							<div class="radio-group">
+								<input
+									id="default_dates"
+									type="radio"
+									name="promotion_dates"
+									value="default"
+									checked={!formData.promotion_start_date && !formData.promotion_end_date}
+									on:change={() => {
+										setDefaultDates();
+									}}
+								/>
+								<label for="default_dates">Default (Today to 7 days from now)</label>
+							</div>
+							<div class="radio-group">
+								<input
+									id="custom_dates"
+									type="radio"
+									name="promotion_dates"
+									value="custom"
+									checked={!!formData.promotion_start_date && !!formData.promotion_end_date}
+									on:change={() => {
+										// Keep existing dates if they exist
+									}}
+								/>
+								<label for="custom_dates">Custom dates</label>
+							</div>
+						</div>
+						
+						<div class="form-grid">
+							<div class="form-group">
+								<label for="promotion_start_date" class="form-label">Start Date</label>
+								<input
+									id="promotion_start_date"
+									type="date"
+									bind:value={formData.promotion_start_date}
+									class="form-input"
+									min={getTodayDateInput()}
+								/>
+							</div>
+							<div class="form-group">
+								<label for="promotion_end_date" class="form-label">End Date</label>
+								<input
+									id="promotion_end_date"
+									type="date"
+									bind:value={formData.promotion_end_date}
+									class="form-input"
+									min={formData.promotion_start_date || getTodayDateInput()}
+								/>
+							</div>
+						</div>
+					</div>
+				{/if}
 
 				<!-- Actions -->
 				<div class="modal-actions">
@@ -233,7 +331,7 @@
 			0 0 0 1px rgba(255, 255, 255, 0.2),
 			0 0 0 4px rgba(59, 130, 246, 0.1);
 		width: 100%;
-		max-width: 600px;
+		max-width: 1200px;
 		max-height: 90vh;
 		overflow-y: auto;
 	}
@@ -389,6 +487,26 @@
 		padding-top: 1.5rem;
 		border-top: 1px solid rgba(0, 0, 0, 0.1);
 		margin-top: 1.5rem;
+	}
+
+	.promotion-options {
+		margin-bottom: 1rem;
+	}
+
+	.radio-group {
+		display: flex;
+		align-items: center;
+		margin-bottom: 0.5rem;
+	}
+
+	.radio-group input[type="radio"] {
+		margin-right: 0.5rem;
+	}
+
+	.radio-group label {
+		font-size: 0.875rem;
+		color: #374151;
+		cursor: pointer;
 	}
 
 	@media (max-width: 768px) {

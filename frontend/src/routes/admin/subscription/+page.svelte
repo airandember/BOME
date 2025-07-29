@@ -23,7 +23,7 @@
 			plans = response.plans || [];
 			
 			// Check for promoted plans
-			const promotedPlans = plans.filter(plan => plan.is_promoted);
+			const promotedPlans = plans.filter(plan => plan.sub_type === "prmo");
 			if (promotedPlans.length > 0) {
 				showPromotionBanner = true;
 				// Get the earliest promotion end date
@@ -96,7 +96,7 @@
 	};
 
 	const getPromotionBadge = (plan: SubscriptionPlan) => {
-		if (plan.is_promoted) {
+		if (plan.sub_type === "prmo") {
 			return `
 				<div class="promotion-badge">
 					<svg class="star-icon" viewBox="0 0 24 24" fill="currentColor">
@@ -219,7 +219,7 @@
 		{:else}
 			<div class="plans-grid">
 				{#each plans as plan}
-					<div class="plan-card" class:popular={plan.popular} class:promoted={plan.is_promoted}>
+					<div class="plan-card" class:popular={plan.popular} class:promoted={plan.sub_type === "prmo"}>
 						{@html getPopularBadge(plan)}
 						{@html getPromotionBadge(plan)}
 						
@@ -236,7 +236,7 @@
 									Save {Math.round((1 - plan.price / (subscriptionUtils.getMonthlyPrice(plan) * 12)) * 100)}%
 								</div>
 							{/if}
-							{#if plan.is_promoted && plan.promotion_end_date}
+							{#if plan.sub_type === "prmo" && plan.promotion_end_date}
 								<div class="promotion-timer">
 									{formatPromotionEndDate(new Date(plan.promotion_end_date))}
 								</div>
@@ -270,7 +270,7 @@
 									class="btn btn-primary btn-full" 
 									on:click={() => handleSubscribe(plan.id)}
 								>
-									{plan.popular ? 'Get Started' : plan.is_promoted ? 'Get Deal' : 'Subscribe'}
+									{plan.popular ? 'Get Started' : plan.sub_type === "prmo" ? 'Get Deal' : 'Subscribe'}
 								</button>
 							{/if}
 						</div>
