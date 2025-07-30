@@ -156,10 +156,26 @@ class ApiClient {
 		});
 	}
 
+	async postWithHeaders<T>(endpoint: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
+		return this.request<T>(endpoint, {
+			method: 'POST',
+			body: data ? JSON.stringify(data) : undefined,
+			headers: customHeaders,
+		});
+	}
+
 	async put<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
 		return this.request<T>(endpoint, {
 			method: 'PUT',
 			body: data ? JSON.stringify(data) : undefined,
+		});
+	}
+
+	async putWithHeaders<T>(endpoint: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
+		return this.request<T>(endpoint, {
+			method: 'PUT',
+			body: data ? JSON.stringify(data) : undefined,
+			headers: customHeaders,
 		});
 	}
 

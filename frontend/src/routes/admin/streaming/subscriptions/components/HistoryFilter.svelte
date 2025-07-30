@@ -1,9 +1,6 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
-
 	export let events: Record<string, any>[] = [];
-	
-	const dispatch = createEventDispatcher();
+	export let onFilterChange: (filteredEvents: Record<string, any>[]) => void = () => {};
 
 	// Filter state
 	let selectedEventType = 'all';
@@ -88,7 +85,7 @@
 
 	// Handle filter changes
 	function handleFilterChange() {
-		dispatch('filterChange', { filteredEvents });
+		onFilterChange(filteredEvents);
 	}
 
 	// Clear all filters

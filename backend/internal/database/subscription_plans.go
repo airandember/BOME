@@ -76,6 +76,19 @@ func (db *DB) CreateSubscriptionPlan(plan *SubscriptionPlan) (*SubscriptionPlan,
 
 // GetAllSubscriptionPlans retrieves all subscription plans from the database
 func (db *DB) GetAllSubscriptionPlans() ([]*SubscriptionPlan, error) {
+	log.Printf("GetAllSubscriptionPlans: Starting database query")
+
+	// Check if database connection is nil
+	if db == nil {
+		log.Printf("GetAllSubscriptionPlans: ERROR - Database connection is nil!")
+		return nil, fmt.Errorf("database connection is nil")
+	}
+
+	if db.DB == nil {
+		log.Printf("GetAllSubscriptionPlans: ERROR - Database DB field is nil!")
+		return nil, fmt.Errorf("database DB field is nil")
+	}
+
 	query := `
 		SELECT id, name, description, price, currency, interval, interval_count, stripe_price_id, features, 
 		       is_active, promotion_end_date, created_at, updated_at, deleted_at,
@@ -85,8 +98,10 @@ func (db *DB) GetAllSubscriptionPlans() ([]*SubscriptionPlan, error) {
 		ORDER BY created_at ASC
 	`
 
+	log.Printf("GetAllSubscriptionPlans: Executing query: %s", query)
 	rows, err := db.Query(query)
 	if err != nil {
+		log.Printf("GetAllSubscriptionPlans: Database query failed: %v", err)
 		return nil, err
 	}
 	defer rows.Close()

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"bome-backend/internal/database"
@@ -74,75 +75,100 @@ func NewPlanHistoryService(db *database.DB) *PlanHistoryService {
 	return &PlanHistoryService{db: db}
 }
 
-// AddHistoryEvent adds a new event to the plan's change history
+// AddHistoryEvent adds a new event to the plan's change history using the separate table
 func (s *PlanHistoryService) AddHistoryEvent(ctx context.Context, planID int, event PlanHistoryEvent) error {
 	log.Printf("AddHistoryEvent: Starting to add event for plan %d", planID)
 	log.Printf("AddHistoryEvent: Event details - Type=%s, Description=%s, UserID=%s", event.EventType, event.Description, event.UserID)
 
-	// Get current history
-	currentHistory, err := s.GetPlanHistory(ctx, planID)
+	// Use the new database method to add history event
+	err := s.db.AddHistoryEvent(
+		planID,
+		event.EventType,
+		event.UserID,
+		event.Description,
+		event.OldValues,
+		event.NewValues,
+		event.Metadata,
+	)
+
 	if err != nil {
-		log.Printf("AddHistoryEvent: Failed to get current history: %v", err)
-		return fmt.Errorf("failed to get current history: %w", err)
+		log.Printf("AddHistoryEvent: Failed to add history event: %v", err)
+		return fmt.Errorf("failed to add history event: %w", err)
 	}
 
-	log.Printf("AddHistoryEvent: Current history has %d events", len(currentHistory))
-
-	// Add new event
-	currentHistory = append(currentHistory, event)
-
-	// Convert to JSON
-	historyJSON, err := json.Marshal(currentHistory)
-	if err != nil {
-		log.Printf("AddHistoryEvent: Failed to marshal history to JSON: %v", err)
-		return fmt.Errorf("failed to marshal history to JSON: %w", err)
-	}
-
-	log.Printf("AddHistoryEvent: History JSON length: %d", len(historyJSON))
-
-	// Update database
-	updates := map[string]interface{}{
-		"plan_change_history": string(historyJSON),
-	}
-
-	_, err = s.db.UpdateSubscriptionPlan(planID, updates)
-	if err != nil {
-		log.Printf("AddHistoryEvent: Failed to update plan history in database: %v", err)
-		return fmt.Errorf("failed to update plan history: %w", err)
-	}
-
-	log.Printf("AddHistoryEvent: Successfully added history event to plan %d: %s", planID, event.EventType)
+	log.Printf("AddHistoryEvent: Successfully added history event for plan %d", planID)
 	return nil
 }
 
-// GetPlanHistory retrieves the complete change history for a plan
+// GetPlanHistory retrieves all history events for a specific plan from the separate table
 func (s *PlanHistoryService) GetPlanHistory(ctx context.Context, planID int) ([]PlanHistoryEvent, error) {
 	log.Printf("GetPlanHistory: Getting history for plan %d", planID)
 
-	plan, err := s.db.GetSubscriptionPlanByID(planID)
+	// Use the new database method to get history events
+	dbEvents, err := s.db.GetPlanHistory(planID)
 	if err != nil {
-		log.Printf("GetPlanHistory: Failed to get plan: %v", err)
-		return nil, fmt.Errorf("failed to get plan: %w", err)
+		log.Printf("GetPlanHistory: Failed to get history from database: %v", err)
+		return nil, fmt.Errorf("failed to get plan history: %w", err)
 	}
 
-	log.Printf("GetPlanHistory: Plan retrieved - ID=%d, Name=%s", plan.ID, plan.Name)
-	log.Printf("GetPlanHistory: PlanChangeHistory.Valid=%v, PlanChangeHistory.String='%s'",
-		plan.PlanChangeHistory.Valid, plan.PlanChangeHistory.String)
+	// Convert database events to service events
+	var events []PlanHistoryEvent
+	for _, dbEvent := range dbEvents {
+		// Parse old values JSON
+		var oldValues map[string]interface{}
+		if dbEvent.OldValues.Valid {
+			if err := json.Unmarshal([]byte(dbEvent.OldValues.String), &oldValues); err != nil {
+				log.Printf("GetPlanHistory: Failed to parse old values for event %d: %v", dbEvent.ID, err)
+				oldValues = make(map[string]interface{})
+			}
+		}
 
-	if !plan.PlanChangeHistory.Valid || plan.PlanChangeHistory.String == "" {
-		log.Printf("GetPlanHistory: No history found, returning empty array")
-		return []PlanHistoryEvent{}, nil
+		// Parse new values JSON
+		var newValues map[string]interface{}
+		if dbEvent.NewValues.Valid {
+			if err := json.Unmarshal([]byte(dbEvent.NewValues.String), &newValues); err != nil {
+				log.Printf("GetPlanHistory: Failed to parse new values for event %d: %v", dbEvent.ID, err)
+				newValues = make(map[string]interface{})
+			}
+		}
+
+		// Parse metadata JSON
+		var metadata map[string]interface{}
+		if dbEvent.Metadata.Valid {
+			if err := json.Unmarshal([]byte(dbEvent.Metadata.String), &metadata); err != nil {
+				log.Printf("GetPlanHistory: Failed to parse metadata for event %d: %v", dbEvent.ID, err)
+				metadata = make(map[string]interface{})
+			}
+		}
+
+		// Convert user ID
+		userID := ""
+		if dbEvent.UserID.Valid {
+			userID = dbEvent.UserID.String
+		}
+
+		// Convert description
+		description := ""
+		if dbEvent.Description.Valid {
+			description = dbEvent.Description.String
+		}
+
+		event := PlanHistoryEvent{
+			ID:          fmt.Sprintf("%d", dbEvent.ID),
+			EventType:   dbEvent.EventType,
+			Timestamp:   dbEvent.Timestamp,
+			UserID:      userID,
+			Description: description,
+			OldValues:   oldValues,
+			NewValues:   newValues,
+			Metadata:    metadata,
+		}
+
+		events = append(events, event)
 	}
 
-	var history []PlanHistoryEvent
-	err = json.Unmarshal([]byte(plan.PlanChangeHistory.String), &history)
-	if err != nil {
-		log.Printf("GetPlanHistory: Failed to unmarshal history: %v", err)
-		return nil, fmt.Errorf("failed to unmarshal history: %w", err)
-	}
-
-	log.Printf("GetPlanHistory: Successfully unmarshaled %d history events", len(history))
-	return history, nil
+	log.Printf("GetPlanHistory: Retrieved %d history events for plan %d", len(events), planID)
+	return events, nil
 }
 
 // UpdatePromotionMetadata updates the promotion metadata for a plan
@@ -186,76 +212,115 @@ func (s *PlanHistoryService) GetPromotionMetadata(ctx context.Context, planID in
 }
 
 // CreatePlanCreatedEvent creates a history event for plan creation
-func (s *PlanHistoryService) CreatePlanCreatedEvent(plan *database.SubscriptionPlan, userID string) PlanHistoryEvent {
-	return PlanHistoryEvent{
-		ID:          fmt.Sprintf("evt_%d", time.Now().Unix()),
+func (s *PlanHistoryService) CreatePlanCreatedEvent(plan *database.SubscriptionPlan, userDataJSON string) PlanHistoryEvent {
+	eventID := fmt.Sprintf("evt_%d", time.Now().Unix())
+
+	metadata := map[string]interface{}{
+		"action":    "created",
+		"plan_name": plan.Name,
+	}
+
+	event := PlanHistoryEvent{
+		ID:          eventID,
 		EventType:   "plan_created",
 		Timestamp:   time.Now(),
-		UserID:      userID,
+		UserID:      userDataJSON, // Now contains JSONB user data
 		Description: fmt.Sprintf("Plan '%s' was created", plan.Name),
 		NewValues: map[string]interface{}{
-			"name":      plan.Name,
-			"price":     plan.Price,
-			"sub_type":  plan.SubType,
-			"is_active": plan.IsActive,
+			"id":              plan.ID,
+			"name":            plan.Name,
+			"price":           plan.Price,
+			"currency":        plan.Currency,
+			"features":        plan.Features.String,
+			"interval":        plan.Interval,
+			"sub_type":        plan.SubType,
+			"is_active":       plan.IsActive,
+			"short_desc":      plan.ShortDesc.String,
+			"description":     plan.Description,
+			"interval_count":  plan.IntervalCount,
+			"stripe_price_id": plan.StripePriceID.String,
 		},
-		Metadata: map[string]interface{}{
-			"plan_name": plan.Name,
-			"action":    "creation",
-		},
+		Metadata: metadata,
 	}
+
+	return event
 }
 
 // CreatePlanUpdatedEvent creates a history event for plan updates
-func (s *PlanHistoryService) CreatePlanUpdatedEvent(planID int, oldValues, newValues map[string]interface{}, userID string) PlanHistoryEvent {
-	return PlanHistoryEvent{
-		ID:          fmt.Sprintf("evt_%d", time.Now().Unix()),
+func (s *PlanHistoryService) CreatePlanUpdatedEvent(planID int, oldValues, newValues map[string]interface{}, userDataJSON string) PlanHistoryEvent {
+	eventID := fmt.Sprintf("evt_%d", time.Now().Unix())
+
+	// Generate a more descriptive message based on what changed
+	var changedFields []string
+	for field := range newValues {
+		changedFields = append(changedFields, field)
+	}
+
+	description := "Plan was updated"
+	if len(changedFields) > 0 {
+		description = fmt.Sprintf("Plan updated: %s", strings.Join(changedFields, ", "))
+	}
+
+	metadata := map[string]interface{}{
+		"action":  "update",
+		"plan_id": planID,
+	}
+
+	event := PlanHistoryEvent{
+		ID:          eventID,
 		EventType:   "plan_updated",
 		Timestamp:   time.Now(),
-		UserID:      userID,
-		Description: fmt.Sprintf("Plan was updated"),
+		UserID:      userDataJSON, // Now contains JSONB user data
+		Description: description,
 		OldValues:   oldValues,
 		NewValues:   newValues,
-		Metadata: map[string]interface{}{
-			"plan_id": planID,
-			"action":  "update",
-		},
+		Metadata:    metadata,
 	}
+
+	return event
 }
 
 // CreatePromotionStartedEvent creates a history event for promotion start
-func (s *PlanHistoryService) CreatePromotionStartedEvent(plan *database.SubscriptionPlan, userID string) PlanHistoryEvent {
-	return PlanHistoryEvent{
-		ID:        fmt.Sprintf("evt_%d", time.Now().Unix()),
-		EventType: "promotion_started",
-		Timestamp: time.Now(),
-		UserID:    userID,
-		Description: fmt.Sprintf("Promotion started for %s (until %s)",
-			plan.Name,
-			plan.PromotionEndDate.Time.Format("2006-01-02")),
-		OldValues: map[string]interface{}{
-			"sub_type": "stnd",
-		},
-		NewValues: map[string]interface{}{
-			"sub_type":             "prmo",
-			"promotion_start_date": plan.PromotionStartDate.Time,
-			"promotion_end_date":   plan.PromotionEndDate.Time,
-		},
-		Metadata: map[string]interface{}{
-			"plan_name": plan.Name,
-			"action":    "promotion_start",
-		},
+func (s *PlanHistoryService) CreatePromotionStartedEvent(plan *database.SubscriptionPlan, userDataJSON string) PlanHistoryEvent {
+	eventID := fmt.Sprintf("evt_%d", time.Now().Unix())
+
+	metadata := map[string]interface{}{
+		"action":    "promotion_started",
+		"plan_name": plan.Name,
 	}
+
+	event := PlanHistoryEvent{
+		ID:          eventID,
+		EventType:   "promotion_started",
+		Timestamp:   time.Now(),
+		UserID:      userDataJSON, // Now contains JSONB user data
+		Description: fmt.Sprintf("Promotion started for plan '%s'", plan.Name),
+		NewValues: map[string]interface{}{
+			"sub_type":  "prmo",
+			"is_active": true,
+		},
+		Metadata: metadata,
+	}
+
+	return event
 }
 
 // CreatePromotionEndedEvent creates a history event for promotion end
-func (s *PlanHistoryService) CreatePromotionEndedEvent(plan *database.SubscriptionPlan, userID string, reason string) PlanHistoryEvent {
-	return PlanHistoryEvent{
-		ID:          fmt.Sprintf("evt_%d", time.Now().Unix()),
+func (s *PlanHistoryService) CreatePromotionEndedEvent(plan *database.SubscriptionPlan, userDataJSON string, reason string) PlanHistoryEvent {
+	eventID := fmt.Sprintf("evt_%d", time.Now().Unix())
+
+	metadata := map[string]interface{}{
+		"action":    "promotion_ended",
+		"plan_name": plan.Name,
+		"reason":    reason,
+	}
+
+	event := PlanHistoryEvent{
+		ID:          eventID,
 		EventType:   "promotion_ended",
 		Timestamp:   time.Now(),
-		UserID:      userID,
-		Description: fmt.Sprintf("Promotion ended for %s (%s)", plan.Name, reason),
+		UserID:      userDataJSON, // Now contains JSONB user data
+		Description: fmt.Sprintf("Promotion ended for plan '%s' (%s)", plan.Name, reason),
 		OldValues: map[string]interface{}{
 			"sub_type": "prmo",
 		},
@@ -263,26 +328,31 @@ func (s *PlanHistoryService) CreatePromotionEndedEvent(plan *database.Subscripti
 			"sub_type":  "stnd",
 			"is_active": false,
 		},
-		Metadata: map[string]interface{}{
-			"plan_name": plan.Name,
-			"action":    "promotion_end",
-			"reason":    reason,
-		},
+		Metadata: metadata,
 	}
+
+	return event
 }
 
 // CreateStatusToggleEvent creates a history event for status changes
-func (s *PlanHistoryService) CreateStatusToggleEvent(plan *database.SubscriptionPlan, newStatus bool, userID string) PlanHistoryEvent {
+func (s *PlanHistoryService) CreateStatusToggleEvent(plan *database.SubscriptionPlan, newStatus bool, userDataJSON string) PlanHistoryEvent {
+	eventID := fmt.Sprintf("evt_%d", time.Now().Unix())
+
 	action := "activated"
 	if !newStatus {
 		action = "deactivated"
 	}
 
-	return PlanHistoryEvent{
-		ID:          fmt.Sprintf("evt_%d", time.Now().Unix()),
+	metadata := map[string]interface{}{
+		"action":    action,
+		"plan_name": plan.Name,
+	}
+
+	event := PlanHistoryEvent{
+		ID:          eventID,
 		EventType:   "status_toggled",
 		Timestamp:   time.Now(),
-		UserID:      userID,
+		UserID:      userDataJSON, // Now contains JSONB user data
 		Description: fmt.Sprintf("Plan '%s' was %s", plan.Name, action),
 		OldValues: map[string]interface{}{
 			"is_active": !newStatus,
@@ -290,11 +360,10 @@ func (s *PlanHistoryService) CreateStatusToggleEvent(plan *database.Subscription
 		NewValues: map[string]interface{}{
 			"is_active": newStatus,
 		},
-		Metadata: map[string]interface{}{
-			"plan_name": plan.Name,
-			"action":    action,
-		},
+		Metadata: metadata,
 	}
+
+	return event
 }
 
 // UpdatePromotionStats updates the promotion statistics in metadata

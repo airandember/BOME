@@ -3,8 +3,8 @@ package routes
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"bome-backend/internal/database"
@@ -61,6 +61,13 @@ func SetupSubscriptionPlanRoutes(router *gin.RouterGroup, db *database.DB, subsc
 
 		// Update promotion status
 		admin.PUT("/:id/promotion", handler.UpdatePromotionStatusHandler)
+
+		// Analytics endpoints for history
+		admin.GET("/:id/history", handler.GetPlanHistoryHandler)
+		admin.GET("/analytics/history-stats", handler.GetHistoryStatsHandler)
+		admin.GET("/analytics/history-by-type/:eventType", handler.GetHistoryByTypeHandler)
+		admin.GET("/analytics/history-by-user/:userID", handler.GetHistoryByUserHandler)
+		admin.GET("/analytics/history-by-date-range", handler.GetHistoryByDateRangeHandler)
 	}
 
 	// Public routes for listing available plans (need to be on main router)
@@ -78,62 +85,57 @@ func (h *SubscriptionPlanHandler) CreateSubscriptionPlanHandler(c *gin.Context) 
 		return
 	}
 
-	// Extract user information for history logging
-	userID := "system"
-	if user, exists := c.Get("user_id"); exists {
-		if userStr, ok := user.(string); ok {
-			userID = userStr
-		}
-	}
+	// Get user data from header if available
+	userDataHeader := c.GetHeader("X-User-Data")
+	var ctx context.Context = c.Request.Context()
 
-	// Create context with user information
-	ctx := context.WithValue(c.Request.Context(), "user_id", userID)
-
-	// Parse dates with flexible parser
-	promotionStartDate, err := services.ParseFlexibleDate(req.PromotionStartDate)
-	if err != nil {
-		log.Printf("CreateSubscriptionPlanHandler: invalid start date: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid promotion start date: %v", err)})
-		return
-	}
-
-	promotionEndDate, err := services.ParseFlexibleDate(req.PromotionEndDate)
-	if err != nil {
-		log.Printf("CreateSubscriptionPlanHandler: invalid end date: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid promotion end date: %v", err)})
-		return
-	}
-
-	// Format dates for database storage
-	promotionStartDateSQL := services.FormatDateForDatabase(promotionStartDate, false)
-	promotionEndDateSQL := services.FormatDateForDatabase(promotionEndDate, true)
-
-	// Convert features array to JSON string
-	featuresJSON, err := json.Marshal(req.Features)
-	if err != nil {
-		log.Printf("CreateSubscriptionPlanHandler: failed to marshal features: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid features format"})
-		return
+	if userDataHeader != "" {
+		log.Printf("CreateSubscriptionPlanHandler: Found user data in header: %s", userDataHeader)
+		// Create a new context with user data
+		ctx = context.WithValue(c.Request.Context(), "frontend_user_data", userDataHeader)
+	} else {
+		log.Printf("CreateSubscriptionPlanHandler: No user data in header, using context from middleware")
 	}
 
 	// Convert request to database model
 	plan := &database.SubscriptionPlan{
-		Name:               req.Name,
-		Description:        req.Description,
-		ShortDesc:          sql.NullString{String: req.ShortDesc, Valid: req.ShortDesc != ""},
-		Price:              req.Price,
-		Currency:           req.Currency,
-		Interval:           req.Interval,
-		IntervalCount:      req.IntervalCount,
-		StripePriceID:      sql.NullString{String: req.StripePriceID, Valid: req.StripePriceID != ""},
-		Features:           sql.NullString{String: string(featuresJSON), Valid: len(req.Features) > 0},
-		IsActive:           req.IsActive,
-		PromotionStartDate: promotionStartDateSQL,
-		PromotionEndDate:   promotionEndDateSQL,
-		SubType:            req.SubType,
-		IsDeleted:          sql.NullBool{Bool: false, Valid: true},
-		CreatedAt:          time.Now(),
-		UpdatedAt:          time.Now(),
+		Name:          req.Name,
+		Description:   req.Description,
+		ShortDesc:     sql.NullString{String: req.ShortDesc, Valid: req.ShortDesc != ""},
+		Price:         req.Price,
+		Currency:      req.Currency,
+		Interval:      req.Interval,
+		IntervalCount: req.IntervalCount,
+		StripePriceID: sql.NullString{String: req.StripePriceID, Valid: req.StripePriceID != ""},
+		Features:      sql.NullString{String: "[]", Valid: true}, // Will be updated below
+		IsActive:      req.IsActive,
+		SubType:       req.SubType,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+
+	// Handle features JSON marshaling
+	if len(req.Features) > 0 {
+		featuresJSON, err := json.Marshal(req.Features)
+		if err != nil {
+			log.Printf("CreateSubscriptionPlanHandler: failed to marshal features: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process features"})
+			return
+		}
+		plan.Features = sql.NullString{String: string(featuresJSON), Valid: true}
+	}
+
+	// Handle promotion dates
+	if req.PromotionStartDate != "" {
+		if startDate, err := services.ParseFlexibleDate(req.PromotionStartDate); err == nil {
+			plan.PromotionStartDate = services.FormatDateForDatabase(startDate, false)
+		}
+	}
+
+	if req.PromotionEndDate != "" {
+		if endDate, err := services.ParseFlexibleDate(req.PromotionEndDate); err == nil {
+			plan.PromotionEndDate = services.FormatDateForDatabase(endDate, true)
+		}
 	}
 
 	createdPlan, err := h.service.CreateSubscriptionPlan(ctx, plan)
@@ -142,6 +144,7 @@ func (h *SubscriptionPlanHandler) CreateSubscriptionPlanHandler(c *gin.Context) 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
 	c.JSON(http.StatusCreated, createdPlan)
 }
 
@@ -219,16 +222,21 @@ func (h *SubscriptionPlanHandler) UpdateSubscriptionPlanHandler(c *gin.Context) 
 		return
 	}
 
-	// Extract user information for history logging
-	userID := "system"
-	if user, exists := c.Get("user_id"); exists {
-		if userStr, ok := user.(string); ok {
-			userID = userStr
-		}
-	}
+	// Debug: Log all headers
+	log.Printf("UpdateSubscriptionPlanHandler: All headers: %+v", c.Request.Header)
 
-	// Create context with user information
-	ctx := context.WithValue(c.Request.Context(), "user_id", userID)
+	// Get user data from header if available
+	userDataHeader := c.GetHeader("X-User-Data")
+	var ctx context.Context = c.Request.Context()
+
+	if userDataHeader != "" {
+		log.Printf("UpdateSubscriptionPlanHandler: Found user data in header: %s", userDataHeader)
+		// Create a new context with user data
+		ctx = context.WithValue(c.Request.Context(), "frontend_user_data", userDataHeader)
+		log.Printf("UpdateSubscriptionPlanHandler: Created context with frontend_user_data")
+	} else {
+		log.Printf("UpdateSubscriptionPlanHandler: No user data in header, using context from middleware")
+	}
 
 	plan, err := h.service.UpdateSubscriptionPlan(ctx, id, updates)
 	if err != nil {
@@ -270,16 +278,18 @@ func (h *SubscriptionPlanHandler) ToggleSubscriptionPlanStatus(c *gin.Context) {
 		return
 	}
 
-	// Extract user information for history logging
-	userID := "system"
-	if user, exists := c.Get("user_id"); exists {
-		if userStr, ok := user.(string); ok {
-			userID = userStr
-		}
-	}
+	// Get user data from header if available
+	userDataHeader := c.GetHeader("X-User-Data")
+	var ctx context.Context = c.Request.Context()
 
-	// Create context with user information
-	ctx := context.WithValue(c.Request.Context(), "user_id", userID)
+	if userDataHeader != "" {
+		log.Printf("ToggleSubscriptionPlanStatus: Found user data in header: %s", userDataHeader)
+		// Create a new context with user data
+		ctx = context.WithValue(c.Request.Context(), "frontend_user_data", userDataHeader)
+		log.Printf("ToggleSubscriptionPlanStatus: Created context with frontend_user_data")
+	} else {
+		log.Printf("ToggleSubscriptionPlanStatus: No user data in header, using context from middleware")
+	}
 
 	plan, err := h.service.ToggleSubscriptionPlanStatus(ctx, id, req.IsActive)
 	if err != nil {
@@ -316,16 +326,8 @@ func (h *SubscriptionPlanHandler) UpdatePromotionStatusHandler(c *gin.Context) {
 
 	log.Printf("Request received: IsPromoted=%v, PromotionEndDate=%s\n", req.IsPromoted, req.PromotionEndDate)
 
-	// Extract user information for history logging
-	userID := "system"
-	if user, exists := c.Get("user_id"); exists {
-		if userStr, ok := user.(string); ok {
-			userID = userStr
-		}
-	}
-
-	// Create context with user information
-	ctx := context.WithValue(c.Request.Context(), "user_id", userID)
+	// Pass the original context with user information from middleware
+	ctx := c.Request.Context()
 
 	// Parse promotion end date if provided
 	var promotionEndDate *time.Time
@@ -435,5 +437,148 @@ func getSubscriptionPlanPublic(c *gin.Context, service *services.SubscriptionPla
 		},
 		"message": "Subscription plan retrieved successfully",
 		"status":  "success",
+	})
+}
+
+// Analytics handlers for history system
+
+// GetPlanHistoryHandler handles GET /api/admin/subscription-plans/:id/history
+func (h *SubscriptionPlanHandler) GetPlanHistoryHandler(c *gin.Context) {
+	log.Println("GetPlanHistoryHandler called")
+	id := c.Param("id")
+
+	planID, err := strconv.Atoi(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid plan ID"})
+		return
+	}
+
+	historyEvents, err := h.service.GetHistoryService().GetPlanHistory(c.Request.Context(), planID)
+	if err != nil {
+		log.Printf("GetPlanHistoryHandler: error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"plan_id": id,
+		"history": historyEvents,
+		"count":   len(historyEvents),
+	})
+}
+
+// GetHistoryStatsHandler handles GET /api/admin/subscription-plans/analytics/history-stats
+func (h *SubscriptionPlanHandler) GetHistoryStatsHandler(c *gin.Context) {
+	log.Println("GetHistoryStatsHandler called")
+
+	stats, err := h.service.GetDatabase().GetHistoryStats()
+	if err != nil {
+		log.Printf("GetHistoryStatsHandler: error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"stats": stats,
+	})
+}
+
+// GetHistoryByTypeHandler handles GET /api/admin/subscription-plans/analytics/history-by-type/:eventType
+func (h *SubscriptionPlanHandler) GetHistoryByTypeHandler(c *gin.Context) {
+	log.Println("GetHistoryByTypeHandler called")
+	eventType := c.Param("eventType")
+
+	// Get limit from query params, default to 100
+	limitStr := c.DefaultQuery("limit", "100")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		limit = 100
+	}
+
+	events, err := h.service.GetDatabase().GetHistoryEventsByType(eventType, limit)
+	if err != nil {
+		log.Printf("GetHistoryByTypeHandler: error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"event_type": eventType,
+		"events":     events,
+		"count":      len(events),
+	})
+}
+
+// GetHistoryByUserHandler handles GET /api/admin/subscription-plans/analytics/history-by-user/:userID
+func (h *SubscriptionPlanHandler) GetHistoryByUserHandler(c *gin.Context) {
+	log.Println("GetHistoryByUserHandler called")
+	userID := c.Param("userID")
+
+	// Get limit from query params, default to 100
+	limitStr := c.DefaultQuery("limit", "100")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		limit = 100
+	}
+
+	events, err := h.service.GetDatabase().GetHistoryEventsByUser(userID, limit)
+	if err != nil {
+		log.Printf("GetHistoryByUserHandler: error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"user_id": userID,
+		"events":  events,
+		"count":   len(events),
+	})
+}
+
+// GetHistoryByDateRangeHandler handles GET /api/admin/subscription-plans/analytics/history-by-date-range
+func (h *SubscriptionPlanHandler) GetHistoryByDateRangeHandler(c *gin.Context) {
+	log.Println("GetHistoryByDateRangeHandler called")
+
+	// Get date range from query params
+	startDateStr := c.Query("start_date")
+	endDateStr := c.Query("end_date")
+
+	if startDateStr == "" || endDateStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "start_date and end_date are required"})
+		return
+	}
+
+	// Parse dates
+	startDate, err := time.Parse("2006-01-02", startDateStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid start_date format (use YYYY-MM-DD)"})
+		return
+	}
+
+	endDate, err := time.Parse("2006-01-02", endDateStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid end_date format (use YYYY-MM-DD)"})
+		return
+	}
+
+	// Get limit from query params, default to 100
+	limitStr := c.DefaultQuery("limit", "100")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		limit = 100
+	}
+
+	events, err := h.service.GetDatabase().GetHistoryEventsByDateRange(startDate, endDate, limit)
+	if err != nil {
+		log.Printf("GetHistoryByDateRangeHandler: error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"start_date": startDate,
+		"end_date":   endDate,
+		"events":     events,
+		"count":      len(events),
 	})
 }

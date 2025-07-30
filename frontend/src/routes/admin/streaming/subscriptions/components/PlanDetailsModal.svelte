@@ -32,8 +32,8 @@
 	let filteredHistory = formattedHistory;
 
 	// Handle filter changes
-	function handleFilterChange(event: CustomEvent) {
-		filteredHistory = event.detail.filteredEvents.map((event: any) => ({
+	function handleFilterChange(filteredEvents: Record<string, any>[]) {
+		filteredHistory = filteredEvents.map((event: any) => ({
 			...event,
 			formattedDate: new Date(event.timestamp).toLocaleDateString('en-US', {
 				year: 'numeric',
@@ -60,6 +60,80 @@
 			'plan_deleted': 'bg-gray-100 text-gray-800'
 		};
 		return colors[eventType] || 'bg-gray-100 text-gray-800';
+	}
+
+	// Get user display name with fallback to localStorage
+	function getUserDisplay(event: any): string {
+		console.log('EVENT: ', event);
+		if (!event.user_id) {
+			console.log('NO USER ID');
+			return 'System';
+		}
+
+		// Handle JSONB user data format (direct from localStorage)
+		if (typeof event.user_id === 'string' && event.user_id.startsWith('{')) {
+			try {
+				const userData = JSON.parse(event.user_id);
+				console.log('Parsed user data:', userData);
+				
+				// Handle system users
+				if (userData.id === 'system' || userData.email === 'system') {
+					if (userData.last_name === '(Auto-Expiration)') {
+						return 'System (Auto-Expiration)';
+					}
+					return 'System';
+				}
+
+				// Handle regular users
+				const firstName = userData.first_name || '';
+				const lastName = userData.last_name || '';
+				const role = userData.role || 'user';
+				
+				let displayName = '';
+				if (firstName && lastName) {
+					displayName = `${firstName} ${lastName}`;
+				} else if (firstName) {
+					displayName = firstName;
+				} else if (userData.email) {
+					displayName = userData.email;
+				} else {
+					displayName = `User ${userData.id}`;
+				}
+
+				// Add role badge
+				const roleBadges: Record<string, string> = {
+					'super_admin': '👑 Super Admin',
+					'system_admin': '🔧 System Admin',
+					'content_manager': '📝 Content Manager',
+					'articles_manager': '📰 Articles Manager',
+					'youtube_manager': '📺 YouTube Manager',
+					'streaming_manager': '🎥 Streaming Manager',
+					'events_manager': '🎪 Events Manager',
+					'advertisement_manager': '📢 Ad Manager',
+					'user_manager': '👥 User Manager',
+					'analytics_manager': '📊 Analytics Manager',
+					'financial_admin': '💰 Financial Admin',
+					'admin': '⚡ Admin',
+					'user': '👤 User',
+					'system': '🤖 System',
+					'dashboard': '🖥️ Dashboard'
+				};
+
+				const roleBadge = roleBadges[role] || `👤 ${role.charAt(0).toUpperCase() + role.slice(1)}`;
+				return `${displayName} (${roleBadge})`;
+			} catch (error) {
+				console.error('Error parsing user data:', error);
+				return 'System';
+			}
+		}
+
+		// Handle legacy string format
+		if (event.user_id === 'System' || event.user_id === 'System (Auto-Expiration)') {
+			return event.user_id;
+		}
+
+		// Fallback
+		return 'System';
 	}
 
 	// Format currency
@@ -96,21 +170,122 @@
 			console.log('PlanDetailsModal: filteredHistory:', filteredHistory);
 		}
 	}
+
+	// Log when modal opens
+	$: if (isOpen && plan) {
+		console.log('🔍 PlanDetailsModal: Modal opened for plan:', plan.name);
+		console.log('🔍 PlanDetailsModal: Test buttons should be visible');
+	}
+
+	// Test function to verify localStorage data
+	function testLocalStorageData() {
+		console.log('=== TESTING LOCALSTORAGE ===');
+		const userData = localStorage.getItem('bome_user_data');
+		console.log('localStorage bome_user_data:', userData);
+		if (userData) {
+			try {
+				const parsed = JSON.parse(userData);
+				console.log('Parsed user data:', parsed);
+			} catch (error) {
+				console.error('Error parsing user data:', error);
+			}
+		} else {
+			console.log('No user data found in localStorage');
+		}
+	}
+
+	// Test the complete flow
+	function testCompleteFlow() {
+		console.log('=== TESTING COMPLETE FLOW ===');
+		
+		// 1. Test localStorage
+		const userData = localStorage.getItem('bome_user_data');
+		console.log('1. localStorage data:', userData);
+		
+		// 2. Test history events
+		if (plan && plan.plan_change_history) {
+			console.log('2. History events:', plan.plan_change_history);
+			plan.plan_change_history.forEach((event, index) => {
+				console.log(`   Event ${index}:`, event);
+				console.log(`   User ID:`, event.user_id);
+				console.log(`   Display:`, getUserDisplay(event));
+			});
+		} else {
+			console.log('2. No history events found');
+		}
+		
+		// 3. Test filtered history
+		console.log('3. Filtered history:', filteredHistory);
+	}
 </script>
 
 {#if isOpen && plan}
 	<div class="modal-backdrop" on:click={handleBackdropClick} transition:fade={{ duration: 200 }}>
 		<div class="modal-content" transition:fly={{ y: 50, duration: 300 }}>
+			<h2>HOWDY BOYS</h2>
 			<div class="modal-header">
 				<h2 class="modal-title">Plan Details: {plan.name}</h2>
-				<button class="close-button" on:click={closeModal}>
-					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-					</svg>
-				</button>
+				<div class="header-actions">
+					<button class="test-button" on:click={testLocalStorageData} style="background: red; color: white; padding: 8px; margin: 4px;">
+						🔍 Test localStorage
+					</button>
+					<button class="test-button" on:click={testCompleteFlow} style="background: blue; color: white; padding: 8px; margin: 4px;">
+						🔍 Test Flow
+					</button>
+					<button class="close-button" on:click={closeModal}>
+						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
 			</div>
 
 			<div class="modal-body">
+				<!-- Debug Test Section -->
+				<div class="debug-section" style="background: yellow; padding: 10px; margin-bottom: 20px; border: 2px solid red;">
+					<h4 style="color: red; margin: 0 0 10px 0;">🔍 DEBUG TEST SECTION</h4>
+					<button 
+						on:click={testLocalStorageData}
+						style="background: red; color: white; padding: 10px; margin: 5px; border: none; border-radius: 5px; cursor: pointer;"
+					>
+						🔍 Test localStorage
+					</button>
+					<button 
+						on:click={testCompleteFlow}
+						style="background: blue; color: white; padding: 10px; margin: 5px; border: none; border-radius: 5px; cursor: pointer;"
+					>
+						🔍 Test Complete Flow
+					</button>
+					<button 
+						on:click={() => console.log('Modal is working!')}
+						style="background: green; color: white; padding: 10px; margin: 5px; border: none; border-radius: 5px; cursor: pointer;"
+					>
+						✅ Test Modal
+					</button>
+					<button 
+						on:click={async () => {
+							if (!plan) return;
+							console.log('Making a test change to the plan...');
+							try {
+								// Use the existing service directly - we're already authenticated in the dashboard
+								const { StreamingSubscriptionService } = await import('$lib/services/streaming-subscriptions');
+								const updatedPlan = await StreamingSubscriptionService.update({
+									id: plan.id,
+									description: plan.description + ' (Test change at ' + new Date().toLocaleTimeString() + ')'
+								});
+								console.log('Test change result:', updatedPlan);
+								// Refresh the plan data
+								plan = updatedPlan;
+							} catch (error) {
+								console.error('Test change failed:', error);
+							}
+						}}
+						style="background: orange; color: white; padding: 10px; margin: 5px; border: none; border-radius: 5px; cursor: pointer;"
+					>
+						🧪 Test Change
+					</button>
+				</div>
+
 				<!-- Plan Overview -->
 				<div class="section">
 					<h3 class="section-title">Plan Overview</h3>
@@ -231,7 +406,7 @@
 						<h3 class="section-title">Change History ({filteredHistory.length} events)</h3>
 						<HistoryFilter 
 							events={plan?.plan_change_history || []} 
-							on:filterChange={handleFilterChange} 
+							onFilterChange={handleFilterChange} 
 						/>
 						<div class="history-timeline">
 							{#each filteredHistory as event}
@@ -243,6 +418,11 @@
 										<span class="event-date">{event.formattedDate}</span>
 									</div>
 									<p class="event-description">{event.description}</p>
+									{#if event.user_id}
+										<div class="event-user">
+											<span class="user-badge">👤 {getUserDisplay(event)}</span>
+										</div>
+									{/if}
 									{#if event.analytics_tag}
 										<span class="analytics-tag">Analytics: {event.analytics_tag}</span>
 									{/if}
@@ -295,7 +475,7 @@
 		background: white;
 		border-radius: 0.5rem;
 		box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-		max-width: 800px;
+		max-width: 1800px;
 		width: 100%;
 		max-height: 90vh;
 		overflow: hidden;
@@ -309,6 +489,28 @@
 		align-items: center;
 		padding: 1.5rem;
 		border-bottom: 1px solid #e5e7eb;
+	}
+
+	.header-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.test-button {
+		background: #3b82f6;
+		color: white;
+		border: none;
+		padding: 0.25rem 0.75rem;
+		border-radius: 0.25rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: background-color 0.2s;
+	}
+
+	.test-button:hover {
+		background: #2563eb;
 	}
 
 	.modal-title {
@@ -528,6 +730,23 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		margin-bottom: 0.5rem;
+	}
+
+	.event-user {
+		margin-top: 0.5rem;
+		padding-top: 0.5rem;
+		border-top: 1px solid #e2e8f0;
+	}
+
+	.user-badge {
+		padding: 0.25rem 0.75rem;
+		border-radius: 0.25rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		background: #e0f2fe;
+		color: #1e40af;
 	}
 
 	.event-changes {
