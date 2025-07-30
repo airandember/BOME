@@ -14,7 +14,7 @@ export interface SubscriptionPlan {
 	is_active: boolean;
 	promotion_end_date?: string;
 	promotion_start_date?: string;
-	plan_change_history?: string[]; // Renamed from promotion_history
+	plan_change_history?: Record<string, any>[]; // Array of history event objects
 	promotion_metadata?: Record<string, any>; // New field for promotion analytics
 	created_at: string;
 	updated_at: string;

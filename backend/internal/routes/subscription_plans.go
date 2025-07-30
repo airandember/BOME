@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -46,6 +47,9 @@ func SetupSubscriptionPlanRoutes(router *gin.RouterGroup, db *database.DB, subsc
 		// Get subscription plan by ID
 		admin.GET("/:id", handler.GetSubscriptionPlanByIDHandler)
 
+		// Debug endpoint to check raw database data
+		admin.GET("/:id/debug", handler.DebugSubscriptionPlanHandler)
+
 		// Update subscription plan
 		admin.PUT("/:id", handler.UpdateSubscriptionPlanHandler)
 
@@ -73,6 +77,17 @@ func (h *SubscriptionPlanHandler) CreateSubscriptionPlanHandler(c *gin.Context) 
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Extract user information for history logging
+	userID := "system"
+	if user, exists := c.Get("user_id"); exists {
+		if userStr, ok := user.(string); ok {
+			userID = userStr
+		}
+	}
+
+	// Create context with user information
+	ctx := context.WithValue(c.Request.Context(), "user_id", userID)
 
 	// Parse dates with flexible parser
 	promotionStartDate, err := services.ParseFlexibleDate(req.PromotionStartDate)
@@ -121,7 +136,7 @@ func (h *SubscriptionPlanHandler) CreateSubscriptionPlanHandler(c *gin.Context) 
 		UpdatedAt:          time.Now(),
 	}
 
-	createdPlan, err := h.service.CreateSubscriptionPlan(c.Request.Context(), plan)
+	createdPlan, err := h.service.CreateSubscriptionPlan(ctx, plan)
 	if err != nil {
 		log.Printf("CreateSubscriptionPlanHandler: error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -170,6 +185,28 @@ func (h *SubscriptionPlanHandler) GetSubscriptionPlanByIDHandler(c *gin.Context)
 	c.JSON(http.StatusOK, plan)
 }
 
+// DebugSubscriptionPlanHandler handles GET /api/subscription_plans/:id/debug
+// Returns raw database data for debugging
+func (h *SubscriptionPlanHandler) DebugSubscriptionPlanHandler(c *gin.Context) {
+	log.Println("DebugSubscriptionPlanHandler called")
+	id := c.Param("id")
+
+	// Get raw database data through service
+	plan, err := h.service.GetSubscriptionPlan(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Plan not found"})
+		return
+	}
+
+	// Return processed data for debugging
+	c.JSON(http.StatusOK, gin.H{
+		"id":                  plan.ID,
+		"name":                plan.Name,
+		"plan_change_history": plan.PlanChangeHistory,
+		"promotion_metadata":  plan.PromotionMetadata,
+	})
+}
+
 // UpdateSubscriptionPlanHandler handles PUT /api/subscription_plans/:id
 // Updates a subscription plan and returns the updated object
 func (h *SubscriptionPlanHandler) UpdateSubscriptionPlanHandler(c *gin.Context) {
@@ -181,7 +218,19 @@ func (h *SubscriptionPlanHandler) UpdateSubscriptionPlanHandler(c *gin.Context) 
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	plan, err := h.service.UpdateSubscriptionPlan(c.Request.Context(), id, updates)
+
+	// Extract user information for history logging
+	userID := "system"
+	if user, exists := c.Get("user_id"); exists {
+		if userStr, ok := user.(string); ok {
+			userID = userStr
+		}
+	}
+
+	// Create context with user information
+	ctx := context.WithValue(c.Request.Context(), "user_id", userID)
+
+	plan, err := h.service.UpdateSubscriptionPlan(ctx, id, updates)
 	if err != nil {
 		log.Printf("UpdateSubscriptionPlanHandler: error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -221,7 +270,18 @@ func (h *SubscriptionPlanHandler) ToggleSubscriptionPlanStatus(c *gin.Context) {
 		return
 	}
 
-	plan, err := h.service.ToggleSubscriptionPlanStatus(c.Request.Context(), id, req.IsActive)
+	// Extract user information for history logging
+	userID := "system"
+	if user, exists := c.Get("user_id"); exists {
+		if userStr, ok := user.(string); ok {
+			userID = userStr
+		}
+	}
+
+	// Create context with user information
+	ctx := context.WithValue(c.Request.Context(), "user_id", userID)
+
+	plan, err := h.service.ToggleSubscriptionPlanStatus(ctx, id, req.IsActive)
 	if err != nil {
 		log.Printf("ToggleSubscriptionPlanStatus: error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -256,6 +316,17 @@ func (h *SubscriptionPlanHandler) UpdatePromotionStatusHandler(c *gin.Context) {
 
 	log.Printf("Request received: IsPromoted=%v, PromotionEndDate=%s\n", req.IsPromoted, req.PromotionEndDate)
 
+	// Extract user information for history logging
+	userID := "system"
+	if user, exists := c.Get("user_id"); exists {
+		if userStr, ok := user.(string); ok {
+			userID = userStr
+		}
+	}
+
+	// Create context with user information
+	ctx := context.WithValue(c.Request.Context(), "user_id", userID)
+
 	// Parse promotion end date if provided
 	var promotionEndDate *time.Time
 	if req.PromotionEndDate != "" {
@@ -268,7 +339,7 @@ func (h *SubscriptionPlanHandler) UpdatePromotionStatusHandler(c *gin.Context) {
 		promotionEndDate = &parsedDate
 	}
 
-	plan, err := h.service.UpdatePromotionStatus(c.Request.Context(), id, req.IsPromoted, promotionEndDate)
+	plan, err := h.service.UpdatePromotionStatus(ctx, id, req.IsPromoted, promotionEndDate)
 	if err != nil {
 		log.Printf("UpdatePromotionStatusHandler: error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

@@ -76,11 +76,17 @@ func NewPlanHistoryService(db *database.DB) *PlanHistoryService {
 
 // AddHistoryEvent adds a new event to the plan's change history
 func (s *PlanHistoryService) AddHistoryEvent(ctx context.Context, planID int, event PlanHistoryEvent) error {
+	log.Printf("AddHistoryEvent: Starting to add event for plan %d", planID)
+	log.Printf("AddHistoryEvent: Event details - Type=%s, Description=%s, UserID=%s", event.EventType, event.Description, event.UserID)
+
 	// Get current history
 	currentHistory, err := s.GetPlanHistory(ctx, planID)
 	if err != nil {
+		log.Printf("AddHistoryEvent: Failed to get current history: %v", err)
 		return fmt.Errorf("failed to get current history: %w", err)
 	}
+
+	log.Printf("AddHistoryEvent: Current history has %d events", len(currentHistory))
 
 	// Add new event
 	currentHistory = append(currentHistory, event)
@@ -88,8 +94,11 @@ func (s *PlanHistoryService) AddHistoryEvent(ctx context.Context, planID int, ev
 	// Convert to JSON
 	historyJSON, err := json.Marshal(currentHistory)
 	if err != nil {
+		log.Printf("AddHistoryEvent: Failed to marshal history to JSON: %v", err)
 		return fmt.Errorf("failed to marshal history to JSON: %w", err)
 	}
+
+	log.Printf("AddHistoryEvent: History JSON length: %d", len(historyJSON))
 
 	// Update database
 	updates := map[string]interface{}{
@@ -98,32 +107,42 @@ func (s *PlanHistoryService) AddHistoryEvent(ctx context.Context, planID int, ev
 
 	_, err = s.db.UpdateSubscriptionPlan(planID, updates)
 	if err != nil {
+		log.Printf("AddHistoryEvent: Failed to update plan history in database: %v", err)
 		return fmt.Errorf("failed to update plan history: %w", err)
 	}
 
-	log.Printf("Added history event to plan %d: %s", planID, event.EventType)
+	log.Printf("AddHistoryEvent: Successfully added history event to plan %d: %s", planID, event.EventType)
 	return nil
 }
 
 // GetPlanHistory retrieves the complete change history for a plan
 func (s *PlanHistoryService) GetPlanHistory(ctx context.Context, planID int) ([]PlanHistoryEvent, error) {
-	//plan, err := s.db.GetSubscriptionPlanByID(planID)
-	//if err != nil {
-	//	return nil, fmt.Errorf("failed to get plan: %w", err)
-	//}
+	log.Printf("GetPlanHistory: Getting history for plan %d", planID)
 
-	//if !plan.PlanChangeHistory.Valid || plan.PlanChangeHistory.String == "" {
-	//return []PlanHistoryEvent{}, nil
-	//}
+	plan, err := s.db.GetSubscriptionPlanByID(planID)
+	if err != nil {
+		log.Printf("GetPlanHistory: Failed to get plan: %v", err)
+		return nil, fmt.Errorf("failed to get plan: %w", err)
+	}
 
-	//var history []PlanHistoryEvent
-	//err = json.Unmarshal([]byte(plan.PlanChangeHistory.String), &history)
-	//if err != nil {
-	//	return nil, fmt.Errorf("failed to unmarshal history: %w", err)
-	//}
+	log.Printf("GetPlanHistory: Plan retrieved - ID=%d, Name=%s", plan.ID, plan.Name)
+	log.Printf("GetPlanHistory: PlanChangeHistory.Valid=%v, PlanChangeHistory.String='%s'",
+		plan.PlanChangeHistory.Valid, plan.PlanChangeHistory.String)
 
-	//return history, nil
-	return nil, nil
+	if !plan.PlanChangeHistory.Valid || plan.PlanChangeHistory.String == "" {
+		log.Printf("GetPlanHistory: No history found, returning empty array")
+		return []PlanHistoryEvent{}, nil
+	}
+
+	var history []PlanHistoryEvent
+	err = json.Unmarshal([]byte(plan.PlanChangeHistory.String), &history)
+	if err != nil {
+		log.Printf("GetPlanHistory: Failed to unmarshal history: %v", err)
+		return nil, fmt.Errorf("failed to unmarshal history: %w", err)
+	}
+
+	log.Printf("GetPlanHistory: Successfully unmarshaled %d history events", len(history))
+	return history, nil
 }
 
 // UpdatePromotionMetadata updates the promotion metadata for a plan
@@ -148,23 +167,22 @@ func (s *PlanHistoryService) UpdatePromotionMetadata(ctx context.Context, planID
 
 // GetPromotionMetadata retrieves the promotion metadata for a plan
 func (s *PlanHistoryService) GetPromotionMetadata(ctx context.Context, planID int) (*PromotionMetadata, error) {
-	//plan, err := s.db.GetSubscriptionPlanByID(planID)
-	//if err != nil {
-	//	return nil, fmt.Errorf("failed to get plan: %w", err)
-	//}
+	plan, err := s.db.GetSubscriptionPlanByID(planID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get plan: %w", err)
+	}
 
-	//if !plan.PromotionMetadata.Valid || plan.PromotionMetadata.String == "" {
-	//	return &PromotionMetadata{}, nil
-	//}
+	if !plan.PromotionMetadata.Valid || plan.PromotionMetadata.String == "" {
+		return &PromotionMetadata{}, nil
+	}
 
-	//var metadata PromotionMetadata
-	//err = json.Unmarshal([]byte(plan.PromotionMetadata.String), &metadata)
-	//if err != nil {
-	//	return nil, fmt.Errorf("failed to unmarshal promotion metadata: %w", err)
-	//}
+	var metadata PromotionMetadata
+	err = json.Unmarshal([]byte(plan.PromotionMetadata.String), &metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal promotion metadata: %w", err)
+	}
 
-	//return &metadata, nil
-	return nil, nil
+	return &metadata, nil
 }
 
 // CreatePlanCreatedEvent creates a history event for plan creation

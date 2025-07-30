@@ -2,6 +2,7 @@
 	import type { SubscriptionPlan } from '$lib/services/streaming-subscriptions';
 	import { formatDateForDisplay } from '$lib/utils/date';
 	import { fade, fly } from 'svelte/transition';
+	import HistoryFilter from './HistoryFilter.svelte';
 
 	export let plan: SubscriptionPlan | null = null;
 	export let isOpen = false;
@@ -26,6 +27,23 @@
 			minute: '2-digit'
 		})
 	})) || [];
+
+	// Filtered history events
+	let filteredHistory = formattedHistory;
+
+	// Handle filter changes
+	function handleFilterChange(event: CustomEvent) {
+		filteredHistory = event.detail.filteredEvents.map((event: any) => ({
+			...event,
+			formattedDate: new Date(event.timestamp).toLocaleDateString('en-US', {
+				year: 'numeric',
+				month: 'short',
+				day: 'numeric',
+				hour: '2-digit',
+				minute: '2-digit'
+			})
+		}));
+	}
 
 	// Get event type color
 	function getEventTypeColor(eventType: string): string {
@@ -66,6 +84,16 @@
 	function handleBackdropClick(event: MouseEvent) {
 		if (event.target === event.currentTarget) {
 			closeModal();
+		}
+	}
+
+	// Debug logging
+	$: {
+		if (plan) {
+			console.log('PlanDetailsModal: Plan data:', plan);
+			console.log('PlanDetailsModal: plan_change_history:', plan.plan_change_history);
+			console.log('PlanDetailsModal: formattedHistory:', formattedHistory);
+			console.log('PlanDetailsModal: filteredHistory:', filteredHistory);
 		}
 	}
 </script>
@@ -200,9 +228,13 @@
 				<!-- Plan Change History -->
 				{#if formattedHistory.length > 0}
 					<div class="section">
-						<h3 class="section-title">Change History ({formattedHistory.length} events)</h3>
+						<h3 class="section-title">Change History ({filteredHistory.length} events)</h3>
+						<HistoryFilter 
+							events={plan?.plan_change_history || []} 
+							on:filterChange={handleFilterChange} 
+						/>
 						<div class="history-timeline">
-							{#each formattedHistory as event}
+							{#each filteredHistory as event}
 								<div class="history-event">
 									<div class="event-header">
 										<span class="event-type {getEventTypeColor(event.event_type)}">

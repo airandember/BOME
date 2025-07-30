@@ -14,29 +14,30 @@ import (
 
 // SubscriptionPlanService handles business logic for subscription plans
 type SubscriptionPlanService struct {
-	db *database.DB
+	db             *database.DB
+	historyService *PlanHistoryService
 }
 
 // SubscriptionPlanResponse represents a subscription plan response
 type SubscriptionPlanResponse struct {
-	ID                 string                 `json:"id"`
-	Name               string                 `json:"name"`
-	Description        string                 `json:"description"`
-	ShortDesc          string                 `json:"short_desc"`
-	Price              float64                `json:"price"`
-	Currency           string                 `json:"currency"`
-	Interval           string                 `json:"interval"`
-	IntervalCount      int                    `json:"interval_count"`
-	StripePriceID      *string                `json:"stripe_price_id,omitempty"`
-	Features           []string               `json:"features"`
-	IsActive           bool                   `json:"is_active"`
-	PromotionEndDate   *time.Time             `json:"promotion_end_date,omitempty"`
-	PromotionStartDate *time.Time             `json:"promotion_start_date,omitempty"`
-	PlanChangeHistory  []string               `json:"plan_change_history,omitempty"` // Renamed from promotion_history
-	PromotionMetadata  map[string]interface{} `json:"promotion_metadata,omitempty"`  // New field for promotion analytics
-	SubType            string                 `json:"sub_type"`                      // stnd = standard, prmo = promotional
-	CreatedAt          time.Time              `json:"created_at"`
-	UpdatedAt          time.Time              `json:"updated_at"`
+	ID                 string                   `json:"id"`
+	Name               string                   `json:"name"`
+	Description        string                   `json:"description"`
+	ShortDesc          string                   `json:"short_desc"`
+	Price              float64                  `json:"price"`
+	Currency           string                   `json:"currency"`
+	Interval           string                   `json:"interval"`
+	IntervalCount      int                      `json:"interval_count"`
+	StripePriceID      *string                  `json:"stripe_price_id,omitempty"`
+	Features           []string                 `json:"features"`
+	IsActive           bool                     `json:"is_active"`
+	PromotionEndDate   *time.Time               `json:"promotion_end_date,omitempty"`
+	PromotionStartDate *time.Time               `json:"promotion_start_date,omitempty"`
+	PlanChangeHistory  []map[string]interface{} `json:"plan_change_history"` // Always include, even if empty
+	PromotionMetadata  map[string]interface{}   `json:"promotion_metadata"`  // Always include, even if empty
+	SubType            string                   `json:"sub_type"`            // stnd = standard, prmo = promotional
+	CreatedAt          time.Time                `json:"created_at"`
+	UpdatedAt          time.Time                `json:"updated_at"`
 }
 
 // CreateSubscriptionPlanRequest represents a request to create a subscription plan
@@ -75,7 +76,10 @@ type UpdateSubscriptionPlanRequest struct {
 
 // NewSubscriptionPlanService creates a new subscription plan service
 func NewSubscriptionPlanService(db *database.DB) *SubscriptionPlanService {
-	return &SubscriptionPlanService{db: db}
+	return &SubscriptionPlanService{
+		db:             db,
+		historyService: NewPlanHistoryService(db),
+	}
 }
 
 // CreateSubscriptionPlan creates a new subscription plan
@@ -85,6 +89,21 @@ func (s *SubscriptionPlanService) CreateSubscriptionPlan(ctx context.Context, pl
 	if err != nil {
 		return nil, err
 	}
+
+	// Add history event for plan creation
+	// Extract user ID from context if available
+	userID := "system" // Default user ID
+	if user, exists := ctx.Value("user_id").(string); exists {
+		userID = user
+	}
+
+	event := s.historyService.CreatePlanCreatedEvent(created, userID)
+	err = s.historyService.AddHistoryEvent(ctx, created.ID, event)
+	if err != nil {
+		log.Printf("Warning: Failed to add creation history event: %v", err)
+		// Don't fail the creation if history logging fails
+	}
+
 	return s.convertToResponse(created), nil
 }
 
@@ -109,11 +128,47 @@ func (s *SubscriptionPlanService) UpdateSubscriptionPlan(ctx context.Context, id
 	if err != nil {
 		return nil, fmt.Errorf("invalid plan ID: %w", err)
 	}
+
+	// Get the current plan to compare old vs new values
+	currentPlan, err := s.db.GetSubscriptionPlanByID(planID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current plan: %w", err)
+	}
+
 	log.Printf("Service: Updating plan %d with: %+v", planID, updates)
 	updated, err := s.db.UpdateSubscriptionPlan(planID, updates)
 	if err != nil {
 		return nil, err
 	}
+
+	// Add history event for plan update
+	// Extract user ID from context if available
+	userID := "system" // Default user ID
+	if user, exists := ctx.Value("user_id").(string); exists {
+		userID = user
+	}
+
+	// Create old values map for comparison
+	oldValues := map[string]interface{}{
+		"name":      currentPlan.Name,
+		"price":     currentPlan.Price,
+		"sub_type":  currentPlan.SubType,
+		"is_active": currentPlan.IsActive,
+	}
+
+	// Create new values map from updates
+	newValues := make(map[string]interface{})
+	for key, value := range updates {
+		newValues[key] = value
+	}
+
+	event := s.historyService.CreatePlanUpdatedEvent(planID, oldValues, newValues, userID)
+	err = s.historyService.AddHistoryEvent(ctx, planID, event)
+	if err != nil {
+		log.Printf("Warning: Failed to add update history event: %v", err)
+		// Don't fail the update if history logging fails
+	}
+
 	return s.convertToResponse(updated), nil
 }
 
@@ -134,25 +189,46 @@ func (s *SubscriptionPlanService) ToggleSubscriptionPlanStatus(ctx context.Conte
 		return nil, fmt.Errorf("invalid plan ID: %w", err)
 	}
 
+	log.Printf("ToggleSubscriptionPlanStatus: Starting toggle for plan %d to isActive=%v", planID, isActive)
+
 	// Check if plan exists
-	_, err = s.db.GetSubscriptionPlanByID(planID)
+	currentPlan, err := s.db.GetSubscriptionPlanByID(planID)
 	if err != nil {
 		return nil, fmt.Errorf("subscription plan not found: %w", err)
 	}
+
+	log.Printf("ToggleSubscriptionPlanStatus: Current plan state - ID=%d, Name=%s, IsActive=%v, SubType=%s",
+		currentPlan.ID, currentPlan.Name, currentPlan.IsActive, currentPlan.SubType)
 
 	// Update status
 	updates := map[string]interface{}{
 		"is_active": isActive,
 	}
-	_, err = s.db.UpdateSubscriptionPlan(planID, updates)
+	updatedPlan, err := s.db.UpdateSubscriptionPlan(planID, updates)
 	if err != nil {
 		return nil, fmt.Errorf("failed to toggle subscription plan status: %w", err)
 	}
 
-	// Get updated plan
-	updatedPlan, err := s.db.GetSubscriptionPlanByID(planID)
+	log.Printf("ToggleSubscriptionPlanStatus: Plan updated successfully - ID=%d, IsActive=%v", updatedPlan.ID, updatedPlan.IsActive)
+
+	// Add history event for status toggle
+	// Extract user ID from context if available
+	userID := "system" // Default user ID
+	if user, exists := ctx.Value("user_id").(string); exists {
+		userID = user
+	}
+
+	log.Printf("ToggleSubscriptionPlanStatus: Creating history event with userID=%s", userID)
+
+	event := s.historyService.CreateStatusToggleEvent(currentPlan, isActive, userID)
+	log.Printf("ToggleSubscriptionPlanStatus: Created event - Type=%s, Description=%s", event.EventType, event.Description)
+
+	err = s.historyService.AddHistoryEvent(ctx, planID, event)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get updated subscription plan: %w", err)
+		log.Printf("Warning: Failed to add status toggle history event: %v", err)
+		// Don't fail the toggle if history logging fails
+	} else {
+		log.Printf("ToggleSubscriptionPlanStatus: Successfully added history event for plan %d", planID)
 	}
 
 	return s.convertToResponse(updatedPlan), nil
@@ -167,10 +243,12 @@ func (s *SubscriptionPlanService) UpdatePromotionStatus(ctx context.Context, id 
 		return nil, fmt.Errorf("invalid plan ID: %w", err)
 	}
 	log.Printf("UpdatePromotionStatus called for plan %d, isPromoted: %v", planID, isPromoted)
-	_, err = s.db.GetSubscriptionPlanByID(planID)
+
+	currentPlan, err := s.db.GetSubscriptionPlanByID(planID)
 	if err != nil {
 		return nil, err
 	}
+
 	updates := map[string]interface{}{}
 	if isPromoted {
 		updates["sub_type"] = "prmo"
@@ -184,10 +262,39 @@ func (s *SubscriptionPlanService) UpdatePromotionStatus(ctx context.Context, id 
 		updates["is_active"] = false
 		updates["promotion_end_date"] = time.Now()
 	}
+
 	updatedPlan, err := s.db.UpdateSubscriptionPlan(planID, updates)
 	if err != nil {
 		return nil, err
 	}
+
+	// Add history event for promotion status change
+	// Extract user ID from context if available
+	userID := "system" // Default user ID
+	if user, exists := ctx.Value("user_id").(string); exists {
+		userID = user
+	}
+
+	if isPromoted {
+		// Create promotion started event
+		event := s.historyService.CreatePromotionStartedEvent(updatedPlan, userID)
+		err = s.historyService.AddHistoryEvent(ctx, planID, event)
+		if err != nil {
+			log.Printf("Warning: Failed to add promotion started history event: %v", err)
+		}
+	} else {
+		// Create promotion ended event
+		reason := "manual"
+		if currentPlan.SubType == "prmo" && currentPlan.PromotionEndDate.Valid && currentPlan.PromotionEndDate.Time.Before(time.Now()) {
+			reason = "expired"
+		}
+		event := s.historyService.CreatePromotionEndedEvent(currentPlan, userID, reason)
+		err = s.historyService.AddHistoryEvent(ctx, planID, event)
+		if err != nil {
+			log.Printf("Warning: Failed to add promotion ended history event: %v", err)
+		}
+	}
+
 	return s.convertToResponse(updatedPlan), nil
 }
 
@@ -209,6 +316,8 @@ func (s *SubscriptionPlanService) GetAllSubscriptionPlans(ctx context.Context) (
 	for i, plan := range plans {
 		log.Printf("Service: Plan %d: ID=%d, Name=%s, IsActive=%v, SubType=%s, Interval=%s",
 			i, plan.ID, plan.Name, plan.IsActive, plan.SubType, plan.Interval)
+		log.Printf("Service: Plan %d PlanChangeHistory: Valid=%v, String='%s'",
+			i, plan.PlanChangeHistory.Valid, plan.PlanChangeHistory.String)
 	}
 
 	// Convert to response format
@@ -245,6 +354,13 @@ func (s *SubscriptionPlanService) CheckAndHandleExpiredPromotions(ctx context.Co
 
 	// Deactivate expired promotions
 	for _, planID := range expiredPromotions {
+		// Get the plan before updating to create proper history event
+		plan, err := s.db.GetSubscriptionPlanByID(planID)
+		if err != nil {
+			log.Printf("Service: Failed to get plan %d for history: %v", planID, err)
+			continue
+		}
+
 		updates := map[string]interface{}{
 			"sub_type":           "stnd",
 			"is_active":          false,
@@ -252,11 +368,18 @@ func (s *SubscriptionPlanService) CheckAndHandleExpiredPromotions(ctx context.Co
 			"updated_at":         now,
 		}
 
-		_, err := s.db.UpdateSubscriptionPlan(planID, updates)
+		_, err = s.db.UpdateSubscriptionPlan(planID, updates)
 		if err != nil {
 			log.Printf("Service: Failed to deactivate expired promotion for plan %d: %v", planID, err)
 		} else {
 			log.Printf("Service: Deactivated expired promotion for plan %d", planID)
+
+			// Add history event for automatic expiration
+			event := s.historyService.CreatePromotionEndedEvent(plan, "system", "expired")
+			err = s.historyService.AddHistoryEvent(ctx, planID, event)
+			if err != nil {
+				log.Printf("Warning: Failed to add expiration history event for plan %d: %v", planID, err)
+			}
 		}
 	}
 
@@ -271,6 +394,8 @@ func (s *SubscriptionPlanService) validateSubscriptionPlanRequest(req interface{
 
 // convertToResponse converts a database subscription plan to response format
 func (s *SubscriptionPlanService) convertToResponse(plan *database.SubscriptionPlan) *SubscriptionPlanResponse {
+	log.Printf("convertToResponse: Starting conversion for plan %d", plan.ID)
+
 	response := &SubscriptionPlanResponse{
 		ID:            strconv.Itoa(plan.ID), // Convert int ID to string for response
 		Name:          plan.Name,
@@ -317,14 +442,18 @@ func (s *SubscriptionPlanService) convertToResponse(plan *database.SubscriptionP
 
 	// Parse promotion history JSON if available
 	if plan.PlanChangeHistory.Valid {
-		var promotionHistory []string
+		log.Printf("convertToResponse: Plan %d has valid PlanChangeHistory: %s", plan.ID, plan.PlanChangeHistory.String)
+		var promotionHistory []map[string]interface{}
 		if err := json.Unmarshal([]byte(plan.PlanChangeHistory.String), &promotionHistory); err == nil {
+			log.Printf("convertToResponse: Successfully parsed %d history events for plan %d", len(promotionHistory), plan.ID)
 			response.PlanChangeHistory = promotionHistory
 		} else {
-			response.PlanChangeHistory = []string{} // Empty array if parsing fails
+			log.Printf("convertToResponse: Failed to parse history for plan %d: %v", plan.ID, err)
+			response.PlanChangeHistory = []map[string]interface{}{} // Empty array if parsing fails
 		}
 	} else {
-		response.PlanChangeHistory = []string{} // Empty array if no history
+		log.Printf("convertToResponse: Plan %d has no valid PlanChangeHistory", plan.ID)
+		response.PlanChangeHistory = []map[string]interface{}{} // Empty array if no history
 	}
 
 	// Parse promotion metadata JSON if available
@@ -339,6 +468,7 @@ func (s *SubscriptionPlanService) convertToResponse(plan *database.SubscriptionP
 		response.PromotionMetadata = map[string]interface{}{} // Empty map if no metadata
 	}
 
+	log.Printf("convertToResponse: Final response for plan %d - PlanChangeHistory length: %d", plan.ID, len(response.PlanChangeHistory))
 	return response
 }
 

@@ -9,6 +9,7 @@ import (
 	"bome-backend/internal/services"
 
 	"database/sql"
+	"encoding/json"
 
 	"github.com/gin-gonic/gin"
 )
@@ -126,12 +127,12 @@ func (h *AnalyticsHandler) GetPromotionAnalytics(c *gin.Context) {
 			}
 
 			// Process promotion metadata
-			//if plan.PromotionMetadata.Valid {
-			//	var metadata map[string]interface{}
-			//	if err := json.Unmarshal([]byte(plan.PromotionMetadata.String), &metadata); err == nil {
-			//		analytics["promotion_metadata"] = metadata
-			//	}
-			//}
+			if plan.PromotionMetadata.Valid {
+				var metadata map[string]interface{}
+				if err := json.Unmarshal([]byte(plan.PromotionMetadata.String), &metadata); err == nil {
+					analytics["promotion_metadata"] = metadata
+				}
+			}
 
 			promotionAnalytics = append(promotionAnalytics, analytics)
 		}
@@ -147,25 +148,26 @@ func (h *AnalyticsHandler) GetPromotionAnalytics(c *gin.Context) {
 // GetTimelineEvents returns timeline events from plan change history
 func (h *AnalyticsHandler) GetTimelineEvents(c *gin.Context) {
 	// Get all subscription plans
-	//plans, err := h.db.GetAllSubscriptionPlans()
-	//if err != nil {
-	//	c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get subscription plans"})
-	//	return
-	//}
+	plans, err := h.db.GetAllSubscriptionPlans()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get subscription plans"})
+		return
+	}
 
 	timelineEvents := []map[string]interface{}{}
 
-	//for _, plan := range plans {
-	//	if plan.PlanChangeHistory.Valid && plan.PlanChangeHistory.String != "" {
-	//		var events []map[string]interface{}
-	//		if err := json.Unmarshal([]byte(plan.PlanChangeHistory.String), &events); err == nil {
-	//		for _, event := range events {
-	//			event["plan_id"] = plan.ID
-	//			event["plan_name"] = plan.Name
-	//			timelineEvents = append(timelineEvents, event)
-	//		}
-	//	}
-	//}
+	for _, plan := range plans {
+		if plan.PlanChangeHistory.Valid && plan.PlanChangeHistory.String != "" {
+			var events []map[string]interface{}
+			if err := json.Unmarshal([]byte(plan.PlanChangeHistory.String), &events); err == nil {
+				for _, event := range events {
+					event["plan_id"] = plan.ID
+					event["plan_name"] = plan.Name
+					timelineEvents = append(timelineEvents, event)
+				}
+			}
+		}
+	}
 
 	// Sort events by timestamp (newest first)
 	// This is a simplified sort - in production you'd want proper timestamp sorting

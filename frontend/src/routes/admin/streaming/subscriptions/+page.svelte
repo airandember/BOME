@@ -187,6 +187,21 @@
 		showDetailsModal = true;
 	}
 
+	// Refresh plan data (for reactive updates)
+	async function refreshPlanData(planId: string) {
+		try {
+			const refreshedPlan = await StreamingSubscriptionService.getById(planId);
+			subscriptionPlans = subscriptionPlans.map(p => p.id === planId ? refreshedPlan : p);
+			
+			// Update details modal if it's open for this plan
+			if (detailsPlan && detailsPlan.id === planId) {
+				detailsPlan = refreshedPlan;
+			}
+		} catch (err) {
+			console.error('Failed to refresh plan data:', err);
+		}
+	}
+
 	// Optimistic update helpers
 	function addOptimisticUpdate(planId: string, updates: Partial<SubscriptionPlan>) {
 		optimisticUpdates.set(planId, updates);
@@ -271,6 +286,10 @@
 			const updatedPlan = await StreamingSubscriptionService.toggleStatus(plan.id, newStatus);
 			removeOptimisticUpdate(plan.id);
 			subscriptionPlans = subscriptionPlans.map(p => p?.id === plan.id ? updatedPlan : p);
+			
+			// Refresh plan data to get updated history
+			await refreshPlanData(plan.id);
+			
 			showToast(`Plan ${newStatus ? 'activated' : 'deactivated'} successfully`, 'success');
 		} catch (err) {
 			console.error('Error toggling plan status:', err);
@@ -317,6 +336,9 @@
 					p.id === planId ? updatedPlan : p
 				);
 				
+				// Refresh plan data to get updated history
+				await refreshPlanData(planId);
+				
 				console.log(`Plan activated successfully:`, updatedPlan);
 				showToast('Plan activated successfully', 'success');
 			} catch (error) {
@@ -358,16 +380,17 @@
 				p.id === planId ? updatedPlan : p
 			);
 			
-			console.log(`Promotion status updated successfully for plan ${planId}`);
-			console.log(`Updated plan:`, updatedPlan);
+			// Refresh plan data to get updated history
+			await refreshPlanData(planId);
 			
-			showToast(`Plan ${newPromotionStatus ? 'promoted' : 'promotion ended'} successfully`, 'success');
+			console.log(`Plan promotion status updated successfully:`, updatedPlan);
+			showToast(`Plan ${newPromotionStatus ? 'promoted' : 'unpromoted'} successfully`, 'success');
 		} catch (error) {
-			console.error('Error toggling promotion status:', error);
+			console.error('Error updating promotion status:', error);
 			subscriptionPlans = subscriptionPlans.map(p => 
 				p.id === planId ? plan : p
 			);
-			showToast(`Failed to ${newPromotionStatus ? 'promote' : 'end promotion for'} plan`, 'error');
+			showToast('Failed to update promotion status', 'error');
 		} finally {
 			optimisticUpdates.delete(planId);
 		}

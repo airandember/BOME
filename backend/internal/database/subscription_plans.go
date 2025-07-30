@@ -212,6 +212,8 @@ func (db *DB) UpdateSubscriptionPlan(id int, updates map[string]interface{}) (*S
 
 	// Process updates and handle special field conversions
 	for k, v := range updates {
+		log.Printf("UpdateSubscriptionPlan: Processing field '%s' with value: %v (type: %T)", k, v, v)
+
 		// Handle features field - convert []string to JSON string
 		if k == "features" {
 			if features, ok := v.([]string); ok {
@@ -246,6 +248,28 @@ func (db *DB) UpdateSubscriptionPlan(id int, updates map[string]interface{}) (*S
 			} else {
 				return nil, fmt.Errorf("invalid features type: %T", v)
 			}
+		} else if k == "plan_change_history" {
+			// Handle plan_change_history field - ensure it's a valid JSON string
+			if historyStr, ok := v.(string); ok {
+				log.Printf("UpdateSubscriptionPlan: Setting plan_change_history to: %s", historyStr)
+				// Column is now jsonb, so no casting needed
+				setParts = append(setParts, fmt.Sprintf("%s = $%d", k, argIdx))
+				args = append(args, historyStr)
+			} else {
+				log.Printf("UpdateSubscriptionPlan: Invalid plan_change_history type: %T", v)
+				return nil, fmt.Errorf("invalid plan_change_history type: %T", v)
+			}
+		} else if k == "promotion_metadata" {
+			// Handle promotion_metadata field - ensure it's a valid JSON string
+			if metadataStr, ok := v.(string); ok {
+				log.Printf("UpdateSubscriptionPlan: Setting promotion_metadata to: %s", metadataStr)
+				// Column is jsonb, so no casting needed
+				setParts = append(setParts, fmt.Sprintf("%s = $%d", k, argIdx))
+				args = append(args, metadataStr)
+			} else {
+				log.Printf("UpdateSubscriptionPlan: Invalid promotion_metadata type: %T", v)
+				return nil, fmt.Errorf("invalid promotion_metadata type: %T", v)
+			}
 		} else {
 			setParts = append(setParts, fmt.Sprintf("%s = $%d", k, argIdx))
 			args = append(args, v)
@@ -261,6 +285,10 @@ func (db *DB) UpdateSubscriptionPlan(id int, updates map[string]interface{}) (*S
 		          short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 	`, strings.Join(setParts, ", "), argIdx)
 	args = append(args, id)
+
+	log.Printf("UpdateSubscriptionPlan: Final query: %s", query)
+	log.Printf("UpdateSubscriptionPlan: Final args: %+v", args)
+
 	row := db.QueryRow(query, args...)
 	plan := &SubscriptionPlan{}
 	if err := row.Scan(
@@ -274,6 +302,8 @@ func (db *DB) UpdateSubscriptionPlan(id int, updates map[string]interface{}) (*S
 	}
 
 	log.Printf("Updated plan: %+v", plan)
+	log.Printf("Updated plan.PlanChangeHistory: Valid=%v, String='%s'",
+		plan.PlanChangeHistory.Valid, plan.PlanChangeHistory.String)
 	return plan, nil
 }
 
