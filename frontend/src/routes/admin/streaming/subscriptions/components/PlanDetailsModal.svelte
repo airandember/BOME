@@ -222,69 +222,13 @@
 {#if isOpen && plan}
 	<div class="modal-backdrop" on:click={handleBackdropClick} transition:fade={{ duration: 200 }}>
 		<div class="modal-content" transition:fly={{ y: 50, duration: 300 }}>
-			<h2>HOWDY BOYS</h2>
 			<div class="modal-header">
 				<h2 class="modal-title">Plan Details: {plan.name}</h2>
-				<div class="header-actions">
-					<button class="test-button" on:click={testLocalStorageData} style="background: red; color: white; padding: 8px; margin: 4px;">
-						🔍 Test localStorage
-					</button>
-					<button class="test-button" on:click={testCompleteFlow} style="background: blue; color: white; padding: 8px; margin: 4px;">
-						🔍 Test Flow
-					</button>
-					<button class="close-button" on:click={closeModal}>
-						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-						</svg>
-					</button>
-				</div>
+				
 			</div>
 
 			<div class="modal-body">
-				<!-- Debug Test Section -->
-				<div class="debug-section" style="background: yellow; padding: 10px; margin-bottom: 20px; border: 2px solid red;">
-					<h4 style="color: red; margin: 0 0 10px 0;">🔍 DEBUG TEST SECTION</h4>
-					<button 
-						on:click={testLocalStorageData}
-						style="background: red; color: white; padding: 10px; margin: 5px; border: none; border-radius: 5px; cursor: pointer;"
-					>
-						🔍 Test localStorage
-					</button>
-					<button 
-						on:click={testCompleteFlow}
-						style="background: blue; color: white; padding: 10px; margin: 5px; border: none; border-radius: 5px; cursor: pointer;"
-					>
-						🔍 Test Complete Flow
-					</button>
-					<button 
-						on:click={() => console.log('Modal is working!')}
-						style="background: green; color: white; padding: 10px; margin: 5px; border: none; border-radius: 5px; cursor: pointer;"
-					>
-						✅ Test Modal
-					</button>
-					<button 
-						on:click={async () => {
-							if (!plan) return;
-							console.log('Making a test change to the plan...');
-							try {
-								// Use the existing service directly - we're already authenticated in the dashboard
-								const { StreamingSubscriptionService } = await import('$lib/services/streaming-subscriptions');
-								const updatedPlan = await StreamingSubscriptionService.update({
-									id: plan.id,
-									description: plan.description + ' (Test change at ' + new Date().toLocaleTimeString() + ')'
-								});
-								console.log('Test change result:', updatedPlan);
-								// Refresh the plan data
-								plan = updatedPlan;
-							} catch (error) {
-								console.error('Test change failed:', error);
-							}
-						}}
-						style="background: orange; color: white; padding: 10px; margin: 5px; border: none; border-radius: 5px; cursor: pointer;"
-					>
-						🧪 Test Change
-					</button>
-				</div>
+				
 
 				<!-- Plan Overview -->
 				<div class="section">
