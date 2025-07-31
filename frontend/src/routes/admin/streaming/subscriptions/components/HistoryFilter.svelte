@@ -5,20 +5,21 @@
 	// Filter state
 	let selectedEventType = 'all';
 	let selectedDateRange = 'all';
+	let selectedUser = 'all';
 	let searchTerm = '';
 
-	// Available filter options
+	// Available filter options - matching actual event types from database
 	const eventTypes = [
 		{ value: 'all', label: 'All Events' },
-		{ value: 'plan_created', label: 'Plan Created' },
 		{ value: 'plan_updated', label: 'Plan Updated' },
-		{ value: 'status_activated', label: 'Status Activated' },
-		{ value: 'status_deactivated', label: 'Status Deactivated' },
+		{ value: 'status_toggled', label: 'Activated/Deactivated' },
 		{ value: 'promotion_started', label: 'Promotion Started' },
 		{ value: 'promotion_ended', label: 'Promotion Ended' },
+		{ value: 'promo_expiry', label: '🖥️ Promo Expired (Deactivated)' },
 		{ value: 'promotion_expired', label: 'Promotion Expired' },
 		{ value: 'price_changed', label: 'Price Changed' },
-		{ value: 'type_changed', label: 'Type Changed' }
+		{ value: 'type_changed', label: 'Type Changed' },
+		{ value: 'plan_deleted', label: 'Plan Deleted' }
 	];
 
 	const dateRanges = [
@@ -29,6 +30,28 @@
 		{ value: 'quarter', label: 'This Quarter' },
 		{ value: 'year', label: 'This Year' }
 	];
+
+	// Get unique users from events
+	$: uniqueUsers = (() => {
+		const users = new Set<string>();
+		events.forEach(event => {
+			if (event.user_id) {
+				try {
+					// Try to parse as JSON to get user details
+					const userData = typeof event.user_id === 'string' ? JSON.parse(event.user_id) : event.user_id;
+					if (userData && userData.email) {
+						users.add(userData.email);
+					} else if (typeof event.user_id === 'string') {
+						users.add(event.user_id);
+					}
+				} catch {
+					// If not JSON, use as is
+					users.add(event.user_id);
+				}
+			}
+		});
+		return Array.from(users).sort();
+	})();
 
 	// Computed filtered events
 	$: filteredEvents = events.filter(event => {
@@ -66,6 +89,20 @@
 			}
 		}
 
+		// User filter
+		if (selectedUser !== 'all') {
+			let eventUser = '';
+			try {
+				const userData = typeof event.user_id === 'string' ? JSON.parse(event.user_id) : event.user_id;
+				eventUser = userData && userData.email ? userData.email : event.user_id;
+			} catch {
+				eventUser = event.user_id;
+			}
+			if (eventUser !== selectedUser) {
+				return false;
+			}
+		}
+
 		// Search term filter
 		if (searchTerm) {
 			const searchLower = searchTerm.toLowerCase();
@@ -88,17 +125,25 @@
 		onFilterChange(filteredEvents);
 	}
 
+	// Apply filters (triggered by search button)
+	function applyFilters() {
+		handleFilterChange();
+	}
+
 	// Clear all filters
 	function clearFilters() {
 		selectedEventType = 'all';
 		selectedDateRange = 'all';
+		selectedUser = 'all';
 		searchTerm = '';
 		handleFilterChange();
 	}
 
-	// Export filtered events
+	// Export filtered events on mount
 	$: {
-		handleFilterChange();
+		if (events.length > 0) {
+			handleFilterChange();
+		}
 	}
 </script>
 
@@ -130,6 +175,16 @@
 		</div>
 		
 		<div class="filter-group">
+			<label for="user-filter">User:</label>
+			<select id="user-filter" bind:value={selectedUser}>
+				<option value="all">All Users</option>
+				{#each uniqueUsers as user}
+					<option value={user}>{user}</option>
+				{/each}
+			</select>
+		</div>
+		
+		<div class="filter-group">
 			<label for="search">Search:</label>
 			<input 
 				id="search" 
@@ -138,6 +193,12 @@
 				bind:value={searchTerm}
 			/>
 		</div>
+	</div>
+	
+	<div class="filter-actions">
+		<button class="apply-filters" on:click={applyFilters}>
+			Apply Filters
+		</button>
 	</div>
 	
 	<div class="filter-stats">
@@ -219,6 +280,28 @@
 		outline: none;
 		border-color: #3b82f6;
 		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+	}
+
+	.filter-actions {
+		display: flex;
+		justify-content: center;
+		margin-bottom: 1rem;
+	}
+
+	.apply-filters {
+		background: #3b82f6;
+		color: white;
+		border: none;
+		padding: 0.5rem 1.5rem;
+		border-radius: 0.375rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: background-color 0.2s;
+	}
+
+	.apply-filters:hover {
+		background: #2563eb;
 	}
 
 	.filter-stats {

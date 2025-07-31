@@ -391,6 +391,14 @@
 		font-weight: 500;
 	}
 
+	.plan-features {
+		border: 1px solid #e5e7eb;
+		padding: 1rem;
+		border-radius: 0.5rem;
+		background-color: #f8fafc;
+	}
+
+
 	.plan-features h4 {
 		color: #111827;
 		font-size: 0.875rem;
@@ -401,6 +409,11 @@
 	}
 
 	.plan-features ul {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 2rem;
 		list-style: none;
 		padding: 0;
 		margin: 0;

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import type { SubscriptionPlan } from '$lib/services/streaming-subscriptions';
 	import { formatDateForDisplay } from '$lib/utils/date';
-	import { fade, fly } from 'svelte/transition';
 	import HistoryFilter from './HistoryFilter.svelte';
 
 	export let plan: SubscriptionPlan | null = null;
@@ -220,8 +219,8 @@
 </script>
 
 {#if isOpen && plan}
-	<div class="modal-backdrop" on:click={handleBackdropClick} transition:fade={{ duration: 200 }}>
-		<div class="modal-content" transition:fly={{ y: 50, duration: 300 }}>
+	<div class="modal-backdrop" on:click={handleBackdropClick}>
+		<div class="modal-content">
 			<div class="modal-header">
 				<h2 class="modal-title">Plan Details: {plan.name}</h2>
 				
@@ -395,6 +394,74 @@
 						</div>
 					</div>
 				{/if}
+				
+				<!-- Debug Test Section -->
+				<div class="section">
+					<h3 class="section-title">🧪 Debug Tests</h3>
+					<div class="debug-buttons">
+						<button 
+							on:click={async () => {
+								if (!plan) return;
+								console.log('Making a test change to the plan...');
+								try {
+									// Use the existing service directly - we're already authenticated in the dashboard
+									const { StreamingSubscriptionService } = await import('$lib/services/streaming-subscriptions');
+									const updatedPlan = await StreamingSubscriptionService.update({
+										id: plan.id,
+										description: plan.description + ' (Test change at ' + new Date().toLocaleTimeString() + ')'
+									});
+									console.log('Test change result:', updatedPlan);
+									// Refresh the plan data
+									plan = updatedPlan;
+								} catch (error) {
+									console.error('Test change failed:', error);
+								}
+							}}
+							class="test-button"
+						>
+							🧪 Test Change
+						</button>
+						
+						{#if plan.sub_type === 'prmo'}
+							<button 
+								on:click={async () => {
+									if (!plan) return;
+									console.log('Testing promo expiry for plan:', plan.name);
+									try {
+										// Update the plan to have an expired promotion end date
+										const { StreamingSubscriptionService } = await import('$lib/services/streaming-subscriptions');
+										const yesterday = new Date();
+										yesterday.setDate(yesterday.getDate() - 1);
+										
+										const twoDaysAgo = new Date();
+										twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+										
+										const updatedPlan = await StreamingSubscriptionService.update({
+											id: plan.id,
+											promotion_start_date: twoDaysAgo.toISOString().split('T')[0], // Start 2 days ago
+											promotion_end_date: yesterday.toISOString().split('T')[0] // End yesterday
+										});
+										console.log('Promo expiry test result:', updatedPlan);
+										// Refresh the plan data
+										plan = updatedPlan;
+									} catch (error) {
+										console.error('Promo expiry test failed:', error);
+									}
+								}}
+								class="test-button"
+							>
+								⏰ Test Promo Expiry
+							</button>
+						{/if}
+						
+						<button 
+							on:click={testCompleteFlow}
+							class="test-button"
+						>
+							🔍 Test Complete Flow
+						</button>
+					</div>
+				</div>
 			</div>
 		</div>
 	</div>
@@ -455,6 +522,12 @@
 
 	.test-button:hover {
 		background: #2563eb;
+	}
+
+	.debug-buttons {
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
 	}
 
 	.modal-title {

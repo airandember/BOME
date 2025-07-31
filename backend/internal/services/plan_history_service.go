@@ -305,6 +305,40 @@ func (s *PlanHistoryService) CreatePromotionStartedEvent(plan *database.Subscrip
 	return event
 }
 
+// CreatePromoExpiryEvent creates a history event for automatic promotion expiry
+func (s *PlanHistoryService) CreatePromoExpiryEvent(plan *database.SubscriptionPlan) PlanHistoryEvent {
+	eventID := fmt.Sprintf("evt_%d", time.Now().Unix())
+
+	// Use system emoji for automatic events
+	systemUserData := `{"id":"system","email":"🖥️System","role":"system","first_name":"🖥️","last_name":"System"}`
+
+	metadata := map[string]interface{}{
+		"action":    "promo_expiry",
+		"plan_name": plan.Name,
+		"reason":    "automatic_expiry",
+		"auto":      true,
+	}
+
+	event := PlanHistoryEvent{
+		ID:          eventID,
+		EventType:   "promo_expiry",
+		Timestamp:   time.Now(),
+		UserID:      systemUserData,
+		Description: fmt.Sprintf("🖥️ Promotion automatically expired for plan '%s' (deactivated)", plan.Name),
+		OldValues: map[string]interface{}{
+			"sub_type":  "prmo",
+			"is_active": true,
+		},
+		NewValues: map[string]interface{}{
+			"sub_type":  "prmo", // Keep as promotional
+			"is_active": false,
+		},
+		Metadata: metadata,
+	}
+
+	return event
+}
+
 // CreatePromotionEndedEvent creates a history event for promotion end
 func (s *PlanHistoryService) CreatePromotionEndedEvent(plan *database.SubscriptionPlan, userDataJSON string, reason string) PlanHistoryEvent {
 	eventID := fmt.Sprintf("evt_%d", time.Now().Unix())

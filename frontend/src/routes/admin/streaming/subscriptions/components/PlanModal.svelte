@@ -1,16 +1,34 @@
 <script lang="ts">
-	import { fade, fly } from 'svelte/transition';
-	import { createEventDispatcher } from 'svelte';
+	import { formatDateForDisplay, dateInputToIso, isoToDateInput, getTodayDateInput, getDateInputFromToday } from '$lib/utils/date';
 	import type { CreateSubscriptionPlanData } from '$lib/services/streaming-subscriptions';
-	import { isoToDateInput, dateInputToIso, getTodayDateInput, getDateInputFromToday } from '$lib/utils/date';
 
 	export let isOpen: boolean = false;
+	export let plan: any = null;
+	export let onSave: (data: CreateSubscriptionPlanData) => void = () => {};
+	export let onCancel: () => void = () => {};
+
 	export let title: string = '';
-	export let formData: CreateSubscriptionPlanData;
+	// Form data
+	let formData: CreateSubscriptionPlanData = {
+		name: '',
+		description: '',
+		short_desc: '',
+		price: 0,
+		currency: 'USD',
+		interval: 'month',
+		interval_count: 1,
+		stripe_price_id: '',
+		features: [],
+		is_active: true,
+		promotion_start_date: getTodayDateInput(),
+		promotion_end_date: getDateInputFromToday(7),
+		sub_type: 'stnd'
+	};
 	export let isSubmitting: boolean = false;
 	export let mode: 'create' | 'edit' = 'create';
 
-	const dispatch = createEventDispatcher();
+	// Remove createEventDispatcher usage
+	// const dispatch = createEventDispatcher();
 
 	let newFeature = '';
 
@@ -25,11 +43,11 @@
 			promotion_start_date: dateInputToIso(formData.promotion_start_date),
 			promotion_end_date: dateInputToIso(formData.promotion_end_date)
 		};
-		dispatch('submit', { formData: submitData });
+		onSave(submitData);
 	}
 
 	function handleCancel() {
-		dispatch('cancel');
+		onCancel();
 	}
 
 	function addFeature() {
@@ -57,8 +75,8 @@
 </script>
 
 {#if isOpen}
-	<div class="modal-backdrop" transition:fade={{ duration: 200 }} on:click={handleCancel}>
-		<div class="modal-content" transition:fly={{ y: 20, duration: 200 }} on:click|stopPropagation>
+	<div class="modal-backdrop" on:click={handleCancel}>
+		<div class="modal-content" on:click|stopPropagation>
 			<div class="modal-header">
 				<h2 class="modal-title">{title}</h2>
 				<button class="modal-close" on:click={handleCancel} aria-label="Close">
@@ -458,6 +476,7 @@
 	}
 
 	.feature-remove {
+		min-width: 25px;
 		background: none;
 		border: none;
 		color: #ef4444;

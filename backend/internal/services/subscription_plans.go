@@ -189,7 +189,27 @@ func (s *SubscriptionPlanService) UpdateSubscriptionPlan(ctx context.Context, id
 
 	for key, value := range updates {
 		if updatableFields[key] {
-			filteredUpdates[key] = value
+			// Special handling for date fields
+			if key == "promotion_start_date" || key == "promotion_end_date" {
+				if dateStr, ok := value.(string); ok && dateStr != "" {
+					log.Printf("Processing %s date: %s", key, dateStr)
+					// Parse the date string
+					if parsedDate, err := ParseFlexibleDate(dateStr); err == nil && parsedDate != nil {
+						// Format the date properly for database storage
+						isEndDate := key == "promotion_end_date"
+						formattedDate := FormatDateForDatabase(parsedDate, isEndDate)
+						log.Printf("Formatted %s: %s -> %s", key, dateStr, formattedDate.Time.Format("2006-01-02 15:04:05"))
+						filteredUpdates[key] = formattedDate.Time
+					} else {
+						log.Printf("Warning: Failed to parse %s date '%s': %v", key, dateStr, err)
+						filteredUpdates[key] = value // Keep original value if parsing fails
+					}
+				} else {
+					filteredUpdates[key] = value
+				}
+			} else {
+				filteredUpdates[key] = value
+			}
 		}
 	}
 
@@ -498,10 +518,8 @@ func (s *SubscriptionPlanService) CheckAndHandleExpiredPromotions(ctx context.Co
 		}
 
 		updates := map[string]interface{}{
-			"sub_type":           "stnd",
 			"is_active":          false,
 			"promotion_end_date": now, // Set to current time when deactivated
-			"updated_at":         now,
 		}
 
 		_, err = s.db.UpdateSubscriptionPlan(planID, updates)
@@ -510,20 +528,13 @@ func (s *SubscriptionPlanService) CheckAndHandleExpiredPromotions(ctx context.Co
 		} else {
 			log.Printf("Service: Deactivated expired promotion for plan %d", planID)
 
-			// Get user information for history logging (use system for automatic events)
-			userDataJSON, err := s.getUserDataFromContext(ctx)
-			if err != nil {
-				log.Printf("Warning: Failed to get user data for auto-expiration history: %v", err)
-				// Continue with system user data if user info fails
-				userDataJSON = `{"id":"system","email":"system","role":"system","first_name":"System","last_name":"(Auto-Expiration)"}`
-			}
-			log.Printf("Service: Auto-expiration with user data: %s", userDataJSON)
-
-			// Add history event for automatic expiration
-			event := s.historyService.CreatePromotionEndedEvent(plan, userDataJSON, "expired")
+			// Add history event for automatic expiration using the new promo expiry event
+			event := s.historyService.CreatePromoExpiryEvent(plan)
 			err = s.historyService.AddHistoryEvent(ctx, planID, event)
 			if err != nil {
 				log.Printf("Warning: Failed to add expiration history event for plan %d: %v", planID, err)
+			} else {
+				log.Printf("Service: Successfully added promo expiry history event for plan %d", planID)
 			}
 		}
 	}
