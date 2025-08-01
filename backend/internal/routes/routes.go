@@ -112,10 +112,13 @@ func SetupRoutes(
 	// Initialize subscription services
 	subscriptionPlanService := services.NewSubscriptionPlanService(db)
 	subscriberService := services.NewSubscriberService(db)
+	subscriptionOffersService := services.NewSubscriptionOffersService(db)
 
 	// Setup subscription-related routes under admin group
 	fmt.Printf("Setting up subscription plan routes...\n")
 	SetupSubscriptionPlanRoutes(admin, db, subscriptionPlanService)
+	fmt.Printf("Setting up subscription offers routes...\n")
+	SetupSubscriptionOfferRoutes(admin, db, subscriptionOffersService)
 	fmt.Printf("Setting up subscriber routes...\n")
 	SetupSubscriberRoutes(admin, db, subscriberService)
 	SetupSubscriptionRoutes(router, db, stripeService, analyticsService)

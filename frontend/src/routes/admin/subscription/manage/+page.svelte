@@ -2,24 +2,12 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/auth';
-	import { subscriptionService, subscriptionUtils } from '$lib/subscription';
+	import { subscriptionService } from '$lib/services/subscription';
 	import { showToast } from '$lib/toast';
+	import { formatCurrency } from '$lib/utils/currency';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import Navigation from '$lib/components/Navigation.svelte';
 	import Footer from '$lib/components/Footer.svelte';
-	import {
-		CreditCardIcon,
-		CalendarIcon,
-		CurrencyDollarIcon,
-		ExclamationTriangleIcon,
-		CheckCircleIcon,
-		XCircleIcon,
-		ClockIcon,
-		TrashIcon,
-		PencilIcon,
-		ArrowRightIcon,
-		DocumentTextIcon
-	} from '@heroicons/svelte/24/outline';
 
 	let loading = true;
 	let error = '';
@@ -121,22 +109,15 @@
 		});
 	}
 
-	function formatCurrency(amount: number, currency = 'USD') {
-		return new Intl.NumberFormat('en-US', {
-			style: 'currency',
-			currency: currency
-		}).format(amount);
-	}
-
 	function getStatusBadge(status: string) {
 		const statusConfig = {
-			active: { text: 'Active', class: 'bg-green-100 text-green-800', icon: CheckCircleIcon },
-			cancelled: { text: 'Cancelled', class: 'bg-red-100 text-red-800', icon: XCircleIcon },
-			past_due: { text: 'Past Due', class: 'bg-yellow-100 text-yellow-800', icon: ExclamationTriangleIcon },
-			unpaid: { text: 'Unpaid', class: 'bg-red-100 text-red-800', icon: XCircleIcon },
-			trialing: { text: 'Trial', class: 'bg-blue-100 text-blue-800', icon: ClockIcon }
+			active: { text: 'Active', class: 'bg-green-100 text-green-800' },
+			cancelled: { text: 'Cancelled', class: 'bg-red-100 text-red-800' },
+			past_due: { text: 'Past Due', class: 'bg-yellow-100 text-yellow-800' },
+			unpaid: { text: 'Unpaid', class: 'bg-red-100 text-red-800' },
+			trialing: { text: 'Trial', class: 'bg-blue-100 text-blue-800' }
 		};
-		return statusConfig[status] || { text: status, class: 'bg-gray-100 text-gray-800', icon: ClockIcon };
+		return statusConfig[status] || { text: status, class: 'bg-gray-100 text-gray-800' };
 	}
 
 	function getDaysUntilRenewal() {

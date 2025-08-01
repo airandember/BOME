@@ -1,17 +1,13 @@
 <script lang="ts">
-	import { slide } from 'svelte/transition';
-	import { createEventDispatcher } from 'svelte';
-
 	export let title: string;
 	export let icon: string;
 	export let count: number;
 	export let isActive: boolean = false;
 	export let plans: any[] = [];
-
-	const dispatch = createEventDispatcher();
+	export let onToggle: () => void = () => {};
 
 	function toggleAccordion() {
-		dispatch('toggle');
+		onToggle();
 	}
 </script>
 
@@ -41,7 +37,6 @@
 			id="accordion-content-{title}"
 			class="accordion-content content-{title}" 
 			aria-hidden="false"
-			transition:slide={{ duration: 300 }}
 		>
 			{#if plans.length > 0}
 				<slot {plans} />

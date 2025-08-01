@@ -1,13 +1,15 @@
 <script lang="ts">
+	// @ts-ignore
 	import { onMount } from 'svelte';
-	import { fade, fly } from 'svelte/transition';
 	import { StreamingSubscriptionService, type SubscriptionPlan, type CreateSubscriptionPlanData } from '$lib/services/streaming-subscriptions';
+	import { SubscriptionOfferService, type SubscriptionOffer, type CreateSubscriptionOfferData } from '$lib/services/subscription-offers';
 	import { showToast } from '$lib/toast';
 	import { auth } from '$lib/auth';
 	import { isoToDateInput } from '$lib/utils/date';
 	
 	// Components
 	import SubscriptionHeader from './components/SubscriptionHeader.svelte';
+	import OffersHeader from './components/OffersHeader.svelte';
 	import SubscriptionAccordion from './components/SubscriptionAccordion.svelte';
 	import PlanCard from './components/PlanCard.svelte';
 	import PlanModal from './components/PlanModal.svelte';
@@ -16,16 +18,19 @@
 	// State
 	let isLoading = true;
 	let subscriptionPlans: SubscriptionPlan[] = [];
+	let subscriptionOffers: SubscriptionOffer[] = [];
 	let showCreateModal = false;
 	let showEditModal = false;
 	let showDeleteModal = false;
 	let selectedPlan: SubscriptionPlan | null = null;
+	let selectedOffer: SubscriptionOffer | null = null;
 	let isSubmitting = false;
 	let activeAccordion: string | null = 'active';
 
 	// Modal state
 	let showDetailsModal = false;
 	let detailsPlan: SubscriptionPlan | null = null;
+	let detailsOffer: SubscriptionOffer | null = null;
 
 	// Initialize form data
 	let formData: CreateSubscriptionPlanData = {
@@ -44,6 +49,26 @@
 		promotion_end_date: null
 	};
 
+	// Initialize offer form data
+	let offerFormData: CreateSubscriptionOfferData = {
+		plan_id: 1,
+		item_id: undefined,
+		off_discount_type: 'percentage',
+		off_discount_value: 10,
+		offer_start_date: undefined,
+		off_end_date: undefined,
+		is_active: true,
+		off_description: undefined,
+		off_name: '',
+		off_code: undefined,
+		off_max_uses: 100,
+		off_current_uses: 0,
+		off_terms_conditions: undefined,
+		off_target: undefined,
+		off_priority: 1,
+		off_auto_apply: false
+	};
+
 	// Optimistic updates
 	let optimisticUpdates = new Map();
 
@@ -59,14 +84,26 @@
 		}
 	}
 
+	// --- CRUD: CREATE OFFER ---
+	async function addOffer(offerFormData: CreateSubscriptionOfferData) {
+		try {
+			const newOffer = await SubscriptionOfferService.create(offerFormData);
+			subscriptionOffers = [...subscriptionOffers, newOffer]; // Immutable update
+			showToast('Offer created successfully', 'success');
+		} catch (err) {
+			console.error('Add offer error', err);
+			showToast('Failed to create offer', 'error');
+		}
+	}
+
 	// --- CRUD: READ ---
 	async function loadPlans() {
 		try {
 			isLoading = true;
 			console.log('loadPlans: Starting to load plans');
 			console.log('loadPlans: Auth state:', $auth);
-			console.log('loadPlans: Is authenticated:', $auth.isAuthenticated);
-			console.log('loadPlans: User role:', $auth.user?.role);
+			console.log('loadPlans: Is authenticated:', ($auth as any).isAuthenticated);
+			console.log('loadPlans: User role:', ($auth as any).user?.role);
 			
 			const allPlans = await StreamingSubscriptionService.getAll();
 			console.log('loadPlans: Received plans:', allPlans);
@@ -79,6 +116,20 @@
 			showToast('Failed to load plans', 'error');
 		} finally {
 			isLoading = false;
+		}
+	}
+
+	// --- CRUD: READ OFFERS ---
+	async function loadOffers() {
+		try {
+			console.log('loadOffers: Starting to load offers');
+			
+			const allOffers = await SubscriptionOfferService.getAll();
+			console.log('loadOffers: Received offers:', allOffers);
+			subscriptionOffers = [...allOffers]; // Immutable update
+		} catch (err) {
+			console.error('Load offers error', err);
+			showToast('Failed to load offers', 'error');
 		}
 	}
 
@@ -167,6 +218,12 @@
 		inactive: subscriptionPlans.filter(p => p && !p.is_active),
 	};
 
+	// Group offers by is_active for display
+	$: groupedOffers = {
+		active: subscriptionOffers.filter(o => o && o.is_active),
+		inactive: subscriptionOffers.filter(o => o && !o.is_active),
+	};
+
 	// --- DOCUMENTATION ---
 	// addPlan: Handles creation of new plans (standard or promo)
 	// loadPlans: Loads all plans from backend
@@ -174,6 +231,9 @@
 	// deletePlan: Soft deletes a plan
 	// togglePromotionStatus: Moves plan between promo/standard/inactive
 	// groupedPlans: Reactive grouping for UI accordions
+	// addOffer: Handles creation of new offers
+	// loadOffers: Loads all offers from backend
+	// groupedOffers: Reactive grouping for UI accordions
 	// All state updates are immutable. All errors are logged and surfaced to user.
 
 	// Toggle accordion
@@ -184,6 +244,12 @@
 	// Handle view details
 	function handleViewDetails(plan: SubscriptionPlan) {
 		detailsPlan = plan;
+		showDetailsModal = true;
+	}
+
+	// Handle view offer details
+	function handleViewOfferDetails(offer: SubscriptionOffer) {
+		detailsOffer = offer;
 		showDetailsModal = true;
 	}
 
@@ -199,6 +265,21 @@
 			}
 		} catch (err) {
 			console.error('Failed to refresh plan data:', err);
+		}
+	}
+
+	// Refresh offer data (for reactive updates)
+	async function refreshOfferData(offerId: number) {
+		try {
+			const refreshedOffer = await SubscriptionOfferService.getById(offerId.toString());
+			subscriptionOffers = subscriptionOffers.map(o => o.id === offerId ? refreshedOffer : o);
+			
+			// Update details modal if it's open for this offer
+			if (detailsOffer && detailsOffer.id === offerId) {
+				detailsOffer = refreshedOffer;
+			}
+		} catch (err) {
+			console.error('Failed to refresh offer data:', err);
 		}
 	}
 
@@ -454,10 +535,11 @@
 	// Load data on mount
 	onMount(() => {
 		loadPlans();
+		loadOffers();
 	});
 </script>
 
-<div class="subscription-content p-0" transition:fade>
+<div class="subscription-content p-0">
 	{#if isLoading}
 		<div class="loading-state">
 			<div class="loading-spinner"></div>
@@ -470,6 +552,12 @@
 		/>
 
 		<div class="subscription-accordions">
+			<!-- Plans Section -->
+			<div class="section-header">
+				<h2 class="section-title">Plans</h2>
+				<p class="section-description">Subscription plans for non-subscribed users</p>
+			</div>
+
 			<!-- Promoted Plans -->
 			<SubscriptionAccordion
 				title="Promoted Plans"
@@ -477,7 +565,7 @@
 				count={groupedPlans.promoted.length}
 				isActive={activeAccordion === 'promoted'}
 				plans={groupedPlans.promoted}
-				on:toggle={() => toggleAccordion('promoted')}
+				onToggle={() => toggleAccordion('promoted')}
 			>
 				{#each groupedPlans.promoted as plan (plan.id)}
 					<PlanCard 
@@ -498,7 +586,7 @@
 				count={groupedPlans.active.length}
 				isActive={activeAccordion === 'active'}
 				plans={groupedPlans.active}
-				on:toggle={() => toggleAccordion('active')}
+				onToggle={() => toggleAccordion('active')}
 			>
 				{#each groupedPlans.active as plan (plan.id)}
 					<PlanCard 
@@ -519,7 +607,7 @@
 				count={groupedPlans.inactive.length}
 				isActive={activeAccordion === 'inactive'}
 				plans={groupedPlans.inactive}
-				on:toggle={() => toggleAccordion('inactive')}
+				onToggle={() => toggleAccordion('inactive')}
 			>
 				{#each groupedPlans.inactive as plan (plan.id)}
 					<PlanCard 
@@ -529,6 +617,63 @@
 						onToggleStatus={handleToggleStatus}
 						onTogglePromotion={handleTogglePromotion}
 						onViewDetails={handleViewDetails}
+					/>
+				{/each}
+			</SubscriptionAccordion>
+
+			<!-- Separator -->
+			<hr class="section-divider" />
+
+			<!-- Offers Header -->
+			<OffersHeader 
+				{subscriptionOffers} 
+				onCreateClick={() => showCreateModal = true} 
+			/>
+
+			<!-- Offers Section -->
+			<div class="section-header">
+				<h2 class="section-title">Offers</h2>
+				<p class="section-description">Special offers presented to users who have chosen a subscription</p>
+			</div>
+
+			<!-- Active Offers -->
+			<SubscriptionAccordion
+				title="Active Offers"
+				icon="<svg class='w-6 h-6' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z'></path></svg>"
+				count={groupedOffers.active.length}
+				isActive={activeAccordion === 'active-offers'}
+				plans={groupedOffers.active}
+				onToggle={() => toggleAccordion('active-offers')}
+			>
+				{#each groupedOffers.active as offer (offer.id)}
+					<PlanCard 
+						plan={offer} 
+						{isOptimisticallyUpdating}
+						onEdit={handleEdit}
+						onToggleStatus={handleToggleStatus}
+						onTogglePromotion={handleTogglePromotion}
+						onViewDetails={handleViewOfferDetails}
+					/>
+				{/each}
+			</SubscriptionAccordion>
+
+			<!-- Inactive Offers -->
+			<SubscriptionAccordion
+				title="Inactive Offers"
+				icon="<svg class='w-6 h-6' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z'></path></svg>"
+				count={groupedOffers.inactive.length}
+				isActive={activeAccordion === 'inactive-offers'}
+				plans={groupedOffers.inactive}
+				onToggle={() => toggleAccordion('inactive-offers')}
+			>
+				{#each groupedOffers.inactive as offer (offer.id)}
+					<PlanCard 
+						plan={offer} 
+						{isOptimisticallyUpdating}
+						onEdit={handleEdit}
+						onToggleStatus={handleToggleStatus}
+						onTogglePromotion={handleTogglePromotion}
+						onViewDetails={handleViewOfferDetails}
 					/>
 				{/each}
 			</SubscriptionAccordion>
@@ -564,8 +709,8 @@
 
 <!-- Delete Confirmation Modal -->
 {#if showDeleteModal}
-	<div class="modal-backdrop" transition:fade={{ duration: 200 }} on:click={() => showDeleteModal = false}>
-		<div class="modal-content delete-modal" transition:fly={{ y: 20, duration: 200 }} on:click|stopPropagation>
+	<div class="modal-backdrop" on:click={() => showDeleteModal = false}>
+		<div class="modal-content delete-modal" on:click|stopPropagation>
 			<div class="modal-header">
 				<div class="modal-title-with-icon">
 					<svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -642,6 +787,30 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1.5rem;
+	}
+
+	.section-header {
+		margin-bottom: 1rem;
+	}
+
+	.section-title {
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: #111827;
+		margin: 0 0 0.5rem 0;
+	}
+
+	.section-description {
+		font-size: 0.875rem;
+		color: #6b7280;
+		margin: 0;
+	}
+
+	.section-divider {
+		border: none;
+		height: 1px;
+		background: #e5e7eb;
+		margin: 2rem 0;
 	}
 
 	/* Delete Modal Styles */

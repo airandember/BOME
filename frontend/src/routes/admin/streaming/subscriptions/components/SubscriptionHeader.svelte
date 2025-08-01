@@ -19,10 +19,7 @@
 		</div>-->
 		
 		<div class="subscription-stats">
-			<div class="stat-item">
-				<span class="stat-number">{totalPlans}</span>
-				<span class="stat-label">Total Plans</span>
-			</div>
+			
 			<div class="stat-item">
 				<span class="stat-number">{activePlansCount}</span>
 				<span class="stat-label">Active</span>
@@ -34,6 +31,10 @@
 			<div class="stat-item">
 				<span class="stat-number">{inactivePlansCount}</span>
 				<span class="stat-label">Inactive</span>
+			</div>
+			<div class="stat-item">
+				<span class="stat-number">{totalPlans}</span>
+				<span class="stat-label">Total Plans</span>
 			</div>
 		</div>
 	</div>
