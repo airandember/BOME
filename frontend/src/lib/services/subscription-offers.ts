@@ -26,7 +26,7 @@ export interface SubscriptionOffer {
 
 export interface CreateSubscriptionOfferData {
 	plan_id: number;
-	item_id?: string;
+	item_id?: number;
 	off_discount_type: string;
 	off_discount_value: number;
 	offer_start_date?: string;
@@ -65,15 +65,34 @@ export interface UpdateSubscriptionOfferData {
 
 // Service class
 export class SubscriptionOfferService {
-	private static readonly BASE_PATH = '/api/v1/admin/subscription-offers/';
+	private static readonly BASE_PATH = '/admin/subscription-offers/';
 
 	// Get all offers
 	static async getAll(): Promise<SubscriptionOffer[]> {
 		try {
-			const response = await apiRequest(this.BASE_PATH.slice(0, -1)); // Remove trailing slash
-			return response as unknown as SubscriptionOffer[];
+			console.log('SubscriptionOfferService: Starting getAll request');
+			console.log('SubscriptionOfferService: Making request to:', this.BASE_PATH);
+			
+			const response = await apiRequest(this.BASE_PATH);
+
+			console.log('SubscriptionOfferService: Response received:', {
+				status: response.status,
+				statusText: response.statusText,
+				ok: response.ok,
+				url: response.url
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				console.error('SubscriptionOfferService: Error response body:', errorText);
+				throw new Error(`Failed to fetch subscription offers: ${response.status} - ${errorText}`);
+			}
+
+			const data = await response.json();
+			console.log('SubscriptionOfferService: Successfully retrieved offers:', data);
+			return data as SubscriptionOffer[];
 		} catch (error) {
-			console.error('Error getting subscription offers:', error);
+			console.error('SubscriptionOfferService: Error getting subscription offers:', error);
 			throw error;
 		}
 	}
@@ -82,7 +101,13 @@ export class SubscriptionOfferService {
 	static async getById(id: string): Promise<SubscriptionOffer> {
 		try {
 			const response = await apiRequest(`${this.BASE_PATH}${id}`);
-			return response as unknown as SubscriptionOffer;
+			
+			if (!response.ok) {
+				throw new Error(`Failed to fetch subscription offer: ${response.status}`);
+			}
+
+			const data = await response.json();
+			return data as SubscriptionOffer;
 		} catch (error) {
 			console.error('Error getting subscription offer:', error);
 			throw error;
@@ -92,27 +117,52 @@ export class SubscriptionOfferService {
 	// Create new offer
 	static async create(data: CreateSubscriptionOfferData): Promise<SubscriptionOffer> {
 		try {
+			console.log('SubscriptionOfferService: Starting create offer request');
+			console.log('SubscriptionOfferService: Request data:', data);
+			console.log('SubscriptionOfferService: Target URL:', this.BASE_PATH);
+			
 			// Get user data from localStorage
 			const userData = localStorage.getItem('bome_user_data');
 			console.log('SubscriptionOfferService: Raw user data from localStorage:', userData);
 			
-			const headers: Record<string, string> = {};
+			const headers: Record<string, string> = {
+				'Content-Type': 'application/json'
+			};
+			
 			if (userData) {
 				headers['X-User-Data'] = userData;
 				console.log('SubscriptionOfferService: Setting X-User-Data header:', userData);
+			} else {
+				console.log('SubscriptionOfferService: No user data found in localStorage');
 			}
 
-			const response = await apiRequest(this.BASE_PATH.slice(0, -1), {
+			console.log('SubscriptionOfferService: Making API request with headers:', headers);
+			console.log('SubscriptionOfferService: Request body:', JSON.stringify(data));
+
+			const response = await apiRequest(this.BASE_PATH, {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					...headers
-				},
+				headers,
 				body: JSON.stringify(data)
 			});
-			return response as unknown as SubscriptionOffer;
+
+			console.log('SubscriptionOfferService: Response received:', {
+				status: response.status,
+				statusText: response.statusText,
+				ok: response.ok,
+				url: response.url
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				console.error('SubscriptionOfferService: Error response body:', errorText);
+				throw new Error(`Failed to create subscription offer: ${response.status} - ${errorText}`);
+			}
+
+			const result = await response.json();
+			console.log('SubscriptionOfferService: Successfully created offer:', result);
+			return result as SubscriptionOffer;
 		} catch (error) {
-			console.error('Error creating subscription offer:', error);
+			console.error('SubscriptionOfferService: Error creating subscription offer:', error);
 			throw error;
 		}
 	}
@@ -138,7 +188,13 @@ export class SubscriptionOfferService {
 				},
 				body: JSON.stringify(data)
 			});
-			return response as unknown as SubscriptionOffer;
+
+			if (!response.ok) {
+				throw new Error(`Failed to update subscription offer: ${response.status}`);
+			}
+
+			const result = await response.json();
+			return result as SubscriptionOffer;
 		} catch (error) {
 			console.error('Error updating subscription offer:', error);
 			throw error;
@@ -158,10 +214,14 @@ export class SubscriptionOfferService {
 				console.log('SubscriptionOfferService: Setting X-User-Data header:', userData);
 			}
 
-			await apiRequest(`${this.BASE_PATH}${id}`, {
+			const response = await apiRequest(`${this.BASE_PATH}${id}`, {
 				method: 'DELETE',
 				headers
 			});
+
+			if (!response.ok) {
+				throw new Error(`Failed to delete subscription offer: ${response.status}`);
+			}
 		} catch (error) {
 			console.error('Error deleting subscription offer:', error);
 			throw error;
@@ -188,7 +248,13 @@ export class SubscriptionOfferService {
 					...headers
 				}
 			});
-			return response as unknown as SubscriptionOffer;
+
+			if (!response.ok) {
+				throw new Error(`Failed to toggle subscription offer status: ${response.status}`);
+			}
+
+			const result = await response.json();
+			return result as SubscriptionOffer;
 		} catch (error) {
 			console.error('Error toggling subscription offer status:', error);
 			throw error;
@@ -199,7 +265,13 @@ export class SubscriptionOfferService {
 	static async getOfferHistory(id: string): Promise<Record<string, any>[]> {
 		try {
 			const response = await apiRequest(`${this.BASE_PATH}${id}/history`);
-			return response as unknown as Record<string, any>[];
+			
+			if (!response.ok) {
+				throw new Error(`Failed to fetch offer history: ${response.status}`);
+			}
+
+			const data = await response.json();
+			return data as Record<string, any>[];
 		} catch (error) {
 			console.error('Error getting offer history:', error);
 			throw error;

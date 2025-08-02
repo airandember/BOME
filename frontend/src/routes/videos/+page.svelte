@@ -473,8 +473,8 @@
 		loadVideos(true);
 	}
 
-	function handleAuthLoadingChange(event: CustomEvent<{loading: boolean}>) {
-		authChecking = event.detail.loading;
+	function handleAuthLoadingChange(data: {loading: boolean}) {
+		authChecking = data.loading;
 	}
 
 	function handleAccessGranted() {
@@ -526,8 +526,8 @@
 		<SubscriptionCheck 
 			redirectTo="/login" 
 			requireSubscription={true}
-			on:loadingChange={handleAuthLoadingChange}
-			on:accessGranted={handleAccessGranted}
+			onLoadingChange={handleAuthLoadingChange}
+			onAccessGranted={handleAccessGranted}
 		>
 			{#if loading}
 				<div class="loading-container">

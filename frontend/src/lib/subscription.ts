@@ -84,13 +84,13 @@ export const subscriptionService = {
 
 	// Get current user's subscription
 	getCurrentSubscription: async () => {
-		const response = await apiRequest('/subscriptions/current');
+		const response = await apiRequest('/api/subscriptions/');
 		return response.json();
 	},
 
 	// Create a new subscription
 	createSubscription: async (planId: string, paymentMethodId: string) => {
-		const response = await apiRequest('/subscriptions', {
+		const response = await apiRequest('/api/subscriptions/', {
 			method: 'POST',
 			body: JSON.stringify({
 				planId,
@@ -102,10 +102,10 @@ export const subscriptionService = {
 
 	// Cancel subscription
 	cancelSubscription: async (subscriptionId: string, cancelAtPeriodEnd: boolean = true) => {
-		const response = await apiRequest(`/subscriptions/${subscriptionId}/cancel`, {
-			method: 'POST',
+		const response = await apiRequest('/api/subscriptions/', {
+			method: 'DELETE',
 			body: JSON.stringify({
-				cancelAtPeriodEnd
+				at_period_end: cancelAtPeriodEnd
 			})
 		});
 		return response.json();
@@ -122,10 +122,10 @@ export const subscriptionService = {
 
 	// Update subscription (change plan)
 	updateSubscription: async (subscriptionId: string, planId: string) => {
-		const response = await apiRequest(`/subscriptions/${subscriptionId}`, {
+		const response = await apiRequest('/api/subscriptions/', {
 			method: 'PUT',
 			body: JSON.stringify({
-				planId
+				plan_id: planId
 			})
 		});
 		return response.json();
@@ -188,12 +188,12 @@ export const subscriptionService = {
 
 	// Create checkout session for Stripe
 	createCheckoutSession: async (planId: string, successUrl: string, cancelUrl: string) => {
-		const response = await apiRequest('/subscriptions/checkout', {
+		const response = await apiRequest('/api/subscription/checkout', {
 			method: 'POST',
 			body: JSON.stringify({
-				planId,
-				successUrl,
-				cancelUrl
+				plan_id: planId,
+				success_url: successUrl,
+				cancel_url: cancelUrl
 			})
 		});
 		return response.json();

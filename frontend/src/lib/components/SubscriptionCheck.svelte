@@ -1,6 +1,6 @@
 <!-- SubscriptionCheck.svelte -->
 <script lang="ts">
-	import { onMount, createEventDispatcher } from 'svelte';
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth, isAdmin, initializeAuth, debugTokenStorage } from '$lib/auth';
 	import { subscriptionService, type Subscription } from '$lib/subscription';
@@ -11,7 +11,10 @@
 	export let requiredTier: 'free' | 'premium' = 'premium';
 	export let checking: boolean = false;
 
-	const dispatch = createEventDispatcher();
+	// Callback props instead of events
+	export let onLoadingChange: (data: { loading: boolean }) => void = () => {};
+	export let onAccessGranted: () => void = () => {};
+
 	let loading = true;
 	let isAuthenticated = false;
 	let hasAccess = false;
@@ -20,12 +23,6 @@
 	let authInitialized = false;
 
 	$: checking = loading;
-
-	// Reactive statement that triggers when auth state changes
-	$: if (authInitialized && !loading) {
-		console.log('🔍 SubscriptionCheck: Auth state changed, checking access...', { authInitialized, loading, isAuthenticated });
-		checkAccess();
-	}
 
 	onMount(async () => {
 		console.log('🚀 SubscriptionCheck: Component mounted, initializing auth...');
@@ -40,7 +37,7 @@
 		console.log('✅ SubscriptionCheck: Auth initialized');
 
 		// Subscribe to auth state changes
-		auth.subscribe(state => {
+		auth.subscribe((state: any) => {
 			const wasAuthenticated = isAuthenticated;
 			isAuthenticated = state.isAuthenticated;
 			user = state.user;
@@ -66,7 +63,9 @@
 	async function checkAccess() {
 		try {
 			loading = true;
-			dispatch('loadingChange', { loading: true });
+			if (typeof onLoadingChange === 'function') {
+				onLoadingChange({ loading: true });
+			}
 			
 			console.log('🔍 SubscriptionCheck: Checking access...', { 
 				isAuthenticated, 
@@ -82,17 +81,23 @@
 				return;
 			}
 
-			// Admin users always have access
+			// Admin users always have access - bypass all subscription checks
 			if (isAdmin()) {
-				console.log('👑 SubscriptionCheck: Admin user detected, granting access');
+				console.log('👑 SubscriptionCheck: Admin user detected, granting access immediately');
 				hasAccess = true;
-				dispatch('accessGranted');
+				loading = false;
+				if (typeof onLoadingChange === 'function') {
+					onLoadingChange({ loading: false });
+				}
+				if (typeof onAccessGranted === 'function') {
+					onAccessGranted();
+				}
 				return;
 			}
 
-			// If subscription is required, check subscription status
+			// Only check subscription for non-admin users
 			if (requireSubscription) {
-				console.log('💳 SubscriptionCheck: Checking subscription status...');
+				console.log('💳 SubscriptionCheck: Checking subscription status for non-admin user...');
 				const response = await subscriptionService.getCurrentSubscription();
 				subscription = response.subscription;
 				
@@ -119,22 +124,20 @@
 
 			console.log('✅ SubscriptionCheck: Access granted');
 			hasAccess = true;
-			dispatch('accessGranted');
+			if (typeof onAccessGranted === 'function') {
+				onAccessGranted();
+			}
 		} catch (err) {
 			console.error('❌ SubscriptionCheck: Error checking access:', err);
-			// If there's an error checking subscription, but user is authenticated,
-			// it might be a network issue - don't redirect to login
-			if (isAuthenticated) {
-				console.warn('⚠️ SubscriptionCheck: Subscription check failed but user is authenticated, allowing access');
-				hasAccess = true;
-				dispatch('accessGranted');
-			} else {
-				console.log('❌ SubscriptionCheck: Auth error, redirecting to subscription page');
-				goto('/subscription');
-			}
+			// If there's an error checking subscription, redirect to subscription page
+			// This ensures users without proper subscription access are redirected
+			console.log('❌ SubscriptionCheck: Subscription check failed, redirecting to subscription page');
+			goto('/subscription');
 		} finally {
 			loading = false;
-			dispatch('loadingChange', { loading: false });
+			if (typeof onLoadingChange === 'function') {
+				onLoadingChange({ loading: false });
+			}
 		}
 	}
 </script>

@@ -118,7 +118,7 @@ func SetupRoutes(
 	fmt.Printf("Setting up subscription plan routes...\n")
 	SetupSubscriptionPlanRoutes(admin, db, subscriptionPlanService)
 	fmt.Printf("Setting up subscription offers routes...\n")
-	SetupSubscriptionOfferRoutes(admin, db, subscriptionOffersService)
+	SetupSubscriptionOfferRoutes(router, db, subscriptionOffersService)
 	fmt.Printf("Setting up subscriber routes...\n")
 	SetupSubscriberRoutes(admin, db, subscriberService)
 	SetupSubscriptionRoutes(router, db, stripeService, analyticsService)

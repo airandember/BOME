@@ -2,7 +2,7 @@
 	// @ts-ignore
 	import { onMount } from 'svelte';
 	import { StreamingSubscriptionService, type SubscriptionPlan, type CreateSubscriptionPlanData } from '$lib/services/streaming-subscriptions';
-	import { SubscriptionOfferService, type SubscriptionOffer, type CreateSubscriptionOfferData } from '$lib/services/subscription-offers';
+	import { SubscriptionOfferService, type SubscriptionOffer, type CreateSubscriptionOfferData, type UpdateSubscriptionOfferData } from '$lib/services/subscription-offers';
 	import { showToast } from '$lib/toast';
 	import { auth } from '$lib/auth';
 	import { isoToDateInput } from '$lib/utils/date';
@@ -14,6 +14,9 @@
 	import PlanCard from './components/PlanCard.svelte';
 	import PlanModal from './components/PlanModal.svelte';
 	import PlanDetailsModal from './components/PlanDetailsModal.svelte';
+	import OfferModal from './components/OfferModal.svelte';
+	import OfferCard from './components/OfferCard.svelte';
+	import OfferDetailsModal from './components/OfferDetailsModal.svelte';
 
 	// State
 	let isLoading = true;
@@ -31,6 +34,11 @@
 	let showDetailsModal = false;
 	let detailsPlan: SubscriptionPlan | null = null;
 	let detailsOffer: SubscriptionOffer | null = null;
+
+	// Offer modal state
+	let showCreateOfferModal = false;
+	let showEditOfferModal = false;
+	let showOfferDetailsModal = false;
 
 	// Initialize form data
 	let formData: CreateSubscriptionPlanData = {
@@ -250,7 +258,7 @@
 	// Handle view offer details
 	function handleViewOfferDetails(offer: SubscriptionOffer) {
 		detailsOffer = offer;
-		showDetailsModal = true;
+		showOfferDetailsModal = true;
 	}
 
 	// Refresh plan data (for reactive updates)
@@ -537,6 +545,96 @@
 		loadPlans();
 		loadOffers();
 	});
+
+	// --- CRUD: UPDATE OFFER ---
+	async function editOffer(id: number, updates: Partial<SubscriptionOffer>) {
+		try {
+			const updatedOffer = await SubscriptionOfferService.update({ id, ...updates });
+			subscriptionOffers = subscriptionOffers.map(o => o.id === id ? updatedOffer : o); // Immutable update
+			showToast('Offer updated successfully', 'success');
+		} catch (err) {
+			console.error('Edit offer error', err);
+			showToast('Failed to update offer', 'error');
+		}
+	}
+
+	// --- CRUD: DELETE OFFER ---
+	async function deleteOffer(id: number) {
+		try {
+			await SubscriptionOfferService.delete(id.toString());
+			subscriptionOffers = subscriptionOffers.filter(o => o.id !== id); // Immutable update
+			showToast('Offer deleted successfully', 'success');
+		} catch (err) {
+			console.error('Delete offer error', err);
+			showToast('Failed to delete offer', 'error');
+		}
+	}
+
+	// --- OFFER ACTIONS ---
+	async function createSubscriptionOffer(formData: CreateSubscriptionOfferData) {
+		try {
+			isSubmitting = true;
+			const newOffer = await SubscriptionOfferService.create(formData);
+			
+			// Only add to array if we got a valid response
+			if (newOffer && newOffer.id) {
+				showCreateOfferModal = false;
+				subscriptionOffers = [...subscriptionOffers, newOffer];
+				showToast('Subscription offer created successfully', 'success');
+			} else {
+				throw new Error('Invalid response from server');
+			}
+		} catch (err) {
+			console.error('Error creating subscription offer:', err);
+			showToast('Failed to create subscription offer', 'error');
+		} finally {
+			isSubmitting = false;
+		}
+	}
+
+	async function updateSubscriptionOffer(formData: UpdateSubscriptionOfferData) {
+		if (!selectedOffer) return;
+		
+		try {
+			isSubmitting = true;
+			const updatedOffer = await SubscriptionOfferService.update(formData);
+			showEditOfferModal = false;
+			subscriptionOffers = subscriptionOffers.map(offer => 
+				offer.id === selectedOffer?.id ? updatedOffer : offer
+			);
+			showToast('Subscription offer updated successfully', 'success');
+		} catch (err) {
+			console.error('Error updating subscription offer:', err);
+			showToast('Failed to update subscription offer', 'error');
+		} finally {
+			isSubmitting = false;
+		}
+	}
+
+	// Handle edit offer
+	function handleEditOffer(offer: SubscriptionOffer) {
+		selectedOffer = offer;
+		showEditOfferModal = true;
+	}
+
+	// Handle delete offer
+	function handleDeleteOffer(offer: SubscriptionOffer) {
+		selectedOffer = offer;
+		// You can add a delete confirmation modal here if needed
+		deleteOffer(offer.id);
+	}
+
+	// Toggle offer status
+	async function toggleOfferStatus(offer: SubscriptionOffer) {
+		try {
+			const updatedOffer = await SubscriptionOfferService.toggleStatus(offer.id.toString(), !offer.is_active);
+			subscriptionOffers = subscriptionOffers.map(o => o.id === offer.id ? updatedOffer : o);
+			showToast(`Offer ${updatedOffer.is_active ? 'activated' : 'deactivated'} successfully`, 'success');
+		} catch (err) {
+			console.error('Error toggling offer status:', err);
+			showToast('Failed to update offer status', 'error');
+		}
+	}
 </script>
 
 <div class="subscription-content p-0">
@@ -546,10 +644,7 @@
 			<p>Loading subscription plans...</p>
 		</div>
 	{:else}
-		<SubscriptionHeader 
-			{subscriptionPlans} 
-			onCreateClick={() => showCreateModal = true} 
-		/>
+		
 
 		<div class="subscription-accordions">
 			<!-- Plans Section -->
@@ -557,10 +652,14 @@
 				<h2 class="section-title">Plans</h2>
 				<p class="section-description">Subscription plans for non-subscribed users</p>
 			</div>
-
+<SubscriptionHeader 
+			{subscriptionPlans} 
+			onCreateClick={() => showCreateModal = true} 
+		/>
 			<!-- Promoted Plans -->
 			<SubscriptionAccordion
 				title="Promoted Plans"
+				class_title="promoted-plans"
 				icon="<svg class='w-6 h-6' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z'></path></svg>"
 				count={groupedPlans.promoted.length}
 				isActive={activeAccordion === 'promoted'}
@@ -582,6 +681,7 @@
 			<!-- Active Plans -->
 			<SubscriptionAccordion
 				title="Active Plans"
+				class_title="active-plans"
 				icon="<svg class='w-6 h-6' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'></path></svg>"
 				count={groupedPlans.active.length}
 				isActive={activeAccordion === 'active'}
@@ -603,6 +703,7 @@
 			<!-- Inactive Plans -->
 			<SubscriptionAccordion
 				title="Inactive Plans"
+				class_title="inactive-plans"
 				icon="<svg class='w-6 h-6' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z'></path></svg>"
 				count={groupedPlans.inactive.length}
 				isActive={activeAccordion === 'inactive'}
@@ -624,21 +725,24 @@
 			<!-- Separator -->
 			<hr class="section-divider" />
 
-			<!-- Offers Header -->
-			<OffersHeader 
-				{subscriptionOffers} 
-				onCreateClick={() => showCreateModal = true} 
-			/>
+			
 
 			<!-- Offers Section -->
 			<div class="section-header">
 				<h2 class="section-title">Offers</h2>
 				<p class="section-description">Special offers presented to users who have chosen a subscription</p>
 			</div>
+			
+			<!-- Offers Header -->
+			<OffersHeader 
+				{subscriptionOffers} 
+				onCreateClick={() => showCreateOfferModal = true} 
+			/>
 
 			<!-- Active Offers -->
 			<SubscriptionAccordion
 				title="Active Offers"
+				class_title="active-offers"
 				icon="<svg class='w-6 h-6' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z'></path></svg>"
 				count={groupedOffers.active.length}
 				isActive={activeAccordion === 'active-offers'}
@@ -646,12 +750,12 @@
 				onToggle={() => toggleAccordion('active-offers')}
 			>
 				{#each groupedOffers.active as offer (offer.id)}
-					<PlanCard 
-						plan={offer} 
+					<OfferCard 
+						{offer}
+						{subscriptionPlans}
 						{isOptimisticallyUpdating}
-						onEdit={handleEdit}
-						onToggleStatus={handleToggleStatus}
-						onTogglePromotion={handleTogglePromotion}
+						onEdit={handleEditOffer}
+						onToggleStatus={toggleOfferStatus}
 						onViewDetails={handleViewOfferDetails}
 					/>
 				{/each}
@@ -660,6 +764,7 @@
 			<!-- Inactive Offers -->
 			<SubscriptionAccordion
 				title="Inactive Offers"
+				class_title="inactive-offers"
 				icon="<svg class='w-6 h-6' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z'></path></svg>"
 				count={groupedOffers.inactive.length}
 				isActive={activeAccordion === 'inactive-offers'}
@@ -667,12 +772,12 @@
 				onToggle={() => toggleAccordion('inactive-offers')}
 			>
 				{#each groupedOffers.inactive as offer (offer.id)}
-					<PlanCard 
-						plan={offer} 
+					<OfferCard 
+						{offer}
+						{subscriptionPlans}
 						{isOptimisticallyUpdating}
-						onEdit={handleEdit}
-						onToggleStatus={handleToggleStatus}
-						onTogglePromotion={handleTogglePromotion}
+						onEdit={handleEditOffer}
+						onToggleStatus={toggleOfferStatus}
 						onViewDetails={handleViewOfferDetails}
 					/>
 				{/each}
@@ -688,8 +793,8 @@
 	{formData}
 	{isSubmitting}
 	mode="create"
-	on:submit={createSubscriptionPlan}
-	on:cancel={() => showCreateModal = false}
+	onSave={createSubscriptionPlan}
+	onCancel={() => showCreateModal = false}
 />
 
 <PlanModal
@@ -698,13 +803,40 @@
 	{formData}
 	{isSubmitting}
 	mode="edit"
-	on:submit={updateSubscriptionPlan}
-	on:cancel={() => showEditModal = false}
+	onSave={updateSubscriptionPlan}
+	onCancel={() => showEditModal = false}
 />
 
 <PlanDetailsModal
 	bind:isOpen={showDetailsModal}
 	plan={detailsPlan}
+/>
+
+<!-- Offer Modals -->
+<OfferModal
+	isOpen={showCreateOfferModal}
+	mode="create"
+	offer={null}
+	{subscriptionPlans}
+	{isSubmitting}
+	onSubmit={createSubscriptionOffer}
+	onCancel={() => showCreateOfferModal = false}
+/>
+
+<OfferModal
+	isOpen={showEditOfferModal}
+	mode="edit"
+	offer={selectedOffer}
+	{subscriptionPlans}
+	{isSubmitting}
+	onSubmit={updateSubscriptionOffer}
+	onCancel={() => showEditOfferModal = false}
+/>
+
+<OfferDetailsModal
+	bind:isOpen={showOfferDetailsModal}
+	offer={detailsOffer}
+	{subscriptionPlans}
 />
 
 <!-- Delete Confirmation Modal -->

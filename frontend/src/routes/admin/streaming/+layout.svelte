@@ -25,10 +25,10 @@
 			description: 'Manage video content and uploads'
 		},
 		{
-			name: 'Subscriptions',
+			name: 'Subscriptions - Plans & Offers',
 			href: '/admin/streaming/subscriptions',
 			icon: 'credit-card',
-			description: 'Manage user subscriptions'
+			description: 'Manage user subscriptions plans and offers'
 		},
 		{
 			name: 'Subscribers',

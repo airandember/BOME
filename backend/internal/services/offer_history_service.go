@@ -63,7 +63,18 @@ func (s *OfferHistoryService) AddHistoryEvent(offerID int, eventType, descriptio
 	// Add metadata
 	if metadata != nil {
 		metadataJSON, _ := json.Marshal(metadata)
-		event.DeviceInfo = sql.NullString{String: string(metadataJSON), Valid: true}
+		event.Metadata = sql.NullString{String: string(metadataJSON), Valid: true}
+	}
+
+	// Add description
+	if description != "" {
+		event.Description = sql.NullString{String: description, Valid: true}
+	}
+
+	// Add old and new values if we have an old offer
+	if oldOffer != nil {
+		oldValuesJSON, _ := json.Marshal(oldOffer)
+		event.OldValues = sql.NullString{String: string(oldValuesJSON), Valid: true}
 	}
 
 	// Add to database

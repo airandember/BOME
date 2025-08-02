@@ -30,7 +30,7 @@ type SubscriptionOffer struct {
 	OffAutoApply       bool           `json:"off_auto_apply"`
 }
 
-// SubscriptionOfferHistory represents offer history events
+// SubscriptionOfferHistory represents a history event for subscription offers
 type SubscriptionOfferHistory struct {
 	ID             int             `json:"id"`
 	OfferID        int             `json:"offer_id"`
@@ -47,11 +47,34 @@ type SubscriptionOfferHistory struct {
 	ReferrerURL    sql.NullString  `json:"referrer_url"`
 	UserAgent      sql.NullString  `json:"user_agent"`
 	CreatedAt      time.Time       `json:"created_at"`
+	Metadata       sql.NullString  `json:"metadata"`
+	OldValues      sql.NullString  `json:"old_values"`
+	NewValues      sql.NullString  `json:"new_values"`
+	Description    sql.NullString  `json:"description"`
 }
 
 // CreateSubscriptionOffer creates a new subscription offer
 func (db *DB) CreateSubscriptionOffer(offer *SubscriptionOffer) error {
 	log.Printf("Database: Creating subscription offer: %s", offer.OffName)
+
+	// First, let's check the actual table schema
+	schemaQuery := "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'subscription_offers' ORDER BY ordinal_position"
+	rows, err := db.Query(schemaQuery)
+	if err != nil {
+		log.Printf("Database: Error checking schema: %v", err)
+		return err
+	}
+	defer rows.Close()
+
+	log.Printf("Database: Current table schema:")
+	for rows.Next() {
+		var columnName, dataType string
+		if err := rows.Scan(&columnName, &dataType); err != nil {
+			log.Printf("Database: Error scanning schema row: %v", err)
+			continue
+		}
+		log.Printf("  %s: %s", columnName, dataType)
+	}
 
 	query := `
 		INSERT INTO subscription_offers (
@@ -65,22 +88,98 @@ func (db *DB) CreateSubscriptionOffer(offer *SubscriptionOffer) error {
 		) RETURNING id, off_created_at, off_updated_at
 	`
 
-	err := db.QueryRow(
+	// Convert sql.NullString to interface{} for proper handling
+	var itemID interface{}
+	if offer.ItemID.Valid {
+		itemID = offer.ItemID.String
+	} else {
+		itemID = nil
+	}
+
+	var offerStartDate interface{}
+	if offer.OfferStartDate.Valid {
+		offerStartDate = offer.OfferStartDate.Time
+	} else {
+		offerStartDate = nil
+	}
+
+	var offEndDate interface{}
+	if offer.OffEndDate.Valid {
+		offEndDate = offer.OffEndDate.Time
+	} else {
+		offEndDate = nil
+	}
+
+	var offDescription interface{}
+	if offer.OffDescription.Valid {
+		offDescription = offer.OffDescription.String
+	} else {
+		offDescription = nil
+	}
+
+	var offCode interface{}
+	if offer.OffCode.Valid {
+		offCode = offer.OffCode.String
+	} else {
+		offCode = nil
+	}
+
+	var offMaxUses interface{}
+	if offer.OffMaxUses.Valid {
+		offMaxUses = offer.OffMaxUses.Int32
+	} else {
+		offMaxUses = nil
+	}
+
+	var offTermsConditions interface{}
+	if offer.OffTermsConditions.Valid {
+		offTermsConditions = offer.OffTermsConditions.String
+	} else {
+		offTermsConditions = nil
+	}
+
+	var offTarget interface{}
+	if offer.OffTarget.Valid {
+		offTarget = offer.OffTarget.String
+	} else {
+		offTarget = nil
+	}
+
+	// Debug logging
+	log.Printf("Database: Query parameters:")
+	log.Printf("  plan_id: %v (type: %T)", offer.PlanID, offer.PlanID)
+	log.Printf("  item_id: %v (type: %T)", itemID, itemID)
+	log.Printf("  off_discount_type: %v (type: %T)", offer.OffDiscountType, offer.OffDiscountType)
+	log.Printf("  off_discount_value: %v (type: %T)", offer.OffDiscountValue, offer.OffDiscountValue)
+	log.Printf("  offer_start_date: %v (type: %T)", offerStartDate, offerStartDate)
+	log.Printf("  off_end_date: %v (type: %T)", offEndDate, offEndDate)
+	log.Printf("  is_active: %v (type: %T)", offer.IsActive, offer.IsActive)
+	log.Printf("  off_description: %v (type: %T)", offDescription, offDescription)
+	log.Printf("  off_name: %v (type: %T)", offer.OffName, offer.OffName)
+	log.Printf("  off_code: %v (type: %T)", offCode, offCode)
+	log.Printf("  off_max_uses: %v (type: %T)", offMaxUses, offMaxUses)
+	log.Printf("  off_current_uses: %v (type: %T)", offer.OffCurrentUses, offer.OffCurrentUses)
+	log.Printf("  off_terms_conditions: %v (type: %T)", offTermsConditions, offTermsConditions)
+	log.Printf("  off_target: %v (type: %T)", offTarget, offTarget)
+	log.Printf("  off_priority: %v (type: %T)", offer.OffPriority, offer.OffPriority)
+	log.Printf("  off_auto_apply: %v (type: %T)", offer.OffAutoApply, offer.OffAutoApply)
+
+	err = db.QueryRow(
 		query,
 		offer.PlanID,
-		offer.ItemID,
+		itemID,
 		offer.OffDiscountType,
 		offer.OffDiscountValue,
-		offer.OfferStartDate,
-		offer.OffEndDate,
+		offerStartDate,
+		offEndDate,
 		offer.IsActive,
-		offer.OffDescription,
+		offDescription,
 		offer.OffName,
-		offer.OffCode,
-		offer.OffMaxUses,
+		offCode,
+		offMaxUses,
 		offer.OffCurrentUses,
-		offer.OffTermsConditions,
-		offer.OffTarget,
+		offTermsConditions,
+		offTarget,
 		offer.OffPriority,
 		offer.OffAutoApply,
 	).Scan(&offer.ID, &offer.OffCreatedAt, &offer.OffUpdatedAt)
@@ -276,8 +375,8 @@ func (db *DB) AddOfferHistoryEvent(event *SubscriptionOfferHistory) error {
 		INSERT INTO subscription_offers_history (
 			offer_id, user_id, sub_plan_id, accepted, off_user_ip, device_info,
 			event_type, discount_amount, original_price, final_price, session_id,
-			referrer_url, user_agent, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+			referrer_url, user_agent, created_at, metadata, old_values, new_values, description
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), $14, $15, $16, $17)
 	`
 
 	_, err := db.Exec(
@@ -295,6 +394,10 @@ func (db *DB) AddOfferHistoryEvent(event *SubscriptionOfferHistory) error {
 		event.SessionID,
 		event.ReferrerURL,
 		event.UserAgent,
+		event.Metadata,
+		event.OldValues,
+		event.NewValues,
+		event.Description,
 	)
 
 	if err != nil {
@@ -318,7 +421,7 @@ func (db *DB) GetOfferHistory(offerID int) ([]*SubscriptionOfferHistory, error) 
 	query := `
 		SELECT id, offer_id, user_id, sub_plan_id, accepted, off_user_ip, device_info,
 			   event_type, discount_amount, original_price, final_price, session_id,
-			   referrer_url, user_agent, created_at
+			   referrer_url, user_agent, created_at, metadata, old_values, new_values, description
 		FROM subscription_offers_history
 		WHERE offer_id = $1
 		ORDER BY created_at DESC
@@ -350,6 +453,10 @@ func (db *DB) GetOfferHistory(offerID int) ([]*SubscriptionOfferHistory, error) 
 			&event.ReferrerURL,
 			&event.UserAgent,
 			&event.CreatedAt,
+			&event.Metadata,
+			&event.OldValues,
+			&event.NewValues,
+			&event.Description,
 		)
 		if err != nil {
 			log.Printf("Database: Error scanning offer history row: %v", err)

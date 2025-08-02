@@ -153,8 +153,15 @@
 		}
 	}
 
-	function handleAuthComplete() {
-		authChecking = false;
+	function handleAuthLoadingChange(data: {loading: boolean}) {
+		authChecking = data.loading;
+	}
+
+	function handleAccessGranted() {
+		// This function is called when the user is granted access.
+		// You can perform actions here, such as re-fetching data or updating UI.
+		console.log('Access granted!');
+		loadCollectionData(); // Re-fetch data after successful access
 	}
 </script>
 
@@ -168,10 +175,11 @@
 	
 	<main class="collection-page">
 		<SubscriptionCheck 
+			redirectTo="/login"
 			requireSubscription={true}
 			requiredTier="premium"
-			on:authComplete={handleAuthComplete}
-			bind:checking={authChecking}
+			onLoadingChange={handleAuthLoadingChange}
+			onAccessGranted={handleAccessGranted}
 		>
 			{#if loading}
 				<div class="loading-container">

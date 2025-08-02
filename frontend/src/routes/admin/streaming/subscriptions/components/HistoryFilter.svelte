@@ -8,18 +8,24 @@
 	let selectedUser = 'all';
 	let searchTerm = '';
 
-	// Available filter options - matching actual event types from database
-	const eventTypes = [
+	// Detect event types from the events array
+	$: detectedEventTypes = (() => {
+		const types = new Set<string>();
+		events.forEach(event => {
+			if (event.event_type) {
+				types.add(event.event_type);
+			}
+		});
+		return Array.from(types).sort();
+	})();
+
+	// Create event type options based on detected types
+	$: eventTypes = [
 		{ value: 'all', label: 'All Events' },
-		{ value: 'plan_updated', label: 'Plan Updated' },
-		{ value: 'status_toggled', label: 'Activated/Deactivated' },
-		{ value: 'promotion_started', label: 'Promotion Started' },
-		{ value: 'promotion_ended', label: 'Promotion Ended' },
-		{ value: 'promo_expiry', label: '🖥️ Promo Expired (Deactivated)' },
-		{ value: 'promotion_expired', label: 'Promotion Expired' },
-		{ value: 'price_changed', label: 'Price Changed' },
-		{ value: 'type_changed', label: 'Type Changed' },
-		{ value: 'plan_deleted', label: 'Plan Deleted' }
+		...detectedEventTypes.map(type => ({
+			value: type,
+			label: type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+		}))
 	];
 
 	const dateRanges = [
@@ -62,7 +68,7 @@
 
 		// Date range filter
 		if (selectedDateRange !== 'all') {
-			const eventDate = new Date(event.timestamp);
+			const eventDate = new Date(event.timestamp || event.created_at);
 			const now = new Date();
 			
 			switch (selectedDateRange) {
@@ -106,13 +112,16 @@
 		// Search term filter
 		if (searchTerm) {
 			const searchLower = searchTerm.toLowerCase();
-			const description = event.description?.toLowerCase() || '';
-			const eventType = event.event_type?.toLowerCase() || '';
-			const user = event.user_id?.toLowerCase() || '';
+			const eventText = [
+				event.event_type,
+				event.description,
+				event.user_id,
+				JSON.stringify(event.metadata || {}),
+				JSON.stringify(event.old_values || {}),
+				JSON.stringify(event.new_values || {})
+			].join(' ').toLowerCase();
 			
-			if (!description.includes(searchLower) && 
-				!eventType.includes(searchLower) && 
-				!user.includes(searchLower)) {
+			if (!eventText.includes(searchLower)) {
 				return false;
 			}
 		}
@@ -120,89 +129,75 @@
 		return true;
 	});
 
-	// Handle filter changes
-	function handleFilterChange() {
+	// Watch for filter changes and notify parent
+	$: {
 		onFilterChange(filteredEvents);
 	}
 
-	// Apply filters (triggered by search button)
-	function applyFilters() {
-		handleFilterChange();
-	}
-
-	// Clear all filters
-	function clearFilters() {
+	// Reset filters
+	function resetFilters() {
 		selectedEventType = 'all';
 		selectedDateRange = 'all';
 		selectedUser = 'all';
 		searchTerm = '';
-		handleFilterChange();
-	}
-
-	// Export filtered events on mount
-	$: {
-		if (events.length > 0) {
-			handleFilterChange();
-		}
 	}
 </script>
 
 <div class="history-filter">
 	<div class="filter-header">
-		<h4>Filter History</h4>
-		<button class="clear-filters" on:click={clearFilters}>
-			Clear Filters
+		<h4 class="filter-title">Filter History</h4>
+		<button type="button" class="reset-btn" on:click={resetFilters}>
+			Reset Filters
 		</button>
 	</div>
-	
-	<div class="filter-controls">
+
+	<div class="filter-grid">
+		<!-- Event Type Filter -->
 		<div class="filter-group">
-			<label for="event-type">Event Type:</label>
-			<select id="event-type" bind:value={selectedEventType}>
+			<label for="event-type" class="filter-label">Event Type</label>
+			<select id="event-type" bind:value={selectedEventType} class="filter-select">
 				{#each eventTypes as type}
 					<option value={type.value}>{type.label}</option>
 				{/each}
 			</select>
 		</div>
-		
+
+		<!-- Date Range Filter -->
 		<div class="filter-group">
-			<label for="date-range">Date Range:</label>
-			<select id="date-range" bind:value={selectedDateRange}>
+			<label for="date-range" class="filter-label">Date Range</label>
+			<select id="date-range" bind:value={selectedDateRange} class="filter-select">
 				{#each dateRanges as range}
 					<option value={range.value}>{range.label}</option>
 				{/each}
 			</select>
 		</div>
-		
+
+		<!-- User Filter -->
 		<div class="filter-group">
-			<label for="user-filter">User:</label>
-			<select id="user-filter" bind:value={selectedUser}>
+			<label for="user-filter" class="filter-label">User</label>
+			<select id="user-filter" bind:value={selectedUser} class="filter-select">
 				<option value="all">All Users</option>
 				{#each uniqueUsers as user}
 					<option value={user}>{user}</option>
 				{/each}
 			</select>
 		</div>
-		
+
+		<!-- Search Filter -->
 		<div class="filter-group">
-			<label for="search">Search:</label>
-			<input 
-				id="search" 
-				type="text" 
-				placeholder="Search events..." 
+			<label for="search-term" class="filter-label">Search</label>
+			<input
+				id="search-term"
+				type="text"
 				bind:value={searchTerm}
+				placeholder="Search events..."
+				class="filter-input"
 			/>
 		</div>
 	</div>
-	
-	<div class="filter-actions">
-		<button class="apply-filters" on:click={applyFilters}>
-			Apply Filters
-		</button>
-	</div>
-	
-	<div class="filter-stats">
-		<span class="stats-text">
+
+	<div class="filter-summary">
+		<span class="summary-text">
 			Showing {filteredEvents.length} of {events.length} events
 		</span>
 	</div>
@@ -210,11 +205,11 @@
 
 <style>
 	.history-filter {
-		margin-bottom: 1.5rem;
-		padding: 1rem;
-		background: #f8fafc;
-		border: 1px solid #e2e8f0;
+		background: #f9fafb;
+		border: 1px solid #e5e7eb;
 		border-radius: 0.5rem;
+		padding: 1rem;
+		margin-bottom: 1rem;
 	}
 
 	.filter-header {
@@ -224,30 +219,30 @@
 		margin-bottom: 1rem;
 	}
 
-	.filter-header h4 {
-		margin: 0;
+	.filter-title {
 		font-size: 1rem;
 		font-weight: 600;
-		color: #374151;
+		color: #111827;
+		margin: 0;
 	}
 
-	.clear-filters {
-		background: #ef4444;
-		color: white;
-		border: none;
-		padding: 0.25rem 0.75rem;
+	.reset-btn {
+		background: #f3f4f6;
+		color: #374151;
+		border: 1px solid #d1d5db;
+		padding: 0.25rem 0.5rem;
 		border-radius: 0.25rem;
 		font-size: 0.75rem;
-		font-weight: 500;
 		cursor: pointer;
-		transition: background-color 0.2s;
+		transition: all 0.2s ease;
 	}
 
-	.clear-filters:hover {
-		background: #dc2626;
+	.reset-btn:hover {
+		background: #e5e7eb;
+		border-color: #9ca3af;
 	}
 
-	.filter-controls {
+	.filter-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 		gap: 1rem;
@@ -260,65 +255,44 @@
 		gap: 0.25rem;
 	}
 
-	.filter-group label {
+	.filter-label {
 		font-size: 0.875rem;
 		font-weight: 500;
-		color: #6b7280;
+		color: #374151;
 	}
 
-	.filter-group select,
-	.filter-group input {
+	.filter-select,
+	.filter-input {
 		padding: 0.5rem;
 		border: 1px solid #d1d5db;
 		border-radius: 0.375rem;
 		font-size: 0.875rem;
 		background: white;
+		transition: border-color 0.2s ease;
 	}
 
-	.filter-group select:focus,
-	.filter-group input:focus {
+	.filter-select:focus,
+	.filter-input:focus {
 		outline: none;
-		border-color: #3b82f6;
-		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+		border-color: #2563eb;
+		box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 	}
 
-	.filter-actions {
-		display: flex;
-		justify-content: center;
-		margin-bottom: 1rem;
+	.filter-summary {
+		border-top: 1px solid #e5e7eb;
+		padding-top: 0.75rem;
 	}
 
-	.apply-filters {
-		background: #3b82f6;
-		color: white;
-		border: none;
-		padding: 0.5rem 1.5rem;
-		border-radius: 0.375rem;
-		font-size: 0.875rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: background-color 0.2s;
-	}
-
-	.apply-filters:hover {
-		background: #2563eb;
-	}
-
-	.filter-stats {
-		text-align: center;
-	}
-
-	.stats-text {
+	.summary-text {
 		font-size: 0.875rem;
 		color: #6b7280;
-		font-weight: 500;
 	}
 
-	@media (max-width: 768px) {
-		.filter-controls {
+	@media (max-width: 640px) {
+		.filter-grid {
 			grid-template-columns: 1fr;
 		}
-		
+
 		.filter-header {
 			flex-direction: column;
 			align-items: flex-start;

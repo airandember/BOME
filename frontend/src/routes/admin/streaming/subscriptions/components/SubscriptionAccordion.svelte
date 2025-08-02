@@ -1,5 +1,6 @@
 <script lang="ts">
 	export let title: string;
+	export let class_title: string;
 	export let icon: string;
 	export let count: number;
 	export let isActive: boolean = false;
@@ -13,10 +14,10 @@
 
 <div class="accordion-container">
 	<button 
-		class="accordion-header header-{title}" 
+		class="accordion-header header-{class_title}" 
 		on:click={toggleAccordion}
 		aria-expanded={isActive}
-		aria-controls="accordion-content-{title}"
+		aria-controls="accordion-content-{class_title}"
 	>
 		<div class="accordion-info">
 			<h3 class="accordion-title">
@@ -34,8 +35,8 @@
 	
 	{#if isActive}
 		<div 
-			id="accordion-content-{title}"
-			class="accordion-content content-{title}" 
+			id="accordion-content-{class_title}"
+			class="accordion-content content-{class_title}" 
 			aria-hidden="false"
 		>
 			{#if plans.length > 0}
@@ -68,28 +69,41 @@
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 	}
 
-	.header-Promoted {
+	.header-promoted-plans {
 		background: #fff5ca !important;
 	}
 
-	.header-Active {
+	.header-active-plans {
 		background: #dbffee !important;
 	}
 
-	.header-Inactive {
+	.header-inactive-plans {
 		background: #ffe5d9 !important;
 	}
 
-	.content-Promoted {
+	.header-active-offers {
+		background: #ccf4fd !important;
+		color: white;
+	}
+
+	.header-inactive-offers {
+		background: #ffb0b3 !important;
+	}
+
+	.content-promoted-plans {
 		background: #fdfded !important;
 	}
 
-	.content-Active {
+	.content-active-plans {
 		background: #f2fff9 !important;
 	}
 
-	.content-Inactive {
-		background: #fff5f0 !important;
+	.content-active-offers {
+		background: #ecfbff !important;
+	}
+
+	.content-inactive-offers {
+		background: #ffe6e7 !important;
 	}
 
 	.accordion-header {

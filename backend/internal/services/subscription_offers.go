@@ -3,11 +3,12 @@ package services
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"log"
 	"time"
 
 	"bome-backend/internal/database"
+
+	"github.com/gin-gonic/gin"
 )
 
 // SubscriptionOfferResponse represents the response structure for subscription offers
@@ -105,18 +106,18 @@ func (s *SubscriptionOffersService) CreateSubscriptionOffer(ctx context.Context,
 		OffAutoApply:     req.OffAutoApply,
 	}
 
-	// Handle nullable fields
+	// Handle optional fields
 	if req.ItemID != nil {
 		offer.ItemID = sql.NullString{String: *req.ItemID, Valid: true}
 	}
 	if req.OfferStartDate != nil {
-		if parsedDate, err := ParseFlexibleDate(*req.OfferStartDate); err == nil && parsedDate != nil {
-			offer.OfferStartDate = sql.NullTime{Time: *parsedDate, Valid: true}
+		if parsedDate, err := time.Parse("2006-01-02", *req.OfferStartDate); err == nil {
+			offer.OfferStartDate = sql.NullTime{Time: parsedDate, Valid: true}
 		}
 	}
 	if req.OffEndDate != nil {
-		if parsedDate, err := ParseFlexibleDate(*req.OffEndDate); err == nil && parsedDate != nil {
-			offer.OffEndDate = sql.NullTime{Time: *parsedDate, Valid: true}
+		if parsedDate, err := time.Parse("2006-01-02", *req.OffEndDate); err == nil {
+			offer.OffEndDate = sql.NullTime{Time: parsedDate, Valid: true}
 		}
 	}
 	if req.OffDescription != nil {
@@ -142,12 +143,23 @@ func (s *SubscriptionOffersService) CreateSubscriptionOffer(ctx context.Context,
 		return nil, err
 	}
 
-	// Log history event
+	// Add history event for offer creation
 	userDataJSON := s.getUserDataFromContext(ctx)
-	s.historyService.AddHistoryEvent(offer.ID, "offer_created", fmt.Sprintf("Offer '%s' was created", offer.OffName), userDataJSON, nil, map[string]interface{}{
-		"action":     "created",
-		"offer_name": offer.OffName,
-	})
+	err = s.historyService.AddHistoryEvent(
+		offer.ID,
+		"offer_created",
+		"Offer created",
+		userDataJSON,
+		nil, // No old offer for creation
+		map[string]interface{}{
+			"action":     "created",
+			"offer_name": offer.OffName,
+		},
+	)
+	if err != nil {
+		log.Printf("Service: Error adding creation history event: %v", err)
+		// Don't fail the creation if history logging fails
+	}
 
 	// Convert to response
 	response := s.convertToResponse(offer)
@@ -194,7 +206,7 @@ func (s *SubscriptionOffersService) GetSubscriptionOfferByID(ctx context.Context
 func (s *SubscriptionOffersService) UpdateSubscriptionOffer(ctx context.Context, req *UpdateSubscriptionOfferRequest) (*SubscriptionOfferResponse, error) {
 	log.Printf("Service: Updating subscription offer ID: %d", req.ID)
 
-	// Get current offer for comparison
+	// Get current offer for history comparison
 	currentOffer, err := s.db.GetSubscriptionOfferByID(req.ID)
 	if err != nil {
 		log.Printf("Service: Error getting current offer: %v", err)
@@ -203,7 +215,6 @@ func (s *SubscriptionOffersService) UpdateSubscriptionOffer(ctx context.Context,
 
 	// Build updates map
 	updates := make(map[string]interface{})
-
 	if req.PlanID != nil {
 		updates["plan_id"] = *req.PlanID
 	}
@@ -217,13 +228,13 @@ func (s *SubscriptionOffersService) UpdateSubscriptionOffer(ctx context.Context,
 		updates["off_discount_value"] = *req.OffDiscountValue
 	}
 	if req.OfferStartDate != nil {
-		if parsedDate, err := ParseFlexibleDate(*req.OfferStartDate); err == nil && parsedDate != nil {
-			updates["offer_start_date"] = *parsedDate
+		if parsedDate, err := time.Parse("2006-01-02", *req.OfferStartDate); err == nil {
+			updates["offer_start_date"] = parsedDate
 		}
 	}
 	if req.OffEndDate != nil {
-		if parsedDate, err := ParseFlexibleDate(*req.OffEndDate); err == nil && parsedDate != nil {
-			updates["off_end_date"] = *parsedDate
+		if parsedDate, err := time.Parse("2006-01-02", *req.OffEndDate); err == nil {
+			updates["off_end_date"] = parsedDate
 		}
 	}
 	if req.IsActive != nil {
@@ -257,28 +268,38 @@ func (s *SubscriptionOffersService) UpdateSubscriptionOffer(ctx context.Context,
 		updates["off_auto_apply"] = *req.OffAutoApply
 	}
 
-	// Update the offer
+	// Update the offer in database
 	updatedOffer, err := s.db.UpdateSubscriptionOffer(req.ID, updates)
 	if err != nil {
 		log.Printf("Service: Error updating subscription offer: %v", err)
 		return nil, err
 	}
 
-	// Log history event if there were changes
-	if len(updates) > 0 {
-		userDataJSON := s.getUserDataFromContext(ctx)
-		s.historyService.AddHistoryEvent(updatedOffer.ID, "offer_updated", fmt.Sprintf("Offer '%s' was updated", updatedOffer.OffName), userDataJSON, currentOffer, map[string]interface{}{
+	// Add history event for offer update
+	userDataJSON := s.getUserDataFromContext(ctx)
+	err = s.historyService.AddHistoryEvent(
+		req.ID,
+		"offer_updated",
+		"Offer updated",
+		userDataJSON,
+		currentOffer,
+		map[string]interface{}{
 			"action":     "updated",
 			"offer_name": updatedOffer.OffName,
-		})
+		},
+	)
+	if err != nil {
+		log.Printf("Service: Error adding update history event: %v", err)
+		// Don't fail the update if history logging fails
 	}
 
+	// Convert to response
 	response := s.convertToResponse(updatedOffer)
-	log.Printf("Service: Successfully updated subscription offer: %s", updatedOffer.OffName)
+	log.Printf("Service: Successfully updated subscription offer with ID: %d", req.ID)
 	return response, nil
 }
 
-// DeleteSubscriptionOffer soft deletes a subscription offer
+// DeleteSubscriptionOffer deletes a subscription offer
 func (s *SubscriptionOffersService) DeleteSubscriptionOffer(ctx context.Context, id int) error {
 	log.Printf("Service: Deleting subscription offer ID: %d", id)
 
@@ -289,20 +310,32 @@ func (s *SubscriptionOffersService) DeleteSubscriptionOffer(ctx context.Context,
 		return err
 	}
 
+	// Delete the offer from database
 	err = s.db.DeleteSubscriptionOffer(id)
 	if err != nil {
 		log.Printf("Service: Error deleting subscription offer: %v", err)
 		return err
 	}
 
-	// Log history event
+	// Add history event for offer deletion
 	userDataJSON := s.getUserDataFromContext(ctx)
-	s.historyService.AddHistoryEvent(id, "offer_deleted", fmt.Sprintf("Offer '%s' was deleted", currentOffer.OffName), userDataJSON, currentOffer, map[string]interface{}{
-		"action":     "deleted",
-		"offer_name": currentOffer.OffName,
-	})
+	err = s.historyService.AddHistoryEvent(
+		id,
+		"offer_deleted",
+		"Offer deleted",
+		userDataJSON,
+		currentOffer,
+		map[string]interface{}{
+			"action":     "deleted",
+			"offer_name": currentOffer.OffName,
+		},
+	)
+	if err != nil {
+		log.Printf("Service: Error adding deletion history event: %v", err)
+		// Don't fail the deletion if history logging fails
+	}
 
-	log.Printf("Service: Successfully deleted subscription offer ID: %d", id)
+	log.Printf("Service: Successfully deleted subscription offer with ID: %d", id)
 	return nil
 }
 
@@ -316,9 +349,10 @@ func (s *SubscriptionOffersService) GetOfferHistory(ctx context.Context, offerID
 		return nil, err
 	}
 
-	converted := s.convertHistoryEvents(events)
-	log.Printf("Service: Retrieved %d history events for offer %d", len(converted), offerID)
-	return converted, nil
+	// Convert to response format
+	response := s.convertHistoryEvents(events)
+	log.Printf("Service: Retrieved %d history events for offer %d", len(response), offerID)
+	return response, nil
 }
 
 // convertToResponse converts a database offer to a response
@@ -373,11 +407,12 @@ func (s *SubscriptionOffersService) convertToResponse(offer *database.Subscripti
 	historyEvents, err := s.historyService.GetOfferHistory(offer.ID)
 	if err != nil {
 		log.Printf("Service: Error getting offer history: %v", err)
+		// Continue without history if there's an error
 		response.OfferHistory = []map[string]interface{}{}
 	} else {
 		response.OfferHistory = s.convertHistoryEvents(historyEvents)
-		log.Printf("Service: Successfully converted %d history events for offer %d", len(historyEvents), offer.ID)
 	}
+	log.Printf("Service: Successfully converted %d history events for offer %d", len(response.OfferHistory), offer.ID)
 
 	log.Printf("Service: Final response for offer %d - OfferHistory length: %d", offer.ID, len(response.OfferHistory))
 	return response
@@ -442,6 +477,20 @@ func (s *SubscriptionOffersService) getUserDataFromContext(ctx context.Context) 
 	if frontendUserData, exists := ctx.Value("frontend_user_data").(string); exists && frontendUserData != "" {
 		log.Printf("Service: Using frontend user data: %s", frontendUserData)
 		return frontendUserData
+	}
+
+	// Try to get user data from gin context if available
+	if ginCtx, ok := ctx.(*gin.Context); ok {
+		if userData := ginCtx.GetHeader("X-User-Data"); userData != "" {
+			log.Printf("Service: Using X-User-Data header: %s", userData)
+			return userData
+		}
+	}
+
+	// Try to get from context directly
+	if userData, exists := ctx.Value("X-User-Data").(string); exists && userData != "" {
+		log.Printf("Service: Using X-User-Data from context: %s", userData)
+		return userData
 	}
 
 	// Fallback to system user

@@ -400,7 +400,7 @@ func getPromotedSubscriptionPlans(c *gin.Context, service *services.Subscription
 	// Filter for promoted plans only
 	var promotedPlans []*services.SubscriptionPlanResponse
 	for _, plan := range plans {
-		if plan.SubType == "prmo" {
+		if plan.IsActive && plan.SubType == "prmo" {
 			promotedPlans = append(promotedPlans, plan)
 		}
 	}
