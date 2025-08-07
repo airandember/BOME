@@ -207,7 +207,11 @@
 									{/if}
 								</span>
 							</td>
-							<td>{formatDate(nonSubscriber.created_at)}</td>
+							<td>
+								<span class="created-date">
+									{formatDate(nonSubscriber.created_at)}
+								</span>
+							</td>
 							<td>
 								<div class="action-buttons">
 									<button class="btn btn-sm btn-secondary" on:click={() => handleEditClick(nonSubscriber)}>
@@ -454,6 +458,11 @@
 	}
 
 	.last-login {
+		font-size: 0.875rem;
+		color: #6b7280;
+	}
+
+	.created-date {
 		font-size: 0.875rem;
 		color: #6b7280;
 	}

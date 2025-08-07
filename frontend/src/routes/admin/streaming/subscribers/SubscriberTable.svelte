@@ -148,6 +148,7 @@
 						<th>Plan</th>
 						<th>Status</th>
 						<th>Last Login</th>
+						<th>Created</th>
 						<th>Actions</th>
 					</tr>
 				</thead>
@@ -231,6 +232,11 @@
 									{:else}
 										Never
 									{/if}
+								</span>
+							</td>
+							<td>
+								<span class="created-date">
+									{formatDate(subscriber.created_at)}
 								</span>
 							</td>
 							<td>
@@ -475,6 +481,11 @@
 	}
 
 	.last-login {
+		font-size: 0.875rem;
+		color: #6b7280;
+	}
+
+	.created-date {
 		font-size: 0.875rem;
 		color: #6b7280;
 	}
