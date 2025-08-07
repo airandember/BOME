@@ -113,6 +113,7 @@ func SetupRoutes(
 	subscriptionPlanService := services.NewSubscriptionPlanService(db)
 	subscriberService := services.NewSubscriberService(db)
 	subscriptionOffersService := services.NewSubscriptionOffersService(db)
+	subscriberHistoryService := services.NewSubscriberHistoryService(db)
 
 	// Setup subscription-related routes under admin group
 	fmt.Printf("Setting up subscription plan routes...\n")
@@ -121,11 +122,18 @@ func SetupRoutes(
 	SetupSubscriptionOfferRoutes(router, db, subscriptionOffersService)
 	fmt.Printf("Setting up subscriber routes...\n")
 	SetupSubscriberRoutes(admin, db, subscriberService)
+	fmt.Printf("Setting up subscriber history routes...\n")
+	SetupSubscriberHistoryRoutes(admin, db, subscriberHistoryService)
 	SetupSubscriptionRoutes(router, db, stripeService, analyticsService)
 
 	// Public subscription plan routes using existing functions
 	publicPlans := v1.Group("/subscription-plans")
 	{
+		// Get all subscription data (plans + offers) - MUST come before /:id
+		publicPlans.GET("/all", func(c *gin.Context) {
+			getAllSubscriptionData(c, subscriptionPlanService, subscriptionOffersService)
+		})
+
 		// Get active subscription plans
 		publicPlans.GET("/active", func(c *gin.Context) {
 			getActiveSubscriptionPlans(c, subscriptionPlanService)
@@ -136,7 +144,7 @@ func SetupRoutes(
 			getPromotedSubscriptionPlans(c, subscriptionPlanService)
 		})
 
-		// Get subscription plan by ID (public)
+		// Get subscription plan by ID (public) - MUST come last
 		publicPlans.GET("/:id", func(c *gin.Context) {
 			getSubscriptionPlanPublic(c, subscriptionPlanService)
 		})

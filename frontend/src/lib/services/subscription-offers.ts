@@ -26,7 +26,7 @@ export interface SubscriptionOffer {
 
 export interface CreateSubscriptionOfferData {
 	plan_id: number;
-	item_id?: number;
+	item_id?: string;
 	off_discount_type: string;
 	off_discount_value: number;
 	offer_start_date?: string;
@@ -274,6 +274,67 @@ export class SubscriptionOfferService {
 			return data as Record<string, any>[];
 		} catch (error) {
 			console.error('Error getting offer history:', error);
+			throw error;
+		}
+	}
+
+	// Get offers for sending modal
+	static async getForSending(): Promise<SubscriptionOffer[]> {
+		try {
+			console.log('SubscriptionOfferService: Starting getForSending request');
+			
+			const response = await apiRequest('admin/subscription-offers/for-sending');
+
+			console.log('SubscriptionOfferService: Response received:', {
+				status: response.status,
+				statusText: response.statusText,
+				ok: response.ok,
+				url: response.url
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				console.error('SubscriptionOfferService: Error response body:', errorText);
+				throw new Error(`Failed to fetch offers for sending: ${response.status} - ${errorText}`);
+			}
+
+			const data = await response.json();
+			console.log('SubscriptionOfferService: Successfully retrieved offers for sending:', data);
+			return data.offers as SubscriptionOffer[];
+		} catch (error) {
+			console.error('SubscriptionOfferService: Error getting offers for sending:', error);
+			throw error;
+		}
+	}
+
+	// Send offer to users
+	static async sendOffer(offerId: number, emails: string[]): Promise<{emails_sent: number}> {
+		try {
+			console.log('SubscriptionOfferService: Starting sendOffer request', { offerId, emailCount: emails.length });
+			
+			const response = await apiRequest('admin/subscription-offers/send', {
+				method: 'POST',
+				body: JSON.stringify({ offerId, emails })
+			});
+
+			console.log('SubscriptionOfferService: Response received:', {
+				status: response.status,
+				statusText: response.statusText,
+				ok: response.ok,
+				url: response.url
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				console.error('SubscriptionOfferService: Error response body:', errorText);
+				throw new Error(`Failed to send offer: ${response.status} - ${errorText}`);
+			}
+
+			const data = await response.json();
+			console.log('SubscriptionOfferService: Successfully sent offer:', data);
+			return data as {emails_sent: number};
+		} catch (error) {
+			console.error('SubscriptionOfferService: Error sending offer:', error);
 			throw error;
 		}
 	}

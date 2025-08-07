@@ -86,7 +86,7 @@
 			}
 
 			const data = await response.json();
-			
+			console.log("ROLES DATA", data);
 			if (data.success && data.data) {
 				roles = data.data.roles || [];
 				departments = data.data.departments || [];

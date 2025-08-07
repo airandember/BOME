@@ -12,11 +12,25 @@ export interface Subscriber {
 	plan_price?: number;
 	plan_currency?: string;
 	subscription_id?: number;
+	sub_id?: number; // Alias for subscription_id
 	subscription_status?: string;
 	current_period_start?: string;
 	current_period_end?: string;
 	stripe_customer_id?: string;
 	stripe_subscription_id?: string;
+	last_login?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface NonSubscriber {
+	id: number;
+	email: string;
+	first_name: string;
+	last_name: string;
+	role: string;
+	email_verified: boolean;
+	sub_id?: number; // Will be null for non-subscribers
 	last_login?: string;
 	created_at: string;
 	updated_at: string;
@@ -39,10 +53,27 @@ export interface SubscriberFilters {
 	status?: string;
 	search?: string;
 	email_verified?: boolean;
+	role?: string;
+	last_login?: string;
+	created_date?: string;
 	date_range?: {
 		start: string;
 		end: string;
 	};
+	sub_id?: number;
+}
+
+export interface NonSubscriberFilters {
+	search?: string;
+	email_verified?: boolean;
+	role?: string;
+	last_login?: string;
+	created_date?: string;
+	date_range?: {
+		start: string;
+		end: string;
+	};
+	subscription_history?: 'never' | 'previously'; // New field
 }
 
 export interface SubscribersResponse {
@@ -50,6 +81,16 @@ export interface SubscribersResponse {
 	pagination: {
 		limit: number;
 		offset: number;
+		total: number;
+	};
+}
+
+export interface NonSubscribersResponse {
+	non_subscribers: NonSubscriber[];
+	pagination: {
+		limit: number;
+		offset: number;
+		total: number;
 	};
 }
 
@@ -63,6 +104,8 @@ export class StreamingSubscriberService {
 		filters?: SubscriberFilters;
 	}): Promise<SubscribersResponse> {
 		try {
+			console.log('StreamingSubscriberService.getSubscribers called with params:', params);
+			
 			const queryParams = new URLSearchParams();
 			
 			if (params?.limit) queryParams.append('limit', params.limit.toString());
@@ -73,17 +116,37 @@ export class StreamingSubscriberService {
 				if (params.filters.status) queryParams.append('status', params.filters.status);
 				if (params.filters.search) queryParams.append('search', params.filters.search);
 				if (params.filters.email_verified !== undefined) queryParams.append('email_verified', params.filters.email_verified.toString());
+				if (params.filters.role) {
+					console.log('Adding role filter:', params.filters.role);
+					queryParams.append('role', params.filters.role);
+				}
+				if (params.filters.last_login) {
+					console.log('Adding last_login filter:', params.filters.last_login);
+					queryParams.append('last_login', params.filters.last_login);
+				}
+				if (params.filters.created_date) {
+					console.log('Adding created_date filter:', params.filters.created_date);
+					queryParams.append('created_date', params.filters.created_date);
+				}
 				if (params.filters.date_range) {
 					queryParams.append('start_date', params.filters.date_range.start);
 					queryParams.append('end_date', params.filters.date_range.end);
 				}
 			}
 
-			const response = await api.get(`/admin/subscribers?${queryParams}`);
+			const url = `/admin/subscribers?${queryParams}`;
+			console.log('Making API request to:', url);
+			console.log('Query parameters being sent:', queryParams.toString());
+			
+			const response = await api.get(url);
+			
+			console.log('API response received:', response);
 			
 			if (response.data) {
+				console.log('Response data:', response.data);
 				return response.data as SubscribersResponse;
 			} else {
+				console.error('No data in response:', response);
 				throw new Error(response.error || 'Failed to load subscribers');
 			}
 		} catch (error) {
@@ -308,5 +371,360 @@ export class StreamingSubscriberService {
 	 */
 	static isSubscriptionCanceled(subscriber: Subscriber): boolean {
 		return subscriber.subscription_status === 'canceled';
+	}
+
+	/**
+	 * Get all non-subscribers with optional filters and pagination
+	 */
+	static async getNonSubscribers(params?: {
+		limit?: number;
+		offset?: number;
+		filters?: NonSubscriberFilters;
+	}): Promise<NonSubscribersResponse> {
+		try {
+			console.log('StreamingSubscriberService.getNonSubscribers called with params:', params);
+			
+			const queryParams = new URLSearchParams();
+			
+			if (params?.limit) queryParams.append('limit', params.limit.toString());
+			if (params?.offset) queryParams.append('offset', params.offset.toString());
+			
+			if (params?.filters) {
+				if (params.filters.search) queryParams.append('search', params.filters.search);
+				if (params.filters.email_verified !== undefined) queryParams.append('email_verified', params.filters.email_verified.toString());
+				if (params.filters.role) queryParams.append('role', params.filters.role);
+				if (params.filters.last_login) queryParams.append('last_login', params.filters.last_login);
+				if (params.filters.created_date) queryParams.append('created_date', params.filters.created_date);
+				if (params.filters.date_range) {
+					queryParams.append('start_date', params.filters.date_range.start);
+					queryParams.append('end_date', params.filters.date_range.end);
+				}
+				if (params.filters.subscription_history) {
+					queryParams.append('subscription_history', params.filters.subscription_history);
+				}
+			}
+
+			const url = `/admin/subscribers/non-subscribers?${queryParams}`;
+			console.log('Making API request to:', url);
+
+			const response = await api.get(url);
+			
+			console.log('API response received:', response);
+			
+			if (response.data) {
+				console.log('Response data:', response.data);
+				return response.data as NonSubscribersResponse;
+			} else {
+				console.error('No data in response:', response);
+				throw new Error(response.error || 'Failed to load non-subscribers');
+			}
+		} catch (error) {
+			console.error('Error fetching non-subscribers:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Get non-subscriber count with optional filters
+	 */
+	static async getNonSubscriberCount(filters?: NonSubscriberFilters): Promise<number> {
+		try {
+			const queryParams = new URLSearchParams();
+			
+			if (filters?.search) queryParams.append('search', filters.search);
+			if (filters?.email_verified !== undefined) queryParams.append('email_verified', filters.email_verified.toString());
+			if (filters?.role) queryParams.append('role', filters.role);
+			if (filters?.last_login) queryParams.append('last_login', filters.last_login);
+			if (filters?.created_date) queryParams.append('created_date', filters.created_date);
+			if (filters?.date_range) {
+				queryParams.append('start_date', filters.date_range.start);
+				queryParams.append('end_date', filters.date_range.end);
+			}
+
+			const response = await api.get(`/admin/subscribers/non-subscribers/count?${queryParams}`);
+			
+			if (response.data) {
+				return (response.data as { count: number }).count;
+			} else {
+				throw new Error(response.error || 'Failed to get non-subscriber count');
+			}
+		} catch (error) {
+			console.error('Error fetching non-subscriber count:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Format non-subscriber name
+	 */
+	static formatNonSubscriberName(nonSubscriber: NonSubscriber): string {
+		return `${nonSubscriber.first_name} ${nonSubscriber.last_name}`.trim() || nonSubscriber.email;
+	}
+
+	/**
+	 * Update subscriber information
+	 */
+	static async updateSubscriber(id: number, updates: Partial<Subscriber>): Promise<Subscriber> {
+		try {
+			const response = await api.put(`/admin/subscribers/${id}`, updates);
+			
+			if (response.data) {
+				return response.data as Subscriber;
+			} else {
+				throw new Error(response.error || 'Failed to update subscriber');
+			}
+		} catch (error) {
+			console.error('Error updating subscriber:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Suspend a subscriber's account
+	 */
+	static async suspendSubscriber(id: number): Promise<Subscriber> {
+		try {
+			const response = await api.post(`/admin/subscribers/${id}/suspend`);
+			
+			if (response.data) {
+				return (response.data as { subscriber: Subscriber }).subscriber;
+			} else {
+				throw new Error(response.error || 'Failed to suspend subscriber');
+			}
+		} catch (error) {
+			console.error('Error suspending subscriber:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Activate a subscriber's account
+	 */
+	static async activateSubscriber(id: number): Promise<Subscriber> {
+		try {
+			const response = await api.post(`/admin/subscribers/${id}/activate`);
+			
+			if (response.data) {
+				return (response.data as { subscriber: Subscriber }).subscriber;
+			} else {
+				throw new Error(response.error || 'Failed to activate subscriber');
+			}
+		} catch (error) {
+			console.error('Error activating subscriber:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Get subscriber history
+	 */
+	static async getSubscriberHistory(id: number): Promise<any[]> {
+		try {
+			const response = await api.get(`/admin/subscribers/${id}/history`);
+			if (response.data) {
+				return (response.data as { history: any[] }).history;
+			} else {
+				throw new Error(response.error || 'Failed to get subscriber history');
+			}
+		} catch (error) {
+			console.error('Error getting subscriber history:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Get subscriber history details from the new subscriber history service
+	 */
+	static async getSubscriberHistoryDetails(id: number): Promise<any> {
+		try {
+			const response = await api.get(`/admin/subscriber-history/${id}`);
+			
+			if (response.data) {
+				return response.data;
+			} else {
+				throw new Error(response.error || 'Failed to get subscriber history details');
+			}
+		} catch (error) {
+			console.error('Error getting subscriber history details:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Get subscriber history summary
+	 */
+	static async getSubscriberHistorySummary(id: number): Promise<any> {
+		try {
+			const response = await api.get(`/admin/subscriber-history/${id}/summary`);
+			
+			if (response.data) {
+				return response.data;
+			} else {
+				throw new Error(response.error || 'Failed to get subscriber history summary');
+			}
+		} catch (error) {
+			console.error('Error getting subscriber history summary:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Add admin note to subscriber history
+	 */
+	static async addAdminNote(userId: number, note: { admin_id: number; admin_name: string; note: string; category: string }): Promise<any> {
+		try {
+			const response = await api.post(`/admin/subscriber-history/${userId}/notes`, note);
+			
+			if (response.data) {
+				return response.data;
+			} else {
+				throw new Error(response.error || 'Failed to add admin note');
+			}
+		} catch (error) {
+			console.error('Error adding admin note:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Add system note to subscriber history
+	 */
+	static async addSystemNote(userId: number, note: { note: string; category: string }): Promise<any> {
+		try {
+			const response = await api.post(`/admin/subscriber-history/${userId}/system-notes`, note);
+			
+			if (response.data) {
+				return response.data;
+			} else {
+				throw new Error(response.error || 'Failed to add system note');
+			}
+		} catch (error) {
+			console.error('Error adding system note:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Add user note to subscriber history
+	 */
+	static async addUserNote(userId: number, note: { note: string; category: string }): Promise<any> {
+		try {
+			const response = await api.post(`/admin/subscriber-history/${userId}/user-notes`, note);
+			
+			if (response.data) {
+				return response.data;
+			} else {
+				throw new Error(response.error || 'Failed to add user note');
+			}
+		} catch (error) {
+			console.error('Error adding user note:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Export subscriber history
+	 */
+	static async exportSubscriberHistory(userId: number): Promise<Blob> {
+		try {
+			const response = await api.get(`/admin/subscriber-history/${userId}/export`);
+			
+			if (response.data) {
+				// Convert the response data to a Blob
+				const blob = new Blob([JSON.stringify(response.data)], { type: 'application/json' });
+				return blob;
+			} else {
+				throw new Error(response.error || 'Failed to export subscriber history');
+			}
+		} catch (error) {
+			console.error('Error exporting subscriber history:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Bulk suspend subscribers
+	 */
+	static async bulkSuspendSubscribers(userIDs: number[]): Promise<{ successful: Subscriber[]; failed: number[] }> {
+		try {
+			const response = await api.post('/admin/subscribers/bulk/suspend', userIDs);
+			
+			if (response.data) {
+				const subscribers = (response.data as { subscribers: Subscriber[] }).subscribers || [];
+				return {
+					successful: subscribers,
+					failed: []
+				};
+			} else {
+				throw new Error(response.error || 'Failed to bulk suspend subscribers');
+			}
+		} catch (error) {
+			console.error('Error bulk suspending subscribers:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Bulk activate subscribers
+	 */
+	static async bulkActivateSubscribers(userIDs: number[]): Promise<{ successful: Subscriber[]; failed: number[] }> {
+		try {
+			const response = await api.post('/admin/subscribers/bulk/activate', userIDs);
+			
+			if (response.data) {
+				const subscribers = (response.data as { subscribers: Subscriber[] }).subscribers || [];
+				return {
+					successful: subscribers,
+					failed: []
+				};
+			} else {
+				throw new Error(response.error || 'Failed to bulk activate subscribers');
+			}
+		} catch (error) {
+			console.error('Error bulk activating subscribers:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Bulk change plan for subscribers
+	 */
+	static async bulkChangePlan(planID: number, userIDs: number[]): Promise<{ successful: Subscriber[]; failed: number[] }> {
+		try {
+			const response = await api.post('/admin/subscribers/bulk/change-plan', { plan_id: planID, ids: userIDs });
+			
+			if (response.data) {
+				const subscribers = (response.data as { subscribers: Subscriber[] }).subscribers || [];
+				return {
+					successful: subscribers,
+					failed: []
+				};
+			} else {
+				throw new Error(response.error || 'Failed to bulk change plan');
+			}
+		} catch (error) {
+			console.error('Error bulk changing plan:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Export subscribers
+	 */
+	static async exportSubscribers(format: 'csv' | 'excel' = 'csv'): Promise<Blob> {
+		try {
+			const response = await api.get(`/admin/subscribers/export?format=${format}`);
+			
+			if (response.data) {
+				// Convert the response data to a Blob
+				const blob = new Blob([JSON.stringify(response.data)], { type: 'text/csv' });
+				return blob;
+			} else {
+				throw new Error(response.error || 'Failed to export subscribers');
+			}
+		} catch (error) {
+			console.error('Error exporting subscribers:', error);
+			throw error;
+		}
 	}
 } 

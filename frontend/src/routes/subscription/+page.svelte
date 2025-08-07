@@ -2,20 +2,19 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/auth';
-	import { publicPlansService, type PublicSubscriptionPlan } from '$lib/services/public-plans';
-	import { SubscriptionOfferService, type SubscriptionOffer } from '$lib/services/subscription-offers';
+	import { publicPlansService, type PublicSubscriptionPlan, type PublicSubscriptionOffer } from '$lib/services/public-plans';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 
 	let user: any = null;
 	let availablePlans: PublicSubscriptionPlan[] = [];
-	let availableOffers: SubscriptionOffer[] = [];
+	let availableOffers: PublicSubscriptionOffer[] = [];
 	let loading = true;
 	let isAuthenticated = false;
 	let selectedPlan: PublicSubscriptionPlan | null = null;
-	let selectedOffer: SubscriptionOffer | null = null;
+	let selectedOffer: PublicSubscriptionOffer | null = null;
 	let showOfferModal = false;
-	let cart: { plan: PublicSubscriptionPlan; offer?: SubscriptionOffer } | null = null;
+	let cart: { plan: PublicSubscriptionPlan; offer?: PublicSubscriptionOffer } | null = null;
 
 	// Subscribe to auth store
 	auth.subscribe((state: any) => {
@@ -31,22 +30,23 @@
 		try {
 			loading = true;
 			
-			// Load available plans and offers
-			const [plansResponse, offersResponse] = await Promise.allSettled([
-				publicPlansService.getAllActivePlans(),
-				SubscriptionOfferService.getAll()
-			]);
-
-			if (plansResponse.status === 'fulfilled') {
-				availablePlans = plansResponse.value || [];
-				console.log('Loaded plans:', availablePlans);
-			}
-
-			if (offersResponse.status === 'fulfilled') {
-				availableOffers = offersResponse.value || [];
-				// Filter to only show active offers
-				availableOffers = availableOffers.filter(offer => offer.is_active);
-			}
+			// Load all subscription data in one call
+			const subscriptionData = await publicPlansService.getAllSubscriptionData();
+			
+			// Combine all plans
+			availablePlans = [
+				...subscriptionData.promotional_plans,
+				...subscriptionData.standard_plans
+			];
+			
+			// Set offers
+			availableOffers = subscriptionData.offers;
+			
+			console.log('Loaded subscription data:', {
+				promotionalPlans: subscriptionData.promotional_plans.length,
+				standardPlans: subscriptionData.standard_plans.length,
+				offers: subscriptionData.offers.length
+			});
 		} catch (err) {
 			showToast('Failed to load subscription data', 'error');
 			console.error('Error loading subscription data:', err);
@@ -73,7 +73,7 @@
 		}
 	};
 
-	const addToCart = (plan: PublicSubscriptionPlan, offer?: SubscriptionOffer) => {
+	const addToCart = (plan: PublicSubscriptionPlan, offer?: PublicSubscriptionOffer) => {
 		cart = { plan, offer };
 		showToast('Plan added to cart!', 'success');
 		// Here you would typically navigate to checkout or show a cart modal
@@ -96,6 +96,18 @@
 		}
 	};
 
+	const removeFromCart = () => {
+		cart = null;
+		showToast('Cart cleared', 'info');
+	};
+
+	const removeOfferFromCart = () => {
+		if (cart) {
+			cart = { plan: cart.plan };
+			showToast('Offer removed from cart', 'info');
+		}
+	};
+
 	const getPlanOffers = (planId: string) => {
 		return availableOffers.filter(offer => 
 			offer.plan_id === parseInt(planId) && offer.is_active
@@ -109,7 +121,7 @@
 		}).format(price);
 	};
 
-	const formatDiscount = (offer: SubscriptionOffer) => {
+	const formatDiscount = (offer: PublicSubscriptionOffer) => {
 		if (offer.off_discount_type === 'percentage') {
 			return `${offer.off_discount_value}% off`;
 		} else if (offer.off_discount_type === 'fixed') {
@@ -136,7 +148,7 @@
 </svelte:head>
 
 <div class="subscription-page">
-	<div class="container">
+	<div class="container"  class:expandedLeft={cart !== null}>
 		<header class="page-header">
 			<button class="back-button" on:click={() => goto('/')}>
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -160,26 +172,95 @@
 				<p>Loading subscription plans...</p>
 			</div>
 		{:else}
-			<div class="subscription-content">
-				<!-- Promotional Plans -->
-				{#if availablePlans.filter(plan => plan.sub_type === 'prmo').length > 0}
-					<div class="plans-section">
-						<h2>Limited Time Offers</h2>
-						<p class="section-description">Special promotional plans with exclusive benefits</p>
+			<div class="subscription-layout">
+				<!-- Plans Section (Left Side) -->
+				<div class="plans-container" >
+					<!-- Promotional Plans -->
+					{#if availablePlans.filter(plan => plan.sub_type === 'prmo' && plan.is_active).length > 0}
+						<div class="plans-section">
+							<h2>Limited Time Offers</h2>
+							<p class="section-description">Special promotional plans with exclusive benefits</p>
+							
+							<div class="plans-grid">
+								{#each availablePlans.filter(plan => plan.sub_type === 'prmo' && plan.is_active) as plan}
+									<div class="plan-card promotional">
+										<div class="plan-header">
+											<h3>{plan.name}</h3>
+										</div>
+										<div class="plan-price">
+											{formatPrice(plan.price, plan.currency)}
+											<span class="interval">/{plan.interval}</span>
+										</div>
+										<div class="promo-badge">Limited Time</div>
+										<br>
+										
+										<div class="plan-description">
+											<p>{plan.description}</p>
+										</div>
+
+										<div class="plan-features">
+											<ul>
+												{#each plan.features.slice(0, 5) as feature}
+													<li>
+														<svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+															<polyline points="20,6 9,17 4,12"></polyline>
+														</svg>
+														{feature}
+													</li>
+												{/each}
+											</ul>
+										</div>
+
+										{#if getPlanOffers(plan.id).length > 0}
+											<div class="offers-section">
+												<h4>Special Bonus</h4>
+												{#each getPlanOffers(plan.id) as offer}
+													<div class="offer-badge">
+														<svg class="gift-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+															<polyline points="20,12 20,22 4,22 4,12"></polyline>
+															<rect x="2" y="7" width="20" height="5"></rect>
+															<line x1="12" y1="22" x2="12" y2="7"></line>
+															<polyline points="7,7 12,2 17,7"></polyline>
+															<polyline points="7,7 12,12 17,7"></polyline>
+														</svg>
+														{formatDiscount(offer)} - {getItemName(offer.item_id)}
+													</div>
+												{/each}
+											</div>
+										{/if}
+
+										<button 
+											class="btn btn-primary btn-full btn-bottom" 
+											on:click={() => handleSelectPlan(plan)}
+										>
+											Select {plan.name}
+										</button>
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
+
+					<!-- Standard Plans -->
+					<div class="plans-section" >
+						<h2>Standard Plans</h2>
+						<p class="section-description">Choose from our standard subscription plans</p>
 						
 						<div class="plans-grid">
-							{#each availablePlans.filter(plan => plan.sub_type === 'prmo' && plan.is_active) as plan}
-								<div class="plan-card promotional">
+							{#each availablePlans.filter(plan => plan.sub_type === 'stnd') as plan}
+								<div class="plan-card">
 									<div class="plan-header">
 										<h3>{plan.name}</h3>
 									</div>
 									<div class="plan-price">
-											{formatPrice(plan.price, plan.currency)}
-											<span class="interval">/{plan.interval}</span>
+										{formatPrice(plan.price, plan.currency)}
+										<span class="interval">/{plan.interval}</span>
 									</div>
-									<div class="promo-badge">Limited Time</div>
-									<br>
+									{#if plan.popular}
+										<div class="popular-badge">Most Popular</div>
+									{/if}
 									
+									<br>
 									<div class="plan-description">
 										<p>{plan.description}</p>
 									</div>
@@ -199,7 +280,7 @@
 
 									{#if getPlanOffers(plan.id).length > 0}
 										<div class="offers-section">
-											<h4>Special Offers</h4>
+											<h4>Special Bonus</h4>
 											{#each getPlanOffers(plan.id) as offer}
 												<div class="offer-badge">
 													<svg class="gift-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -225,109 +306,87 @@
 							{/each}
 						</div>
 					</div>
-				{/if}
-
-				<!-- Standard Plans -->
-				<div class="plans-section">
-					<h2>Standard Plans</h2>
-					<p class="section-description">Choose from our standard subscription plans</p>
-					
-					<div class="plans-grid">
-						{#each availablePlans.filter(plan => plan.sub_type === 'stnd') as plan}
-							<div class="plan-card">
-								<div class="plan-header">
-									<h3>{plan.name}</h3>
-								</div>
-									<div class="plan-price">
-										{formatPrice(plan.price, plan.currency)}
-										<span class="interval">/{plan.interval}</span>
-									</div>
-									{#if plan.popular}
-										<div class="popular-badge">Most Popular</div>
-									{/if}
-								
-								<br>
-								<div class="plan-description">
-									<p>{plan.description}</p>
-								</div>
-
-								<div class="plan-features">
-									<ul>
-										{#each plan.features.slice(0, 5) as feature}
-											<li>
-												<svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-													<polyline points="20,6 9,17 4,12"></polyline>
-												</svg>
-												{feature}
-											</li>
-										{/each}
-									</ul>
-								</div>
-
-								{#if getPlanOffers(plan.id).length > 0}
-									<div class="offers-section">
-										<h4>Special Bonus</h4>
-										{#each getPlanOffers(plan.id) as offer}
-											<div class="offer-badge">
-												<svg class="gift-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-													<polyline points="20,12 20,22 4,22 4,12"></polyline>
-													<rect x="2" y="7" width="20" height="5"></rect>
-													<line x1="12" y1="22" x2="12" y2="7"></line>
-													<polyline points="7,7 12,2 17,7"></polyline>
-													<polyline points="7,7 12,12 17,7"></polyline>
-												</svg>
-												{formatDiscount(offer)} - {getItemName(offer.item_id)}
-											</div>
-										{/each}
-									</div>
-								{/if}
-
-								<button 
-									class="btn btn-primary btn-full btn-bottom" 
-									on:click={() => handleSelectPlan(plan)}
-								>
-									Select {plan.name}
-								</button>
-							</div>
-						{/each}
-					</div>
 				</div>
 
-				<!-- Cart Summary -->
-				{#if cart}
-					<div class="cart-section">
-						<h2>Your Selection</h2>
-						<div class="cart-summary">
-							<div class="cart-item">
-								<h3>{cart.plan.name}</h3>
-								<p>{formatPrice(cart.plan.price, cart.plan.currency)}/{cart.plan.interval}</p>
-							</div>
-							{#if cart.offer}
-								<div class="cart-offer">
-									<h4>Special Offer Included</h4>
-									<p>{formatDiscount(cart.offer)} - {getItemName(cart.offer.item_id)}</p>
-								</div>
-							{/if}
-							{#if isAuthenticated}
-								<button class="btn btn-primary btn-full" on:click={() => goto('/checkout')}>
-									Proceed to Checkout
+				<!-- Cart Section (Right Side) -->
+				<div class="cart-container" class:expanded={cart !== null}>
+					{#if cart}
+						<div class="cart-content">
+							<div class="cart-header">
+								<h2>Your Selection</h2>
+								<button class="close-cart" on:click={removeFromCart}>
+									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<line x1="18" y1="6" x2="6" y2="18"></line>
+										<line x1="6" y1="6" x2="18" y2="18"></line>
+									</svg>
 								</button>
-							{:else}
-								<div class="auth-required">
-									<p>Please sign in to continue with your subscription</p>
-									<div class="auth-buttons">
-										<button class="btn btn-outline" on:click={() => goto('/login')}>
-											Sign In
-										</button>
-										<button class="btn btn-primary" on:click={() => goto('/register')}>
-											Sign Up
+							</div>
+							<div class="cart-summary">
+								<div class="cart-item">
+									<div class="cart-plan-cont">
+										
+										<h3>{cart.plan.name}</h3>
+										<p>. . .</p>
+										<p>{formatPrice(cart.plan.price, cart.plan.currency)}/{cart.plan.interval}</p>
+										<button class="close-cart-item" on:click={removeFromCart}>
+											<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+												<line x1="18" y1="6" x2="6" y2="18"></line>
+												<line x1="6" y1="6" x2="18" y2="18"></line>
+											</svg>
 										</button>
 									</div>
+									<p>
+										{cart.plan.description}
+									</p>
+								
 								</div>
-							{/if}
+								{#if cart.offer}
+								<h4>Additional Items</h4>
+									<div class="cart-offer">
+										<div class="cart-plan-cont">
+										
+											<h3>{cart.offer.off_name}</h3>
+										
+											<p>{formatDiscount(cart.offer)} - {getItemName(cart.offer.item_id)}</p>
+											<button class="close-cart-offer" on:click={removeOfferFromCart}>
+												<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+													<line x1="18" y1="6" x2="6" y2="18"></line>
+													<line x1="6" y1="6" x2="18" y2="18"></line>
+												</svg>
+											</button>
+										</div>
+									</div>
+								{/if}
+								{#if isAuthenticated}
+									<button class="btn btn-primary btn-full" on:click={() => goto('/checkout')}>
+										Proceed to Checkout
+									</button>
+								{:else}
+									<div class="auth-required">
+										<p>Please sign in to continue with your subscription</p>
+										<div class="auth-buttons">
+											<button class="btn btn-outline" on:click={() => goto('/login')}>
+												Sign In
+											</button>
+											<button class="btn btn-primary" on:click={() => goto('/register')}>
+												Sign Up
+											</button>
+										</div>
+									</div>
+								{/if}
+							</div>
 						</div>
-					</div>
-				{/if}
+					{:else}
+						<div class="cart-placeholder">
+							<svg class="cart-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<circle cx="9" cy="21" r="1"></circle>
+								<circle cx="20" cy="21" r="1"></circle>
+								<path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+							</svg>
+							<p>Select a plan to see your cart</p>
+						</div>
+					{/if}
+				</div>
 			</div>
 		{/if}
 	</div>
@@ -336,7 +395,7 @@
 <!-- Offer Modal -->
 {#if showOfferModal && selectedOffer && selectedPlan}
 	<div class="modal-overlay" on:click={() => showOfferModal = false}>
-		<div class="modal" on:click|stopPropagation>
+		<div class="modal modal-offer" on:click|stopPropagation>
 			<div class="modal-header">
 				<h3>Special Offer Available!</h3>
 				<button class="modal-close" on:click={() => showOfferModal = false}>
@@ -411,6 +470,11 @@
 		max-width: 1200px;
 		margin: 0 auto;
 		padding: 0 1rem;
+		transition: max-width 1.75s 500ms ease-out;
+	}
+
+	.container.expandedLeft {
+		max-width: 1800px !important;
 	}
 
 	.page-header {
@@ -466,14 +530,111 @@
 		padding: 3rem 0;
 	}
 
-	.subscription-content {
+	.subscription-layout {
+		display: flex;
+		gap: 2rem;
+		margin-top: 10vh;
+		padding: 2rem;
+		background: var(--bg-dark);
+		min-width: 1300px;
+	}
+
+	.plans-container {
+		flex: 2;
 		display: flex;
 		flex-direction: column;
 		gap: 3rem;
-		margin-top: 10vh;
-		background: var(--bg-dark);
+	}
+
+	
+
+	.cart-container {
+		width: 0;
+		overflow: hidden;
+		transition: width 1.7s 750ms ease-out;
+		background: var(--bg-tertiary);
+		border-radius: 20px;
+		box-shadow: var(--neumorphic-shadow);
+		border: 1px solid var(--border-color);
+	}
+
+	.cart-container.expanded {
+		width: 450px;
+	}
+
+	.cart-content {
 		padding: 2rem;
-		text-align: center;
+		min-width: 350px;
+		transform-origin: right;
+		animation: slideInFromRight 0.8s ease-out 0.5s both;
+	}
+
+	.cart-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 1.5rem;
+		padding-bottom: 1rem;
+		border-bottom: 1px solid var(--border-color);
+	}
+
+	.cart-header h2 {
+		margin: 0;
+		font-size: 1.5rem;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+
+	.cart-placeholder {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 3rem 0;
+		color: var(--text-secondary);
+		font-size: 1.1rem;
+		min-width: 500px;
+		animation: fadeIn 0.8s ease-out 0.5s both;
+	}
+
+	.cart-icon {
+		width: 60px;
+		height: 60px;
+		margin-bottom: 1rem;
+		color: var(--primary-color);
+		animation: bounce 2s ease-in-out infinite;
+	}
+
+	@keyframes slideInFromRight {
+		from {
+			opacity: 0;
+			transform: translateX(50px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
+	}
+
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	@keyframes bounce {
+		0%, 20%, 50%, 80%, 100% {
+			transform: translateY(0);
+		}
+		40% {
+			transform: translateY(-10px);
+		}
+		60% {
+			transform: translateY(-5px);
+		}
 	}
 
 	.plans-section {
@@ -621,6 +782,7 @@
 		background: rgba(var(--primary-color-rgb), 0.1);
 		border-radius: 12px;
 		border: 1px solid rgba(var(--primary-color-rgb), 0.2);
+		text-align: center;
 	}
 
 	.offers-section h4 {
@@ -652,25 +814,39 @@
 		width: 100%;
 	}
 
-	.cart-section {
-		background: var(--card-bg);
-		border-radius: 20px;
-		padding: 2rem;
-		box-shadow: var(--neumorphic-shadow);
-		border: 1px solid var(--border-color);
-	}
-
 	.cart-summary {
 		background: var(--bg-secondary);
 		border-radius: 16px;
-		padding: 1.5rem;
-		border: 1px solid var(--border-color);
+		padding: 0rem;
 	}
 
 	.cart-item {
+		border: 1px solid rgb(46, 46, 46);
 		margin-bottom: 1rem;
-		padding-bottom: 1rem;
-		border-bottom: 1px solid var(--border-color);
+		padding: 0.5rem;
+		padding-left: 1rem;
+		border-radius: 16px;
+		background: linear-gradient(145deg, #cacaca, #f0f0f0);
+		box-shadow:  7px 7px 14px #bebebe,
+             -7px -7px 14px #ffffff;
+	}
+
+	.cart-plan-cont {
+		display: flex;
+		gap: 1rem;
+		align-items: center;
+		/*flex-direction: column;
+		justify-content: space-between;
+		align-items: flex-start;
+		
+		height: 100%;
+		width: 100%;
+		border-radius: 0; */
+	}
+
+	.cart-plan-cont button {
+		justify-content: center;
+		align-items: center;
 	}
 
 	.cart-item h3 {
@@ -678,6 +854,7 @@
 		font-weight: 600;
 		color: var(--text-primary);
 		margin-bottom: 0.25rem;
+		flex: 1;
 	}
 
 	.cart-item p {
@@ -692,6 +869,10 @@
 		background: rgba(var(--primary-color-rgb), 0.1);
 		border-radius: 12px;
 		border: 1px solid rgba(var(--primary-color-rgb), 0.2);
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 1rem;
 	}
 
 	.cart-offer h4 {
@@ -707,6 +888,7 @@
 		color: var(--primary-color);
 		font-weight: 600;
 		margin: 0;
+		flex: 1;
 	}
 
 	.auth-required {
@@ -754,8 +936,17 @@
 		z-index: 1000;
 	}
 
-	.modal {
+	.modal-offer {
 		background: var(--card-bg);
+		border-radius: 20px;
+		padding: 0;
+		max-width: 500px;
+		width: 90%;
+		max-height: 90vh;
+	}
+
+	.modal {
+		background: var(--bg-tertiary);
 		border-radius: 20px;
 		padding: 0;
 		max-width: 500px;
@@ -866,6 +1057,67 @@
 		margin-top: 2rem;
 	}
 
+	.close-cart-item {
+		background: none;
+		border: none;
+		color: rgb(107, 53, 53);
+		cursor: pointer;
+		padding: 0.5rem;
+		border-radius: 8px;
+		transition: all 0.3s ease;
+		
+	}
+
+	.close-cart-item:hover {
+		background: var(--bg-secondary);
+		color: var(--text-primary);
+	}
+
+	.close-cart-item svg {
+		width: 20px;
+		height: 20px;
+	}
+
+	.close-cart-offer {
+		background: none;
+		border: none;
+		color: var(--text-secondary);
+		cursor: pointer;
+		padding: 0.5rem;
+		border-radius: 8px;
+		transition: all 0.3s ease;
+	}
+
+	.close-cart-offer:hover {
+		background: var(--bg-secondary);
+		color: var(--text-primary);
+	}
+
+	.close-cart-offer svg {
+		width: 20px;
+		height: 20px;
+	}
+
+	.close-cart {
+		background: none;
+		border: none;
+		color: var(--text-secondary);
+		cursor: pointer;
+		padding: 0.5rem;
+		border-radius: 8px;
+		transition: all 0.3s ease;
+	}
+
+	.close-cart:hover {
+		background: var(--bg-secondary);
+		color: var(--text-primary);
+	}
+
+	.close-cart svg {
+		width: 20px;
+		height: 20px;
+	}
+
 	@media (max-width: 768px) {
 		.back-button {
 			position: static;
@@ -873,8 +1125,22 @@
 			margin-bottom: 1rem;
 		}
 
-		.plans-grid {
-			grid-template-columns: 1fr;
+		.subscription-layout {
+			flex-direction: column;
+		}
+
+		.plans-container {
+			flex: none;
+			width: 100%;
+		}
+
+		.cart-container {
+			flex: none;
+			width: 100%;
+		}
+
+		.cart-container.expanded {
+			width: 100%;
 		}
 
 		.modal-actions {

@@ -415,6 +415,70 @@ func getPromotedSubscriptionPlans(c *gin.Context, service *services.Subscription
 	})
 }
 
+// New comprehensive endpoint for all subscription data
+func getAllSubscriptionData(c *gin.Context, service *services.SubscriptionPlanService, offersService *services.SubscriptionOffersService) {
+	log.Println("getAllSubscriptionData called")
+
+	// Get all plans
+	plans, err := service.GetAllSubscriptionPlans(c.Request.Context())
+	if err != nil {
+		log.Printf("getAllSubscriptionData: error getting plans: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to get subscription data",
+			"details": err.Error(),
+			"status":  "error",
+		})
+		return
+	}
+
+	// Get all offers
+	offers, err := offersService.GetAllSubscriptionOffers(c.Request.Context())
+	if err != nil {
+		log.Printf("getAllSubscriptionData: error getting offers: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to get subscription data",
+			"details": err.Error(),
+			"status":  "error",
+		})
+		return
+	}
+
+	// Filter plans by type
+	var standardPlans []*services.SubscriptionPlanResponse
+	var promotionalPlans []*services.SubscriptionPlanResponse
+
+	for _, plan := range plans {
+		if plan.IsActive {
+			if plan.SubType == "stnd" {
+				standardPlans = append(standardPlans, plan)
+			} else if plan.SubType == "prmo" {
+				promotionalPlans = append(promotionalPlans, plan)
+			}
+		}
+	}
+
+	// Filter active offers (exclude plan_id = 0 offers)
+	var activeOffers []*services.SubscriptionOfferResponse
+	for _, offer := range offers {
+		if offer.IsActive && offer.PlanID != 0 {
+			activeOffers = append(activeOffers, offer)
+		}
+	}
+
+	log.Printf("Retrieved %d standard plans, %d promotional plans, and %d active offers\n",
+		len(standardPlans), len(promotionalPlans), len(activeOffers))
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"standard_plans":    standardPlans,
+			"promotional_plans": promotionalPlans,
+			"offers":            activeOffers,
+		},
+		"message": "Subscription data retrieved successfully",
+		"status":  "success",
+	})
+}
+
 func getSubscriptionPlanPublic(c *gin.Context, service *services.SubscriptionPlanService) {
 	log.Println("getSubscriptionPlanPublic called")
 	id := c.Param("id")

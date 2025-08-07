@@ -20,8 +20,55 @@ export interface PublicSubscriptionPlan {
 	sub_type: string; // stnd = standard plan, prmo = promotional plan
 }
 
+export interface PublicSubscriptionOffer {
+	id: string;
+	off_name: string;
+	off_description: string;
+	off_discount_type: 'percentage' | 'fixed';
+	off_discount_value: number;
+	off_max_uses?: number;
+	off_current_uses: number;
+	off_auto_apply: boolean;
+	plan_id: number;
+	item_id: number;
+	offer_start_date?: string;
+	off_end_date?: string;
+	is_active: boolean;
+	off_target?: string;
+	off_priority: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface SubscriptionData {
+	standard_plans: PublicSubscriptionPlan[];
+	promotional_plans: PublicSubscriptionPlan[];
+	offers: PublicSubscriptionOffer[];
+}
+
 // Public service for fetching subscription plans without authentication
 export const publicPlansService = {
+	// Get all subscription data (plans + offers) in one call
+	getAllSubscriptionData: async (): Promise<SubscriptionData> => {
+		try {
+			const response = await fetch('/api/v1/subscription-plans/all');
+			const data = await response.json();
+			
+			if (data.status === 'success' && data.data) {
+				return {
+					standard_plans: data.data.standard_plans || [],
+					promotional_plans: data.data.promotional_plans || [],
+					offers: data.data.offers || []
+				};
+			}
+			
+			throw new Error(data.message || 'Failed to fetch subscription data');
+		} catch (error) {
+			console.error('Error fetching all subscription data:', error);
+			throw error;
+		}
+	},
+
 	// Get all active plans (standard and promotional)
 	getAllActivePlans: async (): Promise<PublicSubscriptionPlan[]> => {
 		try {
