@@ -326,6 +326,7 @@
 					
 					// Last login filter
 					if (currentFilters.lastLoginFilter) {
+						console.log('🔍 Applying last login filter to non-subscriber:', nonSubscriber.email, 'Filter:', currentFilters.lastLoginFilter);
 						const matches = matchesLastLoginFilter(nonSubscriber, currentFilters.lastLoginFilter);
 						if (!matches) {
 							console.log('❌ Non-subscriber filtered out by last login:', {
@@ -341,6 +342,7 @@
 					
 					// Created date filter
 					if (currentFilters.createdDateFilter) {
+						console.log('🔍 Applying created date filter to non-subscriber:', nonSubscriber.email, 'Filter:', currentFilters.createdDateFilter);
 						const matches = matchesCreatedDateFilter(nonSubscriber, currentFilters.createdDateFilter);
 						if (!matches) {
 							console.log('❌ Non-subscriber filtered out by created date:', {
