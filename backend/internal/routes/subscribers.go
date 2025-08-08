@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -26,11 +27,6 @@ func SetupSubscriberRoutes(router *gin.RouterGroup, db *database.DB, subscriberS
 			getSubscribers(c, subscriberService)
 		})
 
-		// Get subscriber by ID
-		admin.GET("/:id", func(c *gin.Context) {
-			getSubscriberByID(c, subscriberService)
-		})
-
 		// Get subscriber count
 		admin.GET("/count", func(c *gin.Context) {
 			getSubscriberCount(c, subscriberService)
@@ -39,6 +35,11 @@ func SetupSubscriberRoutes(router *gin.RouterGroup, db *database.DB, subscriberS
 		// Get subscriber statistics
 		admin.GET("/stats", func(c *gin.Context) {
 			getSubscriberStats(c, subscriberService)
+		})
+
+		// Export subscribers (must come before parameterized routes)
+		admin.GET("/export", func(c *gin.Context) {
+			exportSubscribers(c, subscriberService)
 		})
 
 		// Get subscribers by plan
@@ -64,6 +65,16 @@ func SetupSubscriberRoutes(router *gin.RouterGroup, db *database.DB, subscriberS
 		// Get non-subscriber count
 		admin.GET("/non-subscribers/count", func(c *gin.Context) {
 			getNonSubscriberCount(c, subscriberService)
+		})
+
+		// Export non-subscribers (must come before parameterized routes)
+		admin.GET("/non-subscribers/export", func(c *gin.Context) {
+			exportNonSubscribers(c, subscriberService)
+		})
+
+		// Get subscriber by ID (must come after more specific routes)
+		admin.GET("/:id", func(c *gin.Context) {
+			getSubscriberByID(c, subscriberService)
 		})
 
 		// Update subscriber
@@ -97,11 +108,6 @@ func SetupSubscriberRoutes(router *gin.RouterGroup, db *database.DB, subscriberS
 
 		admin.POST("/bulk/change-plan", func(c *gin.Context) {
 			bulkChangePlan(c, subscriberService)
-		})
-
-		// Export subscribers
-		admin.GET("/export", func(c *gin.Context) {
-			exportSubscribers(c, subscriberService)
 		})
 	}
 
@@ -295,6 +301,16 @@ func getSubscribers(c *gin.Context, service *services.SubscriberService) {
 // getSubscriberByID handles GET /api/admin/subscribers/:id
 func getSubscriberByID(c *gin.Context, service *services.SubscriberService) {
 	idStr := c.Param("id")
+	log.Printf("getSubscriberByID: Called with id=%s", idStr)
+
+	// Check if this is actually an export request
+	if idStr == "non-subscribers" {
+		log.Printf("getSubscriberByID: Detected non-subscribers export request, redirecting")
+		// This should not happen if routes are ordered correctly
+		c.JSON(http.StatusNotFound, gin.H{"error": "Route not found"})
+		return
+	}
+
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid subscriber ID"})
@@ -303,7 +319,7 @@ func getSubscriberByID(c *gin.Context, service *services.SubscriberService) {
 
 	subscriber, err := service.GetSubscriberByID(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Subscriber not found", "details": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get subscriber", "details": err.Error()})
 		return
 	}
 
@@ -873,11 +889,36 @@ func bulkChangePlan(c *gin.Context, service *services.SubscriberService) {
 
 // exportSubscribers handles GET /api/admin/subscribers/export
 func exportSubscribers(c *gin.Context, service *services.SubscriberService) {
-	filename, err := service.ExportSubscribers()
+	csvData, err := service.ExportSubscribers()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to export subscribers", "details": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Subscribers exported successfully", "filename": filename})
+	// Set headers for CSV download
+	c.Header("Content-Type", "text/csv")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=subscribers_%s.csv", time.Now().Format("2006-01-02")))
+
+	c.Data(http.StatusOK, "text/csv", []byte(csvData))
+}
+
+// exportNonSubscribers handles GET /api/admin/subscribers/non-subscribers/export
+func exportNonSubscribers(c *gin.Context, service *services.SubscriberService) {
+	log.Println("exportNonSubscribers: Starting export request")
+
+	csvData, err := service.ExportNonSubscribers()
+	if err != nil {
+		log.Printf("exportNonSubscribers: Error exporting non-subscribers: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to export non-subscribers", "details": err.Error()})
+		return
+	}
+
+	log.Printf("exportNonSubscribers: Generated CSV data with %d bytes", len(csvData))
+
+	// Set headers for CSV download
+	c.Header("Content-Type", "text/csv")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=non_subscribers_%s.csv", time.Now().Format("2006-01-02")))
+
+	log.Println("exportNonSubscribers: Sending CSV data response")
+	c.Data(http.StatusOK, "text/csv", []byte(csvData))
 }

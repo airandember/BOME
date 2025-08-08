@@ -713,17 +713,57 @@ export class StreamingSubscriberService {
 	 */
 	static async exportSubscribers(format: 'csv' | 'excel' = 'csv'): Promise<Blob> {
 		try {
-			const response = await api.get(`/admin/subscribers/export?format=${format}`);
-			
-			if (response.data) {
-				// Convert the response data to a Blob
-				const blob = new Blob([JSON.stringify(response.data)], { type: 'text/csv' });
-				return blob;
-			} else {
-				throw new Error(response.error || 'Failed to export subscribers');
+			// Get token from SecureTokenStorage
+			const stored = localStorage.getItem('bome_auth_data');
+			let token = '';
+			if (stored) {
+				const tokenData = JSON.parse(stored);
+				token = tokenData.access_token || '';
 			}
+			
+			const response = await fetch(`/api/v1/admin/subscribers/export?format=${format}`, {
+				headers: {
+					'Authorization': `Bearer ${token}`,
+				},
+			});
+			
+			if (!response.ok) {
+				throw new Error(`Failed to export subscribers: ${response.status}`);
+			}
+			
+			return await response.blob();
 		} catch (error) {
 			console.error('Error exporting subscribers:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Export non-subscribers
+	 */
+	static async exportNonSubscribers(format: 'csv' | 'excel' = 'csv'): Promise<Blob> {
+		try {
+			// Get token from SecureTokenStorage
+			const stored = localStorage.getItem('bome_auth_data');
+			let token = '';
+			if (stored) {
+				const tokenData = JSON.parse(stored);
+				token = tokenData.access_token || '';
+			}
+			
+			const response = await fetch(`/api/v1/admin/subscribers/non-subscribers/export?format=${format}`, {
+				headers: {
+					'Authorization': `Bearer ${token}`,
+				},
+			});
+			
+			if (!response.ok) {
+				throw new Error(`Failed to export non-subscribers: ${response.status}`);
+			}
+			
+			return await response.blob();
+		} catch (error) {
+			console.error('Error exporting non-subscribers:', error);
 			throw error;
 		}
 	}

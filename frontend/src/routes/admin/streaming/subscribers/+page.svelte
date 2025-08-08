@@ -7,6 +7,7 @@
 	import SubscriberTable from './SubscriberTable.svelte';
 	import NonSubscriberTable from './NonSubscriberTable.svelte';
 	import SubscriberPagination from './SubscriberPagination.svelte';
+	import SubscriberEditModal from './SubscriberEditModal.svelte';
 	import { auth } from '$lib/auth';
 	import SendOfferModal from './SendOfferModal.svelte';
 	import type { SubscriptionOffer } from '$lib/services/subscription-offers';
@@ -36,6 +37,10 @@
 
 	// Subscription plans for edit modal
 	let subscriptionPlans: any[] = [];
+
+	// Edit modal state
+	let showEditModal = false;
+	let selectedSubscriber: Subscriber | null = null;
 
 	// Pagination
 	let currentPage = 1;
@@ -895,31 +900,6 @@
 		}
 	}
 
-	// Handle subscriber update from edit modal
-	async function handleSubscriberUpdate(updatedSubscriber: Subscriber) {
-		try {
-			// Update the subscriber in our local arrays
-			allSubscribers = allSubscribers.map(s => 
-				s.id === updatedSubscriber.id ? updatedSubscriber : s
-			);
-			displayedSubscribers = displayedSubscribers.map(s => 
-				s.id === updatedSubscriber.id ? updatedSubscriber : s
-			);
-			
-			showToast('Subscriber updated successfully', 'success');
-		} catch (error) {
-			console.error('Error updating subscriber:', error);
-			showToast('Failed to update subscriber', 'error');
-		}
-	}
-
-	// Handle edit subscriber event from table
-	function handleEditSubscriber(event: CustomEvent<{ subscriber: Subscriber }>) {
-		const { subscriber } = event.detail;
-		// For now, just show a toast - you can implement a modal here later
-		showToast(`Edit functionality for ${subscriber.email} coming soon`, 'info');
-	}
-
 	// Handle non-subscriber update from edit modal
 	async function handleNonSubscriberUpdate(updatedNonSubscriber: NonSubscriber) {
 		try {
@@ -1001,20 +981,59 @@
 
 	async function handleExport() {
 		try {
-			const blob = await StreamingSubscriberService.exportSubscribers('csv');
+			let blob: Blob;
+			let filename: string;
+			
+			if (activeTab === 'subscribers') {
+				blob = await StreamingSubscriberService.exportSubscribers('csv');
+				filename = `subscribers-${new Date().toISOString().split('T')[0]}.csv`;
+			} else {
+				blob = await StreamingSubscriberService.exportNonSubscribers('csv');
+				filename = `non-subscribers-${new Date().toISOString().split('T')[0]}.csv`;
+			}
+			
 			const url = window.URL.createObjectURL(blob);
 			const a = document.createElement('a');
 			a.href = url;
-			a.download = `subscribers-${new Date().toISOString().split('T')[0]}.csv`;
+			a.download = filename;
 			document.body.appendChild(a);
 			a.click();
 			window.URL.revokeObjectURL(url);
 			document.body.removeChild(a);
 			
-			showToast('Subscribers exported successfully', 'success');
+			const tabName = activeTab === 'subscribers' ? 'Subscribers' : 'Non-subscribers';
+			showToast(`${tabName} exported successfully`, 'success');
 		} catch (error) {
-			console.error('Error exporting subscribers:', error);
-			showToast('Failed to export subscribers', 'error');
+			console.error('Error exporting data:', error);
+			const tabName = activeTab === 'subscribers' ? 'subscribers' : 'non-subscribers';
+			showToast(`Failed to export ${tabName}`, 'error');
+		}
+	}
+
+	// Handle edit subscriber event from table
+	function handleEditSubscriber(event: CustomEvent<{ subscriber: Subscriber }>) {
+		const { subscriber } = event.detail;
+		selectedSubscriber = subscriber;
+		showEditModal = true;
+	}
+
+	// Handle subscriber update from edit modal
+	async function handleSubscriberUpdate(updatedSubscriber: Subscriber) {
+		try {
+			// Update the subscriber in our local arrays
+			allSubscribers = allSubscribers.map(s => 
+				s.id === updatedSubscriber.id ? updatedSubscriber : s
+			);
+			displayedSubscribers = displayedSubscribers.map(s => 
+				s.id === updatedSubscriber.id ? updatedSubscriber : s
+			);
+			
+			showToast('Subscriber updated successfully', 'success');
+			showEditModal = false;
+			selectedSubscriber = null;
+		} catch (error) {
+			console.error('Error updating subscriber:', error);
+			showToast('Failed to update subscriber', 'error');
 		}
 	}
 </script>
@@ -1167,6 +1186,13 @@
 					</div>
 				{/if}
 
+				<!-- Export button -->
+				<div class="export-section">
+					<button class="btn btn-outline" on:click={handleExport}>
+						📥 Export Non-Subscribers
+					</button>
+				</div>
+
 				{#if loading}
 					<div class="loading-container">
 						<LoadingSpinner />
@@ -1208,6 +1234,16 @@
 	onSendOffer={handleSendOfferSubmit}
 	onCancel={handleSendOfferCancel}
 />
+
+{#if showEditModal && selectedSubscriber}
+	<SubscriberEditModal 
+		bind:isOpen={showEditModal}
+		subscriber={selectedSubscriber}
+		{subscriptionPlans}
+		onSave={handleSubscriberUpdate}
+		onCancel={() => { showEditModal = false; selectedSubscriber = null; }}
+	/>
+{/if}
 
 <style>
 	.subscribers-page {

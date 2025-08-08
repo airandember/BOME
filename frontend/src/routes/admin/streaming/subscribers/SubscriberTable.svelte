@@ -453,7 +453,9 @@
 
 	.plan-info {
 		display: flex;
-		flex-direction: column;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
 		gap: 0.25rem;
 	}
 

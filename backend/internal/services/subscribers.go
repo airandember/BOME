@@ -3,6 +3,7 @@ package services
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"bome-backend/internal/database"
@@ -1026,10 +1027,130 @@ func (s *SubscriberService) BulkChangePlan(planID int, userIDs []int) ([]*Subscr
 	return subscribers, nil
 }
 
-// ExportSubscribers exports subscribers to a file
+// ExportSubscribers exports subscribers to CSV format
 func (s *SubscriberService) ExportSubscribers() (string, error) {
-	// For now, return a placeholder filename
-	// In a real implementation, you'd generate a CSV or Excel file
-	filename := fmt.Sprintf("subscribers_export_%s.csv", time.Now().Format("2006-01-02"))
-	return filename, nil
+	// Get all subscribers
+	subscribers, err := s.GetSubscribers(10000, 0, nil) // Get all subscribers
+	if err != nil {
+		return "", fmt.Errorf("failed to get subscribers: %w", err)
+	}
+
+	// Generate CSV content
+	var csvContent strings.Builder
+
+	// Write CSV header
+	csvContent.WriteString("ID,Email,First Name,Last Name,Role,Email Verified,Plan ID,Plan Name,Plan Price,Plan Currency,Subscription Status,Last Login,Created At,Updated At\n")
+
+	// Write subscriber data
+	for _, subscriber := range subscribers {
+		lastLogin := ""
+		if subscriber.LastLogin != nil {
+			lastLogin = subscriber.LastLogin.Format("2006-01-02 15:04:05")
+		}
+
+		planID := ""
+		if subscriber.PlanID != nil {
+			planID = fmt.Sprintf("%d", *subscriber.PlanID)
+		}
+
+		planName := ""
+		if subscriber.PlanName != nil {
+			planName = *subscriber.PlanName
+		}
+
+		planPrice := ""
+		if subscriber.PlanPrice != nil {
+			planPrice = fmt.Sprintf("%.2f", *subscriber.PlanPrice)
+		}
+
+		planCurrency := ""
+		if subscriber.PlanCurrency != nil {
+			planCurrency = *subscriber.PlanCurrency
+		}
+
+		subscriptionStatus := ""
+		if subscriber.SubscriptionStatus != nil {
+			subscriptionStatus = *subscriber.SubscriptionStatus
+		}
+
+		// Escape CSV fields that contain commas or quotes
+		email := strings.ReplaceAll(subscriber.Email, `"`, `""`)
+		firstName := strings.ReplaceAll(subscriber.FirstName, `"`, `""`)
+		lastName := strings.ReplaceAll(subscriber.LastName, `"`, `""`)
+		role := strings.ReplaceAll(subscriber.Role, `"`, `""`)
+		planName = strings.ReplaceAll(planName, `"`, `""`)
+		planCurrency = strings.ReplaceAll(planCurrency, `"`, `""`)
+		subscriptionStatus = strings.ReplaceAll(subscriptionStatus, `"`, `""`)
+
+		// Write CSV row
+		csvContent.WriteString(fmt.Sprintf(`%d,"%s","%s","%s","%s",%t,"%s","%s","%s","%s","%s","%s","%s","%s"`+"\n",
+			subscriber.ID,
+			email,
+			firstName,
+			lastName,
+			role,
+			subscriber.EmailVerified,
+			planID,
+			planName,
+			planPrice,
+			planCurrency,
+			subscriptionStatus,
+			lastLogin,
+			subscriber.CreatedAt.Format("2006-01-02 15:04:05"),
+			subscriber.UpdatedAt.Format("2006-01-02 15:04:05"),
+		))
+	}
+
+	return csvContent.String(), nil
+}
+
+// ExportNonSubscribers exports non-subscribers to CSV format
+func (s *SubscriberService) ExportNonSubscribers() (string, error) {
+	fmt.Println("ExportNonSubscribers: Starting export")
+
+	// Get all non-subscribers
+	nonSubscribers, err := s.GetNonSubscribers(10000, 0, nil) // Get all non-subscribers
+	if err != nil {
+		fmt.Printf("ExportNonSubscribers: Error getting non-subscribers: %v\n", err)
+		return "", fmt.Errorf("failed to get non-subscribers: %w", err)
+	}
+
+	fmt.Printf("ExportNonSubscribers: Retrieved %d non-subscribers\n", len(nonSubscribers))
+
+	// Generate CSV content
+	var csvContent strings.Builder
+
+	// Write CSV header
+	csvContent.WriteString("ID,Email,First Name,Last Name,Role,Email Verified,Last Login,Created At,Updated At\n")
+
+	// Write non-subscriber data
+	for _, nonSubscriber := range nonSubscribers {
+		lastLogin := ""
+		if nonSubscriber.LastLogin != nil {
+			lastLogin = nonSubscriber.LastLogin.Format("2006-01-02 15:04:05")
+		}
+
+		// Escape CSV fields that contain commas or quotes
+		email := strings.ReplaceAll(nonSubscriber.Email, `"`, `""`)
+		firstName := strings.ReplaceAll(nonSubscriber.FirstName, `"`, `""`)
+		lastName := strings.ReplaceAll(nonSubscriber.LastName, `"`, `""`)
+		role := strings.ReplaceAll(nonSubscriber.Role, `"`, `""`)
+
+		// Write CSV row
+		csvContent.WriteString(fmt.Sprintf(`%d,"%s","%s","%s","%s",%t,"%s","%s","%s"`+"\n",
+			nonSubscriber.ID,
+			email,
+			firstName,
+			lastName,
+			role,
+			nonSubscriber.EmailVerified,
+			lastLogin,
+			nonSubscriber.CreatedAt.Format("2006-01-02 15:04:05"),
+			nonSubscriber.UpdatedAt.Format("2006-01-02 15:04:05"),
+		))
+	}
+
+	result := csvContent.String()
+	fmt.Printf("ExportNonSubscribers: Generated CSV with %d characters\n", len(result))
+	return result, nil
 }
