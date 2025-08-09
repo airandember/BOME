@@ -26,6 +26,8 @@ type Subscriber struct {
 	PlanName             *string    `json:"plan_name,omitempty"`
 	PlanPrice            *float64   `json:"plan_price,omitempty"`
 	PlanCurrency         *string    `json:"plan_currency,omitempty"`
+	PlanInterval         *string    `json:"plan_interval,omitempty"`
+	PlanIntervalCount    *int       `json:"plan_interval_count,omitempty"`
 	SubscriptionID       *int       `json:"subscription_id,omitempty"`
 	SubID                *int       `json:"sub_id,omitempty"` // Alias for subscription_id
 	SubscriptionStatus   *string    `json:"subscription_status,omitempty"`
@@ -201,6 +203,14 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 
 		// Set SubID to the same value as SubscriptionID
 		subscriber.SubID = subscriber.SubscriptionID
+
+		// Set plan interval data
+		if interval != "" {
+			subscriber.PlanInterval = &interval
+		}
+		if intervalCount > 0 {
+			subscriber.PlanIntervalCount = &intervalCount
+		}
 
 		// Set subscription status based on plan active status
 		if planActive {
@@ -445,16 +455,17 @@ func (s *SubscriberService) SearchSubscribers(searchTerm string, limit, offset i
 
 // NonSubscriber represents a user without an active subscription
 type NonSubscriber struct {
-	ID            int        `json:"id"`
-	Email         string     `json:"email"`
-	FirstName     string     `json:"first_name"`
-	LastName      string     `json:"last_name"`
-	Role          string     `json:"role"`
-	EmailVerified bool       `json:"email_verified"`
-	SubID         *int       `json:"sub_id,omitempty"` // Will be null for non-subscribers
-	LastLogin     *time.Time `json:"last_login,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID                     int        `json:"id"`
+	Email                  string     `json:"email"`
+	FirstName              string     `json:"first_name"`
+	LastName               string     `json:"last_name"`
+	Role                   string     `json:"role"`
+	EmailVerified          bool       `json:"email_verified"`
+	SubID                  *int       `json:"sub_id,omitempty"` // Will be null for non-subscribers
+	HasSubscriptionHistory bool       `json:"has_subscription_history"`
+	LastLogin              *time.Time `json:"last_login,omitempty"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
 // NonSubscriberFilters represents filters for non-subscriber queries
@@ -468,7 +479,7 @@ type NonSubscriberFilters struct {
 		Start time.Time `json:"start"`
 		End   time.Time `json:"end"`
 	} `json:"date_range"`
-	SubscriptionHistory *string `json:"subscription_history"` // "never", "previously", or nil for all
+	HasSubscriptionHistory *bool `json:"has_subscription_history"` // true, false, or nil for all
 }
 
 // GetNonSubscribers retrieves all users without active subscriptions
@@ -476,7 +487,8 @@ func (s *SubscriberService) GetNonSubscribers(limit, offset int, filters *NonSub
 	query := `
 		SELECT 
 			u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified,
-			u.last_login, u.created_at, u.updated_at
+			u.last_login, u.created_at, u.updated_at,
+			COALESCE(u.has_subbed, false) as has_subscription_history
 		FROM users u
 		WHERE u.sub_id IS NULL
 	`
@@ -530,22 +542,11 @@ func (s *SubscriberService) GetNonSubscribers(limit, offset int, filters *NonSub
 			argCount++
 		}
 
-		// Add subscription history filter
-		if filters.SubscriptionHistory != nil {
-			switch *filters.SubscriptionHistory {
-			case "never":
-				// Users who have never had a subscription (no entries in subscriber_history or empty usr_sub_hstry)
-				query += ` AND (u.id NOT IN (
-					SELECT DISTINCT user_id FROM subscriber_history 
-					WHERE usr_sub_hstry IS NOT NULL AND usr_sub_hstry != '{}'::jsonb
-				) OR u.id NOT IN (SELECT DISTINCT user_id FROM subscriber_history))`
-			case "previously":
-				// Users who have had subscriptions before (have entries in subscriber_history with usr_sub_hstry)
-				query += ` AND u.id IN (
-					SELECT DISTINCT user_id FROM subscriber_history 
-					WHERE usr_sub_hstry IS NOT NULL AND usr_sub_hstry != '{}'::jsonb
-				)`
-			}
+		// Add subscription history filter using the new has_subbed column
+		if filters.HasSubscriptionHistory != nil {
+			argCount++
+			query += fmt.Sprintf(" AND COALESCE(u.has_subbed, false) = $%d", argCount)
+			args = append(args, *filters.HasSubscriptionHistory)
 		}
 	}
 
@@ -575,7 +576,7 @@ func (s *SubscriberService) GetNonSubscribers(limit, offset int, filters *NonSub
 		err := rows.Scan(
 			&nonSubscriber.ID, &nonSubscriber.Email, &nonSubscriber.FirstName, &nonSubscriber.LastName,
 			&nonSubscriber.Role, &nonSubscriber.EmailVerified, &nonSubscriber.LastLogin,
-			&nonSubscriber.CreatedAt, &nonSubscriber.UpdatedAt,
+			&nonSubscriber.CreatedAt, &nonSubscriber.UpdatedAt, &nonSubscriber.HasSubscriptionHistory,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan non-subscriber: %w", err)
@@ -620,14 +621,19 @@ func (s *SubscriberService) GetNonSubscriberCount(filters *NonSubscriberFilters)
 		}
 
 		if filters.LastLogin != nil {
-			argCount++
-			query += fmt.Sprintf(" AND u.last_login = $%d", argCount)
-			args = append(args, *filters.LastLogin)
+			if filters.LastLogin.IsZero() {
+				// Special case for "never" - users who have never logged in
+				query += " AND u.last_login IS NULL"
+			} else {
+				argCount++
+				query += fmt.Sprintf(" AND u.last_login >= $%d", argCount)
+				args = append(args, *filters.LastLogin)
+			}
 		}
 
 		if filters.CreatedDate != nil {
 			argCount++
-			query += fmt.Sprintf(" AND u.created_at = $%d", argCount)
+			query += fmt.Sprintf(" AND u.created_at >= $%d", argCount)
 			args = append(args, *filters.CreatedDate)
 		}
 
@@ -636,6 +642,13 @@ func (s *SubscriberService) GetNonSubscriberCount(filters *NonSubscriberFilters)
 			query += fmt.Sprintf(" AND u.created_at BETWEEN $%d AND $%d", argCount, argCount+1)
 			args = append(args, filters.DateRange.Start, filters.DateRange.End)
 			argCount++
+		}
+
+		// Add subscription history filter using the new has_subbed column
+		if filters.HasSubscriptionHistory != nil {
+			argCount++
+			query += fmt.Sprintf(" AND COALESCE(u.has_subbed, false) = $%d", argCount)
+			args = append(args, *filters.HasSubscriptionHistory)
 		}
 	}
 

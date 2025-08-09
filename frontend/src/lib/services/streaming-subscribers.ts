@@ -11,6 +11,8 @@ export interface Subscriber {
 	plan_name?: string;
 	plan_price?: number;
 	plan_currency?: string;
+	plan_interval?: string; // 'month', 'year', etc.
+	plan_interval_count?: number; // 1, 12, etc.
 	subscription_id?: number;
 	sub_id?: number; // Alias for subscription_id
 	subscription_status?: string;
@@ -31,6 +33,7 @@ export interface NonSubscriber {
 	role: string;
 	email_verified: boolean;
 	sub_id?: number; // Will be null for non-subscribers
+	has_subscription_history?: boolean;
 	last_login?: string;
 	created_at: string;
 	updated_at: string;
@@ -73,7 +76,7 @@ export interface NonSubscriberFilters {
 		start: string;
 		end: string;
 	};
-	subscription_history?: 'never' | 'previously'; // New field
+	has_subscription_history?: boolean; // true, false, or undefined for all
 }
 
 export interface SubscribersResponse {
@@ -353,6 +356,60 @@ export class StreamingSubscriberService {
 	}
 
 	/**
+	 * Calculate subscription start date (based on created_at)
+	 */
+	static calculateSubscriptionStartDate(subscriber: Subscriber): Date | null {
+		if (!subscriber.created_at) return null;
+		return new Date(subscriber.created_at);
+	}
+
+	/**
+	 * Calculate subscription end date based on plan interval and start date
+	 */
+	static calculateSubscriptionEndDate(subscriber: Subscriber): Date | null {
+		const startDate = this.calculateSubscriptionStartDate(subscriber);
+		if (!startDate || !subscriber.plan_interval || !subscriber.plan_interval_count) {
+			return null;
+		}
+
+		const endDate = new Date(startDate);
+		const intervalCount = subscriber.plan_interval_count || 1;
+
+		switch (subscriber.plan_interval.toLowerCase()) {
+			case 'day':
+				endDate.setDate(endDate.getDate() + intervalCount);
+				break;
+			case 'week':
+				endDate.setDate(endDate.getDate() + (intervalCount * 7));
+				break;
+			case 'month':
+				endDate.setMonth(endDate.getMonth() + intervalCount);
+				break;
+			case 'year':
+				endDate.setFullYear(endDate.getFullYear() + intervalCount);
+				break;
+			default:
+				// Default to monthly if interval is not recognized
+				endDate.setMonth(endDate.getMonth() + intervalCount);
+		}
+
+		return endDate;
+	}
+
+	/**
+	 * Format subscription dates for display
+	 */
+	static formatSubscriptionDates(subscriber: Subscriber): { startDate: string; endDate: string } {
+		const startDate = this.calculateSubscriptionStartDate(subscriber);
+		const endDate = this.calculateSubscriptionEndDate(subscriber);
+
+		return {
+			startDate: startDate ? this.formatDate(startDate.toISOString()) : 'N/A',
+			endDate: endDate ? this.formatDate(endDate.toISOString()) : 'N/A'
+		};
+	}
+
+	/**
 	 * Check if subscription is active
 	 */
 	static isSubscriptionActive(subscriber: Subscriber): boolean {
@@ -399,8 +456,8 @@ export class StreamingSubscriberService {
 					queryParams.append('start_date', params.filters.date_range.start);
 					queryParams.append('end_date', params.filters.date_range.end);
 				}
-				if (params.filters.subscription_history) {
-					queryParams.append('subscription_history', params.filters.subscription_history);
+				if (params.filters.has_subscription_history !== undefined) {
+					queryParams.append('has_subscription_history', params.filters.has_subscription_history.toString());
 				}
 			}
 
@@ -439,6 +496,9 @@ export class StreamingSubscriberService {
 			if (filters?.date_range) {
 				queryParams.append('start_date', filters.date_range.start);
 				queryParams.append('end_date', filters.date_range.end);
+			}
+			if (filters?.has_subscription_history !== undefined) {
+				queryParams.append('has_subscription_history', filters.has_subscription_history.toString());
 			}
 
 			const response = await api.get(`/admin/subscribers/non-subscribers/count?${queryParams}`);

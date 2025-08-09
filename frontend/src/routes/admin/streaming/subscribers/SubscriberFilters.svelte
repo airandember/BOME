@@ -8,7 +8,7 @@
 	export let planFilter = '';
 	export let lastLoginFilter = '';
 	export let createdDateFilter = '';
-	export let subscriptionHistoryFilter = ''; // New filter
+	export let hasSubbedFilter: boolean | undefined = undefined; // Updated filter
 	export let subscribers: Subscriber[] = [];
 	export let nonSubscribers: NonSubscriber[] = [];
 	export let activeTab: 'subscribers' | 'non-subscribers' = 'subscribers';
@@ -16,7 +16,7 @@
 
 	// Callback props for Svelte 5
 	export let onSearch: (term: string) => void = () => {};
-	export let onFilterChange: (type: 'emailVerified' | 'role' | 'plan' | 'lastLogin' | 'createdDate' | 'subscriptionHistory', value: any) => void = () => {};
+	export let onFilterChange: (type: 'emailVerified' | 'role' | 'plan' | 'lastLogin' | 'createdDate' | 'hasSubbed', value: any) => void = () => {};
 	export let onClearAll: () => void = () => {};
 
 	// Debounced search for better performance
@@ -113,7 +113,7 @@
 	}
 
 	function handleSubscriptionHistoryChange() {
-		onFilterChange('subscriptionHistory', subscriptionHistoryFilter);
+		onFilterChange('hasSubbed', hasSubbedFilter);
 	}
 
 	function handleClearAll() {
@@ -123,7 +123,7 @@
 		planFilter = '';
 		lastLoginFilter = '';
 		createdDateFilter = '';
-		subscriptionHistoryFilter = '';
+		hasSubbedFilter = undefined;
 		onClearAll();
 	}
 
@@ -134,7 +134,7 @@
 		planFilter ||
 		lastLoginFilter || 
 		createdDateFilter ||
-		subscriptionHistoryFilter;
+		hasSubbedFilter !== undefined;
 </script>
 
 <div class="filters-container">
@@ -200,19 +200,19 @@
 		</div>
 	{/if}
 
-	<!-- Subscription History Filter (Non-subscribers only) -->
+	<!-- Has Subbed Filter (Non-subscribers only) -->
 	{#if activeTab === 'non-subscribers'}
 		<div class="filter-group">
-			<label for="subscription-history" class="filter-label">Subscription History</label>
+			<label for="has-subbed" class="filter-label">Has Subbed</label>
 			<select
-				id="subscription-history"
-				bind:value={subscriptionHistoryFilter}
+				id="has-subbed"
+				bind:value={hasSubbedFilter}
 				on:change={handleSubscriptionHistoryChange}
 				class="filter-select"
 			>
-				<option value="">All Users</option>
-				<option value="never">Never Subscribed</option>
-				<option value="previously">Previously Subscribed</option>
+				<option value={undefined}>All Users</option>
+				<option value={false}>Never Subscribed</option>
+				<option value={true}>Previously Subscribed</option>
 			</select>
 		</div>
 	{/if}

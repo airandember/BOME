@@ -148,6 +148,7 @@
 						<th>Email</th>
 						<th>Verified</th>
 						<th>Role</th>
+						<th>Has Subbed</th>
 						<th>Last Login</th>
 						<th>Created</th>
 						<th>Actions</th>
@@ -197,6 +198,15 @@
 								<div class="role-badge" style="background: {getRoleColor(nonSubscriber.role)}20; color: {getRoleColor(nonSubscriber.role)}">
 									{getRoleIcon(nonSubscriber.role)} {getRoleName(nonSubscriber.role)}
 								</div>
+							</td>
+							<td>
+								<span class="has-subbed">
+									{#if nonSubscriber.has_subscription_history}
+										<span class="has-subbed-badge has-subbed-true">Yes</span>
+									{:else}
+										<span class="has-subbed-badge has-subbed-false">No</span>
+									{/if}
+								</span>
 							</td>
 							<td>
 								<span class="last-login">
@@ -465,6 +475,31 @@
 	.created-date {
 		font-size: 0.875rem;
 		color: #6b7280;
+	}
+
+	.has-subbed {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.has-subbed-badge {
+		padding: 0.25rem 0.5rem;
+		border-radius: 0.25rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 0.025em;
+	}
+
+	.has-subbed-true {
+		background: #dcfce7;
+		color: #166534;
+	}
+
+	.has-subbed-false {
+		background: #fef2f2;
+		color: #991b1b;
 	}
 
 	.action-buttons {

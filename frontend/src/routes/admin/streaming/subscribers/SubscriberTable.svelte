@@ -147,6 +147,8 @@
 						<th>Role</th>
 						<th>Plan</th>
 						<th>Status</th>
+						<th>Subscription Start</th>
+						<th>Subscription End</th>
 						<th>Last Login</th>
 						<th>Created</th>
 						<th>Actions</th>
@@ -169,9 +171,9 @@
 							</td>
 							<td>
 								<div class="user-info">
-									<div class="user-avatar">
+									<!--<div class="user-avatar">
 										{(subscriber.first_name || '').charAt(0)}{(subscriber.last_name || '').charAt(0)}
-									</div>
+									</div>-->
 									<div class="user-details">
 										<div class="user-name">
 											{StreamingSubscriberService.formatSubscriberName(subscriber)}
@@ -224,6 +226,16 @@
 										</span>
 									{/if}
 								</div>
+							</td>
+							<td>
+								<span class="subscription-start">
+									{StreamingSubscriberService.formatSubscriptionDates(subscriber).startDate}
+								</span>
+							</td>
+							<td>
+								<span class="subscription-end">
+									{StreamingSubscriberService.formatSubscriptionDates(subscriber).endDate}
+								</span>
 							</td>
 							<td>
 								<span class="last-login">

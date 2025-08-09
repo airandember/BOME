@@ -521,9 +521,9 @@ func getNonSubscribers(c *gin.Context, service *services.SubscriberService) {
 	createdDateStr := c.Query("created_date")
 	startDateStr := c.Query("start_date")
 	endDateStr := c.Query("end_date")
-	subscriptionHistoryStr := c.Query("subscription_history") // New parameter
+	subscriptionHistoryStr := c.Query("has_subscription_history") // Updated parameter name
 
-	log.Printf("getNonSubscribers: Query params - limit=%s, offset=%s, search=%s, email_verified=%s, role=%s, last_login=%s, created_date=%s, subscription_history=%s",
+	log.Printf("getNonSubscribers: Query params - limit=%s, offset=%s, search=%s, email_verified=%s, role=%s, last_login=%s, created_date=%s, has_subscription_history=%s",
 		limitStr, offsetStr, searchStr, emailVerifiedStr, roleStr, lastLoginStr, createdDateStr, subscriptionHistoryStr)
 
 	limit, err := strconv.Atoi(limitStr)
@@ -621,8 +621,23 @@ func getNonSubscribers(c *gin.Context, service *services.SubscriberService) {
 
 	// Handle subscription history filter
 	if subscriptionHistoryStr != "" {
-		if subscriptionHistoryStr == "never" || subscriptionHistoryStr == "previously" {
-			filters.SubscriptionHistory = &subscriptionHistoryStr
+		var hasSubscriptionHistory bool
+		var shouldSetFilter bool
+
+		switch subscriptionHistoryStr {
+		case "true", "previously":
+			hasSubscriptionHistory = true
+			shouldSetFilter = true
+		case "false", "never":
+			hasSubscriptionHistory = false
+			shouldSetFilter = true
+		default:
+			// If it's not a recognized value, skip this filter
+			shouldSetFilter = false
+		}
+
+		if shouldSetFilter {
+			filters.HasSubscriptionHistory = &hasSubscriptionHistory
 		}
 	}
 

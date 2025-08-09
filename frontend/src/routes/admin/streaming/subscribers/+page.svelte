@@ -60,6 +60,7 @@
 	let nonSubscriberRoleFilter = '';
 	let nonSubscriberLastLoginFilter = '';
 	let nonSubscriberCreatedDateFilter = '';
+	let nonSubscriberHasSubbedFilter: boolean | undefined = undefined;
 
 	// Selection state
 	let selectedSubscribers: Set<number> = new Set();
@@ -212,7 +213,8 @@
 			currentFilters.roleFilter || 
 			currentFilters.planFilter ||
 			(currentFilters.lastLoginFilter && currentFilters.lastLoginFilter.trim() !== '') || 
-			(currentFilters.createdDateFilter && currentFilters.createdDateFilter.trim() !== '');
+			(currentFilters.createdDateFilter && currentFilters.createdDateFilter.trim() !== '') ||
+			currentFilters.hasSubbedFilter !== undefined;
 		
 		console.log('Applying filters:', {
 			activeTab,
@@ -359,6 +361,19 @@
 							return false;
 						}
 						console.log('✅ Non-subscriber passed created date filter:', nonSubscriber.email);
+					}
+					
+					// Has Subbed filter
+					if (currentFilters.hasSubbedFilter !== undefined) {
+						if (nonSubscriber.has_subscription_history !== currentFilters.hasSubbedFilter) {
+							console.log('❌ Non-subscriber filtered out by has subbed filter:', {
+								nonSubscriber: nonSubscriber.email,
+								hasSubscriptionHistory: nonSubscriber.has_subscription_history,
+								filter: currentFilters.hasSubbedFilter
+							});
+							return false;
+						}
+						console.log('✅ Non-subscriber passed has subbed filter:', nonSubscriber.email);
 					}
 					
 					return true;
@@ -810,7 +825,7 @@
 	}
 
 	// Handle filter changes
-	function handleFilterChange(type: 'emailVerified' | 'role' | 'plan' | 'lastLogin' | 'createdDate' | 'subscriptionHistory', value: any) {
+	function handleFilterChange(type: 'emailVerified' | 'role' | 'plan' | 'lastLogin' | 'createdDate' | 'hasSubbed', value: any) {
 		console.log('🎯 Filter change received:', { type, value });
 		
 		if (activeTab === 'subscribers') {
@@ -849,6 +864,10 @@
 					console.log('📅 Setting non-subscriber created date filter:', value);
 					nonSubscriberCreatedDateFilter = value;
 					break;
+				case 'hasSubbed':
+					console.log('📅 Setting non-subscriber has subbed filter:', value);
+					nonSubscriberHasSubbedFilter = value;
+					break;
 			}
 		}
 		currentPage = 1;
@@ -869,6 +888,7 @@
 			nonSubscriberRoleFilter = '';
 			nonSubscriberLastLoginFilter = '';
 			nonSubscriberCreatedDateFilter = '';
+			nonSubscriberHasSubbedFilter = undefined;
 		}
 		currentPage = 1;
 	}
@@ -896,6 +916,7 @@
 				roleFilter: nonSubscriberRoleFilter,
 				lastLoginFilter: nonSubscriberLastLoginFilter,
 				createdDateFilter: nonSubscriberCreatedDateFilter,
+				hasSubbedFilter: nonSubscriberHasSubbedFilter,
 			};
 		}
 	}
@@ -1160,6 +1181,7 @@
 					bind:roleFilter={nonSubscriberRoleFilter}
 					bind:lastLoginFilter={nonSubscriberLastLoginFilter}
 					bind:createdDateFilter={nonSubscriberCreatedDateFilter}
+					bind:hasSubbedFilter={nonSubscriberHasSubbedFilter}
 					subscribers={[]}
 					nonSubscribers={allNonSubscribers}
 					{activeTab}
