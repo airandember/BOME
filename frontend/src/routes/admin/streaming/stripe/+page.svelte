@@ -76,10 +76,10 @@
 	<div class="stripe-dashboard">
 		<!-- Header -->
 		<div class="dashboard-header">
-			<div class="header-content">
+			<!--<div class="header-content">
 				<h1>Stripe Dashboard</h1>
 				<p>Manage payments, subscriptions, and customer data</p>
-			</div>
+			</div>-->
 			
 			{#if summary?.enabled}
 				<div class="header-status">
@@ -248,9 +248,8 @@
 
 	.dashboard-header {
 		display: flex;
-		justify-content: space-between;
+		justify-content: flex-end;
 		align-items: center;
-		padding: var(--space-xl) var(--space-lg);
 		background: var(--surface);
 		border-bottom: 1px solid var(--border);
 	}
