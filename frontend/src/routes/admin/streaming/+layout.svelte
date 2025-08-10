@@ -44,6 +44,13 @@
 		},
 		
 		{
+			name: 'Stripe',
+			href: '/admin/streaming/stripe',
+			icon: 'credit-card',
+			description: 'Stripe payments and webhooks'
+		},
+		
+		{
 			name: 'Settings',
 			href: '/admin/streaming/settings',
 			icon: 'cog',

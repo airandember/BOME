@@ -126,6 +126,7 @@ func (db *DB) RunMigrations() error {
 		addShortDescToSubscriptionPlans,   // Add short_desc column to existing subscription_plans table
 		addMissingSubscriptionPlanColumns, // Add missing columns for subscription plans
 		createSubscriberHistoryTable,      // Add subscriber history table
+		createSecureSettingsTable,         // Add secure settings table for encrypted config
 	}
 
 	for i, migration := range migrations {
@@ -208,6 +209,46 @@ func (db *DB) CreateAlert(alert *Alert) error {
 	}
 
 	return nil
+}
+
+// Secure settings table stores encrypted key-value configuration
+const createSecureSettingsTable = `
+CREATE TABLE IF NOT EXISTS secure_settings (
+    id SERIAL PRIMARY KEY,
+    key VARCHAR(255) UNIQUE NOT NULL,
+    value TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+`
+
+// SetSecureSetting stores or updates an encrypted secure setting value
+func (db *DB) SetSecureSetting(key, encryptedValue string) error {
+	if db == nil || db.DB == nil {
+		return fmt.Errorf("database not initialized")
+	}
+	// Upsert behavior
+	_, err := db.Exec(`
+        INSERT INTO secure_settings (key, value) VALUES ($1, $2)
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
+    `, key, encryptedValue)
+	return err
+}
+
+// GetSecureSetting retrieves an encrypted setting by key
+func (db *DB) GetSecureSetting(key string) (string, error) {
+	if db == nil || db.DB == nil {
+		return "", fmt.Errorf("database not initialized")
+	}
+	var value string
+	err := db.QueryRow(`SELECT value FROM secure_settings WHERE key = $1`, key).Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", err
+	}
+	return value, nil
 }
 
 // Migration SQL statements - PostgreSQL compatible

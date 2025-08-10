@@ -13,53 +13,108 @@ import (
 )
 
 // SetupAdminStreamingRoutes sets up streaming admin dashboard routes
-func SetupAdminStreamingRoutes(router *gin.Engine, db *database.DB, stripeService *services.StripeService, analyticsService *services.SubscriptionAnalyticsService, biService *services.BusinessIntelligenceService) {
+func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeService *services.StripeService, analyticsService *services.SubscriptionAnalyticsService, biService *services.BusinessIntelligenceService) {
 	// Streaming admin routes - requires streaming manager role or higher
-	admin := router.Group("/api/admin/streaming")
-	admin.Use(middleware.AuthRequired())
-	admin.Use(middleware.StreamingAdminRequired())
+	streaming := admin.Group("/streaming")
+	streaming.Use(middleware.AuthRequired())
+	streaming.Use(middleware.StreamingAdminRequired())
 
 	{
 		// Dashboard overview
-		admin.GET("/dashboard", GetStreamingDashboardHandler(db, analyticsService))
+		streaming.GET("/dashboard", GetStreamingDashboardHandler(db, analyticsService))
 
 		// Subscription management
-		admin.GET("/subscriptions", GetStreamingSubscriptionsHandler(db))
-		admin.GET("/subscriptions/:id", GetStreamingSubscriptionHandler(db))
-		admin.PUT("/subscriptions/:id", UpdateStreamingSubscriptionHandler(db, stripeService))
-		admin.DELETE("/subscriptions/:id", CancelStreamingSubscriptionHandler(db, stripeService))
-		admin.POST("/subscriptions/:id/refund", ProcessStreamingRefundHandler(db, stripeService))
+		streaming.GET("/subscriptions", GetStreamingSubscriptionsHandler(db))
+		streaming.GET("/subscriptions/:id", GetStreamingSubscriptionHandler(db))
+		streaming.PUT("/subscriptions/:id", UpdateStreamingSubscriptionHandler(db, stripeService))
+		streaming.DELETE("/subscriptions/:id", CancelStreamingSubscriptionHandler(db, stripeService))
+		streaming.POST("/subscriptions/:id/refund", ProcessStreamingRefundHandler(db, stripeService))
 
 		// Customer management
-		admin.GET("/customers", GetStreamingCustomersHandler(db))
-		admin.GET("/customers/:id", GetStreamingCustomerHandler(db))
-		admin.GET("/customers/:id/subscriptions", GetCustomerSubscriptionsHandler(db))
-		admin.POST("/customers/:id/communication", SendCustomerCommunicationHandler(db))
+		streaming.GET("/customers", GetStreamingCustomersHandler(db))
+		streaming.GET("/customers/:id", GetStreamingCustomerHandler(db))
+		streaming.GET("/customers/:id/subscriptions", GetCustomerSubscriptionsHandler(db))
+		streaming.POST("/customers/:id/communication", SendCustomerCommunicationHandler(db))
 
 		// Analytics and reporting
-		admin.GET("/analytics/overview", GetStreamingAnalyticsOverviewHandler(analyticsService))
-		admin.GET("/analytics/revenue", GetStreamingRevenueAnalyticsHandler(analyticsService))
-		admin.GET("/analytics/subscriptions", GetStreamingSubscriptionAnalyticsHandler(analyticsService))
-		admin.GET("/analytics/customers", GetStreamingCustomerAnalyticsHandler(analyticsService))
+		streaming.GET("/analytics/overview", GetStreamingAnalyticsOverviewHandler(analyticsService))
+		streaming.GET("/analytics/revenue", GetStreamingRevenueAnalyticsHandler(analyticsService))
+		streaming.GET("/analytics/subscriptions", GetStreamingSubscriptionAnalyticsHandler(analyticsService))
+		streaming.GET("/analytics/customers", GetStreamingCustomerAnalyticsHandler(analyticsService))
 
 		// Business Intelligence Analytics
-		admin.GET("/analytics/executive-summary", GetExecutiveSummaryHandler(biService))
-		admin.GET("/analytics/funnel-analysis", GetFunnelAnalysisHandler(biService))
-		admin.GET("/analytics/revenue-impact", GetRevenueImpactHandler(biService))
-		admin.GET("/analytics/customer-journey", GetCustomerJourneyHandler(biService))
+		streaming.GET("/analytics/executive-summary", GetExecutiveSummaryHandler(biService))
+		streaming.GET("/analytics/funnel-analysis", GetFunnelAnalysisHandler(biService))
+		streaming.GET("/analytics/revenue-impact", GetRevenueImpactHandler(biService))
+		streaming.GET("/analytics/customer-journey", GetCustomerJourneyHandler(biService))
+
+		// Stripe configuration (write-only secret) and summary
+		streaming.POST("/stripe/secret", func(c *gin.Context) {
+			var req struct {
+				Key  string `json:"key" binding:"required"`
+				Type string `json:"type"` // optional: "sk" or "rk" or "pk"; we only accept secret keys for backend
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
+				return
+			}
+
+			// Only allow server secret keys (sk_ or rk_)
+			if !(len(req.Key) > 3 && (req.Key[:3] == "sk_" || req.Key[:3] == "rk_")) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "A Stripe secret or restricted secret starting with sk_ or rk_ is required"})
+				return
+			}
+
+			crypto := services.GetGlobalCryptoService()
+			if crypto == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Crypto service not initialized"})
+				return
+			}
+
+			encrypted, err := crypto.EncryptString(req.Key)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt key"})
+				return
+			}
+
+			if db == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
+				return
+			}
+
+			if err := db.SetSecureSetting("stripe_secret_key", encrypted); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store key"})
+				return
+			}
+
+			// Update runtime Stripe service to enable immediate use
+			stripeService.UpdateSecretKey(req.Key)
+
+			c.JSON(http.StatusOK, gin.H{"message": "Stripe secret updated"})
+		})
+
+		streaming.GET("/stripe/summary", func(c *gin.Context) {
+			// never return stored secret; only return runtime capability summary
+			summary, err := stripeService.GetAccountSummary()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"summary": summary})
+		})
 
 		// Promotions and deals
-		admin.GET("/promotions", GetStreamingPromotionsHandler(db))
-		admin.POST("/promotions", CreateStreamingPromotionHandler(db))
-		admin.PUT("/promotions/:id", UpdateStreamingPromotionHandler(db))
-		admin.DELETE("/promotions/:id", DeleteStreamingPromotionHandler(db))
+		streaming.GET("/promotions", GetStreamingPromotionsHandler(db))
+		streaming.POST("/promotions", CreateStreamingPromotionHandler(db))
+		streaming.PUT("/promotions/:id", UpdateStreamingPromotionHandler(db))
+		streaming.DELETE("/promotions/:id", DeleteStreamingPromotionHandler(db))
 
 		// Event-based deals
-		admin.GET("/events", GetStreamingEventsHandler(db))
-		admin.POST("/events", CreateStreamingEventHandler(db))
-		admin.PUT("/events/:id", UpdateStreamingEventHandler(db))
-		admin.DELETE("/events/:id", DeleteStreamingEventHandler(db))
-		admin.POST("/events/:id/subscription-deals", CreateEventSubscriptionDealHandler(db))
+		streaming.GET("/events", GetStreamingEventsHandler(db))
+		streaming.POST("/events", CreateStreamingEventHandler(db))
+		streaming.PUT("/events/:id", UpdateStreamingEventHandler(db))
+		streaming.DELETE("/events/:id", DeleteStreamingEventHandler(db))
+		streaming.POST("/events/:id/subscription-deals", CreateEventSubscriptionDealHandler(db))
 	}
 }
 

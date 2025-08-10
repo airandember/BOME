@@ -16,6 +16,8 @@ import (
 	"github.com/stripe/stripe-go/v74/refund"
 	"github.com/stripe/stripe-go/v74/subscription"
 	"github.com/stripe/stripe-go/v74/webhook"
+
+	"bome-backend/internal/database"
 )
 
 // StripeService handles all Stripe operations
@@ -142,7 +144,7 @@ type StripeError struct {
 }
 
 // NewStripeService creates a new Stripe service instance
-func NewStripeService() *StripeService {
+func NewStripeService(db *database.DB) *StripeService {
 	secretKey := os.Getenv("STRIPE_SECRET_KEY")
 	publishableKey := os.Getenv("STRIPE_PUBLISHABLE_KEY")
 	webhookSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
@@ -153,26 +155,65 @@ func NewStripeService() *StripeService {
 		environment = "test"
 	}
 
-	// Check if Stripe is enabled (has required keys)
-	isEnabled := secretKey != "" && publishableKey != ""
-
-	if isEnabled {
-		stripe.Key = secretKey
-		log.Printf("Stripe service initialized in %s mode", environment)
-	} else {
-		log.Printf("Stripe service initialized in DISABLED mode - missing environment variables")
-	}
-
-	return &StripeService{
+	service := &StripeService{
 		secretKey:         secretKey,
 		publishableKey:    publishableKey,
 		webhookSecret:     webhookSecret,
 		priceIDMonthly:    os.Getenv("STRIPE_PRICE_ID_MONTHLY"),
 		priceIDYearly:     os.Getenv("STRIPE_PRICE_ID_YEARLY"),
 		customerPortalURL: os.Getenv("STRIPE_CUSTOMER_PORTAL_URL"),
-		isEnabled:         isEnabled,
+		isEnabled:         false, // Will be set based on available keys
 		environment:       environment,
 	}
+
+	// Try to load stored key from database first
+	if db != nil {
+		if storedKey := service.loadStoredKey(db); storedKey != "" {
+			log.Println("Loading stored Stripe key from database")
+			service.UpdateSecretKey(storedKey)
+		}
+	}
+
+	// Fall back to environment variables if no stored key
+	if !service.isEnabled && secretKey != "" {
+		log.Printf("Using Stripe key from environment variables in %s mode", environment)
+		service.UpdateSecretKey(secretKey)
+	}
+
+	if !service.isEnabled {
+		log.Printf("Stripe service initialized in DISABLED mode - no keys available")
+	}
+
+	return service
+}
+
+// loadStoredKey loads the encrypted Stripe key from database
+func (s *StripeService) loadStoredKey(db *database.DB) string {
+	if db == nil {
+		return ""
+	}
+
+	// Get the encrypted key from database
+	encryptedKey, err := db.GetSecureSetting("stripe_secret_key")
+	if err != nil {
+		log.Printf("No stored Stripe key found in database: %v", err)
+		return ""
+	}
+
+	// Decrypt the key
+	cryptoService := GetGlobalCryptoService()
+	if cryptoService == nil {
+		log.Printf("Cannot decrypt Stripe key: crypto service not available")
+		return ""
+	}
+
+	decryptedKey, err := cryptoService.DecryptString(encryptedKey)
+	if err != nil {
+		log.Printf("Failed to decrypt stored Stripe key: %v", err)
+		return ""
+	}
+
+	return decryptedKey
 }
 
 // IsEnabled returns whether Stripe is properly configured
@@ -872,4 +913,253 @@ func (s *StripeService) ListCustomerRefunds(customerID string, limit int) ([]*Re
 	}
 
 	return refunds, nil
+}
+
+// UpdateSecretKey updates the in-memory Stripe secret key and toggles enabled state
+func (s *StripeService) UpdateSecretKey(secret string) {
+	s.secretKey = secret
+	if secret != "" {
+		stripe.Key = secret
+		s.isEnabled = true
+	} else {
+		s.isEnabled = false
+	}
+}
+
+// GetAccountSummary fetches comprehensive account info for display
+func (s *StripeService) GetAccountSummary() (map[string]interface{}, error) {
+	if !s.isEnabled {
+		return map[string]interface{}{
+			"enabled": false,
+		}, nil
+	}
+
+	// We avoid persisting or returning any secret. Just probe Stripe resources.
+	// Try to list various Stripe resources to verify access and show capabilities
+	summary := map[string]interface{}{"enabled": true}
+
+	// Fetch products (first 10)
+	type productMinimal struct {
+		ID, Name, Description string
+		Active                bool
+		CreatedAt             time.Time
+		Metadata              map[string]string
+	}
+	var products []productMinimal
+	{
+		params := &stripe.ProductListParams{}
+		params.Limit = stripe.Int64(10)
+		iter := product.List(params)
+		for iter.Next() {
+			p := iter.Current().(*stripe.Product)
+			products = append(products, productMinimal{
+				ID:          p.ID,
+				Name:        p.Name,
+				Description: p.Description,
+				Active:      p.Active,
+				CreatedAt:   time.Unix(p.Created, 0),
+				Metadata:    p.Metadata,
+			})
+		}
+		// ignore iter.Err() to keep summary resilient
+	}
+	summary["products"] = products
+	summary["products_count"] = len(products)
+
+	// Fetch recent prices (first 15)
+	type priceMinimal struct {
+		ID, ProductID, Currency, Nickname string
+		UnitAmount                        int64
+		Active                            bool
+		Recurring                         *stripe.PriceRecurringParams
+		CreatedAt                         time.Time
+		Metadata                          map[string]string
+	}
+	var prices []priceMinimal
+	{
+		params := &stripe.PriceListParams{}
+		params.Limit = stripe.Int64(15)
+		iter := price.List(params)
+		for iter.Next() {
+			pr := iter.Current().(*stripe.Price)
+			prodID := ""
+			if pr.Product != nil {
+				prodID = pr.Product.ID
+			}
+
+			var recurring *stripe.PriceRecurringParams
+			if pr.Recurring != nil {
+				recurring = &stripe.PriceRecurringParams{
+					Interval:      stripe.String(string(pr.Recurring.Interval)),
+					IntervalCount: stripe.Int64(pr.Recurring.IntervalCount),
+				}
+			}
+
+			prices = append(prices, priceMinimal{
+				ID:         pr.ID,
+				ProductID:  prodID,
+				Currency:   string(pr.Currency),
+				UnitAmount: pr.UnitAmount,
+				Nickname:   pr.Nickname,
+				Active:     pr.Active,
+				Recurring:  recurring,
+				CreatedAt:  time.Unix(pr.Created, 0),
+				Metadata:   pr.Metadata,
+			})
+		}
+	}
+	summary["prices"] = prices
+	summary["prices_count"] = len(prices)
+
+	// Fetch recent customers (first 10)
+	type customerMinimal struct {
+		ID, Email, Name string
+		CreatedAt       time.Time
+		Metadata        map[string]string
+	}
+	var customers []customerMinimal
+	{
+		params := &stripe.CustomerListParams{}
+		params.Limit = stripe.Int64(10)
+		iter := customer.List(params)
+		for iter.Next() {
+			c := iter.Current().(*stripe.Customer)
+			customers = append(customers, customerMinimal{
+				ID:        c.ID,
+				Email:     c.Email,
+				Name:      c.Name,
+				CreatedAt: time.Unix(c.Created, 0),
+				Metadata:  c.Metadata,
+			})
+		}
+	}
+	summary["customers"] = customers
+	summary["customers_count"] = len(customers)
+
+	// Fetch recent subscriptions (first 10)
+	type subscriptionMinimal struct {
+		ID, Status        string
+		CurrentPeriodEnd  time.Time
+		CancelAtPeriodEnd bool
+		CreatedAt         time.Time
+		Metadata          map[string]string
+	}
+	var subscriptions []subscriptionMinimal
+	{
+		params := &stripe.SubscriptionListParams{}
+		params.Limit = stripe.Int64(10)
+		iter := subscription.List(params)
+		for iter.Next() {
+			sub := iter.Current().(*stripe.Subscription)
+			subscriptions = append(subscriptions, subscriptionMinimal{
+				ID:                sub.ID,
+				Status:            string(sub.Status),
+				CurrentPeriodEnd:  time.Unix(sub.CurrentPeriodEnd, 0),
+				CancelAtPeriodEnd: sub.CancelAtPeriodEnd,
+				CreatedAt:         time.Unix(sub.Created, 0),
+				Metadata:          sub.Metadata,
+			})
+		}
+	}
+	summary["subscriptions"] = subscriptions
+	summary["subscriptions_count"] = len(subscriptions)
+
+	// Fetch recent payment intents (first 10)
+	type paymentIntentMinimal struct {
+		ID, Status, Currency string
+		Amount               int64
+		CreatedAt            time.Time
+		Metadata             map[string]string
+	}
+	var paymentIntents []paymentIntentMinimal
+	{
+		params := &stripe.PaymentIntentListParams{}
+		params.Limit = stripe.Int64(10)
+		iter := paymentintent.List(params)
+		for iter.Next() {
+			pi := iter.Current().(*stripe.PaymentIntent)
+			paymentIntents = append(paymentIntents, paymentIntentMinimal{
+				ID:        pi.ID,
+				Status:    string(pi.Status),
+				Currency:  string(pi.Currency),
+				Amount:    pi.Amount,
+				CreatedAt: time.Unix(pi.Created, 0),
+				Metadata:  pi.Metadata,
+			})
+		}
+	}
+	summary["payment_intents"] = paymentIntents
+	summary["payment_intents_count"] = len(paymentIntents)
+
+	// Fetch recent invoices (first 10)
+	type invoiceMinimal struct {
+		ID, Status, Currency string
+		Amount               int64
+		CreatedAt            time.Time
+		Metadata             map[string]string
+	}
+	var invoices []invoiceMinimal
+	{
+		params := &stripe.InvoiceListParams{}
+		params.Limit = stripe.Int64(10)
+		iter := invoice.List(params)
+		for iter.Next() {
+			inv := iter.Current().(*stripe.Invoice)
+			invoices = append(invoices, invoiceMinimal{
+				ID:        inv.ID,
+				Status:    string(inv.Status),
+				Currency:  string(inv.Currency),
+				Amount:    inv.AmountPaid,
+				CreatedAt: time.Unix(inv.Created, 0),
+				Metadata:  inv.Metadata,
+			})
+		}
+	}
+	summary["invoices"] = invoices
+	summary["invoices_count"] = len(invoices)
+
+	// Account capabilities and limits
+	summary["environment"] = s.environment
+	summary["capabilities"] = map[string]interface{}{
+		"products": map[string]interface{}{
+			"create": true,
+			"update": true,
+			"delete": true,
+			"list":   true,
+		},
+		"prices": map[string]interface{}{
+			"create": true,
+			"update": true,
+			"list":   true,
+		},
+		"customers": map[string]interface{}{
+			"create": true,
+			"update": true,
+			"list":   true,
+		},
+		"subscriptions": map[string]interface{}{
+			"create": true,
+			"update": true,
+			"cancel": true,
+			"list":   true,
+		},
+		"payment_intents": map[string]interface{}{
+			"create":  true,
+			"confirm": true,
+			"list":    true,
+		},
+		"invoices": map[string]interface{}{
+			"create":   true,
+			"finalize": true,
+			"pay":      true,
+			"list":     true,
+		},
+		"webhooks": map[string]interface{}{
+			"create": true,
+			"update": true,
+			"list":   true,
+		},
+	}
+
+	return summary, nil
 }

@@ -106,7 +106,7 @@ func SetupRoutes(
 
 	// Create admin cache service
 	analyticsService := services.NewSubscriptionAnalyticsService(db)
-	SetupAdminStreamingRoutes(router, db, stripeService, analyticsService, biService)
+	SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService)
 	SetupMasterVideoRoutes(admin, db, bunnyService)
 
 	// Initialize subscription services
