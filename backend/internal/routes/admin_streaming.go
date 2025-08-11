@@ -13,7 +13,7 @@ import (
 )
 
 // SetupAdminStreamingRoutes sets up streaming admin dashboard routes
-func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeService *services.StripeService, analyticsService *services.SubscriptionAnalyticsService, biService *services.BusinessIntelligenceService) {
+func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeService *services.StripeService, analyticsService *services.SubscriptionAnalyticsService, biService *services.BusinessIntelligenceService, subscriptionPlanStripeService *services.SubscriptionPlanStripeService) {
 	// Streaming admin routes - requires streaming manager role or higher
 	streaming := admin.Group("/streaming")
 	streaming.Use(middleware.AuthRequired())
@@ -115,6 +115,9 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 		streaming.PUT("/events/:id", UpdateStreamingEventHandler(db))
 		streaming.DELETE("/events/:id", DeleteStreamingEventHandler(db))
 		streaming.POST("/events/:id/subscription-deals", CreateEventSubscriptionDealHandler(db))
+
+		// Setup Stripe-integrated subscription plan routes
+		SetupSubscriptionPlanStripeRoutes(streaming, stripeService, subscriptionPlanStripeService)
 	}
 }
 

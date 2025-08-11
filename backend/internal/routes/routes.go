@@ -104,13 +104,16 @@ func SetupRoutes(
 	planHistoryService := services.NewPlanHistoryService(db)
 	SetupAnalyticsRoutes(admin, db, planHistoryService)
 
-	// Create admin cache service
-	analyticsService := services.NewSubscriptionAnalyticsService(db)
-	SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService)
-	SetupMasterVideoRoutes(admin, db, bunnyService)
-
 	// Initialize subscription services
 	subscriptionPlanService := services.NewSubscriptionPlanService(db)
+	subscriptionPlanStripeService := services.NewSubscriptionPlanStripeService(db, stripeService) // Add Stripe-integrated service
+
+	// Create admin cache service
+	analyticsService := services.NewSubscriptionAnalyticsService(db)
+	SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService, subscriptionPlanStripeService)
+	SetupMasterVideoRoutes(admin, db, bunnyService)
+
+	// Initialize remaining subscription services
 	subscriberService := services.NewSubscriberService(db)
 	subscriptionOffersService := services.NewSubscriptionOffersService(db)
 	subscriberHistoryService := services.NewSubscriberHistoryService(db)
@@ -118,6 +121,8 @@ func SetupRoutes(
 	// Setup subscription-related routes under admin group
 	fmt.Printf("Setting up subscription plan routes...\n")
 	SetupSubscriptionPlanRoutes(admin, db, subscriptionPlanService)
+	fmt.Printf("Setting up subscription plan Stripe integration routes...\n")
+	// Note: Stripe routes are now set up within SetupAdminStreamingRoutes
 	fmt.Printf("Setting up subscription offers routes...\n")
 	SetupSubscriptionOfferRoutes(router, db, subscriptionOffersService)
 	fmt.Printf("Setting up subscriber routes...\n")

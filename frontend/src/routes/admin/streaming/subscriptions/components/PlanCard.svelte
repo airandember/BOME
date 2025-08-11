@@ -1,9 +1,11 @@
 <script lang="ts">
 	import type { SubscriptionPlan } from '$lib/services/streaming-subscriptions';
 	import { formatDateForDisplay } from '$lib/utils/date';
+	import StripeIntegrationStatus from './StripeIntegrationStatus.svelte'; // Add Stripe status component
 
 	export let plan: SubscriptionPlan;
 	export let isOptimisticallyUpdating: (planId: string) => boolean;
+	export let showStripeStatus: boolean = true; // Add prop to control Stripe status display
 	
 	// Callback props for Svelte 5 compatibility
 	export let onEdit: (plan: SubscriptionPlan) => void;
@@ -134,6 +136,11 @@
 			</div>
 		{/if}
 	</div>
+
+	<!-- Stripe Integration Status -->
+	{#if showStripeStatus}
+		<StripeIntegrationStatus planId={plan.id} planName={plan.name} />
+	{/if}
 
 	<div class="plan-footer">
 		<div class="plan-actions">

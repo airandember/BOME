@@ -13,16 +13,19 @@
 	import SubscriptionAccordion from './components/SubscriptionAccordion.svelte';
 	import PlanCard from './components/PlanCard.svelte';
 	import PlanModal from './components/PlanModal.svelte';
+	import PlanModalWithStripe from './components/PlanModalWithStripe.svelte'; // Add Stripe-enabled modal
 	import PlanDetailsModal from './components/PlanDetailsModal.svelte';
 	import OfferModal from './components/OfferModal.svelte';
 	import OfferCard from './components/OfferCard.svelte';
 	import OfferDetailsModal from './components/OfferDetailsModal.svelte';
+	import StripeIntegrationStatus from './components/StripeIntegrationStatus.svelte'; // Add Stripe status component
 
 	// State
 	let isLoading = true;
 	let subscriptionPlans: SubscriptionPlan[] = [];
 	let subscriptionOffers: SubscriptionOffer[] = [];
 	let showCreateModal = false;
+	let showCreateStripeModal = false; // Add Stripe modal state
 	let showEditModal = false;
 	let showDeleteModal = false;
 	let selectedPlan: SubscriptionPlan | null = null;
@@ -654,7 +657,8 @@
 			</div>
 <SubscriptionHeader 
 			{subscriptionPlans} 
-			onCreateClick={() => showCreateModal = true} 
+			onCreateClick={() => showCreateModal = true}
+			onCreateWithStripeClick={() => showCreateStripeModal = true}
 		/>
 			<!-- Promoted Plans -->
 			<SubscriptionAccordion
@@ -805,6 +809,15 @@
 	mode="edit"
 	onSave={updateSubscriptionPlan}
 	onCancel={() => showEditModal = false}
+/>
+
+<!-- Stripe-enabled Plan Modal -->
+<PlanModalWithStripe
+	show={showCreateStripeModal}
+	on:planCreated={(event) => {
+		subscriptionPlans = [...subscriptionPlans, event.detail];
+		showCreateStripeModal = false;
+	}}
 />
 
 <PlanDetailsModal
