@@ -2,6 +2,9 @@
 	import { onMount } from 'svelte';
 	import { apiRequest } from '$lib/auth';
 	import CustomerSyncPanel from '../components/CustomerSyncPanel.svelte';
+	import { StripeCustomerSyncService } from '$lib/services/stripe-customer-sync';
+	import { showToast } from '$lib/toast';
+	import { goto } from '$app/navigation';
 
 	let summary: any = null;
 	let loading = true;
@@ -11,6 +14,10 @@
 
 	$: customers = data?.customers || [];
 	$: customersCount = data?.customers_count || 0;
+
+	// Customer sync state
+	let syncingCustomers = new Set<string>();
+	let customerSyncStatus = new Map<string, any>();
 
 	// Debug logging
 	$: {
@@ -26,6 +33,11 @@
 		console.log('========================');
 	}
 
+	// Automatically check sync status when customers data changes
+	$: if (customers.length > 0 && !loading) {
+		checkAllCustomerSyncStatus();
+	}
+
 	onMount(async () => {
 		if (data) {
 			summary = data;
@@ -33,7 +45,21 @@
 		} else {
 			await fetchSummary();
 		}
+		
+		// Check sync status for all customers with local IDs
+		if (customers.length > 0) {
+			await checkAllCustomerSyncStatus();
+		}
 	});
+
+	// Check sync status for all customers
+	async function checkAllCustomerSyncStatus() {
+		const customersWithLocalIds = customers.filter((c: any) => c.Metadata?.local_customer_id);
+		
+		for (const customer of customersWithLocalIds) {
+			await getCustomerSyncStatus(customer.ID);
+		}
+	}
 
 	async function fetchSummary() {
 		try {
@@ -51,6 +77,105 @@
 			console.error(err);
 		} finally {
 			loading = false;
+		}
+	}
+
+	// Sync individual customer to Stripe
+	async function syncCustomerToStripe(customerId: string) {
+		if (syncingCustomers.has(customerId)) return;
+
+		try {
+			syncingCustomers.add(customerId);
+			
+			// Get local customer ID from metadata if available
+			const customer = customers.find((c: any) => c.ID === customerId);
+			const localCustomerId = customer?.Metadata?.local_customer_id;
+			
+			if (!localCustomerId) {
+				showToast('No local customer ID found for this Stripe customer', 'warning');
+				return;
+			}
+
+			const result = await StripeCustomerSyncService.syncCustomerToStripe(parseInt(localCustomerId));
+			
+			// Update the customer status in-place
+			customerSyncStatus.set(customerId, {
+				action: result.action,
+				message: result.message,
+				stripe_id: customerId,
+				last_sync_at: new Date().toISOString()
+			});
+			
+			showToast(`Customer synced: ${result.message}`, 'success');
+		} catch (error) {
+			console.error('Failed to sync customer:', error);
+			showToast('Failed to sync customer', 'error');
+			
+			// Update status to show error
+			customerSyncStatus.set(customerId, {
+				action: 'error',
+				message: 'Sync failed',
+				stripe_id: customerId,
+				last_sync_at: new Date().toISOString()
+			});
+		} finally {
+			syncingCustomers.delete(customerId);
+		}
+	}
+
+	// Get sync status for a customer - automatically determined from existing data
+	async function getCustomerSyncStatus(customerId: string) {
+		if (customerSyncStatus.has(customerId)) {
+			return customerSyncStatus.get(customerId);
+		}
+
+		const customer = customers.find((c: any) => c.ID === customerId);
+		
+		if (!customer) {
+			customerSyncStatus.set(customerId, { action: 'not_found', message: 'Customer not found', stripe_id: customerId, last_sync_at: null });
+			return customerSyncStatus.get(customerId);
+		}
+		
+		// If customer has local_customer_id in metadata, they are synced
+		if (customer.Metadata?.local_customer_id) {
+			customerSyncStatus.set(customerId, {
+				action: 'synced',
+				message: 'Customer is synced with local database',
+				stripe_id: customer.ID,
+				last_sync_at: customer.CreatedAt
+			});
+		} else {
+			// If customer exists in Stripe but no local ID, they are not synced
+			customerSyncStatus.set(customerId, {
+				action: 'not_synced',
+				message: 'Customer exists in Stripe but not linked to local database',
+				stripe_id: customer.ID,
+				last_sync_at: null
+			});
+		}
+		return customerSyncStatus.get(customerId);
+	}
+
+	// Get sync status display info
+	function getSyncStatusDisplay(customerId: string) {
+		const status = customerSyncStatus.get(customerId);
+		if (!status) return { text: 'Unknown', class: 'status-unknown' };
+		
+		switch (status.action) {
+			case 'synced':
+				return { text: '✅ Synced', class: 'status-synced' };
+			case 'created':
+				return { text: '🆕 Created', class: 'status-created' };
+			case 'updated':
+				return { text: '🔄 Updated', class: 'status-updated' };
+			case 'not_synced':
+				return { text: '❌ Not Synced', class: 'status-not-synced' };
+			case 'error':
+				return { text: '⚠️ Error', class: 'status-error' };
+			case 'not_found':
+				return { text: '❓ Not Found', class: 'status-not-found' };
+			default:
+				return { text: '❓ Unknown', class: 'status-unknown' };
 		}
 	}
 
@@ -114,6 +239,53 @@
 		if (!summary.payment_intents) return [];
 		return summary.payment_intents.filter((pi: any) => pi.CustomerID === customerId);
 	}
+
+	// Add user from Stripe customer data
+	function addUserFromStripe(customer: any) {
+		if (!customer.ID) {
+			showToast('Invalid customer ID', 'error');
+			return;
+		}
+
+		// Parse name into first and last name if possible
+		let firstName = '';
+		let lastName = '';
+		if (customer.Name) {
+			const nameParts = customer.Name.trim().split(' ');
+			if (nameParts.length === 1) {
+				firstName = nameParts[0];
+			} else if (nameParts.length >= 2) {
+				firstName = nameParts[0];
+				lastName = nameParts.slice(1).join(' ');
+			}
+		}
+
+		// Prepare customer data for user creation
+		const customerData = {
+			stripe_customer_id: customer.ID,
+			email: customer.Email || '',
+			first_name: firstName,
+			last_name: lastName,
+			full_name: customer.Name || '',
+			created_at: customer.CreatedAt || new Date().toISOString(),
+			metadata: customer.Metadata || {},
+			source: 'stripe_import'
+		};
+
+		// Navigate to users page with pre-filled data
+		const queryParams = new URLSearchParams({
+			stripe_customer_id: customer.ID,
+			email: customerData.email,
+			first_name: customerData.first_name,
+			last_name: customerData.last_name,
+			full_name: customerData.full_name,
+			created_at: customerData.created_at,
+			source: customerData.source,
+			metadata: JSON.stringify(customerData.metadata)
+		});
+
+		goto(`/admin/users/add?${queryParams.toString()}`);
+	}
 </script>
 
 <div class="customers-page">
@@ -166,6 +338,7 @@
 						<th>Created</th>
 						<th>Local ID</th>
 						<th>Role</th>
+						<th>Sync Status</th>
 						<th>Metadata</th>
 						<th>Actions</th>
 					</tr>
@@ -200,6 +373,25 @@
 								</span>
 							</td>
 							<td>
+								{#if customer.Metadata?.local_customer_id}
+									{@const statusDisplay = getSyncStatusDisplay(customer.ID)}
+									{@const status = customerSyncStatus.get(customer.ID)}
+									<span 
+										class="sync-status {statusDisplay.class}"
+										title="{status?.message || 'Unknown status'}"
+									>
+										{statusDisplay.text}
+									</span>
+									{#if status?.last_sync_at}
+										<div class="last-sync-info">
+											Last sync: {new Date(status.last_sync_at).toLocaleDateString()}
+										</div>
+									{/if}
+								{:else}
+									<span class="sync-status status-no-local">No Local ID</span>
+								{/if}
+							</td>
+							<td>
 								{#if customer.Metadata && Object.keys(customer.Metadata).length > 0}
 									<details class="metadata-details">
 										<summary class="metadata-summary">📋 View</summary>
@@ -218,12 +410,28 @@
 							</td>
 							<td>
 								<div class="customer-actions">
-									<button class="btn btn-sm btn-secondary">
-										Edit
-									</button>
-									<button class="btn btn-sm btn-primary">
-										Sync
-									</button>
+									{#if customer.Metadata?.local_customer_id}
+										<button 
+											class="btn btn-sm btn-primary"
+											on:click={() => syncCustomerToStripe(customer.ID)}
+											disabled={syncingCustomers.has(customer.ID)}
+										>
+											{#if syncingCustomers.has(customer.ID)}
+												<div class="loading-spinner"></div>
+												Syncing...
+											{:else}
+												🔄 Sync
+											{/if}
+										</button>
+									{:else}
+										<button 
+											class="btn btn-sm btn-success"
+											on:click={() => addUserFromStripe(customer)}
+											title="Create new user with Stripe customer data"
+										>
+											➕ Add User
+										</button>
+									{/if}
 								</div>
 							</td>
 						</tr>
@@ -311,6 +519,11 @@
 		gap: var(--space-xs);
 	}
 
+	.btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
 	.btn-primary {
 		background: var(--primary);
 		color: white;
@@ -318,6 +531,16 @@
 
 	.btn-primary:hover {
 		background: var(--primary-hover);
+		transform: translateY(-1px);
+	}
+
+	.btn-success {
+		background: var(--success, #059669);
+		color: white;
+	}
+
+	.btn-success:hover {
+		background: var(--success-hover, #047857);
 		transform: translateY(-1px);
 	}
 
@@ -499,6 +722,90 @@
 		color: var(--text, #111827);
 		font-family: var(--font-mono, monospace);
 		word-break: break-all;
+	}
+
+	.sync-status {
+		padding: var(--space-xs, 0.25rem) var(--space-sm, 0.5rem);
+		border-radius: var(--radius-sm, 0.25rem);
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		display: inline-block;
+		text-align: center;
+		min-width: 80px;
+	}
+
+	.sync-status.status-synced {
+		background-color: #d1fae5;
+		color: #059669;
+	}
+
+	.sync-status.status-created {
+		background-color: #dbeafe;
+		color: #2563eb;
+	}
+
+	.sync-status.status-updated {
+		background-color: #fef3c7;
+		color: #d97706;
+	}
+
+	.sync-status.status-not-synced {
+		background-color: #fee2e2;
+		color: #dc2626;
+	}
+
+	.sync-status.status-error {
+		background-color: #fecaca;
+		color: #dc2626;
+	}
+
+	.sync-status.status-unknown {
+		background-color: #f3f4f6;
+		color: #6b7280;
+	}
+
+	.sync-status.status-no-local {
+		background-color: #fef3c7;
+		color: #d97706;
+	}
+
+	.sync-status.status-not-found {
+		background-color: #f3f4f6;
+		color: #6b7280;
+	}
+
+	.loading-spinner {
+		width: 12px;
+		height: 12px;
+		border: 2px solid transparent;
+		border-top: 2px solid currentColor;
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+		margin-right: 6px;
+	}
+
+	@keyframes spin {
+		0% { transform: rotate(0deg); }
+		100% { transform: rotate(360deg); }
+	}
+
+	.last-sync-info {
+		font-size: 0.7rem;
+		color: var(--text-muted, #6b7280);
+		margin-top: var(--space-xs, 0.25rem);
+		font-style: italic;
+	}
+
+	.btn-outline {
+		background: transparent;
+		color: var(--text-muted, #6b7280);
+		border: 1px solid var(--border, #e5e7eb);
+	}
+
+	.btn-outline:hover:not(:disabled) {
+		background: var(--bg-secondary, #f9fafb);
+		color: var(--text, #111827);
 	}
 
 	@media (max-width: 768px) {
