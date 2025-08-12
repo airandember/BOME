@@ -218,12 +218,12 @@ func (s *StripeCustomerSyncService) SyncAllCustomers() (*CustomerSyncStats, erro
 
 // GetSyncStatus returns the sync status for a customer
 func (s *StripeCustomerSyncService) GetSyncStatus(customerID int) (*CustomerSyncResult, error) {
-	customer, err := s.db.GetUserByID(customerID)
+	localCustomer, err := s.db.GetUserByID(customerID)
 	if err != nil {
 		return nil, err
 	}
 
-	if !customer.StripeCustomerID.Valid || customer.StripeCustomerID.String == "" {
+	if !localCustomer.StripeCustomerID.Valid || localCustomer.StripeCustomerID.String == "" {
 		return &CustomerSyncResult{
 			CustomerID: customerID,
 			Action:     "not_synced",
@@ -233,11 +233,11 @@ func (s *StripeCustomerSyncService) GetSyncStatus(customerID int) (*CustomerSync
 	}
 
 	// Check if Stripe customer still exists
-	_, err = customer.Get(customer.StripeCustomerID.String, nil)
+	_, err = customer.Get(localCustomer.StripeCustomerID.String, nil)
 	if err != nil {
 		return &CustomerSyncResult{
 			CustomerID: customerID,
-			StripeID:   customer.StripeCustomerID.String,
+			StripeID:   localCustomer.StripeCustomerID.String,
 			Action:     "stripe_not_found",
 			Message:    "Stripe customer not found",
 			LastSyncAt: time.Now(),
@@ -246,7 +246,7 @@ func (s *StripeCustomerSyncService) GetSyncStatus(customerID int) (*CustomerSync
 
 	return &CustomerSyncResult{
 		CustomerID: customerID,
-		StripeID:   customer.StripeCustomerID.String,
+		StripeID:   localCustomer.StripeCustomerID.String,
 		Action:     "synced",
 		Message:    "Customer is in sync with Stripe",
 		LastSyncAt: time.Now(),

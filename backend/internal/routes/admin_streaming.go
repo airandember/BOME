@@ -166,6 +166,10 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 
 		// Setup Stripe-integrated subscription offers routes
 		SetupSubscriptionOffersStripeRoutes(streaming, stripeService, subscriptionOffersStripeService)
+
+		// Setup Stripe customer sync routes
+		customerSyncService := services.NewStripeCustomerSyncService(stripeService, db)
+		SetupStripeCustomerSyncRoutes(streaming.Group("/stripe"), customerSyncService)
 	}
 }
 

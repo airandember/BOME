@@ -157,59 +157,79 @@
 			<p>You haven't created any customers yet. Create your first customer to start managing customer data.</p>
 		</div>
 	{:else}
-		<div class="customers-grid">
-			{#each customers as customer}
-				<div class="customer-card">
-					<div class="customer-header">
-						<div class="customer-name">
-							<h3>{customer.Name || 'Unnamed Customer'}</h3>
-							<span class="customer-id">#{customer.ID.slice(-8)}</span>
-						</div>
-						<div class="customer-status">
-							● Active
-						</div>
-					</div>
-
-					<div class="customer-details">
-						<div class="detail-row">
-							<span class="detail-label">Email:</span>
-							<span class="detail-value">{customer.Email}</span>
-						</div>
-
-						<div class="detail-row">
-							<span class="detail-label">Created:</span>
-							<span class="detail-value">{new Date(customer.CreatedAt).toLocaleDateString()}</span>
-						</div>
-
-						{#if customer.Metadata && Object.keys(customer.Metadata).length > 0}
-							<div class="detail-row">
-								<span class="detail-label">Local ID:</span>
-								<span class="detail-value">{customer.Metadata.local_customer_id || 'N/A'}</span>
-							</div>
-							<div class="detail-row">
-								<span class="detail-label">Role:</span>
-								<span class="detail-value">{customer.Metadata.role || 'N/A'}</span>
-							</div>
-						{/if}
-					</div>
-
-					{#if Object.keys(customer.Metadata || {}).length > 0}
-						<div class="customer-metadata">
-							<details>
-								<summary class="metadata-summary">📋 View Metadata</summary>
-								<div class="metadata-content">
-									{#each Object.entries(customer.Metadata || {}) as [key, value]}
-										<div class="metadata-item">
-											<span class="metadata-key">{key}:</span>
-											<span class="metadata-value">{value}</span>
-										</div>
-									{/each}
+		<div class="customers-table-container">
+			<table class="customers-table">
+				<thead>
+					<tr>
+						<th>Customer</th>
+						<th>Email</th>
+						<th>Created</th>
+						<th>Local ID</th>
+						<th>Role</th>
+						<th>Metadata</th>
+						<th>Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each customers as customer}
+						<tr>
+							<td>
+								<div class="customer-info">
+									<div class="customer-name">
+										<h4>{customer.Name || 'Unnamed Customer'}</h4>
+										<span class="customer-id">#{customer.ID.slice(-8)}</span>
+									</div>
 								</div>
-							</details>
-						</div>
-					{/if}
-				</div>
-			{/each}
+							</td>
+							<td>
+								<span class="customer-email">{customer.Email}</span>
+							</td>
+							<td>
+								<span class="customer-created">
+									{new Date(customer.CreatedAt).toLocaleDateString()}
+								</span>
+							</td>
+							<td>
+								<span class="local-id">
+									{customer.Metadata?.local_customer_id || 'N/A'}
+								</span>
+							</td>
+							<td>
+								<span class="customer-role">
+									{customer.Metadata?.role || 'N/A'}
+								</span>
+							</td>
+							<td>
+								{#if customer.Metadata && Object.keys(customer.Metadata).length > 0}
+									<details class="metadata-details">
+										<summary class="metadata-summary">📋 View</summary>
+										<div class="metadata-content">
+											{#each Object.entries(customer.Metadata || {}) as [key, value]}
+												<div class="metadata-item">
+													<span class="metadata-key">{key}:</span>
+													<span class="metadata-value">{value}</span>
+												</div>
+											{/each}
+										</div>
+									</details>
+								{:else}
+									<span class="no-metadata">No metadata</span>
+								{/if}
+							</td>
+							<td>
+								<div class="customer-actions">
+									<button class="btn btn-sm btn-secondary">
+										Edit
+									</button>
+									<button class="btn btn-sm btn-primary">
+										Sync
+									</button>
+								</div>
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
 		</div>
 	{/if}
 </div>
@@ -340,118 +360,144 @@
 		max-width: 500px;
 	}
 
-	.customers-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-		gap: var(--space-lg);
+	.customers-table-container {
+		overflow-x: auto;
+		border-radius: var(--radius-lg, 0.5rem);
+		border: 1px solid var(--border, #e5e7eb);
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 	}
 
-	.customer-card {
-		background: var(--surface);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		padding: var(--space-lg);
-		transition: all 0.2s ease;
+	.customers-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.875rem;
+		color: var(--text, #111827);
 	}
 
-	.customer-card:hover {
-		transform: translateY(-2px);
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+	.customers-table th,
+	.customers-table td {
+		padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+		text-align: left;
+		border-bottom: 1px solid var(--border, #e5e7eb);
 	}
 
-	.customer-header {
+	.customers-table th {
+		background-color: var(--bg-secondary, #f9fafb);
+		font-weight: 600;
+		color: var(--text-muted, #6b7280);
+		text-transform: uppercase;
+		font-size: 0.75rem;
+		letter-spacing: 0.05em;
+	}
+
+	.customers-table tbody tr:hover {
+		background-color: var(--bg-hover, #f3f4f6);
+	}
+
+	.customers-table tbody tr:nth-child(even) {
+		background-color: var(--bg-secondary, #f9fafb);
+	}
+
+	.customers-table tbody tr:nth-child(even):hover {
+		background-color: var(--bg-hover, #f3f4f6);
+	}
+
+	.customer-info {
 		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		margin-bottom: var(--space-md);
+		align-items: center;
+		gap: var(--space-sm);
 	}
 
-	.customer-name h3 {
-		margin: 0 0 var(--space-xs) 0;
-		color: var(--text);
-		font-size: 1.25rem;
+	.customer-name h4 {
+		margin: 0 0 var(--space-xs, 0.25rem) 0;
+		color: var(--text, #111827);
+		font-size: 1rem;
 		font-weight: 600;
 	}
 
 	.customer-id {
 		font-size: 0.75rem;
-		color: var(--text-muted);
-		font-family: var(--font-mono);
+		color: var(--text-muted, #6b7280);
+		font-family: var(--font-mono, monospace);
 	}
 
-	.customer-status {
+	.customer-email {
+		color: var(--text-muted, #6b7280);
 		font-size: 0.875rem;
-		font-weight: 600;
-		color: var(--success);
+	}
+
+	.customer-created {
+		color: var(--text-muted, #6b7280);
+		font-size: 0.875rem;
+	}
+
+	.local-id {
+		color: var(--text-muted, #6b7280);
+		font-size: 0.875rem;
+	}
+
+	.customer-role {
+		color: var(--text-muted, #6b7280);
+		font-size: 0.875rem;
+	}
+
+	.no-metadata {
+		color: var(--text-muted, #6b7280);
+		font-size: 0.875rem;
+	}
+
+	.customer-actions {
 		display: flex;
-		align-items: center;
-		gap: var(--space-xs);
+		gap: var(--space-xs, 0.25rem);
 	}
 
-	.customer-details {
-		margin-bottom: var(--space-md);
+	.btn-sm {
+		padding: var(--space-xs, 0.25rem) var(--space-md, 1rem);
+		font-size: 0.75rem;
 	}
 
-	.detail-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: var(--space-sm);
-		padding: var(--space-xs) 0;
-	}
-
-	.detail-label {
-		color: var(--text-muted);
-		font-size: 0.875rem;
-		font-weight: 500;
-	}
-
-	.detail-value {
-		color: var(--text);
-		font-size: 0.875rem;
-		font-weight: 600;
-	}
-
-	.customer-metadata {
-		border-top: 1px solid var(--border);
-		padding-top: var(--space-md);
+	.metadata-details {
+		border: 1px solid var(--border, #e5e7eb);
+		border-radius: var(--radius-md, 0.375rem);
+		padding: var(--space-sm, 0.5rem);
+		background-color: var(--bg-secondary, #f9fafb);
 	}
 
 	.metadata-summary {
 		cursor: pointer;
 		font-weight: 600;
-		color: var(--text-muted);
+		color: var(--text-muted, #6b7280);
 		user-select: none;
 		font-size: 0.875rem;
 	}
 
 	.metadata-summary:hover {
-		color: var(--text);
+		color: var(--text, #111827);
 	}
 
 	.metadata-content {
-		margin-top: var(--space-sm);
-		padding: var(--space-sm);
-		background: var(--bg-secondary);
-		border-radius: var(--radius-md);
+		margin-top: var(--space-sm, 0.5rem);
+		padding: var(--space-sm, 0.5rem);
+		background: var(--bg-primary, #ffffff);
+		border-radius: var(--radius-sm, 0.25rem);
 	}
 
 	.metadata-item {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: var(--space-xs);
+		margin-bottom: var(--space-xs, 0.25rem);
 		font-size: 0.8125rem;
 	}
 
 	.metadata-key {
-		color: var(--text-muted);
+		color: var(--text-muted, #6b7280);
 		font-weight: 500;
 	}
 
 	.metadata-value {
-		color: var(--text);
-		font-family: var(--font-mono);
+		color: var(--text, #111827);
+		font-family: var(--font-mono, monospace);
 		word-break: break-all;
 	}
 
@@ -466,12 +512,51 @@
 			justify-content: center;
 		}
 
-		.customers-grid {
-			grid-template-columns: 1fr;
+		.customers-table {
+			display: block;
+			overflow-x: auto;
 		}
 
-		.customer-card {
-			padding: var(--space-md);
+		.customers-table th,
+		.customers-table td {
+			display: block;
+			width: 100%;
+			text-align: right;
+			padding-left: 50%;
+			position: relative;
+		}
+
+		.customers-table th:before,
+		.customers-table td:before {
+			content: attr(data-label);
+			position: absolute;
+			left: 0;
+			width: 50%;
+			padding-left: var(--space-md);
+			font-weight: 600;
+			text-align: left;
+			color: var(--text-muted);
+		}
+
+		.customer-info {
+			flex-direction: column;
+			align-items: flex-start;
+			text-align: left;
+		}
+
+		.customer-name h4 {
+			margin-bottom: var(--space-xs);
+		}
+
+		.customer-actions {
+			justify-content: flex-start;
+			flex-wrap: wrap;
+			gap: var(--space-xs);
+		}
+
+		.btn-sm {
+			flex: 1;
+			min-width: 100px;
 		}
 	}
 </style> 

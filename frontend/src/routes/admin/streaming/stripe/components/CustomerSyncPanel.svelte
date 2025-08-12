@@ -145,204 +145,256 @@
 </script>
 
 <div class="customer-sync-panel">
-	<div class="panel-header">
-		<h3>🔄 Customer Sync</h3>
-		<p>Keep customer data synchronized between your database and Stripe</p>
-	</div>
+	<details class="accordion">
+		<summary class="accordion-header">
+			<h3>🔄 Customer Sync</h3>
+			<span class="accordion-icon">▼</span>
+		</summary>
+		<div class="accordion-content">
+			<p>Keep customer data synchronized between your database and Stripe</p>
 
-	{#if customerId}
-		<!-- Individual Customer Sync -->
-		<div class="sync-section">
-			<h4>Sync Customer: {customerEmail}</h4>
-			
-			{#if loading}
-				<div class="loading">Loading sync status...</div>
-			{:else if syncStatus}
-				<div class="sync-status">
-					<div class="status-indicator" style="color: {actionColor}">
-						● {actionDescription}
-					</div>
-					{#if syncStatus.stripe_id}
-						<div class="stripe-id">Stripe ID: {syncStatus.stripe_id}</div>
-					{/if}
-					{#if syncStatus.last_sync_at}
-						<div class="last-sync">Last sync: {new Date(syncStatus.last_sync_at).toLocaleString()}</div>
-					{/if}
-					{#if syncStatus.error}
-						<div class="sync-error">Error: {syncStatus.error}</div>
-					{/if}
-				</div>
-
-				<div class="sync-actions">
-					<button 
-						class="btn btn-primary" 
-						on:click={syncToStripe}
-						disabled={syncing}
-					>
-						{syncing ? '🔄 Syncing...' : '📤 Sync to Stripe'}
-					</button>
+			{#if customerId}
+				<!-- Individual Customer Sync -->
+				<div class="sync-section">
+					<h4>Sync Customer: {customerEmail}</h4>
 					
-					{#if syncStatus.stripe_id}
-						<button 
-							class="btn btn-secondary" 
-							on:click={syncFromStripe}
-							disabled={syncing}
-						>
-							{syncing ? '🔄 Syncing...' : '📥 Sync from Stripe'}
-						</button>
-					{/if}
-				</div>
-			{/if}
-		</div>
-	{/if}
-
-	<!-- Global Sync -->
-	<div class="sync-section">
-		<h4>Global Customer Sync</h4>
-		<p>Sync all customers between your database and Stripe</p>
-		
-		<button 
-			class="btn btn-warning" 
-			on:click={syncAllCustomers}
-			disabled={syncing}
-		>
-			{syncing ? '🔄 Syncing All...' : '🔄 Sync All Customers'}
-		</button>
-
-		{#if lastSyncStats}
-			<div class="sync-stats">
-				<h5>Last Sync Results</h5>
-				<div class="stats-grid">
-					<div class="stat">
-						<span class="stat-value">{lastSyncStats.total_processed}</span>
-						<span class="stat-label">Total</span>
-					</div>
-					<div class="stat">
-						<span class="stat-value">{lastSyncStats.created}</span>
-						<span class="stat-label">Created</span>
-					</div>
-					<div class="stat">
-						<span class="stat-value">{lastSyncStats.updated}</span>
-						<span class="stat-label">Updated</span>
-					</div>
-					<div class="stat">
-						<span class="stat-value">{lastSyncStats.errors}</span>
-						<span class="stat-label">Errors</span>
-					</div>
-				</div>
-				<div class="sync-duration">Duration: {lastSyncStats.duration}</div>
-			</div>
-		{/if}
-	</div>
-
-	<!-- Active Subscribers Sync -->
-	<div class="sync-section">
-		<h4>🟢 Active Subscribers Sync</h4>
-		<p>Sync only your active subscribers to Stripe. This ensures your paying customers are always up-to-date.</p>
-		
-		<div class="active-subscribers-info">
-			{#if activeSubscribersLoading}
-				<div class="loading">Loading active subscribers...</div>
-			{:else if activeSubscribersCount > 0}
-				<div class="subscribers-summary">
-					<span class="subscribers-count">{activeSubscribersCount} active subscribers found</span>
-					<button 
-						class="btn btn-success" 
-						on:click={syncActiveSubscribersToStripe}
-						disabled={activeSubscribersSyncing}
-					>
-						{activeSubscribersSyncing ? '🔄 Syncing...' : '🟢 Sync Active Subscribers to Stripe'}
-					</button>
-				</div>
-			{:else}
-				<div class="no-subscribers">
-					<span>No active subscribers loaded</span>
-					<button 
-						class="btn btn-secondary" 
-						on:click={loadActiveSubscribers}
-					>
-						📊 Load Active Subscribers
-					</button>
-				</div>
-			{/if}
-		</div>
-
-		{#if activeSubscribersSyncStats}
-			<div class="sync-stats">
-				<h5>Active Subscribers Sync Results</h5>
-				<div class="stats-grid">
-					<div class="stat">
-						<span class="stat-value">{activeSubscribersSyncStats.total_processed}</span>
-						<span class="stat-label">Total</span>
-					</div>
-					<div class="stat">
-						<span class="stat-value">{activeSubscribersSyncStats.created}</span>
-						<span class="stat-label">Created</span>
-					</div>
-					<div class="stat">
-						<span class="stat-value">{activeSubscribersSyncStats.updated}</span>
-						<span class="stat-label">Updated</span>
-					</div>
-					<div class="stat">
-						<span class="stat-value">{activeSubscribersSyncStats.errors}</span>
-						<span class="stat-label">Errors</span>
-					</div>
-				</div>
-				<div class="sync-duration">Duration: {activeSubscribersSyncStats.duration}</div>
-			</div>
-		{/if}
-
-		{#if activeSubscribersCount > 0 && !activeSubscribersSyncStats}
-			<div class="subscribers-preview">
-				<h5>Active Subscribers Preview</h5>
-				<div class="subscribers-list">
-					{#each activeSubscribers.slice(0, 5) as subscriber}
-						<div class="subscriber-item">
-							<span class="subscriber-name">{subscriber.first_name} {subscriber.last_name}</span>
-							<span class="subscriber-email">{subscriber.email}</span>
-							<span class="subscriber-plan">{subscriber.plan_name || 'No Plan'}</span>
+					{#if loading}
+						<div class="loading">Loading sync status...</div>
+					{:else if syncStatus}
+						<div class="sync-status">
+							<div class="status-indicator" style="color: {actionColor}">
+								● {actionDescription}
+							</div>
+							{#if syncStatus.stripe_id}
+								<div class="stripe-id">Stripe ID: {syncStatus.stripe_id}</div>
+							{/if}
+							{#if syncStatus.last_sync_at}
+								<div class="last-sync">Last sync: {new Date(syncStatus.last_sync_at).toLocaleString()}</div>
+							{/if}
+							{#if syncStatus.error}
+								<div class="sync-error">Error: {syncStatus.error}</div>
+							{/if}
 						</div>
-					{/each}
-					{#if activeSubscribersCount > 5}
-						<div class="subscriber-item more">
-							<span>... and {activeSubscribersCount - 5} more</span>
+
+						<div class="sync-actions">
+							<button 
+								class="btn btn-primary" 
+								on:click={syncToStripe}
+								disabled={syncing}
+							>
+								{syncing ? '🔄 Syncing...' : '📤 Sync to Stripe'}
+							</button>
+							
+							{#if syncStatus.stripe_id}
+								<button 
+									class="btn btn-secondary" 
+									on:click={syncFromStripe}
+									disabled={syncing}
+								>
+									{syncing ? '🔄 Syncing...' : '📥 Sync from Stripe'}
+								</button>
+							{/if}
 						</div>
 					{/if}
 				</div>
-			</div>
-		{/if}
-	</div>
+			{/if}
 
-	<!-- Sync Info -->
-	<div class="sync-info">
-		<h4>How It Works</h4>
-		<ul>
-			<li><strong>Sync to Stripe:</strong> Creates or updates customer in Stripe with local data</li>
-			<li><strong>Sync from Stripe:</strong> Updates local customer with Stripe data</li>
-			<li><strong>Global Sync:</strong> Automatically syncs all customers in both directions</li>
-			<li><strong>Metadata:</strong> Preserves local customer ID and role in Stripe metadata</li>
-		</ul>
-	</div>
+			<!-- Global Sync -->
+			<div class="sync-section">
+				<h4>Global Customer Sync</h4>
+				<p>Sync all customers between your database and Stripe</p>
+				
+				<button 
+					class="btn btn-warning" 
+					on:click={syncAllCustomers}
+					disabled={syncing}
+				>
+					{syncing ? '🔄 Syncing All...' : '🔄 Sync All Customers'}
+				</button>
+
+				{#if lastSyncStats}
+					<div class="sync-stats">
+						<h5>Last Sync Results</h5>
+						<div class="stats-grid">
+							<div class="stat">
+								<span class="stat-value">{lastSyncStats.total_processed}</span>
+								<span class="stat-label">Total</span>
+							</div>
+							<div class="stat">
+								<span class="stat-value">{lastSyncStats.created}</span>
+								<span class="stat-label">Created</span>
+							</div>
+							<div class="stat">
+								<span class="stat-value">{lastSyncStats.updated}</span>
+								<span class="stat-label">Updated</span>
+							</div>
+							<div class="stat">
+								<span class="stat-value">{lastSyncStats.errors}</span>
+								<span class="stat-label">Errors</span>
+							</div>
+						</div>
+						<div class="sync-duration">Duration: {lastSyncStats.duration}</div>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Active Subscribers Sync -->
+			<div class="sync-section">
+				<h4>🟢 Active Subscribers Sync</h4>
+				<p>Sync only your active subscribers to Stripe. This ensures your paying customers are always up-to-date.</p>
+				
+				<div class="active-subscribers-info">
+					{#if activeSubscribersLoading}
+						<div class="loading">Loading active subscribers...</div>
+					{:else if activeSubscribersCount > 0}
+						<div class="subscribers-summary">
+							<span class="subscribers-count">{activeSubscribersCount} active subscribers found</span>
+							<button 
+								class="btn btn-success" 
+								on:click={syncActiveSubscribersToStripe}
+								disabled={activeSubscribersSyncing}
+							>
+								{activeSubscribersSyncing ? '🔄 Syncing...' : '🟢 Sync Active Subscribers to Stripe'}
+							</button>
+						</div>
+					{:else}
+						<div class="no-subscribers">
+							<span>No active subscribers loaded</span>
+							<button 
+								class="btn btn-secondary" 
+								on:click={loadActiveSubscribers}
+							>
+								📊 Load Active Subscribers
+							</button>
+						</div>
+					{/if}
+				</div>
+
+				{#if activeSubscribersSyncStats}
+					<div class="sync-stats">
+						<h5>Active Subscribers Sync Results</h5>
+						<div class="stats-grid">
+							<div class="stat">
+								<span class="stat-value">{activeSubscribersSyncStats.total_processed}</span>
+								<span class="stat-label">Total</span>
+							</div>
+							<div class="stat">
+								<span class="stat-value">{activeSubscribersSyncStats.created}</span>
+								<span class="stat-label">Created</span>
+							</div>
+							<div class="stat">
+								<span class="stat-value">{activeSubscribersSyncStats.updated}</span>
+								<span class="stat-label">Updated</span>
+							</div>
+							<div class="stat">
+								<span class="stat-value">{activeSubscribersSyncStats.errors}</span>
+								<span class="stat-label">Errors</span>
+							</div>
+						</div>
+						<div class="sync-duration">Duration: {activeSubscribersSyncStats.duration}</div>
+					</div>
+				{/if}
+
+				{#if activeSubscribersCount > 0 && !activeSubscribersSyncStats}
+					<div class="subscribers-preview">
+						<h5>Active Subscribers Preview</h5>
+						<div class="subscribers-list">
+							{#each activeSubscribers.slice(0, 5) as subscriber}
+								<div class="subscriber-item">
+									<span class="subscriber-name">{subscriber.first_name} {subscriber.last_name}</span>
+									<span class="subscriber-email">{subscriber.email}</span>
+									<span class="subscriber-plan">{subscriber.plan_name || 'No Plan'}</span>
+								</div>
+							{/each}
+							{#if activeSubscribersCount > 5}
+								<div class="subscriber-item more">
+									<span>... and {activeSubscribersCount - 5} more</span>
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Sync Info -->
+			<div class="sync-info">
+				<h4>How It Works</h4>
+				<ul>
+					<li><strong>Sync to Stripe:</strong> Creates or updates customer in Stripe with local data</li>
+					<li><strong>Sync from Stripe:</strong> Updates local customer with Stripe data</li>
+					<li><strong>Global Sync:</strong> Automatically syncs all customers in both directions</li>
+					<li><strong>Metadata:</strong> Preserves local customer ID and role in Stripe metadata</li>
+				</ul>
+			</div>
+		</div>
+	</details>
 </div>
 
 <style>
 	.customer-sync-panel {
-		background: var(--surface);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
-		padding: var(--space-lg);
 		margin-bottom: var(--space-lg);
 	}
 
-	.panel-header h3 {
-		margin: 0 0 var(--space-xs) 0;
-		color: var(--text);
-		font-size: 1.25rem;
+	.accordion {
+		background: var(--surface, #ffffff);
+		border: 1px solid var(--border, #e5e7eb);
+		border-radius: var(--radius-lg, 0.5rem);
+		overflow: hidden;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 	}
 
-	.panel-header p {
+	.accordion-header {
+		padding: var(--space-lg, 1.5rem);
+		background: var(--bg-secondary, #f9fafb);
+		color: var(--text, #111827);
+		font-size: 1.1rem;
+		font-weight: 600;
+		cursor: pointer;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		transition: background-color 0.2s ease;
+		list-style: none;
+	}
+
+	.accordion-header::-webkit-details-marker {
+		display: none;
+	}
+
+	.accordion-header:hover {
+		background: var(--bg-hover, #f3f4f6);
+	}
+
+	.accordion-header:focus {
+		outline: none;
+		box-shadow: 0 0 0 2px var(--primary, #3b82f6);
+	}
+
+	.accordion-header h3 {
 		margin: 0;
-		color: var(--text-muted);
+		color: var(--text, #111827);
+		font-size: 1.25rem;
+		font-weight: 700;
+	}
+
+	.accordion-icon {
+		transition: transform 0.3s ease;
+		font-size: 1rem;
+		color: var(--text-muted, #6b7280);
+	}
+
+	.accordion[open] .accordion-icon {
+		transform: rotate(180deg);
+	}
+
+	.accordion-content {
+		padding: var(--space-lg, 1.5rem);
+		background: var(--surface, #ffffff);
+	}
+
+	.accordion-content > p:first-child {
+		margin: 0 0 var(--space-lg, 1.5rem) 0;
+		color: var(--text-muted, #6b7280);
 		font-size: 0.9rem;
 	}
 
@@ -620,6 +672,21 @@
 	}
 
 	@media (max-width: 768px) {
+		.accordion-header {
+			padding: var(--space-md, 1rem);
+			flex-direction: column;
+			gap: var(--space-sm, 0.5rem);
+			text-align: center;
+		}
+
+		.accordion-header h3 {
+			font-size: 1.1rem;
+		}
+
+		.accordion-content {
+			padding: var(--space-md, 1rem);
+		}
+
 		.sync-actions {
 			flex-direction: column;
 		}
@@ -638,7 +705,7 @@
 		.subscriber-item {
 			flex-direction: column;
 			align-items: stretch;
-			gap: var(--space-xs);
+			gap: var(--space-xs, 0.25rem);
 			text-align: center;
 		}
 
