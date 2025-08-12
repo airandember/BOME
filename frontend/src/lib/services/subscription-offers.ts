@@ -21,6 +21,8 @@ export interface SubscriptionOffer {
 	off_target?: string;
 	off_priority: number;
 	off_auto_apply: boolean;
+	stripe_coupon_id?: string;
+	stripe_promotion_code_id?: string;
 	offer_history: Record<string, any>[];
 }
 

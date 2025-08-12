@@ -1,67 +1,21 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { apiRequest } from '$lib/auth';
-	import CustomerSyncPanel from '../components/CustomerSyncPanel.svelte';
+	export let data: any;
 
-	let summary: any = null;
-	let loading = true;
-	let error = '';
-
-	export let data: any = null;
-
-	$: customers = data?.customers || [];
-	$: customersCount = data?.customers_count || 0;
+	$: coupons = data?.coupons || [];
+	$: couponsCount = data?.coupons_count || 0;
 
 	// Debug logging
 	$: {
-		console.log('=== CUSTOMERS DEBUG ===');
+		console.log('=== COUPONS DEBUG ===');
 		console.log('Data received:', data);
-		console.log('Customers array:', customers);
-		console.log('Customers count:', customersCount);
+		console.log('Coupons array:', coupons);
+		console.log('Coupons count:', couponsCount);
 		console.log('Data type:', typeof data);
 		console.log('Data keys:', data ? Object.keys(data) : 'No data');
-		console.log('Customers key exists:', data?.customers ? 'Yes' : 'No');
-		console.log('Customers key type:', data?.customers ? typeof data.customers : 'N/A');
-		console.log('Customers is array:', Array.isArray(data?.customers));
-		console.log('========================');
-	}
-
-	onMount(async () => {
-		if (data) {
-			summary = data;
-			loading = false;
-		} else {
-			await fetchSummary();
-		}
-	});
-
-	async function fetchSummary() {
-		try {
-			loading = true;
-			error = '';
-			const res = await apiRequest('/admin/streaming/stripe/summary');
-			if (res.ok) {
-				const data = await res.json();
-				summary = data.summary;
-			} else {
-				error = 'Failed to load customers';
-			}
-		} catch (err) {
-			error = 'Failed to load customers';
-			console.error(err);
-		} finally {
-			loading = false;
-		}
-	}
-
-	function formatDate(date: string): string {
-		return new Date(date).toLocaleDateString('en-US', {
-			year: 'numeric',
-			month: 'short',
-			day: 'numeric',
-			hour: '2-digit',
-			minute: '2-digit'
-		});
+		console.log('Coupons key exists:', data?.coupons ? 'Yes' : 'No');
+		console.log('Coupons key type:', data?.coupons ? typeof data.coupons : 'N/A');
+		console.log('Coupons is array:', Array.isArray(data?.coupons));
+		console.log('====================');
 	}
 
 	function formatCurrency(amount: number, currency: string = 'usd') {
@@ -104,36 +58,26 @@
 	function getStatusText(valid: boolean) {
 		return valid ? 'Active' : 'Inactive';
 	}
-
-	function getCustomerSubscriptions(customerId: string) {
-		if (!summary.subscriptions) return [];
-		return summary.subscriptions.filter((sub: any) => sub.CustomerID === customerId);
-	}
-
-	function getCustomerPayments(customerId: string) {
-		if (!summary.payment_intents) return [];
-		return summary.payment_intents.filter((pi: any) => pi.CustomerID === customerId);
-	}
 </script>
 
-<div class="customers-page">
+<div class="coupons-page">
 	<div class="page-header">
 		<div class="header-content">
-			<h1>👥 Customers</h1>
-			<p>Manage customer data and synchronization with Stripe</p>
+			<h1>🎟️ Coupons</h1>
+			<p>Manage discount coupons and promotional codes</p>
 		</div>
 		<div class="header-stats">
 			<div class="stat-card">
-				<span class="stat-value">{customersCount}</span>
-				<span class="stat-label">Total Customers</span>
+				<span class="stat-value">{couponsCount}</span>
+				<span class="stat-label">Total Coupons</span>
 			</div>
 			<div class="stat-card">
-				<span class="stat-value">{customers.filter((c: any) => c.Metadata && Object.keys(c.Metadata).length > 0).length}</span>
-				<span class="stat-label">With Metadata</span>
-			</div>
-			<div class="stat-card">
-				<span class="stat-value">{customers.filter((c: any) => c.CreatedAt).length}</span>
+				<span class="stat-value">{coupons.filter((c: any) => c.Valid).length}</span>
 				<span class="stat-label">Active</span>
+			</div>
+			<div class="stat-card">
+				<span class="stat-value">{coupons.filter((c: any) => c.TimesRedeemed > 0).length}</span>
+				<span class="stat-label">Used</span>
 			</div>
 		</div>
 		
@@ -142,63 +86,68 @@
 				🔄 Refresh Page
 			</button>
 			<button class="btn btn-primary">
-				➕ Create Customer
+				➕ Create Coupon
 			</button>
 		</div>
 	</div>
 
-	<!-- Customer Sync Panel -->
-	<CustomerSyncPanel customerId={null} customerEmail="" />
-
-	{#if customers.length === 0}
+	{#if coupons.length === 0}
 		<div class="empty-state">
-			<div class="empty-icon">👥</div>
-			<h3>No Customers Found</h3>
-			<p>You haven't created any customers yet. Create your first customer to start managing customer data.</p>
+			<div class="empty-icon">🎟️</div>
+			<h3>No Coupons Found</h3>
+			<p>You haven't created any coupons yet. Create your first coupon to start offering discounts to customers.</p>
 		</div>
 	{:else}
-		<div class="customers-grid">
-			{#each customers as customer}
-				<div class="customer-card">
-					<div class="customer-header">
-						<div class="customer-name">
-							<h3>{customer.Name || 'Unnamed Customer'}</h3>
-							<span class="customer-id">#{customer.ID.slice(-8)}</span>
+		<div class="coupons-grid">
+			{#each coupons as coupon}
+				<div class="coupon-card">
+					<div class="coupon-header">
+						<div class="coupon-name">
+							<h3>{coupon.Name || 'Unnamed Coupon'}</h3>
+							<span class="coupon-id">#{coupon.ID.slice(-8)}</span>
 						</div>
-						<div class="customer-status">
-							● Active
+						<div class="coupon-status" style="color: {getStatusColor(coupon.Valid)}">
+							● {getStatusText(coupon.Valid)}
 						</div>
 					</div>
 
-					<div class="customer-details">
+					<div class="coupon-details">
 						<div class="detail-row">
-							<span class="detail-label">Email:</span>
-							<span class="detail-value">{customer.Email}</span>
+							<span class="detail-label">Discount:</span>
+							<span class="detail-value discount">
+								{getDiscountDisplay(coupon)}
+							</span>
+						</div>
+
+						<div class="detail-row">
+							<span class="detail-label">Duration:</span>
+							<span class="detail-value">{getDurationDisplay(coupon.Duration)}</span>
+						</div>
+
+						{#if coupon.MaxRedemptions}
+							<div class="detail-row">
+								<span class="detail-label">Max Uses:</span>
+								<span class="detail-value">{coupon.MaxRedemptions}</span>
+							</div>
+						{/if}
+
+						<div class="detail-row">
+							<span class="detail-label">Times Used:</span>
+							<span class="detail-value">{coupon.TimesRedeemed}</span>
 						</div>
 
 						<div class="detail-row">
 							<span class="detail-label">Created:</span>
-							<span class="detail-value">{new Date(customer.CreatedAt).toLocaleDateString()}</span>
+							<span class="detail-value">{new Date(coupon.CreatedAt).toLocaleDateString()}</span>
 						</div>
-
-						{#if customer.Metadata && Object.keys(customer.Metadata).length > 0}
-							<div class="detail-row">
-								<span class="detail-label">Local ID:</span>
-								<span class="detail-value">{customer.Metadata.local_customer_id || 'N/A'}</span>
-							</div>
-							<div class="detail-row">
-								<span class="detail-label">Role:</span>
-								<span class="detail-value">{customer.Metadata.role || 'N/A'}</span>
-							</div>
-						{/if}
 					</div>
 
-					{#if Object.keys(customer.Metadata || {}).length > 0}
-						<div class="customer-metadata">
+					{#if Object.keys(coupon.Metadata || {}).length > 0}
+						<div class="coupon-metadata">
 							<details>
 								<summary class="metadata-summary">📋 View Metadata</summary>
 								<div class="metadata-content">
-									{#each Object.entries(customer.Metadata || {}) as [key, value]}
+									{#each Object.entries(coupon.Metadata || {}) as [key, value]}
 										<div class="metadata-item">
 											<span class="metadata-key">{key}:</span>
 											<span class="metadata-value">{value}</span>
@@ -215,7 +164,7 @@
 </div>
 
 <style>
-	.customers-page {
+	.coupons-page {
 		padding: var(--space-lg);
 	}
 
@@ -340,13 +289,13 @@
 		max-width: 500px;
 	}
 
-	.customers-grid {
+	.coupons-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
 		gap: var(--space-lg);
 	}
 
-	.customer-card {
+	.coupon-card {
 		background: var(--surface);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
@@ -354,41 +303,40 @@
 		transition: all 0.2s ease;
 	}
 
-	.customer-card:hover {
+	.coupon-card:hover {
 		transform: translateY(-2px);
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 	}
 
-	.customer-header {
+	.coupon-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: flex-start;
 		margin-bottom: var(--space-md);
 	}
 
-	.customer-name h3 {
+	.coupon-name h3 {
 		margin: 0 0 var(--space-xs) 0;
 		color: var(--text);
 		font-size: 1.25rem;
 		font-weight: 600;
 	}
 
-	.customer-id {
+	.coupon-id {
 		font-size: 0.75rem;
 		color: var(--text-muted);
 		font-family: var(--font-mono);
 	}
 
-	.customer-status {
+	.coupon-status {
 		font-size: 0.875rem;
 		font-weight: 600;
-		color: var(--success);
 		display: flex;
 		align-items: center;
 		gap: var(--space-xs);
 	}
 
-	.customer-details {
+	.coupon-details {
 		margin-bottom: var(--space-md);
 	}
 
@@ -412,7 +360,13 @@
 		font-weight: 600;
 	}
 
-	.customer-metadata {
+	.detail-value.discount {
+		color: var(--success);
+		font-size: 1rem;
+		font-weight: 700;
+	}
+
+	.coupon-metadata {
 		border-top: 1px solid var(--border);
 		padding-top: var(--space-md);
 	}
@@ -466,11 +420,11 @@
 			justify-content: center;
 		}
 
-		.customers-grid {
+		.coupons-grid {
 			grid-template-columns: 1fr;
 		}
 
-		.customer-card {
+		.coupon-card {
 			padding: var(--space-md);
 		}
 	}

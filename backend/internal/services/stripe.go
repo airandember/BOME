@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stripe/stripe-go/v74"
+	"github.com/stripe/stripe-go/v74/coupon"
 	"github.com/stripe/stripe-go/v74/customer"
 	"github.com/stripe/stripe-go/v74/invoice"
 	"github.com/stripe/stripe-go/v74/paymentintent"
@@ -1118,6 +1119,82 @@ func (s *StripeService) GetAccountSummary() (map[string]interface{}, error) {
 	summary["invoices"] = invoices
 	summary["invoices_count"] = len(invoices)
 
+	// Fetch recent coupons (first 15)
+	type couponMinimal struct {
+		ID, Name, Duration string
+		PercentOff         *float64
+		AmountOff          *int64
+		Currency           string
+		MaxRedemptions     *int64
+		TimesRedeemed      int64
+		Valid              bool
+		CreatedAt          time.Time
+		Metadata           map[string]string
+	}
+	var coupons []couponMinimal
+	{
+		log.Printf("Stripe: Starting to fetch coupons...")
+		params := &stripe.CouponListParams{}
+		params.Limit = stripe.Int64(15)
+
+		iter := coupon.List(params)
+		if iter == nil {
+			log.Printf("Stripe: Coupon iterator is nil")
+		} else {
+			log.Printf("Stripe: Coupon iterator created successfully")
+		}
+
+		couponCount := 0
+		for iter.Next() {
+			couponCount++
+			c := iter.Current().(*stripe.Coupon)
+			log.Printf("Stripe: Processing coupon %d: ID=%s, Name=%s, Valid=%v", couponCount, c.ID, c.Name, c.Valid)
+
+			var percentOff *float64
+			if c.PercentOff > 0 {
+				percentOff = stripe.Float64(float64(c.PercentOff) / 100.0) // Convert from basis points
+			}
+
+			var amountOff *int64
+			if c.AmountOff > 0 {
+				amountOff = stripe.Int64(c.AmountOff)
+			}
+
+			var currency string
+			if c.Currency != "" {
+				currency = string(c.Currency)
+			}
+
+			var maxRedemptions *int64
+			if c.MaxRedemptions > 0 {
+				maxRedemptions = stripe.Int64(c.MaxRedemptions)
+			}
+
+			coupons = append(coupons, couponMinimal{
+				ID:             c.ID,
+				Name:           c.Name,
+				Duration:       string(c.Duration),
+				PercentOff:     percentOff,
+				AmountOff:      amountOff,
+				Currency:       currency,
+				MaxRedemptions: maxRedemptions,
+				TimesRedeemed:  c.TimesRedeemed,
+				Valid:          c.Valid,
+				CreatedAt:      time.Unix(c.Created, 0),
+				Metadata:       c.Metadata,
+			})
+		}
+
+		if err := iter.Err(); err != nil {
+			log.Printf("Stripe: Error iterating coupons: %v", err)
+		}
+
+		log.Printf("Stripe: Successfully processed %d coupons", len(coupons))
+		// ignore iter.Err() to keep summary resilient
+	}
+	summary["coupons"] = coupons
+	summary["coupons_count"] = len(coupons)
+
 	// Account capabilities and limits
 	summary["environment"] = s.environment
 	summary["capabilities"] = map[string]interface{}{
@@ -1157,6 +1234,12 @@ func (s *StripeService) GetAccountSummary() (map[string]interface{}, error) {
 		"webhooks": map[string]interface{}{
 			"create": true,
 			"update": true,
+			"list":   true,
+		},
+		"coupons": map[string]interface{}{
+			"create": true,
+			"update": true,
+			"delete": true,
 			"list":   true,
 		},
 	}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { apiRequest } from '$lib/auth';
+	import CustomerSyncPanel from '../components/CustomerSyncPanel.svelte';
 
 	let summary: any = null;
 	let loading = true;
@@ -13,6 +14,7 @@
 			summary = data;
 			loading = false;
 		} else {
+			// Only fetch if no data is passed (standalone mode)
 			await fetchSummary();
 		}
 	});
@@ -111,6 +113,15 @@
 						<div class="card-label">Recent Invoices</div>
 					</div>
 				</div>
+				
+				<div class="overview-card">
+					<div class="card-icon">🎟️</div>
+					<div class="card-content">
+						<h3>Coupons</h3>
+						<div class="card-value">{summary.coupons_count || 0}</div>
+						<div class="card-label">Active Coupons</div>
+					</div>
+				</div>
 			</div>
 		</div>
 
@@ -132,7 +143,7 @@
 					<div class="stat-label">Revenue This Month</div>
 					<div class="stat-value">
 						{#if summary.invoices}
-							${(summary.invoices.filter(inv => inv.Status === 'paid').reduce((sum, inv) => sum + inv.Amount, 0) / 100).toFixed(2)}
+							${(summary.invoices.filter((inv: any) => inv.Status === 'paid').reduce((sum: any, inv: any) => sum + inv.Amount, 0) / 100).toFixed(2)}
 						{:else}
 							$0.00
 						{/if}
@@ -142,20 +153,27 @@
 				<div class="stat-item">
 					<div class="stat-label">Active Subscriptions</div>
 					<div class="stat-value">
-						{summary.subscriptions?.filter(sub => sub.Status === 'active').length || 0}
+						{summary.subscriptions?.filter((sub: any) => sub.Status === 'active').length || 0}
 					</div>
 				</div>
 				
 				<div class="stat-item">
 					<div class="stat-label">Successful Payments</div>
 					<div class="stat-value">
-						{summary.payment_intents?.filter(pi => pi.Status === 'succeeded').length || 0}
+						{summary.payment_intents?.filter((pi: any) => pi.Status === 'succeeded').length || 0}
 					</div>
 				</div>
 				
 				<div class="stat-item">
 					<div class="stat-label">Total Customers</div>
 					<div class="stat-value">{summary.customers_count || 0}</div>
+				</div>
+				
+				<div class="stat-item">
+					<div class="stat-label">Active Coupons</div>
+					<div class="stat-value">
+						{summary.coupons?.filter((c: any) => c.Valid).length || 0}
+					</div>
 				</div>
 			</div>
 		</div>
@@ -178,6 +196,11 @@
 					</div>
 				{/each}
 			</div>
+		</section>
+
+		<!-- Customer Sync Panel -->
+		<section class="customer-sync-section">
+			<CustomerSyncPanel customerId={null} customerEmail="" />
 		</section>
 	</div>
 {/if}
@@ -391,6 +414,10 @@
 	.capability-name {
 		text-transform: capitalize;
 		font-weight: 500;
+	}
+
+	.customer-sync-section {
+		margin-top: var(--space-xl);
 	}
 
 	.loading {

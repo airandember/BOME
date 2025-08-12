@@ -8,6 +8,7 @@
 	import Overview from './overview/+page.svelte';
 	import Products from './products/+page.svelte';
 	import Customers from './customers/+page.svelte';
+	import Coupons from './coupons/+page.svelte';
 	import Setup from './setup/+page.svelte';
 
 	let summary: any = null;
@@ -15,11 +16,23 @@
 	let error = '';
 	let activeTab = 'overview';
 
+	// Debug logging for data changes
+	$: {
+		console.log('=== MAIN STRIPE DEBUG ===');
+		console.log('Summary data changed:', summary);
+		console.log('Summary enabled:', summary?.enabled);
+		console.log('Coupons count:', summary?.coupons_count);
+		console.log('Coupons array length:', summary?.coupons?.length);
+		console.log('Active tab:', activeTab);
+		console.log('========================');
+	}
+
 	// Tab configuration
 	const tabs = [
 		{ id: 'overview', name: 'Overview', icon: '📊', component: Overview },
 		{ id: 'products', name: 'Products', icon: '📦', component: Products },
 		{ id: 'customers', name: 'Customers', icon: '👥', component: Customers },
+		{ id: 'coupons', name: 'Coupons', icon: '🎟️', component: Coupons },
 		{ id: 'invoices', name: 'Invoices', icon: '📄', component: null },
 		{ id: 'payments', name: 'Payments', icon: '💳', component: null },
 		{ id: 'subscriptions', name: 'Subscriptions', icon: '🔄', component: null },
@@ -128,6 +141,8 @@
 			{:else if activeTab === 'products' && activeTabConfig?.component}
 				<svelte:component this={activeTabConfig.component} data={summary} />
 			{:else if activeTab === 'customers' && activeTabConfig?.component}
+				<svelte:component this={activeTabConfig.component} data={summary} />
+			{:else if activeTab === 'coupons' && activeTabConfig?.component}
 				<svelte:component this={activeTabConfig.component} data={summary} />
 			{:else if activeTab === 'setup' && activeTabConfig?.component}
 				<svelte:component this={activeTabConfig.component} data={summary} />

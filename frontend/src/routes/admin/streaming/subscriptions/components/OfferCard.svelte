@@ -2,9 +2,11 @@
 	import type { SubscriptionOffer } from '$lib/services/subscription-offers';
 	import type { SubscriptionPlan } from '$lib/services/streaming-subscriptions';
 	import { formatDateForDisplay } from '$lib/utils/date';
+	import StripeOfferIntegrationStatus from './StripeOfferIntegrationStatus.svelte';
 
 	export let offer: SubscriptionOffer;
 	export let subscriptionPlans: SubscriptionPlan[] = [];
+	export let showStripeStatus: boolean = true; // Default to true like PlanCard
 	export let isOptimisticallyUpdating: (id: number) => boolean = () => false;
 	export let onEdit: (offer: SubscriptionOffer) => void = () => {};
 	export let onToggleStatus: (offer: SubscriptionOffer) => void = () => {};
@@ -108,6 +110,14 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- Stripe Integration Status -->
+	{#if showStripeStatus}
+		<StripeOfferIntegrationStatus 
+			offerId={offer.id.toString()} 
+			offerName={offer.off_name}
+		/>
+	{/if}
 
 	<div class="offer-actions">
 		<button

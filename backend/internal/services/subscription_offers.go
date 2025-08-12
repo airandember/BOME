@@ -13,26 +13,28 @@ import (
 
 // SubscriptionOfferResponse represents the response structure for subscription offers
 type SubscriptionOfferResponse struct {
-	ID                 int                      `json:"id"`
-	PlanID             int                      `json:"plan_id"`
-	ItemID             *string                  `json:"item_id,omitempty"`
-	OffDiscountType    string                   `json:"off_discount_type"`
-	OffDiscountValue   float64                  `json:"off_discount_value"`
-	OfferStartDate     *string                  `json:"offer_start_date,omitempty"`
-	OffEndDate         *string                  `json:"off_end_date,omitempty"`
-	IsActive           bool                     `json:"is_active"`
-	OffDescription     *string                  `json:"off_description,omitempty"`
-	OffCreatedAt       string                   `json:"off_created_at"`
-	OffUpdatedAt       string                   `json:"off_updated_at"`
-	OffName            string                   `json:"off_name"`
-	OffCode            *string                  `json:"off_code,omitempty"`
-	OffMaxUses         *int                     `json:"off_max_uses,omitempty"`
-	OffCurrentUses     int                      `json:"off_current_uses"`
-	OffTermsConditions *string                  `json:"off_terms_conditions,omitempty"`
-	OffTarget          *string                  `json:"off_target,omitempty"`
-	OffPriority        int                      `json:"off_priority"`
-	OffAutoApply       bool                     `json:"off_auto_apply"`
-	OfferHistory       []map[string]interface{} `json:"offer_history"`
+	ID                    int                      `json:"id"`
+	PlanID                int                      `json:"plan_id"`
+	ItemID                *string                  `json:"item_id,omitempty"`
+	OffDiscountType       string                   `json:"off_discount_type"`
+	OffDiscountValue      float64                  `json:"off_discount_value"`
+	OfferStartDate        *string                  `json:"offer_start_date,omitempty"`
+	OffEndDate            *string                  `json:"off_end_date,omitempty"`
+	IsActive              bool                     `json:"is_active"`
+	OffDescription        *string                  `json:"off_description,omitempty"`
+	OffCreatedAt          string                   `json:"off_created_at"`
+	OffUpdatedAt          string                   `json:"off_updated_at"`
+	OffName               string                   `json:"off_name"`
+	OffCode               *string                  `json:"off_code,omitempty"`
+	OffMaxUses            *int                     `json:"off_max_uses,omitempty"`
+	OffCurrentUses        int                      `json:"off_current_uses"`
+	OffTermsConditions    *string                  `json:"off_terms_conditions,omitempty"`
+	OffTarget             *string                  `json:"off_target,omitempty"`
+	OffPriority           int                      `json:"off_priority"`
+	OffAutoApply          bool                     `json:"off_auto_apply"`
+	StripeCouponID        *string                  `json:"stripe_coupon_id,omitempty"`
+	StripePromotionCodeID *string                  `json:"stripe_promotion_code_id,omitempty"`
+	OfferHistory          []map[string]interface{} `json:"offer_history"`
 }
 
 // CreateSubscriptionOfferRequest represents the request structure for creating offers
@@ -57,23 +59,25 @@ type CreateSubscriptionOfferRequest struct {
 
 // UpdateSubscriptionOfferRequest represents the request structure for updating offers
 type UpdateSubscriptionOfferRequest struct {
-	ID                 int      `json:"id" binding:"required"`
-	PlanID             *int     `json:"plan_id"`
-	ItemID             *string  `json:"item_id"`
-	OffDiscountType    *string  `json:"off_discount_type"`
-	OffDiscountValue   *float64 `json:"off_discount_value"`
-	OfferStartDate     *string  `json:"offer_start_date"`
-	OffEndDate         *string  `json:"off_end_date"`
-	IsActive           *bool    `json:"is_active"`
-	OffDescription     *string  `json:"off_description"`
-	OffName            *string  `json:"off_name"`
-	OffCode            *string  `json:"off_code"`
-	OffMaxUses         *int     `json:"off_max_uses"`
-	OffCurrentUses     *int     `json:"off_current_uses"`
-	OffTermsConditions *string  `json:"off_terms_conditions"`
-	OffTarget          *string  `json:"off_target"`
-	OffPriority        *int     `json:"off_priority"`
-	OffAutoApply       *bool    `json:"off_auto_apply"`
+	ID                    int      `json:"id" binding:"required"`
+	PlanID                *int     `json:"plan_id"`
+	ItemID                *string  `json:"item_id"`
+	OffDiscountType       *string  `json:"off_discount_type"`
+	OffDiscountValue      *float64 `json:"off_discount_value"`
+	OfferStartDate        *string  `json:"offer_start_date"`
+	OffEndDate            *string  `json:"off_end_date"`
+	IsActive              *bool    `json:"is_active"`
+	OffDescription        *string  `json:"off_description"`
+	OffName               *string  `json:"off_name"`
+	OffCode               *string  `json:"off_code"`
+	OffMaxUses            *int     `json:"off_max_uses"`
+	OffCurrentUses        *int     `json:"off_current_uses"`
+	OffTermsConditions    *string  `json:"off_terms_conditions"`
+	OffTarget             *string  `json:"off_target"`
+	OffPriority           *int     `json:"off_priority"`
+	OffAutoApply          *bool    `json:"off_auto_apply"`
+	StripeCouponID        *string  `json:"stripe_coupon_id"`
+	StripePromotionCodeID *string  `json:"stripe_promotion_code_id"`
 }
 
 // SubscriptionOffersService handles business logic for subscription offers
@@ -267,6 +271,12 @@ func (s *SubscriptionOffersService) UpdateSubscriptionOffer(ctx context.Context,
 	if req.OffAutoApply != nil {
 		updates["off_auto_apply"] = *req.OffAutoApply
 	}
+	if req.StripeCouponID != nil {
+		updates["stripe_coupon_id"] = *req.StripeCouponID
+	}
+	if req.StripePromotionCodeID != nil {
+		updates["stripe_promotion_code_id"] = *req.StripePromotionCodeID
+	}
 
 	// Update the offer in database
 	updatedOffer, err := s.db.UpdateSubscriptionOffer(req.ID, updates)
@@ -400,6 +410,14 @@ func (s *SubscriptionOffersService) convertToResponse(offer *database.Subscripti
 	}
 	if offer.OffTarget.Valid {
 		response.OffTarget = &offer.OffTarget.String
+	}
+
+	// Handle Stripe fields
+	if offer.StripeCouponID.Valid {
+		response.StripeCouponID = &offer.StripeCouponID.String
+	}
+	if offer.StripePromotionCodeID.Valid {
+		response.StripePromotionCodeID = &offer.StripePromotionCodeID.String
 	}
 
 	// Get history events

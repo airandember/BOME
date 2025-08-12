@@ -10,10 +10,12 @@ import (
 	"bome-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stripe/stripe-go/v74"
+	"github.com/stripe/stripe-go/v74/coupon"
 )
 
 // SetupAdminStreamingRoutes sets up streaming admin dashboard routes
-func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeService *services.StripeService, analyticsService *services.SubscriptionAnalyticsService, biService *services.BusinessIntelligenceService, subscriptionPlanStripeService *services.SubscriptionPlanStripeService) {
+func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeService *services.StripeService, analyticsService *services.SubscriptionAnalyticsService, biService *services.BusinessIntelligenceService, subscriptionPlanStripeService *services.SubscriptionPlanStripeService, subscriptionOffersStripeService *services.SubscriptionOffersStripeService) {
 	// Streaming admin routes - requires streaming manager role or higher
 	streaming := admin.Group("/streaming")
 	streaming.Use(middleware.AuthRequired())
@@ -103,6 +105,49 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 			c.JSON(http.StatusOK, gin.H{"summary": summary})
 		})
 
+		// Debug endpoint for testing coupon listing
+		streaming.GET("/stripe/debug/coupons", func(c *gin.Context) {
+			if !stripeService.IsEnabled() {
+				c.JSON(400, gin.H{"error": "Stripe service is not enabled"})
+				return
+			}
+
+			// Test direct coupon listing
+			params := &stripe.CouponListParams{}
+			params.Limit = stripe.Int64(10)
+
+			iter := coupon.List(params)
+			var coupons []map[string]interface{}
+			var count int
+
+			for iter.Next() {
+				count++
+				c := iter.Current().(*stripe.Coupon)
+				coupons = append(coupons, map[string]interface{}{
+					"id":             c.ID,
+					"name":           c.Name,
+					"duration":       string(c.Duration),
+					"percent_off":    c.PercentOff,
+					"amount_off":     c.AmountOff,
+					"currency":       string(c.Currency),
+					"valid":          c.Valid,
+					"times_redeemed": c.TimesRedeemed,
+					"created":        c.Created,
+				})
+			}
+
+			if err := iter.Err(); err != nil {
+				c.JSON(500, gin.H{"error": err.Error(), "coupons": coupons, "count": count})
+				return
+			}
+
+			c.JSON(200, gin.H{
+				"coupons": coupons,
+				"count":   count,
+				"error":   nil,
+			})
+		})
+
 		// Promotions and deals
 		streaming.GET("/promotions", GetStreamingPromotionsHandler(db))
 		streaming.POST("/promotions", CreateStreamingPromotionHandler(db))
@@ -118,6 +163,9 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 
 		// Setup Stripe-integrated subscription plan routes
 		SetupSubscriptionPlanStripeRoutes(streaming, stripeService, subscriptionPlanStripeService)
+
+		// Setup Stripe-integrated subscription offers routes
+		SetupSubscriptionOffersStripeRoutes(streaming, stripeService, subscriptionOffersStripeService)
 	}
 }
 

@@ -106,11 +106,12 @@ func SetupRoutes(
 
 	// Initialize subscription services
 	subscriptionPlanService := services.NewSubscriptionPlanService(db)
-	subscriptionPlanStripeService := services.NewSubscriptionPlanStripeService(db, stripeService) // Add Stripe-integrated service
+	subscriptionPlanStripeService := services.NewSubscriptionPlanStripeService(db, stripeService)     // Add Stripe-integrated service
+	subscriptionOffersStripeService := services.NewSubscriptionOffersStripeService(db, stripeService) // Add Stripe-integrated offers service
 
 	// Create admin cache service
 	analyticsService := services.NewSubscriptionAnalyticsService(db)
-	SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService, subscriptionPlanStripeService)
+	SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService, subscriptionPlanStripeService, subscriptionOffersStripeService)
 	SetupMasterVideoRoutes(admin, db, bunnyService)
 
 	// Initialize remaining subscription services

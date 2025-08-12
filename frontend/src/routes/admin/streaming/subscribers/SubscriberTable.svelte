@@ -267,6 +267,12 @@
 </div>
 
 <style>
+
+    .bg-green-100 {
+		background-color: #d1fae5;
+	} 
+
+
 	.content {
 		background: white;
 		border-radius: 0.5rem;

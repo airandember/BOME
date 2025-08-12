@@ -9,25 +9,27 @@ import (
 
 // SubscriptionOffer represents a subscription offer in the database
 type SubscriptionOffer struct {
-	ID                 int            `json:"id"`
-	PlanID             int            `json:"plan_id"`
-	ItemID             sql.NullString `json:"item_id"`
-	OffDiscountType    string         `json:"off_discount_type"`
-	OffDiscountValue   float64        `json:"off_discount_value"`
-	OfferStartDate     sql.NullTime   `json:"offer_start_date"`
-	OffEndDate         sql.NullTime   `json:"off_end_date"`
-	IsActive           bool           `json:"is_active"`
-	OffDescription     sql.NullString `json:"off_description"`
-	OffCreatedAt       time.Time      `json:"off_created_at"`
-	OffUpdatedAt       time.Time      `json:"off_updated_at"`
-	OffName            string         `json:"off_name"`
-	OffCode            sql.NullString `json:"off_code"`
-	OffMaxUses         sql.NullInt32  `json:"off_max_uses"`
-	OffCurrentUses     int            `json:"off_current_uses"`
-	OffTermsConditions sql.NullString `json:"off_terms_conditions"`
-	OffTarget          sql.NullString `json:"off_target"`
-	OffPriority        int            `json:"off_priority"`
-	OffAutoApply       bool           `json:"off_auto_apply"`
+	ID                    int            `json:"id"`
+	PlanID                int            `json:"plan_id"`
+	ItemID                sql.NullString `json:"item_id"`
+	OffDiscountType       string         `json:"off_discount_type"`
+	OffDiscountValue      float64        `json:"off_discount_value"`
+	OfferStartDate        sql.NullTime   `json:"offer_start_date"`
+	OffEndDate            sql.NullTime   `json:"off_end_date"`
+	IsActive              bool           `json:"is_active"`
+	OffDescription        sql.NullString `json:"off_description"`
+	OffCreatedAt          time.Time      `json:"off_created_at"`
+	OffUpdatedAt          time.Time      `json:"off_updated_at"`
+	OffName               string         `json:"off_name"`
+	OffCode               sql.NullString `json:"off_code"`
+	OffMaxUses            sql.NullInt32  `json:"off_max_uses"`
+	OffCurrentUses        int            `json:"off_current_uses"`
+	OffTermsConditions    sql.NullString `json:"off_terms_conditions"`
+	OffTarget             sql.NullString `json:"off_target"`
+	OffPriority           int            `json:"off_priority"`
+	OffAutoApply          bool           `json:"off_auto_apply"`
+	StripeCouponID        sql.NullString `json:"stripe_coupon_id"`
+	StripePromotionCodeID sql.NullString `json:"stripe_promotion_code_id"`
 }
 
 // SubscriptionOfferHistory represents a history event for subscription offers
@@ -266,7 +268,8 @@ func (db *DB) GetSubscriptionOfferByID(id int) (*SubscriptionOffer, error) {
 		SELECT id, plan_id, item_id, off_discount_type, off_discount_value,
 			   offer_start_date, off_end_date, is_active, off_description,
 			   off_created_at, off_updated_at, off_name, off_code, off_max_uses,
-			   off_current_uses, off_terms_conditions, off_target, off_priority, off_auto_apply
+			   off_current_uses, off_terms_conditions, off_target, off_priority, off_auto_apply,
+			   stripe_coupon_id, stripe_promotion_code_id
 		FROM subscription_offers
 		WHERE id = $1
 	`
@@ -292,6 +295,8 @@ func (db *DB) GetSubscriptionOfferByID(id int) (*SubscriptionOffer, error) {
 		&offer.OffTarget,
 		&offer.OffPriority,
 		&offer.OffAutoApply,
+		&offer.StripeCouponID,
+		&offer.StripePromotionCodeID,
 	)
 
 	if err != nil {
