@@ -444,6 +444,17 @@
 	function handleCreateAllUsers() {
 		createAllUsersFromStripe();
 	}
+
+	function handleSyncToStripe(event: CustomEvent) {
+		const customer = event.detail;
+		// TODO: Implement individual sync to Stripe
+		showToast('Sync to Stripe functionality coming soon!', 'info');
+	}
+
+	function handleSyncAllToStripe() {
+		// TODO: Implement bulk sync to Stripe
+		showToast('Sync All to Stripe functionality coming soon!', 'info');
+	}
 </script>
 
 <div class="customers-page">
@@ -514,21 +525,27 @@
 			<SimpleTable
 				title="💳 Stripe Only Customers"
 				customers={stripeOnlyCustomers}
-				showActions={true}
+				tableType="stripe-only"
+				{syncingCustomers}
+				{bulkCreatingUsers}
+				on:createUser={handleCreateUser}
+				on:createAllUsers={handleCreateAllUsers}
 			/>
 
 			<!-- Synced Customers Table -->
 			<SimpleTable
 				title="🔗 Synced Customers"
 				customers={syncedCustomers}
-				showActions={false}
+				tableType="synced"
 			/>
 			
 			<!-- Local Only Users Table -->
 			<SimpleTable
 				title="🏠 Local Only Users"
 				customers={localOnlyUsers}
-				showActions={false}
+				tableType="local-only"
+				on:syncToStripe={handleSyncToStripe}
+				on:syncAllToStripe={handleSyncAllToStripe}
 			/>
 		</div>
 	{/if}
