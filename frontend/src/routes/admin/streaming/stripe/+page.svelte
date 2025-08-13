@@ -10,6 +10,8 @@
 	import Products from './products/+page.svelte';
 	import Customers from './customers/+page.svelte';
 	import Coupons from './coupons/+page.svelte';
+	import Invoices from './invoices/+page.svelte';
+	import Payments from './payments/+page.svelte';
 	import Setup from './setup/+page.svelte';
 
 	let summary: any = null;
@@ -52,8 +54,8 @@
 		{ id: 'products', name: 'Products', icon: '📦', component: Products },
 		{ id: 'customers', name: 'Customers', icon: '👥', component: Customers },
 		{ id: 'coupons', name: 'Coupons', icon: '🎟️', component: Coupons },
-		{ id: 'invoices', name: 'Invoices', icon: '📄', component: null },
-		{ id: 'payments', name: 'Payments', icon: '💳', component: null },
+		{ id: 'invoices', name: 'Invoices', icon: '📄', component: Invoices },
+		{ id: 'payments', name: 'Payments', icon: '💳', component: Payments },
 		{ id: 'subscriptions', name: 'Subscriptions', icon: '🔄', component: null },
 		{ id: 'setup', name: 'Setup', icon: '⚙️', component: Setup }
 	];
@@ -546,45 +548,17 @@
 				{:else if activeTab === 'coupons' && activeTabConfig?.component}
 					<!-- @ts-ignore -->
 					<svelte:component this={activeTabConfig.component} data={summary as any} />
+				{:else if activeTab === 'invoices' && activeTabConfig?.component}
+					<!-- @ts-ignore -->
+					<svelte:component this={activeTabConfig.component} data={summary as any} />
+				{:else if activeTab === 'payments' && activeTabConfig?.component}
+					<!-- @ts-ignore -->
+					<svelte:component this={activeTabConfig.component} data={summary as any} />
 				{:else if activeTab === 'setup' && activeTabConfig?.component}
 					<!-- @ts-ignore -->
 					<svelte:component this={activeTabConfig.component} data={summary as any} />
-				{:else if activeTab === 'invoices'}
-					<div class="coming-soon">
-						<div class="coming-soon-icon">📄</div>
-						<h3>Invoices Coming Soon</h3>
-						<p>Invoice management features are currently in development.</p>
-						{#if summary?.invoices && summary.invoices.length > 0}
-							<div class="preview-stats">
-								<div class="stat">
-									<span class="stat-value">{summary.invoices_count}</span>
-									<span class="stat-label">Total Invoices</span>
-								</div>
-								<div class="stat">
-									<span class="stat-value">{summary.invoices.filter((inv: any) => inv.Status === 'paid').length}</span>
-									<span class="stat-label">Paid</span>
-								</div>
-							</div>
-						{/if}
-					</div>
-				{:else if activeTab === 'payments'}
-					<div class="coming-soon">
-						<div class="coming-soon-icon">💳</div>
-						<h3>Payments Coming Soon</h3>
-						<p>Payment management features are currently in development.</p>
-						{#if summary?.payment_intents && summary.payment_intents.length > 0}
-							<div class="preview-stats">
-								<div class="stat">
-									<span class="stat-value">{summary.payment_intents_count}</span>
-									<span class="stat-label">Total Payments</span>
-								</div>
-								<div class="stat">
-									<span class="stat-value">{summary.payment_intents.filter((pi: any) => pi.Status === 'succeeded').length}</span>
-									<span class="stat-label">Successful</span>
-								</div>
-							</div>
-						{/if}
-					</div>
+
+
 				{:else if activeTab === 'subscriptions'}
 					<div class="coming-soon">
 						<div class="coming-soon-icon">🔄</div>
