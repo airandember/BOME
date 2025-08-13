@@ -511,7 +511,7 @@
 		</div>
 	{:else}
 		<div class="customers-table-container">
-			<!-- Debug information -->
+			<!-- Debug information 
 			<div style="background: #f0f0f0; padding: 1rem; margin: 1rem 0; border-radius: 0.5rem;">
 				<h3>🔧 Debug Info:</h3>
 				<p><strong>Stripe Only:</strong> {stripeOnlyCustomers.length}</p>
@@ -519,7 +519,7 @@
 				<p><strong>Local Only:</strong> {localOnlyUsers.length}</p>
 				<p><strong>Loading:</strong> {loading}</p>
 				<p><strong>Error:</strong> {error || 'None'}</p>
-			</div>
+			</div>-->
 
 			<!-- Stripe Only Customers Table -->
 			<SimpleTable
