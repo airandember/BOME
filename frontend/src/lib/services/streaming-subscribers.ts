@@ -137,7 +137,7 @@ export class StreamingSubscriberService {
 				}
 			}
 
-			const url = `/admin/subscribers?${queryParams}`;
+			const url = `/admin/subscribers/?${queryParams}`;
 			console.log('Making API request to:', url);
 			console.log('Query parameters being sent:', queryParams.toString());
 			

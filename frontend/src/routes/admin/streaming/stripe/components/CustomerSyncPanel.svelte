@@ -513,7 +513,8 @@
 	}
 
 	.btn-success:hover:not(:disabled) {
-		background: var(--success-hover);
+		background: var(--bg-green-200);
+		color: var(--text-primary);
 		transform: translateY(-1px);
 	}
 

@@ -3,255 +3,201 @@
 	import { apiRequest } from '$lib/auth';
 	import CustomerSyncPanel from '../components/CustomerSyncPanel.svelte';
 	import { StripeCustomerSyncService } from '$lib/services/stripe-customer-sync';
+	import { StreamingSubscriberService } from '$lib/services/streaming-subscribers';
 	import { showToast } from '$lib/toast';
 	import { goto } from '$app/navigation';
 
-	let summary: any = null;
+	// State variables
 	let loading = true;
 	let error = '';
-
-	export let data: any = null;
-
-	$: customers = data?.customers || [];
-	$: customersCount = data?.customers_count || 0;
-
-	// Customer sync state
+	
+	// Data arrays
+	let localSubscribers: any[] = [];
+	let stripeCustomers: any[] = [];
+	let hybridCustomers: any[] = [];
+	
+	// Sync state
 	let syncingCustomers = new Set<string>();
-	let customerSyncStatus = new Map<string, any>();
-
-	// Debug logging
-	$: {
-		console.log('=== CUSTOMERS DEBUG ===');
-		console.log('Data received:', data);
-		console.log('Customers array:', customers);
-		console.log('Customers count:', customersCount);
-		console.log('Data type:', typeof data);
-		console.log('Data keys:', data ? Object.keys(data) : 'No data');
-		console.log('Customers key exists:', data?.customers ? 'Yes' : 'No');
-		console.log('Customers key type:', data?.customers ? typeof data.customers : 'N/A');
-		console.log('Customers is array:', Array.isArray(data?.customers));
-		console.log('========================');
-	}
-
-	// Automatically check sync status when customers data changes
-	$: if (customers.length > 0 && !loading) {
-		checkAllCustomerSyncStatus();
-	}
+	
+	// Stats
+	let totalCount = 0;
+	let syncedCount = 0;
+	let localOnlyCount = 0;
+	let stripeOnlyCount = 0;
 
 	onMount(async () => {
-		if (data) {
-			summary = data;
-			loading = false;
-		} else {
-			await fetchSummary();
-		}
-		
-		// Check sync status for all customers with local IDs
-		if (customers.length > 0) {
-			await checkAllCustomerSyncStatus();
-		}
+		await loadAllData();
 	});
 
-	// Check sync status for all customers
-	async function checkAllCustomerSyncStatus() {
-		const customersWithLocalIds = customers.filter((c: any) => c.Metadata?.local_customer_id);
-		
-		for (const customer of customersWithLocalIds) {
-			await getCustomerSyncStatus(customer.ID);
-		}
-	}
-
-	async function fetchSummary() {
+	// Load both local subscribers and Stripe customers
+	async function loadAllData() {
 		try {
 			loading = true;
 			error = '';
-			const res = await apiRequest('/admin/streaming/stripe/summary');
-			if (res.ok) {
-				const data = await res.json();
-				summary = data.summary;
+
+			console.log('🔄 Loading local subscribers and Stripe customers...');
+
+			// Fetch local subscribers with subscription plans
+			const subscribersData = await StreamingSubscriberService.getSubscribers({ limit: 1000 });
+			localSubscribers = subscribersData.subscribers || [];
+			console.log('✅ Loaded local subscribers:', localSubscribers.length);
+
+			// Fetch Stripe customers
+			const stripeRes = await apiRequest('/admin/streaming/stripe/summary');
+			if (stripeRes.ok) {
+				const stripeData = await stripeRes.json();
+				stripeCustomers = stripeData.summary?.customers || [];
+				console.log('✅ Loaded Stripe customers:', stripeCustomers.length);
 			} else {
-				error = 'Failed to load customers';
+				console.error('❌ Failed to load Stripe customers');
 			}
+
+			// Create hybrid customer list
+			createHybridCustomerList();
+
 		} catch (err) {
-			error = 'Failed to load customers';
-			console.error(err);
+			error = 'Failed to load data';
+			console.error('❌ Error loading data:', err);
 		} finally {
 			loading = false;
 		}
 	}
 
-	// Sync individual customer to Stripe
-	async function syncCustomerToStripe(customerId: string) {
-		if (syncingCustomers.has(customerId)) return;
+	// Create a hybrid list that compares local subscribers with Stripe customers
+	function createHybridCustomerList() {
+		const customerMap = new Map();
 
-		try {
-			syncingCustomers.add(customerId);
+		console.log('🔄 Creating hybrid customer list...');
+
+		// Add local subscribers first
+		localSubscribers.forEach((subscriber: any) => {
+			const key = subscriber.email.toLowerCase();
+			customerMap.set(key, {
+				id: `local_${subscriber.id}`,
+				source: 'local',
+				name: `${subscriber.first_name} ${subscriber.last_name}`.trim(),
+				email: subscriber.email,
+				localId: subscriber.id,
+				role: subscriber.role,
+				planName: subscriber.plan_name,
+				stripePriceId: subscriber.stripe_price_id,
+				createdAt: subscriber.created_at,
+				stripeCustomerId: subscriber.stripe_customer_id,
+				syncStatus: 'local_only'
+			});
+		});
+
+		// Check Stripe customers against local subscribers
+		stripeCustomers.forEach((stripeCustomer: any) => {
+			const key = stripeCustomer.Email?.toLowerCase();
+			if (!key) return;
+
+			const existing = customerMap.get(key);
 			
-			// Get local customer ID from metadata if available
-			const customer = customers.find((c: any) => c.ID === customerId);
-			const localCustomerId = customer?.Metadata?.local_customer_id;
-			
-			if (!localCustomerId) {
-				showToast('No local customer ID found for this Stripe customer', 'warning');
-				return;
+			if (existing) {
+				// This customer exists in both systems
+				existing.source = 'hybrid';
+				existing.stripeId = stripeCustomer.ID;
+				existing.stripeCreatedAt = stripeCustomer.CreatedAt;
+				existing.stripeMetadata = stripeCustomer.Metadata;
+				existing.syncStatus = existing.stripeCustomerId ? 'synced' : 'not_synced';
+			} else {
+				// This customer only exists in Stripe
+				customerMap.set(key, {
+					id: `stripe_${stripeCustomer.ID}`,
+					source: 'stripe',
+					name: stripeCustomer.Name || 'Unnamed Customer',
+					email: stripeCustomer.Email,
+					stripeId: stripeCustomer.ID,
+					stripeCreatedAt: stripeCustomer.CreatedAt,
+					stripeMetadata: stripeCustomer.Metadata,
+					localId: stripeCustomer.Metadata?.local_customer_id || null,
+					syncStatus: 'stripe_only'
+				});
 			}
+		});
 
-			const result = await StripeCustomerSyncService.syncCustomerToStripe(parseInt(localCustomerId));
-			
-			// Update the customer status in-place
-			customerSyncStatus.set(customerId, {
-				action: result.action,
-				message: result.message,
-				stripe_id: customerId,
-				last_sync_at: new Date().toISOString()
-			});
-			
-			showToast(`Customer synced: ${result.message}`, 'success');
-		} catch (error) {
-			console.error('Failed to sync customer:', error);
-			showToast('Failed to sync customer', 'error');
-			
-			// Update status to show error
-			customerSyncStatus.set(customerId, {
-				action: 'error',
-				message: 'Sync failed',
-				stripe_id: customerId,
-				last_sync_at: new Date().toISOString()
-			});
-		} finally {
-			syncingCustomers.delete(customerId);
-		}
+		// Convert map to array and sort by creation date
+		hybridCustomers = Array.from(customerMap.values()).sort((a, b) => {
+			const dateA = new Date(a.createdAt || a.stripeCreatedAt || 0);
+			const dateB = new Date(b.createdAt || b.stripeCreatedAt || 0);
+			return dateB.getTime() - dateA.getTime();
+		});
+
+		// Calculate stats
+		totalCount = hybridCustomers.length;
+		syncedCount = hybridCustomers.filter(c => c.syncStatus === 'synced').length;
+		localOnlyCount = hybridCustomers.filter(c => c.syncStatus === 'local_only').length;
+		stripeOnlyCount = hybridCustomers.filter(c => c.syncStatus === 'stripe_only').length;
+
+		console.log('✅ Hybrid customer list created:', {
+			total: totalCount,
+			synced: syncedCount,
+			localOnly: localOnlyCount,
+			stripeOnly: stripeOnlyCount
+		});
 	}
 
-	// Get sync status for a customer - automatically determined from existing data
-	async function getCustomerSyncStatus(customerId: string) {
-		if (customerSyncStatus.has(customerId)) {
-			return customerSyncStatus.get(customerId);
-		}
-
-		const customer = customers.find((c: any) => c.ID === customerId);
-		
-		if (!customer) {
-			customerSyncStatus.set(customerId, { action: 'not_found', message: 'Customer not found', stripe_id: customerId, last_sync_at: null });
-			return customerSyncStatus.get(customerId);
-		}
-		
-		// If customer has local_customer_id in metadata, they are synced
-		if (customer.Metadata?.local_customer_id) {
-			customerSyncStatus.set(customerId, {
-				action: 'synced',
-				message: 'Customer is synced with local database',
-				stripe_id: customer.ID,
-				last_sync_at: customer.CreatedAt
-			});
-		} else {
-			// If customer exists in Stripe but no local ID, they are not synced
-			customerSyncStatus.set(customerId, {
-				action: 'not_synced',
-				message: 'Customer exists in Stripe but not linked to local database',
-				stripe_id: customer.ID,
-				last_sync_at: null
-			});
-		}
-		return customerSyncStatus.get(customerId);
-	}
-
-	// Get sync status display info
-	function getSyncStatusDisplay(customerId: string) {
-		const status = customerSyncStatus.get(customerId);
-		if (!status) return { text: 'Unknown', class: 'status-unknown' };
-		
-		switch (status.action) {
+	// Get sync status display
+	function getSyncStatusDisplay(customer: any) {
+		switch (customer.syncStatus) {
 			case 'synced':
 				return { text: '✅ Synced', class: 'status-synced' };
-			case 'created':
-				return { text: '🆕 Created', class: 'status-created' };
-			case 'updated':
-				return { text: '🔄 Updated', class: 'status-updated' };
 			case 'not_synced':
-				return { text: '❌ Not Synced', class: 'status-not-synced' };
-			case 'error':
-				return { text: '⚠️ Error', class: 'status-error' };
-			case 'not_found':
-				return { text: '❓ Not Found', class: 'status-not-found' };
+				return { text: '⚠️ Not Synced', class: 'status-not-synced' };
+			case 'local_only':
+				return { text: '🏠 Local Only', class: 'status-local-only' };
+			case 'stripe_only':
+				return { text: '💳 Stripe Only', class: 'status-stripe-only' };
 			default:
 				return { text: '❓ Unknown', class: 'status-unknown' };
 		}
 	}
 
-	function formatDate(date: string): string {
-		return new Date(date).toLocaleDateString('en-US', {
-			year: 'numeric',
-			month: 'short',
-			day: 'numeric',
-			hour: '2-digit',
-			minute: '2-digit'
-		});
-	}
-
-	function formatCurrency(amount: number, currency: string = 'usd') {
-		return new Intl.NumberFormat('en-US', {
-			style: 'currency',
-			currency: currency.toUpperCase(),
-		}).format(amount / 100); // Convert from cents
-	}
-
-	function formatPercentage(percent: number) {
-		return `${percent}%`;
-	}
-
-	function getDiscountDisplay(coupon: any) {
-		if (coupon.PercentOff) {
-			return formatPercentage(coupon.PercentOff);
-		} else if (coupon.AmountOff) {
-			return formatCurrency(coupon.AmountOff, coupon.Currency);
+	// Sync individual customer to Stripe
+	async function syncCustomerToStripe(customer: any) {
+		if (!customer.localId) {
+			showToast('No local customer ID available for sync', 'warning');
+			return;
 		}
-		return 'N/A';
-	}
 
-	function getDurationDisplay(duration: string) {
-		switch (duration) {
-			case 'once':
-				return 'Single Use';
-			case 'repeating':
-				return 'Repeating';
-			case 'forever':
-				return 'Forever';
-			default:
-				return duration;
+		if (syncingCustomers.has(customer.id)) return;
+
+		try {
+			syncingCustomers.add(customer.id);
+			syncingCustomers = new Set(syncingCustomers); // Trigger reactivity
+
+			const result = await StripeCustomerSyncService.syncCustomerToStripe(customer.localId);
+			
+			// Update the customer status
+			customer.syncStatus = 'synced';
+			customer.source = 'hybrid'; // Change from 'local' to 'hybrid' after sync
+			customer.stripeCustomerId = result.stripe_id;
+			customer.stripeId = result.stripe_id; // Also set stripeId for consistency
+			hybridCustomers = [...hybridCustomers]; // Trigger reactivity
+			
+			showToast(`Customer synced: ${result.message}`, 'success');
+		} catch (error) {
+			console.error('Failed to sync customer:', error);
+			showToast('Failed to sync customer', 'error');
+		} finally {
+			syncingCustomers.delete(customer.id);
+			syncingCustomers = new Set(syncingCustomers); // Trigger reactivity
 		}
-	}
-
-	function getStatusColor(valid: boolean) {
-		return valid ? 'var(--success)' : 'var(--error)';
-	}
-
-	function getStatusText(valid: boolean) {
-		return valid ? 'Active' : 'Inactive';
-	}
-
-	function getCustomerSubscriptions(customerId: string) {
-		if (!summary.subscriptions) return [];
-		return summary.subscriptions.filter((sub: any) => sub.CustomerID === customerId);
-	}
-
-	function getCustomerPayments(customerId: string) {
-		if (!summary.payment_intents) return [];
-		return summary.payment_intents.filter((pi: any) => pi.CustomerID === customerId);
 	}
 
 	// Add user from Stripe customer data
 	function addUserFromStripe(customer: any) {
-		if (!customer.ID) {
-			showToast('Invalid customer ID', 'error');
+		if (!customer.stripeId) {
+			showToast('Invalid Stripe customer ID', 'error');
 			return;
 		}
 
 		// Parse name into first and last name if possible
 		let firstName = '';
 		let lastName = '';
-		if (customer.Name) {
-			const nameParts = customer.Name.trim().split(' ');
+		if (customer.name) {
+			const nameParts = customer.name.trim().split(' ');
 			if (nameParts.length === 1) {
 				firstName = nameParts[0];
 			} else if (nameParts.length >= 2) {
@@ -260,61 +206,63 @@
 			}
 		}
 
-		// Prepare customer data for user creation
-		const customerData = {
-			stripe_customer_id: customer.ID,
-			email: customer.Email || '',
-			first_name: firstName,
-			last_name: lastName,
-			full_name: customer.Name || '',
-			created_at: customer.CreatedAt || new Date().toISOString(),
-			metadata: customer.Metadata || {},
-			source: 'stripe_import'
-		};
-
 		// Navigate to users page with pre-filled data
 		const queryParams = new URLSearchParams({
-			stripe_customer_id: customer.ID,
-			email: customerData.email,
-			first_name: customerData.first_name,
-			last_name: customerData.last_name,
-			full_name: customerData.full_name,
-			created_at: customerData.created_at,
-			source: customerData.source,
-			metadata: JSON.stringify(customerData.metadata)
+			stripe_customer_id: customer.stripeId,
+			email: customer.email,
+			first_name: firstName,
+			last_name: lastName,
+			source: 'stripe_import'
 		});
 
 		goto(`/admin/users/add?${queryParams.toString()}`);
+	}
+
+	// Format date
+	function formatDate(dateString: string): string {
+		if (!dateString) return 'N/A';
+		return new Date(dateString).toLocaleDateString('en-US', {
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric'
+		});
+	}
+
+	// Refresh data
+	async function refreshData() {
+		await loadAllData();
+		showToast('Data refreshed', 'success');
 	}
 </script>
 
 <div class="customers-page">
 	<div class="page-header">
 		<div class="header-content">
-			<h1>👥 Customers</h1>
-			<p>Manage customer data and synchronization with Stripe</p>
+			<h1>👥 Customer Sync Dashboard</h1>
+			<p>Compare local subscribers with Stripe customers and manage synchronization</p>
 		</div>
 		<div class="header-stats">
 			<div class="stat-card">
-				<span class="stat-value">{customersCount}</span>
+				<span class="stat-value">{totalCount}</span>
 				<span class="stat-label">Total Customers</span>
 			</div>
-			<div class="stat-card">
-				<span class="stat-value">{customers.filter((c: any) => c.Metadata && Object.keys(c.Metadata).length > 0).length}</span>
-				<span class="stat-label">With Metadata</span>
+			<div class="stat-card synced">
+				<span class="stat-value">{syncedCount}</span>
+				<span class="stat-label">Synced</span>
 			</div>
-			<div class="stat-card">
-				<span class="stat-value">{customers.filter((c: any) => c.CreatedAt).length}</span>
-				<span class="stat-label">Active</span>
+			<div class="stat-card local">
+				<span class="stat-value">{localOnlyCount}</span>
+				<span class="stat-label">Local Only</span>
+			</div>
+			<div class="stat-card stripe">
+				<span class="stat-value">{stripeOnlyCount}</span>
+				<span class="stat-label">Stripe Only</span>
 			</div>
 		</div>
 		
 		<div class="header-actions">
-			<button class="btn btn-secondary" on:click={() => window.location.reload()}>
-				🔄 Refresh Page
-			</button>
-			<button class="btn btn-primary">
-				➕ Create Customer
+			<button class="btn btn-secondary" on:click={refreshData}>
+				🔄 Refresh Data
 			</button>
 		</div>
 	</div>
@@ -322,11 +270,22 @@
 	<!-- Customer Sync Panel -->
 	<CustomerSyncPanel customerId={null} customerEmail="" />
 
-	{#if customers.length === 0}
+	{#if loading}
+		<div class="loading-container">
+			<div class="loading-spinner"></div>
+			<p>Loading customer data...</p>
+		</div>
+	{:else if error}
+		<div class="error-container">
+			<h3>Error Loading Data</h3>
+			<p>{error}</p>
+			<button class="btn btn-primary" on:click={refreshData}>Retry</button>
+		</div>
+	{:else if hybridCustomers.length === 0}
 		<div class="empty-state">
 			<div class="empty-icon">👥</div>
 			<h3>No Customers Found</h3>
-			<p>You haven't created any customers yet. Create your first customer to start managing customer data.</p>
+			<p>No local subscribers or Stripe customers found.</p>
 		</div>
 	{:else}
 		<div class="customers-table-container">
@@ -335,95 +294,77 @@
 					<tr>
 						<th>Customer</th>
 						<th>Email</th>
-						<th>Created</th>
+						<th>Source</th>
 						<th>Local ID</th>
+						<th>Stripe ID</th>
+						<th>Plan</th>
 						<th>Role</th>
 						<th>Sync Status</th>
-						<th>Metadata</th>
+						<th>Created</th>
 						<th>Actions</th>
 					</tr>
 				</thead>
 				<tbody>
-					{#each customers as customer}
+					{#each hybridCustomers as customer}
+						{@const statusDisplay = getSyncStatusDisplay(customer)}
 						<tr>
 							<td>
 								<div class="customer-info">
 									<div class="customer-name">
-										<h4>{customer.Name || 'Unnamed Customer'}</h4>
-										<span class="customer-id">#{customer.ID.slice(-8)}</span>
+										<h4>{customer.name || 'Unnamed Customer'}</h4>
+										<span class="customer-source">{customer.source}</span>
 									</div>
 								</div>
 							</td>
 							<td>
-								<span class="customer-email">{customer.Email}</span>
+								<span class="customer-email">{customer.email}</span>
 							</td>
 							<td>
-								<span class="customer-created">
-									{new Date(customer.CreatedAt).toLocaleDateString()}
+								<span class="source-badge source-{customer.source}">
+									{customer.source === 'local' ? '🏠 Local' : 
+									 customer.source === 'stripe' ? '💳 Stripe' : '🔗 Hybrid'}
 								</span>
 							</td>
 							<td>
-								<span class="local-id">
-									{customer.Metadata?.local_customer_id || 'N/A'}
+								<span class="local-id">{customer.localId || 'N/A'}</span>
+							</td>
+							<td>
+								<span class="stripe-id">
+									{customer.stripeId ? `#${customer.stripeId.slice(-8)}` : 'N/A'}
 								</span>
 							</td>
 							<td>
-								<span class="customer-role">
-									{customer.Metadata?.role || 'N/A'}
+								<span class="plan-name">{customer.planName || 'N/A'}</span>
+							</td>
+							<td>
+								<span class="customer-role">{customer.role || 'N/A'}</span>
+							</td>
+							<td>
+								<span class="sync-status {statusDisplay.class}">
+									{statusDisplay.text}
 								</span>
 							</td>
 							<td>
-								{#if customer.Metadata?.local_customer_id}
-									{@const statusDisplay = getSyncStatusDisplay(customer.ID)}
-									{@const status = customerSyncStatus.get(customer.ID)}
-									<span 
-										class="sync-status {statusDisplay.class}"
-										title="{status?.message || 'Unknown status'}"
-									>
-										{statusDisplay.text}
-									</span>
-									{#if status?.last_sync_at}
-										<div class="last-sync-info">
-											Last sync: {new Date(status.last_sync_at).toLocaleDateString()}
-										</div>
-									{/if}
-								{:else}
-									<span class="sync-status status-no-local">No Local ID</span>
-								{/if}
-							</td>
-							<td>
-								{#if customer.Metadata && Object.keys(customer.Metadata).length > 0}
-									<details class="metadata-details">
-										<summary class="metadata-summary">📋 View</summary>
-										<div class="metadata-content">
-											{#each Object.entries(customer.Metadata || {}) as [key, value]}
-												<div class="metadata-item">
-													<span class="metadata-key">{key}:</span>
-													<span class="metadata-value">{value}</span>
-												</div>
-											{/each}
-										</div>
-									</details>
-								{:else}
-									<span class="no-metadata">No metadata</span>
-								{/if}
+								<span class="created-date">
+									{formatDate(customer.createdAt || customer.stripeCreatedAt)}
+								</span>
 							</td>
 							<td>
 								<div class="customer-actions">
-									{#if customer.Metadata?.local_customer_id}
+									{#if customer.source === 'local' || (customer.source === 'hybrid' && customer.syncStatus !== 'synced')}
 										<button 
 											class="btn btn-sm btn-primary"
-											on:click={() => syncCustomerToStripe(customer.ID)}
-											disabled={syncingCustomers.has(customer.ID)}
+											on:click={() => syncCustomerToStripe(customer)}
+											disabled={syncingCustomers.has(customer.id)}
 										>
-											{#if syncingCustomers.has(customer.ID)}
-												<div class="loading-spinner"></div>
+											{#if syncingCustomers.has(customer.id)}
+												<div class="loading-spinner small"></div>
 												Syncing...
 											{:else}
 												🔄 Sync
 											{/if}
 										</button>
-									{:else}
+									{:else if customer.source === 'stripe'}
 										<button 
 											class="btn btn-sm btn-success"
 											on:click={() => addUserFromStripe(customer)}
@@ -431,6 +372,8 @@
 										>
 											➕ Add User
 										</button>
+									{:else}
+										<span class="sync-complete">✅ Synced</span>
 									{/if}
 								</div>
 							</td>
@@ -444,34 +387,34 @@
 
 <style>
 	.customers-page {
-		padding: var(--space-lg);
+		padding: var(--space-lg, 1.5rem);
 	}
 
 	.page-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: flex-start;
-		margin-bottom: var(--space-xl);
+		margin-bottom: var(--space-xl, 2rem);
 		flex-wrap: wrap;
-		gap: var(--space-lg);
+		gap: var(--space-lg, 1.5rem);
 	}
 
 	.header-content h1 {
-		margin: 0 0 var(--space-xs) 0;
-		color: var(--text);
+		margin: 0 0 var(--space-xs, 0.5rem) 0;
+		color: var(--text, #111827);
 		font-size: 2rem;
 		font-weight: 700;
 	}
 
 	.header-content p {
 		margin: 0;
-		color: var(--text-muted);
+		color: var(--text-muted, #6b7280);
 		font-size: 1.1rem;
 	}
 
 	.header-stats {
 		display: flex;
-		gap: var(--space-md);
+		gap: var(--space-md, 1rem);
 		flex-wrap: wrap;
 	}
 
@@ -479,36 +422,51 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		padding: var(--space-md);
-		background: var(--surface);
-		border-radius: var(--radius-lg);
-		border: 1px solid var(--border);
+		padding: var(--space-md, 1rem);
+		background: var(--surface, white);
+		border-radius: var(--radius-lg, 0.5rem);
+		border: 1px solid var(--border, #e5e7eb);
 		min-width: 100px;
+	}
+
+	.stat-card.synced {
+		border-color: #059669;
+		background: #f0fdf4;
+	}
+
+	.stat-card.local {
+		border-color: #2563eb;
+		background: #eff6ff;
+	}
+
+	.stat-card.stripe {
+		border-color: #d97706;
+		background: #fffbeb;
 	}
 
 	.stat-value {
 		font-size: 1.5rem;
 		font-weight: bold;
-		color: var(--primary);
-		margin-bottom: var(--space-xs);
+		color: var(--primary, #2563eb);
+		margin-bottom: var(--space-xs, 0.5rem);
 	}
 
 	.stat-label {
 		font-size: 0.875rem;
-		color: var(--text-muted);
+		color: var(--text-muted, #6b7280);
 		text-align: center;
 	}
 
 	.header-actions {
 		display: flex;
 		justify-content: flex-end;
-		margin-top: var(--space-md);
+		margin-top: var(--space-md, 1rem);
 	}
 
 	.btn {
-		padding: var(--space-sm) var(--space-lg);
+		padding: var(--space-sm, 0.75rem) var(--space-lg, 1.5rem);
 		border: none;
-		border-radius: var(--radius-md);
+		border-radius: var(--radius-md, 0.375rem);
 		font-size: 0.875rem;
 		font-weight: 600;
 		cursor: pointer;
@@ -516,7 +474,7 @@
 		text-decoration: none;
 		display: inline-flex;
 		align-items: center;
-		gap: var(--space-xs);
+		gap: var(--space-xs, 0.5rem);
 	}
 
 	.btn:disabled {
@@ -525,33 +483,48 @@
 	}
 
 	.btn-primary {
-		background: var(--primary);
+		background: #2563eb;
 		color: white;
 	}
 
-	.btn-primary:hover {
-		background: var(--primary-hover);
+	.btn-primary:hover:not(:disabled) {
+		background: #1d4ed8;
 		transform: translateY(-1px);
 	}
 
 	.btn-success {
-		background: var(--success, #059669);
+		background: #059669;
 		color: white;
 	}
 
-	.btn-success:hover {
-		background: var(--success-hover, #047857);
+	.btn-success:hover:not(:disabled) {
+		background: #047857;
 		transform: translateY(-1px);
 	}
 
 	.btn-secondary {
-		background: var(--secondary);
-		color: white;
+		background: #f3f4f6;
+		color: #374151;
+		border: 1px solid #d1d5db;
 	}
 
-	.btn-secondary:hover {
-		background: var(--secondary-hover);
-		transform: translateY(-1px);
+	.btn-secondary:hover:not(:disabled) {
+		background: #e5e7eb;
+	}
+
+	.btn-sm {
+		padding: var(--space-xs, 0.5rem) var(--space-md, 1rem);
+		font-size: 0.75rem;
+	}
+
+	.loading-container, .error-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: var(--space-xl, 2rem);
+		text-align: center;
+		min-height: 400px;
 	}
 
 	.empty-state {
@@ -559,28 +532,37 @@
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		padding: var(--space-xl);
+		padding: var(--space-xl, 2rem);
 		text-align: center;
 		min-height: 400px;
 	}
 
 	.empty-icon {
 		font-size: 4rem;
-		margin-bottom: var(--space-lg);
+		margin-bottom: var(--space-lg, 1.5rem);
 		opacity: 0.5;
 	}
 
-	.empty-state h3 {
-		margin: 0 0 var(--space-md) 0;
-		color: var(--text);
-		font-size: 1.5rem;
+	.loading-spinner {
+		width: 40px;
+		height: 40px;
+		border: 3px solid #e5e7eb;
+		border-top: 3px solid #2563eb;
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+		margin-bottom: var(--space-md, 1rem);
 	}
 
-	.empty-state p {
-		margin: 0;
-		color: var(--text-muted);
-		font-size: 1.1rem;
-		max-width: 500px;
+	.loading-spinner.small {
+		width: 12px;
+		height: 12px;
+		border-width: 2px;
+		margin: 0 4px 0 0;
+	}
+
+	@keyframes spin {
+		0% { transform: rotate(0deg); }
+		100% { transform: rotate(360deg); }
 	}
 
 	.customers-table-container {
@@ -599,7 +581,7 @@
 
 	.customers-table th,
 	.customers-table td {
-		padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+		padding: var(--space-sm, 0.75rem) var(--space-md, 1rem);
 		text-align: left;
 		border-bottom: 1px solid var(--border, #e5e7eb);
 	}
@@ -617,18 +599,10 @@
 		background-color: var(--bg-hover, #f3f4f6);
 	}
 
-	.customers-table tbody tr:nth-child(even) {
-		background-color: var(--bg-secondary, #f9fafb);
-	}
-
-	.customers-table tbody tr:nth-child(even):hover {
-		background-color: var(--bg-hover, #f3f4f6);
-	}
-
 	.customer-info {
 		display: flex;
 		align-items: center;
-		gap: var(--space-sm);
+		gap: var(--space-sm, 0.75rem);
 	}
 
 	.customer-name h4 {
@@ -638,95 +612,39 @@
 		font-weight: 600;
 	}
 
-	.customer-id {
+	.customer-source {
 		font-size: 0.75rem;
 		color: var(--text-muted, #6b7280);
-		font-family: var(--font-mono, monospace);
-	}
-
-	.customer-email {
-		color: var(--text-muted, #6b7280);
-		font-size: 0.875rem;
-	}
-
-	.customer-created {
-		color: var(--text-muted, #6b7280);
-		font-size: 0.875rem;
-	}
-
-	.local-id {
-		color: var(--text-muted, #6b7280);
-		font-size: 0.875rem;
-	}
-
-	.customer-role {
-		color: var(--text-muted, #6b7280);
-		font-size: 0.875rem;
-	}
-
-	.no-metadata {
-		color: var(--text-muted, #6b7280);
-		font-size: 0.875rem;
-	}
-
-	.customer-actions {
-		display: flex;
-		gap: var(--space-xs, 0.25rem);
-	}
-
-	.btn-sm {
-		padding: var(--space-xs, 0.25rem) var(--space-md, 1rem);
-		font-size: 0.75rem;
-	}
-
-	.metadata-details {
-		border: 1px solid var(--border, #e5e7eb);
-		border-radius: var(--radius-md, 0.375rem);
-		padding: var(--space-sm, 0.5rem);
-		background-color: var(--bg-secondary, #f9fafb);
-	}
-
-	.metadata-summary {
-		cursor: pointer;
-		font-weight: 600;
-		color: var(--text-muted, #6b7280);
-		user-select: none;
-		font-size: 0.875rem;
-	}
-
-	.metadata-summary:hover {
-		color: var(--text, #111827);
-	}
-
-	.metadata-content {
-		margin-top: var(--space-sm, 0.5rem);
-		padding: var(--space-sm, 0.5rem);
-		background: var(--bg-primary, #ffffff);
-		border-radius: var(--radius-sm, 0.25rem);
-	}
-
-	.metadata-item {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: var(--space-xs, 0.25rem);
-		font-size: 0.8125rem;
-	}
-
-	.metadata-key {
-		color: var(--text-muted, #6b7280);
+		text-transform: uppercase;
 		font-weight: 500;
 	}
 
-	.metadata-value {
-		color: var(--text, #111827);
-		font-family: var(--font-mono, monospace);
-		word-break: break-all;
+	.source-badge {
+		padding: 0.25rem 0.5rem;
+		border-radius: 0.25rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+	}
+
+	.source-local {
+		background-color: #dbeafe;
+		color: #1e40af;
+	}
+
+	.source-stripe {
+		background-color: #fef3c7;
+		color: #d97706;
+	}
+
+	.source-hybrid {
+		background-color: #d1fae5;
+		color: #059669;
 	}
 
 	.sync-status {
-		padding: var(--space-xs, 0.25rem) var(--space-sm, 0.5rem);
-		border-radius: var(--radius-sm, 0.25rem);
+		padding: 0.25rem 0.5rem;
+		border-radius: 0.25rem;
 		font-size: 0.75rem;
 		font-weight: 600;
 		text-transform: uppercase;
@@ -740,23 +658,18 @@
 		color: #059669;
 	}
 
-	.sync-status.status-created {
-		background-color: #dbeafe;
-		color: #2563eb;
-	}
-
-	.sync-status.status-updated {
+	.sync-status.status-not-synced {
 		background-color: #fef3c7;
 		color: #d97706;
 	}
 
-	.sync-status.status-not-synced {
-		background-color: #fee2e2;
-		color: #dc2626;
+	.sync-status.status-local-only {
+		background-color: #dbeafe;
+		color: #2563eb;
 	}
 
-	.sync-status.status-error {
-		background-color: #fecaca;
+	.sync-status.status-stripe-only {
+		background-color: #fee2e2;
 		color: #dc2626;
 	}
 
@@ -765,47 +678,16 @@
 		color: #6b7280;
 	}
 
-	.sync-status.status-no-local {
-		background-color: #fef3c7;
-		color: #d97706;
+	.customer-actions {
+		display: flex;
+		gap: var(--space-xs, 0.5rem);
+		align-items: center;
 	}
 
-	.sync-status.status-not-found {
-		background-color: #f3f4f6;
-		color: #6b7280;
-	}
-
-	.loading-spinner {
-		width: 12px;
-		height: 12px;
-		border: 2px solid transparent;
-		border-top: 2px solid currentColor;
-		border-radius: 50%;
-		animation: spin 1s linear infinite;
-		margin-right: 6px;
-	}
-
-	@keyframes spin {
-		0% { transform: rotate(0deg); }
-		100% { transform: rotate(360deg); }
-	}
-
-	.last-sync-info {
-		font-size: 0.7rem;
-		color: var(--text-muted, #6b7280);
-		margin-top: var(--space-xs, 0.25rem);
-		font-style: italic;
-	}
-
-	.btn-outline {
-		background: transparent;
-		color: var(--text-muted, #6b7280);
-		border: 1px solid var(--border, #e5e7eb);
-	}
-
-	.btn-outline:hover:not(:disabled) {
-		background: var(--bg-secondary, #f9fafb);
-		color: var(--text, #111827);
+	.sync-complete {
+		color: #059669;
+		font-weight: 600;
+		font-size: 0.875rem;
 	}
 
 	@media (max-width: 768px) {
@@ -820,50 +702,7 @@
 		}
 
 		.customers-table {
-			display: block;
-			overflow-x: auto;
-		}
-
-		.customers-table th,
-		.customers-table td {
-			display: block;
-			width: 100%;
-			text-align: right;
-			padding-left: 50%;
-			position: relative;
-		}
-
-		.customers-table th:before,
-		.customers-table td:before {
-			content: attr(data-label);
-			position: absolute;
-			left: 0;
-			width: 50%;
-			padding-left: var(--space-md);
-			font-weight: 600;
-			text-align: left;
-			color: var(--text-muted);
-		}
-
-		.customer-info {
-			flex-direction: column;
-			align-items: flex-start;
-			text-align: left;
-		}
-
-		.customer-name h4 {
-			margin-bottom: var(--space-xs);
-		}
-
-		.customer-actions {
-			justify-content: flex-start;
-			flex-wrap: wrap;
-			gap: var(--space-xs);
-		}
-
-		.btn-sm {
-			flex: 1;
-			min-width: 100px;
+			font-size: 0.8125rem;
 		}
 	}
 </style> 
