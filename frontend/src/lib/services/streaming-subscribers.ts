@@ -324,6 +324,8 @@ export class StreamingSubscriberService {
 				return { text: 'Canceled', class: 'bg-red-100 text-red-800', color: 'red' };
 			case 'incomplete':
 				return { text: 'Incomplete', class: 'bg-gray-100 text-gray-800', color: 'gray' };
+			case 'inactive' :
+				return { text: 'Inactive', class: 'bg-gray-100 text-gray-800', color: 'gray' };
 			default:
 				return { text: 'Unknown', class: 'bg-gray-100 text-gray-800', color: 'gray' };
 		}

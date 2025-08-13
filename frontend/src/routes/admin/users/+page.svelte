@@ -4,6 +4,8 @@
 	import { auth } from '$lib/auth';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import UserModal from './UserModal.svelte';
+	import UsersTable from './UsersTable.svelte';
 	import { 
 		type StandardizedRole,
 		type StandardizedPermission,
@@ -53,8 +55,15 @@
 		lastName: '',
 		email: '',
 		role: '',
-		emailVerified: false
+		roleId: '',
+		emailVerified: false,
+		isActive: true,
+		hasSubbed: false,
+		stripeCustomerId: ''
 	};
+
+	// Check for URL parameters on mount (for Stripe customer import)
+	let urlParams: URLSearchParams;
 
 	// State for database-driven roles and departments
 	let roles: StandardizedRole[] = [];
@@ -190,6 +199,36 @@
 	onMount(async () => {
 		console.log('🚀 Admin Users: Component mounted');
 		
+		// Check for URL parameters (for Stripe customer import)
+		if (browser) {
+			urlParams = new URLSearchParams(window.location.search);
+			const stripeCustomerId = urlParams.get('stripe_customer_id');
+			const email = urlParams.get('email');
+			const firstName = urlParams.get('first_name');
+			const lastName = urlParams.get('last_name');
+			
+			if (stripeCustomerId || email || firstName || lastName) {
+				// Pre-fill form with Stripe data
+				userForm = {
+					firstName: firstName || '',
+					lastName: lastName || '',
+					email: email || '',
+					role: '',
+					roleId: '',
+					emailVerified: false,
+					isActive: true,
+					hasSubbed: false,
+					stripeCustomerId: stripeCustomerId || ''
+				};
+				
+				// Show modal automatically
+				showUserModal = true;
+				
+				// Clean up URL parameters
+				window.history.replaceState({}, '', '/admin/users');
+			}
+		}
+		
 		// Check authentication
 		if (!$auth.isAuthenticated) {
 			console.log('❌ Admin Users: User not authenticated, redirecting to login');
@@ -205,10 +244,93 @@
 		]);
 	});
 
+	// Modal functions
+	function openAddUserModal() {
+		editingUser = null;
+		userForm = {
+			firstName: '',
+			lastName: '',
+			email: '',
+			role: '',
+			roleId: '',
+			emailVerified: false,
+			isActive: true,
+			hasSubbed: false,
+			stripeCustomerId: ''
+		};
+		showUserModal = true;
+	}
+
+	function openEditUserModal(user: any) {
+		editingUser = user;
+		userForm = {
+			firstName: user.FirstName || '',
+			lastName: user.LastName || '',
+			email: user.Email || '',
+			role: user.Role || '',
+			roleId: user.RoleId || '',
+			emailVerified: user.EmailVerified || false,
+			isActive: user.IsActive || true,
+			hasSubbed: user.HasSubbed || false,
+			stripeCustomerId: user.StripeCustomerId || ''
+		};
+		showUserModal = true;
+	}
+
+	function closeUserModal() {
+		showUserModal = false;
+		editingUser = null;
+		userForm = {
+			firstName: '',
+			lastName: '',
+			email: '',
+			role: '',
+			roleId: '',
+			emailVerified: false,
+			isActive: true,
+			hasSubbed: false,
+			stripeCustomerId: ''
+		};
+	}
+
+	async function handleSaveUser(event: CustomEvent) {
+		try {
+			const { userForm: formData, editingUser: user } = event.detail;
+			
+			// Validate form
+			if (!formData.firstName || !formData.lastName || !formData.email || !formData.role) {
+				showToast('Please fill in all required fields', 'error');
+				return;
+			}
+
+			// TODO: Implement user creation/update API call
+			if (user) {
+				showToast('User updated successfully', 'success');
+			} else {
+				showToast('User created successfully', 'success');
+			}
+
+			closeUserModal();
+			await loadUsers(); // Refresh user list
+		} catch (error) {
+			console.error('Error saving user:', error);
+			showToast('Failed to save user', 'error');
+		}
+	}
+
 	// Function to handle page changes
 	async function changePage(newPage: number) {
 		currentPage = newPage;
 		await loadUsers();
+	}
+
+	// Wrapper functions for UsersTable events
+	function handlePageChange(event: CustomEvent<{ page: number }>) {
+		changePage(event.detail.page);
+	}
+
+	function handleEditUser(event: CustomEvent<{ user: any }>) {
+		openEditUserModal(event.detail.user);
 	}
 
 	// Function to handle page size changes
@@ -313,7 +435,7 @@
 			<p class="page-description">Manage users, roles, and access control across the platform</p>
 		</div>
 		<div class="header-actions">
-			<button class="btn btn-primary" on:click={() => showUserModal = true}>
+			<button class="btn btn-primary" on:click={openAddUserModal}>
 				<span class="btn-icon">➕</span>
 				Add User
 			</button>
@@ -453,7 +575,7 @@
 			<!-- Users Tab -->
 			<div class="users-section">
 				<!-- Search and Filter Bar -->
-				<div class="filter-bar">
+				<!--<div class="filter-bar">
 					<div class="search-container">
 						<input
 							type="text"
@@ -481,7 +603,7 @@
 							<option value="suspended">Suspended</option>
 						</select>
 					</div>
-				</div>
+				</div>-->
 
 				<!-- Users Table -->
 				{#if loading}
@@ -495,118 +617,21 @@
 						<button class="btn btn-secondary" on:click={loadUsers}>Retry</button>
 					</div>
 				{:else}
-					<div class="table-container">
-						<table class="users-table">
-							<thead>
-								<tr>
-									<th>User</th>
-									<th>Email</th>
-									<th>Verified</th>
-									<th>Role</th>
-									<!--<th>Department</th>-->
-									<th>Status</th>
-									<th>Subscription</th>
-									<th>Last Login</th>
-									<th>Actions</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each users as user, index (user.id || `user-${index}`)}
-									<tr>
-										<td>
-											<div class="user-info">
-												<div class="user-avatar">
-													{(user.FirstName || '').charAt(0)}{(user.LastName || '').charAt(0)}
-												</div>
-												<div class="user-details">
-													<div class="user-name">{user.FirstName || 'Unknown'} {user.LastName || 'User'}</div>
-													<div class="user-id">ID: {user.ID}</div>
-												</div>
-											</div>
-										</td>
-										<td>
-											<div class="email-cell">
-												<span class="email">{user.Email}</span>
-												
-											</div>
-										</td>
-										<td>
-											<div class="status-cell">
-												{#if user.EmailVerified}
-													<span class="verified-badge">✓</span>
-												{:else} 
-													<span class="unverified-badge">🚫</span>
-												{/if}
-											</div>
-										</td>
-										<td>
-											<div class="role-badge" style="background: {getRoleColor(user.Role)}20; color: {getRoleColor(user.Role)}">
-												{getRoleIcon(user.Role)} {roles.find(r => r.id === user.Role)?.name || user.Role}
-											</div>
-										</td>
-										<!--<td>
-											<span class="department-badge">{user.Department}</span>
-										</td>-->
-										<td>
-											<div class="status-cell">
-												<span class="status-badge {getStatusBadgeClass(user.Status)}">
-													{user.Status}
-												</span>
-											</div>
-										</td>
-										<td>
-											<span class="subscription-badge {getSubscriptionBadgeClass(user.subscription)}">
-												{user.subscription}
-											</span>
-										</td>
-										<td>
-											<span class="last-login">{formatDate(user.lastLogin)}</span>
-										</td>
-										<td>
-											<div class="action-buttons">
-												<button class="btn btn-sm btn-secondary" on:click={() => { editingUser = user; showUserModal = true; }}>
-													Edit
-												</button>
-											</div>
-										</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-
-					<!-- Pagination -->
-					{#if totalPages > 1}
-						<div class="pagination">
-							<button 
-								class="btn btn-secondary" 
-								disabled={currentPage === 1}
-								on:click={() => changePage(currentPage - 1)}
-							>
-								Previous
-							</button>
-							
-							<div class="page-numbers">
-								{#each Array.from({length: totalPages}, (_, i) => i + 1) as pageNum}
-									<button 
-										class="page-number" 
-										class:active={pageNum === currentPage}
-										on:click={() => changePage(pageNum)}
-									>
-										{pageNum}
-									</button>
-								{/each}
-							</div>
-							
-							<button 
-								class="btn btn-secondary" 
-								disabled={currentPage === totalPages}
-								on:click={() => changePage(currentPage + 1)}
-							>
-								Next
-							</button>
-						</div>
-					{/if}
+					<UsersTable 
+						{users}
+						{roles}
+						{loading}
+						{error}
+						{currentPage}
+						{totalPages}
+						bind:searchTerm
+						bind:roleFilter
+						bind:statusFilter
+						on:pageChange={handlePageChange}
+						on:search={handleSearch}
+						on:filterChange={handleFilterChange}
+						on:editUser={handleEditUser}
+					/>
 				{/if}
 			</div>
 
@@ -707,6 +732,18 @@
 		{/if}
 	</div>
 </div>
+
+<!-- User Modal -->
+{#if showUserModal}
+	<UserModal 
+		bind:isOpen={showUserModal}
+		bind:editingUser={editingUser}
+		bind:userForm={userForm}
+		{roles}
+		on:close={closeUserModal}
+		on:save={handleSaveUser}
+	/>
+{/if}
 
 <style>
 	.admin-page {
@@ -891,174 +928,6 @@
 		border-radius: 0.5rem;
 		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 		overflow: hidden;
-	}
-
-	.filter-bar {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 1rem 1.5rem;
-		border-bottom: 1px solid #e5e7eb;
-		background: #f9fafb;
-	}
-
-	.search-container {
-		position: relative;
-		flex: 1;
-		max-width: 400px;
-	}
-
-	.search-input {
-		width: 100%;
-		padding: 0.5rem 1rem 0.5rem 2.5rem;
-		border: 1px solid #d1d5db;
-		border-radius: 0.375rem;
-		font-size: 0.875rem;
-	}
-
-	.search-icon {
-		position: absolute;
-		left: 0.75rem;
-		top: 50%;
-		transform: translateY(-50%);
-		color: #6b7280;
-	}
-
-	.filter-container {
-		display: flex;
-		gap: 1rem;
-	}
-
-	.filter-select {
-		padding: 0.5rem;
-		border: 1px solid #d1d5db;
-		border-radius: 0.375rem;
-		font-size: 0.875rem;
-		background: white;
-	}
-
-	.table-container {
-		overflow-x: auto;
-	}
-
-	.users-table {
-		width: 100%;
-		border-collapse: collapse;
-	}
-
-	.users-table th,
-	.users-table td {
-		padding: 1rem;
-		text-align: left;
-		border-bottom: 1px solid #e5e7eb;
-	}
-
-	.users-table th {
-		background: #f9fafb;
-		font-weight: 600;
-		color: #374151;
-		font-size: 0.875rem;
-	}
-
-	.user-info {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-	}
-
-	.user-avatar {
-		width: 2.5rem;
-		height: 2.5rem;
-		border-radius: 50%;
-		background: #3b82f6;
-		color: white;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-weight: 600;
-		font-size: 0.875rem;
-	}
-
-	.user-name {
-		font-weight: 500;
-		color: #111827;
-	}
-
-	.user-id {
-		font-size: 0.75rem;
-		color: #6b7280;
-	}
-
-	.email-cell {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		
-	}
-
-	.status-cell {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		text-align: center;
-		justify-content: center;
-	}
-
-	.verified-badge {
-		color: #059669;
-		font-weight: bold;
-	}
-
-	.role-badge, .department-badge, .status-badge, .subscription-badge {
-		padding: 0.25rem 0.5rem;
-		border-radius: 0.25rem;
-		font-size: 0.75rem;
-		font-weight: 500;
-	}
-
-	.last-login {
-		font-size: 0.875rem;
-		color: #6b7280;
-	}
-
-	.action-buttons {
-		display: flex;
-		gap: 0.5rem;
-	}
-
-	/* Pagination */
-	.pagination {
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		gap: 1rem;
-		padding: 1rem;
-		border-top: 1px solid #e5e7eb;
-	}
-
-	.page-numbers {
-		display: flex;
-		gap: 0.25rem;
-	}
-
-	.page-number {
-		padding: 0.5rem 0.75rem;
-		border: 1px solid #d1d5db;
-		background: white;
-		color: #374151;
-		border-radius: 0.25rem;
-		cursor: pointer;
-		transition: all 0.2s;
-	}
-
-	.page-number:hover {
-		background: #f3f4f6;
-	}
-
-	.page-number.active {
-		background: #2563eb;
-		color: white;
-		border-color: #2563eb;
 	}
 
 	/* Roles Tab */

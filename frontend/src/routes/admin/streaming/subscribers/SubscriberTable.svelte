@@ -146,7 +146,7 @@
 						<th>Verified</th>
 						<th>Role</th>
 						<th>Plan</th>
-						<th>Status</th>
+						<th>Plan Status</th>
 						<th>Subscription Start</th>
 						<th>Subscription End</th>
 						<th>Last Login</th>
