@@ -127,6 +127,104 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 			c.JSON(http.StatusOK, gin.H{"summary": summary})
 		})
 
+		// Customer portal link endpoints
+		streaming.GET("/stripe/portal-link", func(c *gin.Context) {
+			crypto := services.GetGlobalCryptoService()
+			if crypto == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Crypto service not initialized"})
+				return
+			}
+
+			if db == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
+				return
+			}
+
+			// Retrieve encrypted portal link
+			encrypted, err := db.GetSecureSetting("stripe_portal_url")
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve portal link"})
+				return
+			}
+
+			if encrypted == "" {
+				c.JSON(http.StatusOK, gin.H{"portal_url": ""})
+				return
+			}
+
+			// Decrypt the portal link
+			decrypted, err := crypto.DecryptString(encrypted)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decrypt portal link"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"portal_url": decrypted})
+		})
+
+		streaming.POST("/stripe/portal-link", func(c *gin.Context) {
+			var req struct {
+				PortalURL string `json:"portal_url" binding:"required"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
+				return
+			}
+
+			crypto := services.GetGlobalCryptoService()
+			if crypto == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Crypto service not initialized"})
+				return
+			}
+
+			if db == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
+				return
+			}
+
+			// Encrypt the portal URL
+			encrypted, err := crypto.EncryptString(req.PortalURL)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt portal link"})
+				return
+			}
+
+			// Store encrypted portal URL
+			if err := db.SetSecureSetting("stripe_portal_url", encrypted); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store portal link"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"message": "Portal link saved successfully"})
+		})
+
+		streaming.DELETE("/stripe/portal-link", func(c *gin.Context) {
+			crypto := services.GetGlobalCryptoService()
+			if crypto == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Crypto service not initialized"})
+				return
+			}
+
+			if db == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
+				return
+			}
+
+			// Store empty encrypted value to clear the portal link
+			encrypted, err := crypto.EncryptString("")
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt empty value"})
+				return
+			}
+
+			if err := db.SetSecureSetting("stripe_portal_url", encrypted); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear portal link"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"message": "Portal link cleared successfully"})
+		})
+
 		// Debug endpoint for testing coupon listing
 		streaming.GET("/stripe/debug/coupons", func(c *gin.Context) {
 			if !stripeService.IsEnabled() {

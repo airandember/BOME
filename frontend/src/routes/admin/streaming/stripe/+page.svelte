@@ -27,6 +27,14 @@
 	let showClearModal = false;
 	let clearConfirmText = '';
 
+	// Customer portal link state
+	let portalLink = '';
+	let savedPortalLink = ''; // The saved/persisted value
+	let savingPortal = false;
+	let portalError = '';
+	let portalSuccess = '';
+	let editingPortal = false; // Whether we're in edit mode
+
 	// Debug logging for data changes
 	$: {
 		console.log('=== MAIN STRIPE DEBUG ===');
@@ -52,6 +60,7 @@
 
 	onMount(async () => {
 		await fetchSummary();
+		await loadPortalLink();
 		
 		// If not enabled, default to setup tab
 		if (summary && !summary.enabled) {
@@ -75,6 +84,23 @@
 			console.error(err);
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function loadPortalLink() {
+		try {
+			const res = await apiRequest('/admin/streaming/stripe/portal-link');
+			if (res.ok) {
+				const data = await res.json();
+				savedPortalLink = data.portal_url;
+				portalLink = savedPortalLink; // Initialize portalLink for editing
+			} else {
+				console.error('Failed to load portal link:', res.status);
+				portalError = 'Failed to load customer portal link';
+			}
+		} catch (err) {
+			console.error('Failed to load portal link:', err);
+			portalError = 'Failed to load customer portal link';
 		}
 	}
 
@@ -165,6 +191,77 @@
 			console.error(err);
 		} finally {
 			saving = false;
+		}
+	}
+
+	// Save customer portal link
+	async function savePortalLink() {
+		if (!portalLink.trim()) return;
+		
+		savingPortal = true;
+		portalError = '';
+		portalSuccess = '';
+		
+		try {
+			const res = await apiRequest('/admin/streaming/stripe/portal-link', {
+				method: 'POST',
+				body: JSON.stringify({ portal_url: portalLink })
+			});
+
+			if (res.ok) {
+				const data = await res.json();
+				savedPortalLink = portalLink; // Use the local value since backend doesn't return it
+				editingPortal = false;
+				portalSuccess = data.message || 'Customer portal link saved successfully!';
+			} else {
+				const errorData = await res.json();
+				portalError = errorData.error || 'Failed to save portal link';
+			}
+		} catch (err) {
+			portalError = 'Failed to save portal link';
+			console.error(err);
+		} finally {
+			savingPortal = false;
+		}
+	}
+
+	// Start editing portal link
+	function startEditingPortal() {
+		editingPortal = true;
+		portalLink = savedPortalLink;
+		portalError = '';
+		portalSuccess = '';
+	}
+
+	// Cancel editing portal link
+	function cancelEditingPortal() {
+		editingPortal = false;
+		portalLink = '';
+		portalError = '';
+		portalSuccess = '';
+	}
+
+	// Clear saved portal link
+	async function clearPortalLink() {
+		try {
+			const res = await apiRequest('/admin/streaming/stripe/portal-link', {
+				method: 'DELETE'
+			});
+			
+			if (res.ok) {
+				const data = await res.json();
+				savedPortalLink = '';
+				portalLink = '';
+				editingPortal = false;
+				portalSuccess = data.message || 'Customer portal link cleared successfully!';
+				portalError = '';
+			} else {
+				const errorData = await res.json();
+				portalError = errorData.error || 'Failed to clear portal link';
+			}
+		} catch (err) {
+			portalError = 'Failed to clear portal link';
+			console.error(err);
 		}
 	}
 
@@ -325,6 +422,92 @@
 								<li>All communication uses HTTPS encryption</li>
 							</ul>
 						</div>
+					</div>
+
+					<!-- Customer Portal Setup -->
+					<div class="instructions-card">
+						<h3>🔗 Customer Portal Setup</h3>
+						<p>Configure your Stripe customer portal link for subscription management</p>
+						
+						{#if savedPortalLink && !editingPortal}
+							<!-- Display saved portal link -->
+							<div class="saved-portal">
+								<div class="saved-portal-display">
+									<div class="saved-portal-label">Current Portal URL:</div>
+									<div class="saved-portal-url">
+										<a href={savedPortalLink} target="_blank" rel="noopener">
+											{savedPortalLink}
+										</a>
+									</div>
+								</div>
+								<div class="saved-portal-actions">
+									<button class="btn btn-outline" on:click={startEditingPortal}>
+										✏️ Update Link
+									</button>
+									<button class="btn btn-secondary" on:click={clearPortalLink}>
+										🗑️ Clear Link
+									</button>
+								</div>
+							</div>
+						{:else}
+							<!-- Edit/Add form -->
+							<form on:submit|preventDefault={savePortalLink} class="portal-form">
+								<div class="input-group">
+									<label for="main-portal-link" class="input-label">
+										Customer Portal URL
+									</label>
+									<input 
+										id="main-portal-link"
+										class="input" 
+										type="url" 
+										placeholder="https://billing.stripe.com/p/login/..." 
+										bind:value={portalLink}
+									/>
+									<div class="input-help">
+										Get this URL from your Stripe Dashboard → Settings → Customer Portal
+									</div>
+								</div>
+
+								<div class="portal-form-actions">
+									<button 
+										type="submit" 
+										class="btn btn-primary" 
+										disabled={savingPortal || !portalLink.trim()}
+									>
+										{savingPortal ? 'Saving...' : (savedPortalLink ? 'Update Portal Link' : 'Save Portal Link')}
+									</button>
+									{#if editingPortal}
+										<button 
+											type="button" 
+											class="btn btn-secondary" 
+											on:click={cancelEditingPortal}
+										>
+											Cancel
+										</button>
+									{/if}
+								</div>
+							</form>
+						{/if}
+						
+						{#if portalError}
+							<div class="alert alert-error">
+								<div class="alert-icon">❌</div>
+								<div class="alert-content">
+									<strong>Error</strong>
+									<p>{portalError}</p>
+								</div>
+							</div>
+						{/if}
+						
+						{#if portalSuccess}
+							<div class="alert alert-success">
+								<div class="alert-icon">✅</div>
+								<div class="alert-content">
+									<strong>Success!</strong>
+									<p>{portalSuccess}</p>
+								</div>
+							</div>
+						{/if}
 					</div>
 				</div>
 			</div>
@@ -972,6 +1155,64 @@
 		margin-bottom: var(--space-xs);
 		color: var(--text-muted);
 		font-size: 0.9rem;
+	}
+
+	.portal-form {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-md);
+		margin-top: var(--space-lg);
+	}
+
+	.portal-form-actions {
+		display: flex;
+		gap: var(--space-md);
+		justify-content: flex-end;
+	}
+
+	.saved-portal {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-md);
+		padding: var(--space-md);
+		background: var(--bg-secondary);
+		border-radius: var(--radius-md);
+		border: 1px solid var(--border);
+	}
+
+	.saved-portal-display {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+	}
+
+	.saved-portal-label {
+		font-size: 0.9rem;
+		color: var(--text-muted);
+		font-weight: 500;
+	}
+
+	.saved-portal-url {
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.saved-portal-url a {
+		color: var(--primary);
+		text-decoration: none;
+		word-break: break-all;
+	}
+
+	.saved-portal-url a:hover {
+		text-decoration: underline;
+	}
+
+	.saved-portal-actions {
+		display: flex;
+		gap: var(--space-md);
+		justify-content: flex-end;
 	}
 
 	/* Modal Styles */

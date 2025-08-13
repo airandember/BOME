@@ -13,6 +13,14 @@
 	let showClearModal = false;
 	let clearConfirmText = '';
 
+	// Customer portal link state
+	let portalLink = '';
+	let savedPortalLink = ''; // The saved/persisted value
+	let savingPortal = false;
+	let portalError = '';
+	let portalSuccess = '';
+	let editingPortal = false; // Whether we're in edit mode
+
 	export let data: any = null;
 
 	onMount(async () => {
@@ -22,6 +30,7 @@
 		} else {
 			await fetchSummary();
 		}
+		await loadPortalLink();
 	});
 
 	async function fetchSummary() {
@@ -148,6 +157,91 @@
 			console.error(err);
 		} finally {
 			saving = false;
+		}
+	}
+
+	// Save customer portal link
+	async function savePortalLink() {
+		if (!portalLink.trim()) return;
+		
+		savingPortal = true;
+		portalError = '';
+		portalSuccess = '';
+		
+		try {
+			const res = await apiRequest('/admin/streaming/stripe/portal-link', {
+				method: 'POST',
+				body: JSON.stringify({ portal_url: portalLink })
+			});
+			
+			if (res.ok) {
+				const data = await res.json();
+				savedPortalLink = portalLink; // Use the local value since backend doesn't return it
+				editingPortal = false;
+				portalSuccess = data.message || 'Customer portal link saved successfully!';
+			} else {
+				const errorData = await res.json();
+				portalError = errorData.error || 'Failed to save portal link';
+			}
+		} catch (err) {
+			portalError = 'Failed to update portal link';
+			console.error(err);
+		} finally {
+			savingPortal = false;
+		}
+	}
+
+	// Start editing portal link
+	function startEditingPortal() {
+		editingPortal = true;
+		portalLink = savedPortalLink;
+		portalError = '';
+		portalSuccess = '';
+	}
+
+	// Cancel editing portal link
+	function cancelEditingPortal() {
+		editingPortal = false;
+		portalLink = '';
+		portalError = '';
+		portalSuccess = '';
+	}
+
+	// Clear saved portal link
+	async function clearPortalLink() {
+		try {
+			const res = await apiRequest('/admin/streaming/stripe/portal-link', {
+				method: 'DELETE'
+			});
+			
+			if (res.ok) {
+				const data = await res.json();
+				savedPortalLink = '';
+				portalLink = '';
+				editingPortal = false;
+				portalSuccess = data.message || 'Customer portal link cleared successfully!';
+				portalError = '';
+			} else {
+				const errorData = await res.json();
+				portalError = errorData.error || 'Failed to clear portal link';
+			}
+		} catch (err) {
+			portalError = 'Failed to clear portal link';
+			console.error(err);
+		}
+	}
+
+	async function loadPortalLink() {
+		try {
+			const res = await apiRequest('/admin/streaming/stripe/portal-link');
+			if (res.ok) {
+				const data = await res.json();
+				savedPortalLink = data.portal_url;
+			} else {
+				console.error('Failed to load portal link');
+			}
+		} catch (err) {
+			console.error('Failed to load portal link', err);
 		}
 	}
 </script>
@@ -316,37 +410,90 @@
 					</div>
 				</div>
 
-				<!-- Next Steps -->
+				<!-- Customer Portal Setup -->
 				<div class="next-steps-card">
-					<h3>🎯 Next Steps</h3>
-					<div class="next-steps">
-						<div class="next-step">
-							<div class="next-step-icon">📦</div>
-							<div class="next-step-content">
-								<h4>Create Products</h4>
-								<p>Set up your products and services in Stripe</p>
-								<a href="/admin/streaming/stripe/products" class="btn btn-sm btn-outline">Manage Products</a>
+					<h3>🔗 Customer Portal Setup</h3>
+					<p>Configure your Stripe customer portal link for subscription management</p>
+					
+					{#if savedPortalLink && !editingPortal}
+						<!-- Display saved portal link -->
+						<div class="saved-portal">
+							<div class="saved-portal-display">
+								<div class="saved-portal-label">Current Portal URL:</div>
+								<div class="saved-portal-url">
+									<a href={savedPortalLink} target="_blank" rel="noopener">
+										{savedPortalLink}
+									</a>
+								</div>
+							</div>
+							<div class="saved-portal-actions">
+								<button class="btn btn-outline" on:click={startEditingPortal}>
+									✏️ Update Link
+								</button>
+								<button class="btn btn-secondary" on:click={clearPortalLink}>
+									🗑️ Clear Link
+								</button>
 							</div>
 						</div>
-						
-						<div class="next-step">
-							<div class="next-step-icon">💰</div>
-							<div class="next-step-content">
-								<h4>Configure Pricing</h4>
-								<p>Set up pricing plans and subscription tiers</p>
-								<a href="/admin/streaming/stripe/products" class="btn btn-sm btn-outline">Set Pricing</a>
+					{:else}
+						<!-- Edit/Add form -->
+						<form on:submit|preventDefault={savePortalLink} class="portal-form">
+							<div class="input-group">
+								<label for="portal-link" class="input-label">
+									Customer Portal URL
+								</label>
+								<input 
+									id="portal-link"
+									class="input" 
+									type="url" 
+									placeholder="https://billing.stripe.com/p/login/..." 
+									bind:value={portalLink}
+								/>
+								<div class="input-help">
+									Get this URL from your Stripe Dashboard → Settings → Customer Portal
+								</div>
+							</div>
+
+							<div class="portal-form-actions">
+								<button 
+									type="submit" 
+									class="btn btn-primary" 
+									disabled={savingPortal || !portalLink.trim()}
+								>
+									{savingPortal ? 'Saving...' : (savedPortalLink ? 'Update Portal Link' : 'Save Portal Link')}
+								</button>
+								{#if editingPortal}
+									<button 
+										type="button" 
+										class="btn btn-secondary" 
+										on:click={cancelEditingPortal}
+									>
+										Cancel
+									</button>
+								{/if}
+							</div>
+						</form>
+					{/if}
+					
+					{#if portalError}
+						<div class="alert alert-error">
+							<div class="alert-icon">❌</div>
+							<div class="alert-content">
+								<strong>Error</strong>
+								<p>{portalError}</p>
 							</div>
 						</div>
-						
-						<div class="next-step">
-							<div class="next-step-icon">🔗</div>
-							<div class="next-step-content">
-								<h4>Setup Webhooks</h4>
-								<p>Configure webhooks for real-time updates</p>
-								<button class="btn btn-sm btn-outline">Configure Webhooks</button>
+					{/if}
+					
+					{#if portalSuccess}
+						<div class="alert alert-success">
+							<div class="alert-icon">✅</div>
+							<div class="alert-content">
+								<strong>Success!</strong>
+								<p>{portalSuccess}</p>
 							</div>
 						</div>
-					</div>
+					{/if}
 				</div>
 			</div>
 		{/if}
@@ -802,9 +949,22 @@
 	}
 
 	.next-steps-card h3 {
-		margin: 0 0 var(--space-lg) 0;
-		color: var(--text);
+		margin: 0 0 var(--space-lg, 1.5rem) 0;
+		color: var(--text, #111827);
 		font-size: 1.5rem;
+	}
+
+	.portal-form {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-md, 1rem);
+		margin-top: var(--space-lg, 1.5rem);
+	}
+
+	.portal-form-actions {
+		display: flex;
+		gap: var(--space-md, 1rem);
+		margin-top: var(--space-md, 1rem);
 	}
 
 	.next-steps {
@@ -967,6 +1127,49 @@
 		border-top: 1px solid var(--border, #e5e7eb);
 		background: var(--bg-secondary, #f9fafb);
 		border-radius: 0 0 var(--radius-lg, 0.5rem) var(--radius-lg, 0.5rem);
+	}
+
+	.saved-portal {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-md);
+		padding: var(--space-md);
+		background: var(--bg-secondary);
+		border-radius: var(--radius-md);
+	}
+
+	.saved-portal-display {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+	}
+
+	.saved-portal-label {
+		font-weight: 600;
+		color: var(--text);
+		font-size: 1rem;
+	}
+
+	.saved-portal-url {
+		flex: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.saved-portal-url a {
+		color: var(--primary);
+		text-decoration: none;
+	}
+
+	.saved-portal-url a:hover {
+		text-decoration: underline;
+	}
+
+	.saved-portal-actions {
+		display: flex;
+		gap: var(--space-md);
+		flex-wrap: wrap;
 	}
 
 	@media (max-width: 768px) {

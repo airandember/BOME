@@ -45,6 +45,14 @@
 			minute: '2-digit'
 		});
 	}
+
+	// Currency formatting utility
+	function formatCurrency(amount: number, currency: string = 'USD'): string {
+		return new Intl.NumberFormat('en-US', { 
+			style: 'currency', 
+			currency: currency.toUpperCase() 
+		}).format(amount);
+	}
 </script>
 
 {#if loading}
@@ -127,7 +135,7 @@
 										{#each relatedPrices as price}
 											<div class="price-item">
 												<div class="price-amount">
-													${(price.UnitAmount / 100).toFixed(2)} {price.Currency.toUpperCase()}
+													{formatCurrency(price.UnitAmount / 100, price.Currency)}
 												</div>
 												{#if price.Recurring}
 													<div class="price-interval">

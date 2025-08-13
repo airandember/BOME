@@ -41,6 +41,14 @@
 	async function refreshData() {
 		await fetchSummary();
 	}
+
+	// Currency formatting utility
+	function formatCurrency(amount: number): string {
+		return new Intl.NumberFormat('en-US', { 
+			style: 'currency', 
+			currency: 'USD' 
+		}).format(amount);
+	}
 </script>
 
 {#if loading}
@@ -143,9 +151,9 @@
 					<div class="stat-label">Revenue This Month</div>
 					<div class="stat-value">
 						{#if summary.invoices}
-							${(summary.invoices.filter((inv: any) => inv.Status === 'paid').reduce((sum: any, inv: any) => sum + inv.Amount, 0) / 100).toFixed(2)}
+							{formatCurrency(summary.invoices.filter((inv: any) => inv.Status === 'paid').reduce((sum: any, inv: any) => sum + inv.Amount, 0) / 100)}
 						{:else}
-							$0.00
+							{formatCurrency(0)}
 						{/if}
 					</div>
 				</div>
