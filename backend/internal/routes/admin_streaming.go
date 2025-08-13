@@ -73,14 +73,36 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 				return
 			}
 
-			encrypted, err := crypto.EncryptString(req.Key)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt key"})
+			if db == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
 				return
 			}
 
-			if db == nil {
-				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
+			// Check for special "clear" key
+			if req.Key == "sk_1337" {
+				// Store empty encrypted value to clear the key
+				encrypted, err := crypto.EncryptString("")
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt empty key"})
+					return
+				}
+
+				if err := db.SetSecureSetting("stripe_secret_key", encrypted); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear key"})
+					return
+				}
+
+				// Update runtime Stripe service to disable it
+				stripeService.UpdateSecretKey("")
+
+				c.JSON(http.StatusOK, gin.H{"message": "Stripe secret cleared"})
+				return
+			}
+
+			// Normal key processing
+			encrypted, err := crypto.EncryptString(req.Key)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt key"})
 				return
 			}
 

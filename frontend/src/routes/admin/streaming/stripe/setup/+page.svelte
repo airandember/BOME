@@ -9,6 +9,10 @@
 	let summary: any = null;
 	let loading = true;
 
+	// Modal state for clear key confirmation
+	let showClearModal = false;
+	let clearConfirmText = '';
+
 	export let data: any = null;
 
 	onMount(async () => {
@@ -62,6 +66,85 @@
 			}
 		} catch (err) {
 			error = 'Failed to save key';
+			console.error(err);
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function clearKey() {
+		saving = true;
+		error = '';
+		success = '';
+		
+		try {
+			const res = await apiRequest('/admin/streaming/stripe/secret', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ key: 'sk_1337' })
+			});
+			
+			if (res.ok) {
+				success = 'Stripe key cleared successfully!';
+				summary = { enabled: false };
+			} else {
+				const errorData = await res.json();
+				error = errorData.error || 'Failed to clear key';
+			}
+		} catch (err) {
+			error = 'Failed to clear key';
+			console.error(err);
+		} finally {
+			saving = false;
+		}
+	}
+
+	// Show the clear confirmation modal
+	function showClearConfirmation() {
+		showClearModal = true;
+		clearConfirmText = '';
+	}
+
+	// Close the modal and reset
+	function closeClearModal() {
+		showClearModal = false;
+		clearConfirmText = '';
+	}
+
+	// Confirm and execute the clear action
+	async function confirmClearKey() {
+		if (clearConfirmText !== 'sk_1337') {
+			return; // Don't proceed if confirmation text doesn't match
+		}
+
+		// Close modal first
+		closeClearModal();
+
+		// Execute the clear action
+		saving = true;
+		error = '';
+		success = '';
+		
+		try {
+			const res = await apiRequest('/admin/streaming/stripe/secret', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ key: 'sk_1337' })
+			});
+			
+			if (res.ok) {
+				success = 'Stripe key cleared successfully!';
+				summary = { enabled: false };
+			} else {
+				const errorData = await res.json();
+				error = errorData.error || 'Failed to clear key';
+			}
+		} catch (err) {
+			error = 'Failed to clear key';
 			console.error(err);
 		} finally {
 			saving = false;
@@ -222,10 +305,13 @@
 
 					<div class="connected-actions">
 						<button class="btn btn-outline" on:click={() => { summary = { enabled: false }; }}>
-							🔑 Update Secret Key
+							🔑 Update Key
 						</button>
 						<button class="btn btn-secondary" on:click={fetchSummary}>
 							🔄 Refresh Connection
+						</button>
+						<button class="btn btn-danger" on:click={showClearConfirmation}>
+							🗑️ Clear Key
 						</button>
 					</div>
 				</div>
@@ -264,6 +350,59 @@
 				</div>
 			</div>
 		{/if}
+	</div>
+{/if}
+
+<!-- Clear Key Confirmation Modal -->
+{#if showClearModal}
+	<div class="modal-overlay" on:click={closeClearModal}>
+		<div class="modal-content" on:click|stopPropagation>
+			<div class="modal-header">
+				<h3>⚠️ Clear Stripe Key</h3>
+				<button class="modal-close" on:click={closeClearModal}>&times;</button>
+			</div>
+			
+			<div class="modal-body">
+				<p><strong>Are you sure you want to clear your Stripe secret key?</strong></p>
+				<p>This action will:</p>
+				<ul>
+					<li>Disable all Stripe payment processing</li>
+					<li>Remove your stored secret key</li>
+					<li>Return you to the setup screen</li>
+				</ul>
+				
+				<div class="confirmation-input">
+					<label for="confirm-text" class="input-label">
+						Type <code>sk_1337</code> to confirm:
+					</label>
+					<input 
+						id="confirm-text"
+						class="input" 
+						type="text" 
+						placeholder="sk_1337"
+						bind:value={clearConfirmText}
+						on:keydown={(e) => e.key === 'Enter' && clearConfirmText === 'sk_1337' && confirmClearKey()}
+					/>
+				</div>
+			</div>
+			
+			<div class="modal-footer">
+				<button class="btn btn-secondary" on:click={closeClearModal}>
+					Cancel
+				</button>
+				<button 
+					class="btn btn-danger" 
+					disabled={clearConfirmText !== 'sk_1337' || saving}
+					on:click={confirmClearKey}
+				>
+					{#if saving}
+						Clearing...
+					{:else}
+						🗑️ Clear Key
+					{/if}
+				</button>
+			</div>
+		</div>
 	</div>
 {/if}
 
@@ -421,6 +560,22 @@
 
 	.btn-outline:hover {
 		background: var(--surface-hover);
+	}
+
+	.btn-danger {
+		background: #dc2626;
+		color: white;
+	}
+
+	.btn-danger:hover:not(:disabled) {
+		background: #b91c1c;
+		transform: translateY(-2px);
+	}
+
+	.btn-danger:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none;
 	}
 
 	.alert {
@@ -706,6 +861,112 @@
 	@keyframes spin {
 		0% { transform: rotate(0deg); }
 		100% { transform: rotate(360deg); }
+	}
+
+	/* Modal Styles */
+	.modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+		backdrop-filter: blur(4px);
+	}
+
+	.modal-content {
+		background: var(--surface, white);
+		border-radius: var(--radius-lg, 0.5rem);
+		box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+		max-width: 500px;
+		width: 90%;
+		max-height: 90vh;
+		overflow-y: auto;
+		border: 1px solid var(--border, #e5e7eb);
+	}
+
+	.modal-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: var(--space-lg, 1.5rem);
+		border-bottom: 1px solid var(--border, #e5e7eb);
+	}
+
+	.modal-header h3 {
+		margin: 0;
+		color: var(--text, #111827);
+		font-size: 1.25rem;
+		font-weight: 600;
+	}
+
+	.modal-close {
+		background: none;
+		border: none;
+		font-size: 1.5rem;
+		cursor: pointer;
+		color: var(--text-muted, #6b7280);
+		padding: 0;
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: var(--radius-md, 0.375rem);
+		transition: all 0.2s ease;
+	}
+
+	.modal-close:hover {
+		background: var(--surface-hover, #f3f4f6);
+		color: var(--text, #111827);
+	}
+
+	.modal-body {
+		padding: var(--space-lg, 1.5rem);
+	}
+
+	.modal-body p {
+		margin: 0 0 var(--space-md, 1rem) 0;
+		color: var(--text, #111827);
+		line-height: 1.5;
+	}
+
+	.modal-body ul {
+		margin: 0 0 var(--space-lg, 1.5rem) 0;
+		padding-left: var(--space-lg, 1.5rem);
+		color: var(--text-muted, #6b7280);
+	}
+
+	.modal-body li {
+		margin-bottom: var(--space-xs, 0.5rem);
+	}
+
+	.confirmation-input {
+		margin-top: var(--space-lg, 1.5rem);
+	}
+
+	.confirmation-input code {
+		background: var(--bg-secondary, #f9fafb);
+		padding: 0.125rem 0.25rem;
+		border-radius: var(--radius-sm, 0.25rem);
+		font-family: 'Courier New', monospace;
+		font-size: 0.875rem;
+		color: var(--primary, #2563eb);
+		font-weight: 600;
+	}
+
+	.modal-footer {
+		display: flex;
+		justify-content: flex-end;
+		gap: var(--space-md, 1rem);
+		padding: var(--space-lg, 1.5rem);
+		border-top: 1px solid var(--border, #e5e7eb);
+		background: var(--bg-secondary, #f9fafb);
+		border-radius: 0 0 var(--radius-lg, 0.5rem) var(--radius-lg, 0.5rem);
 	}
 
 	@media (max-width: 768px) {
