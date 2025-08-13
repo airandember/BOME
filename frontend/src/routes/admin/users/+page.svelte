@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { auth } from '$lib/auth';
+	import { apiRequest } from '$lib/auth';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import UserModal from './UserModal.svelte';
@@ -303,18 +304,60 @@
 				return;
 			}
 
-			// TODO: Implement user creation/update API call
+			// Prepare API request data
+			const requestData = {
+				first_name: formData.firstName,
+				last_name: formData.lastName,
+				email: formData.email,
+				role: formData.role,
+				role_id: formData.roleId || '',
+				email_verified: formData.emailVerified,
+				is_active: formData.isActive,
+				has_subbed: formData.hasSubbed,
+				stripe_customer_id: formData.stripeCustomerId || ''
+			};
+
 			if (user) {
-				showToast('User updated successfully', 'success');
+				// Update existing user
+				const response = await apiRequest(`/admin/users/${user.ID}`, {
+					method: 'PUT',
+					headers: {
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({ role: formData.role })
+				});
+
+				if (response.ok) {
+					showToast('User updated successfully', 'success');
+				} else {
+					const errorData = await response.json();
+					throw new Error(errorData.error || 'Failed to update user');
+				}
 			} else {
-				showToast('User created successfully', 'success');
+				// Create new user
+				const response = await apiRequest('/admin/users', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify(requestData)
+				});
+
+				if (response.ok) {
+					const responseData = await response.json();
+					showToast(`User created successfully! Temporary password: ${responseData.temporary_password}`, 'success');
+					console.log('New user created:', responseData.user);
+				} else {
+					const errorData = await response.json();
+					throw new Error(errorData.error || 'Failed to create user');
+				}
 			}
 
 			closeUserModal();
 			await loadUsers(); // Refresh user list
-		} catch (error) {
+		} catch (error: any) {
 			console.error('Error saving user:', error);
-			showToast('Failed to save user', 'error');
+			showToast(error.message || 'Failed to save user', 'error');
 		}
 	}
 

@@ -25,24 +25,38 @@
 	let localOnlyCount = 0;
 	let stripeOnlyCount = 0;
 
-	onMount(async () => {
-		await loadAllData();
+	onMount(() => {
+		// Load initial data
+		loadAllData();
+
+		// Add page visibility listener to refresh data when returning to this page
+		// This ensures that after creating a user from the users page, the data updates
+		const handleVisibilityChange = () => {
+			if (!document.hidden) {
+				console.log('🔄 Page became visible, refreshing customer data...');
+				loadAllData();
+			}
+		};
+
+		if (typeof document !== 'undefined') {
+			document.addEventListener('visibilitychange', handleVisibilityChange);
+
+			// Return cleanup function
+			return () => {
+				document.removeEventListener('visibilitychange', handleVisibilityChange);
+			};
+		}
 	});
 
-	// Load both local subscribers and Stripe customers
+	// Load both local users and Stripe customers
 	async function loadAllData() {
 		try {
 			loading = true;
 			error = '';
 
-			console.log('🔄 Loading local subscribers and Stripe customers...');
+			console.log('🔄 Loading Stripe customers and checking against local users...');
 
-			// Fetch local subscribers with subscription plans
-			const subscribersData = await StreamingSubscriberService.getSubscribers({ limit: 1000 });
-			localSubscribers = subscribersData.subscribers || [];
-			console.log('✅ Loaded local subscribers:', localSubscribers.length);
-
-			// Fetch Stripe customers
+			// First, fetch all Stripe customers (primary source)
 			const stripeRes = await apiRequest('/admin/streaming/stripe/summary');
 			if (stripeRes.ok) {
 				const stripeData = await stripeRes.json();
@@ -50,10 +64,72 @@
 				console.log('✅ Loaded Stripe customers:', stripeCustomers.length);
 			} else {
 				console.error('❌ Failed to load Stripe customers');
+				stripeCustomers = [];
 			}
 
-			// Create hybrid customer list
-			createHybridCustomerList();
+			// Then, fetch all local users to check against
+			const usersRes = await apiRequest('/admin/users?limit=1000');
+			let localUsers: any[] = [];
+			if (usersRes.ok) {
+				const usersData = await usersRes.json();
+				localUsers = usersData.users || [];
+				console.log('✅ Loaded local users for matching:', localUsers.length);
+			} else {
+				console.warn('⚠️ Users endpoint not available, using subscriber data as fallback');
+			}
+
+			// Also fetch subscribers to get subscription plan information
+			const subscribersData = await StreamingSubscriberService.getSubscribers({ limit: 1000 });
+			const subscribers = subscribersData.subscribers || [];
+			console.log('✅ Loaded subscribers for plan data:', subscribers.length);
+
+			// If users endpoint failed, use subscribers as the base data source
+			if (localUsers.length === 0 && subscribers.length > 0) {
+				console.log('🔄 Using subscribers as primary data source');
+				localUsers = subscribers.map((sub: any) => ({
+					ID: sub.id,
+					id: sub.id,
+					Email: sub.email,
+					email: sub.email,
+					FirstName: sub.first_name,
+					first_name: sub.first_name,
+					LastName: sub.last_name,
+					last_name: sub.last_name,
+					Role: sub.role,
+					role: sub.role,
+					StripeCustomerID: sub.stripe_customer_id,
+					stripe_customer_id: sub.stripe_customer_id,
+					CreatedAt: sub.created_at,
+					created_at: sub.created_at,
+					plan_name: sub.plan_name,
+					stripe_price_id: sub.stripe_price_id,
+					subscription_id: sub.subscription_id
+				}));
+			} else {
+				// Merge user data with subscriber plan data
+				const subscribersByEmail = new Map();
+				subscribers.forEach((sub: any) => {
+					subscribersByEmail.set(sub.email.toLowerCase(), sub);
+				});
+
+				// Enhance local users with subscription plan data
+				localUsers = localUsers.map((user: any) => {
+					const email = (user.Email || user.email || '').toLowerCase();
+					const subscriber = subscribersByEmail.get(email);
+					if (subscriber) {
+						return {
+							...user,
+							plan_name: subscriber.plan_name,
+							stripe_price_id: subscriber.stripe_price_id,
+							subscription_id: subscriber.subscription_id
+						};
+					}
+					return user;
+				});
+			}
+
+			// Create hybrid customer list by checking Stripe customers against local users
+			createHybridCustomerList(stripeCustomers, localUsers);
 
 		} catch (err) {
 			error = 'Failed to load data';
@@ -63,62 +139,75 @@
 		}
 	}
 
-	// Create a hybrid list that compares local subscribers with Stripe customers
-	function createHybridCustomerList() {
-		const customerMap = new Map();
-
+	// Create a hybrid list starting with Stripe customers and checking against local users
+	function createHybridCustomerList(stripeCustomers: any[], localUsers: any[]) {
 		console.log('🔄 Creating hybrid customer list...');
 
-		// Add local subscribers first
-		localSubscribers.forEach((subscriber: any) => {
-			const key = subscriber.email.toLowerCase();
-			customerMap.set(key, {
-				id: `local_${subscriber.id}`,
-				source: 'local',
-				name: `${subscriber.first_name} ${subscriber.last_name}`.trim(),
-				email: subscriber.email,
-				localId: subscriber.id,
-				role: subscriber.role,
-				planName: subscriber.plan_name,
-				stripePriceId: subscriber.stripe_price_id,
-				createdAt: subscriber.created_at,
-				stripeCustomerId: subscriber.stripe_customer_id,
-				syncStatus: 'local_only'
-			});
-		});
-
-		// Check Stripe customers against local subscribers
-		stripeCustomers.forEach((stripeCustomer: any) => {
-			const key = stripeCustomer.Email?.toLowerCase();
-			if (!key) return;
-
-			const existing = customerMap.get(key);
+		// Create a map of local users by email and by stripe_customer_id for fast lookup
+		const usersByEmail = new Map();
+		const usersByStripeId = new Map();
+		
+		localUsers.forEach((user: any) => {
+			const email = (user.Email || user.email || '').toLowerCase();
+			if (email) {
+				usersByEmail.set(email, user);
+			}
 			
-			if (existing) {
-				// This customer exists in both systems
-				existing.source = 'hybrid';
-				existing.stripeId = stripeCustomer.ID;
-				existing.stripeCreatedAt = stripeCustomer.CreatedAt;
-				existing.stripeMetadata = stripeCustomer.Metadata;
-				existing.syncStatus = existing.stripeCustomerId ? 'synced' : 'not_synced';
-			} else {
-				// This customer only exists in Stripe
-				customerMap.set(key, {
-					id: `stripe_${stripeCustomer.ID}`,
-					source: 'stripe',
-					name: stripeCustomer.Name || 'Unnamed Customer',
-					email: stripeCustomer.Email,
-					stripeId: stripeCustomer.ID,
-					stripeCreatedAt: stripeCustomer.CreatedAt,
-					stripeMetadata: stripeCustomer.Metadata,
-					localId: stripeCustomer.Metadata?.local_customer_id || null,
-					syncStatus: 'stripe_only'
-				});
+			const stripeId = user.StripeCustomerID || user.stripe_customer_id;
+			if (stripeId) {
+				usersByStripeId.set(stripeId, user);
 			}
 		});
 
-		// Convert map to array and sort by creation date
-		hybridCustomers = Array.from(customerMap.values()).sort((a, b) => {
+		// Start with Stripe customers and check if they exist locally
+		hybridCustomers = stripeCustomers.map((stripeCustomer: any) => {
+			const email = stripeCustomer.Email?.toLowerCase();
+			const stripeId = stripeCustomer.ID;
+			
+			// Try to find local user by stripe_customer_id first, then by email
+			let localUser = usersByStripeId.get(stripeId) || usersByEmail.get(email);
+			
+			if (localUser) {
+				// Customer exists both in Stripe and locally - HYBRID
+				return {
+					id: `hybrid_${stripeId}`,
+					source: 'hybrid',
+					name: stripeCustomer.Name || `${localUser.FirstName || localUser.first_name || ''} ${localUser.LastName || localUser.last_name || ''}`.trim(),
+					email: stripeCustomer.Email,
+					localId: localUser.ID || localUser.id,
+					role: localUser.Role || localUser.role,
+					planName: localUser.plan_name || null,
+					stripePriceId: localUser.stripe_price_id || null,
+					stripeId: stripeId,
+					stripeCreatedAt: stripeCustomer.CreatedAt,
+					stripeMetadata: stripeCustomer.Metadata,
+					createdAt: localUser.CreatedAt || localUser.created_at,
+					stripeCustomerId: localUser.StripeCustomerID || localUser.stripe_customer_id,
+					syncStatus: 'synced'
+				};
+			} else {
+				// Customer only exists in Stripe - STRIPE ONLY
+				return {
+					id: `stripe_${stripeId}`,
+					source: 'stripe',
+					name: stripeCustomer.Name || 'Unnamed Customer',
+					email: stripeCustomer.Email,
+					localId: null,
+					role: null,
+					planName: null,
+					stripePriceId: null,
+					stripeId: stripeId,
+					stripeCreatedAt: stripeCustomer.CreatedAt,
+					stripeMetadata: stripeCustomer.Metadata,
+					createdAt: stripeCustomer.CreatedAt,
+					stripeCustomerId: null,
+					syncStatus: 'stripe_only'
+				};
+			}
+		});
+
+		// Sort by creation date (newest first)
+		hybridCustomers.sort((a, b) => {
 			const dateA = new Date(a.createdAt || a.stripeCreatedAt || 0);
 			const dateB = new Date(b.createdAt || b.stripeCreatedAt || 0);
 			return dateB.getTime() - dateA.getTime();
@@ -127,13 +216,12 @@
 		// Calculate stats
 		totalCount = hybridCustomers.length;
 		syncedCount = hybridCustomers.filter(c => c.syncStatus === 'synced').length;
-		localOnlyCount = hybridCustomers.filter(c => c.syncStatus === 'local_only').length;
+		localOnlyCount = 0; // We don't show local-only customers in this view
 		stripeOnlyCount = hybridCustomers.filter(c => c.syncStatus === 'stripe_only').length;
 
 		console.log('✅ Hybrid customer list created:', {
 			total: totalCount,
 			synced: syncedCount,
-			localOnly: localOnlyCount,
 			stripeOnly: stripeOnlyCount
 		});
 	}
@@ -154,10 +242,10 @@
 		}
 	}
 
-	// Sync individual customer to Stripe
-	async function syncCustomerToStripe(customer: any) {
-		if (!customer.localId) {
-			showToast('No local customer ID available for sync', 'warning');
+	// Create user directly from Stripe customer data (inline)
+	async function createUserFromStripe(customer: any) {
+		if (!customer.stripeId) {
+			showToast('Invalid Stripe customer ID', 'error');
 			return;
 		}
 
@@ -167,55 +255,56 @@
 			syncingCustomers.add(customer.id);
 			syncingCustomers = new Set(syncingCustomers); // Trigger reactivity
 
-			const result = await StripeCustomerSyncService.syncCustomerToStripe(customer.localId);
-			
-			// Update the customer status
-			customer.syncStatus = 'synced';
-			customer.source = 'hybrid'; // Change from 'local' to 'hybrid' after sync
-			customer.stripeCustomerId = result.stripe_id;
-			customer.stripeId = result.stripe_id; // Also set stripeId for consistency
-			hybridCustomers = [...hybridCustomers]; // Trigger reactivity
-			
-			showToast(`Customer synced: ${result.message}`, 'success');
-		} catch (error) {
-			console.error('Failed to sync customer:', error);
-			showToast('Failed to sync customer', 'error');
+			// Parse name into first and last name if possible
+			let firstName = '';
+			let lastName = '';
+			if (customer.name) {
+				const nameParts = customer.name.trim().split(' ');
+				if (nameParts.length === 1) {
+					firstName = nameParts[0];
+				} else if (nameParts.length >= 2) {
+					firstName = nameParts[0];
+					lastName = nameParts.slice(1).join(' ');
+				}
+			}
+
+			// Create user with Stripe customer data
+			const userData = {
+				first_name: firstName,
+				last_name: lastName,
+				email: customer.email,
+				role: 'user', // Default role
+				stripe_customer_id: customer.stripeId,
+				email_verified: false,
+				is_active: true,
+				has_subbed: false
+			};
+
+			const response = await apiRequest('/admin/users', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(userData)
+			});
+
+			if (response.ok) {
+				const responseData = await response.json();
+				showToast(`User created successfully! Temporary password: ${responseData.temporary_password}`, 'success');
+				
+				// Refresh data to show the updated status
+				await loadAllData();
+			} else {
+				const errorData = await response.json();
+				throw new Error(errorData.error || 'Failed to create user');
+			}
+		} catch (error: any) {
+			console.error('Failed to create user from Stripe:', error);
+			showToast(error.message || 'Failed to create user', 'error');
 		} finally {
 			syncingCustomers.delete(customer.id);
 			syncingCustomers = new Set(syncingCustomers); // Trigger reactivity
 		}
-	}
-
-	// Add user from Stripe customer data
-	function addUserFromStripe(customer: any) {
-		if (!customer.stripeId) {
-			showToast('Invalid Stripe customer ID', 'error');
-			return;
-		}
-
-		// Parse name into first and last name if possible
-		let firstName = '';
-		let lastName = '';
-		if (customer.name) {
-			const nameParts = customer.name.trim().split(' ');
-			if (nameParts.length === 1) {
-				firstName = nameParts[0];
-			} else if (nameParts.length >= 2) {
-				firstName = nameParts[0];
-				lastName = nameParts.slice(1).join(' ');
-			}
-		}
-
-		// Navigate to users page with pre-filled data
-		const queryParams = new URLSearchParams({
-			stripe_customer_id: customer.stripeId,
-			email: customer.email,
-			first_name: firstName,
-			last_name: lastName,
-			source: 'stripe_import'
-		});
-
-		goto(`/admin/users/add?${queryParams.toString()}`);
 	}
 
 	// Format date
@@ -351,28 +440,23 @@
 							</td>
 							<td>
 								<div class="customer-actions">
-									{#if customer.source === 'local' || (customer.source === 'hybrid' && customer.syncStatus !== 'synced')}
+									{#if customer.source === 'stripe'}
+										<!-- Stripe-only customer: show Add User button -->
 										<button 
-											class="btn btn-sm btn-primary"
-											on:click={() => syncCustomerToStripe(customer)}
+											class="btn btn-sm btn-success"
+											on:click={() => createUserFromStripe(customer)}
 											disabled={syncingCustomers.has(customer.id)}
+											title="Create local user from Stripe customer data"
 										>
 											{#if syncingCustomers.has(customer.id)}
 												<div class="loading-spinner small"></div>
-												Syncing...
+												Creating...
 											{:else}
-												🔄 Sync
+												➕ Add User
 											{/if}
 										</button>
-									{:else if customer.source === 'stripe'}
-										<button 
-											class="btn btn-sm btn-success"
-											on:click={() => addUserFromStripe(customer)}
-											title="Create new user with Stripe customer data"
-										>
-											➕ Add User
-										</button>
 									{:else}
+										<!-- Hybrid customer: already synced -->
 										<span class="sync-complete">✅ Synced</span>
 									{/if}
 								</div>

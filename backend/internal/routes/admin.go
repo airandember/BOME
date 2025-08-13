@@ -23,6 +23,19 @@ type UpdateUserRequest struct {
 	Role string `json:"role" binding:"required"`
 }
 
+// CreateUserRequest represents a user creation payload
+type CreateUserRequest struct {
+	Email            string `json:"email" binding:"required,email"`
+	FirstName        string `json:"first_name" binding:"required"`
+	LastName         string `json:"last_name" binding:"required"`
+	Role             string `json:"role" binding:"required"`
+	RoleID           string `json:"role_id"`
+	EmailVerified    bool   `json:"email_verified"`
+	IsActive         bool   `json:"is_active"`
+	HasSubbed        bool   `json:"has_subbed"`
+	StripeCustomerID string `json:"stripe_customer_id"`
+}
+
 // GetUsersHandler handles retrieving users for admin
 func GetUsersHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -1442,6 +1455,7 @@ func UpdateAdPlacementHandler(db *database.DB) gin.HandlerFunc {
 func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
 	// Users
 	router.GET("/users", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUsersHandler(db))
+	router.POST("/users", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), CreateUserHandler(db))
 	router.GET("/users/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUserHandler(db))
 	router.PUT("/users/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), UpdateUserHandler(db))
 	router.DELETE("/users/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), DeleteUserHandler(db))
@@ -2443,6 +2457,117 @@ func GetRolesAndDepartmentsHandler(db *database.DB) gin.HandlerFunc {
 				"roles":       len(roles),
 				"departments": len(departments),
 			},
+		})
+	}
+}
+
+// CreateUserHandler handles creating a new user for admin
+func CreateUserHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req CreateUserRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Validate and sanitize input
+		req.Email = strings.ToLower(services.SanitizeString(req.Email))
+		req.FirstName = services.SanitizeString(req.FirstName)
+		req.LastName = services.SanitizeString(req.LastName)
+
+		// Validate email
+		if err := services.ValidateEmail(req.Email); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Validate names
+		if err := services.ValidateName(req.FirstName); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid first name: " + err.Error()})
+			return
+		}
+		if err := services.ValidateName(req.LastName); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid last name: " + err.Error()})
+			return
+		}
+
+		// Check if user already exists
+		exists, err := db.CheckUserExists(req.Email)
+		if err != nil {
+			log.Printf("Database error checking user existence: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Service temporarily unavailable. Please try again later.",
+			})
+			return
+		}
+		if exists {
+			c.JSON(http.StatusConflict, gin.H{"error": "An account with this email already exists"})
+			return
+		}
+
+		// Generate a temporary password for admin-created users
+		tempPassword := services.GenerateSecureToken()[:12] // Use first 12 chars as temp password
+		passwordHash, err := services.HashPassword(tempPassword)
+		if err != nil {
+			log.Printf("Failed to hash password: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Service temporarily unavailable. Please try again later.",
+			})
+			return
+		}
+
+		// Prepare user data for creation
+		userData := map[string]interface{}{
+			"email":         req.Email,
+			"password_hash": passwordHash,
+			"first_name":    req.FirstName,
+			"last_name":     req.LastName,
+			"role":          req.Role,
+		}
+
+		// Add optional fields if provided
+		if req.RoleID != "" {
+			userData["role_id"] = req.RoleID
+		}
+		if req.EmailVerified {
+			userData["email_verified"] = req.EmailVerified
+		}
+		if req.IsActive {
+			userData["is_active"] = req.IsActive
+		} else {
+			userData["is_active"] = true // Default to active
+		}
+		if req.HasSubbed {
+			userData["has_subbed"] = req.HasSubbed
+		}
+		if req.StripeCustomerID != "" {
+			userData["stripe_customer_id"] = req.StripeCustomerID
+		}
+
+		// Create user with all details
+		user, err := db.CreateUserWithDetails(userData)
+		if err != nil {
+			log.Printf("Failed to create user: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to create user. Please try again later.",
+			})
+			return
+		}
+
+		// Log admin action
+		adminID := c.GetInt("user_id")
+		go db.CreateAdminLog(&adminID, "user_created", "user", &user.ID, map[string]interface{}{
+			"email":      req.Email,
+			"role":       req.Role,
+			"created_by": "admin",
+		}, c.ClientIP(), c.GetHeader("User-Agent"))
+
+		// Return success response with temporary password
+		c.JSON(http.StatusCreated, gin.H{
+			"message":            "User created successfully",
+			"user":               user,
+			"temporary_password": tempPassword,
+			"note":               "The user should change this password on first login",
 		})
 	}
 }
