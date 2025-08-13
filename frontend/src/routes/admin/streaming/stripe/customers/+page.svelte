@@ -2,22 +2,22 @@
 	import { onMount } from 'svelte';
 	import { apiRequest } from '$lib/auth';
 	import CustomerSyncPanel from '../components/CustomerSyncPanel.svelte';
-	import { StripeCustomerSyncService } from '$lib/services/stripe-customer-sync';
+	import SimpleTable from './SimpleTable.svelte';
 	import { StreamingSubscriberService } from '$lib/services/streaming-subscribers';
 	import { showToast } from '$lib/toast';
-	import { goto } from '$app/navigation';
 
 	// State variables
 	let loading = true;
 	let error = '';
 	
-	// Data arrays
-	let localSubscribers: any[] = [];
-	let stripeCustomers: any[] = [];
-	let hybridCustomers: any[] = [];
+	// Data arrays for different sync states
+	let stripeOnlyCustomers: any[] = [];
+	let syncedCustomers: any[] = [];
+	let localOnlyUsers: any[] = [];
 	
 	// Sync state
 	let syncingCustomers = new Set<string>();
+	let bulkCreatingUsers = false;
 	
 	// Stats
 	let totalCount = 0;
@@ -58,13 +58,14 @@
 
 			// First, fetch all Stripe customers (primary source)
 			const stripeRes = await apiRequest('/admin/streaming/stripe/summary');
+			let allStripeCustomers: any[] = [];
 			if (stripeRes.ok) {
 				const stripeData = await stripeRes.json();
-				stripeCustomers = stripeData.summary?.customers || [];
-				console.log('✅ Loaded Stripe customers:', stripeCustomers.length);
+				allStripeCustomers = stripeData.summary?.customers || [];
+				console.log('✅ Loaded Stripe customers:', allStripeCustomers.length);
 			} else {
 				console.error('❌ Failed to load Stripe customers');
-				stripeCustomers = [];
+				allStripeCustomers = [];
 			}
 
 			// Then, fetch all local users to check against
@@ -75,7 +76,8 @@
 				localUsers = usersData.users || [];
 				console.log('✅ Loaded local users for matching:', localUsers.length);
 			} else {
-				console.warn('⚠️ Users endpoint not available, using subscriber data as fallback');
+				console.warn('⚠️ Users endpoint not available (404), using subscriber data as fallback');
+				console.warn('Response status:', usersRes.status);
 			}
 
 			// Also fetch subscribers to get subscription plan information
@@ -128,8 +130,8 @@
 				});
 			}
 
-			// Create hybrid customer list by checking Stripe customers against local users
-			createHybridCustomerList(stripeCustomers, localUsers);
+			// Create separate customer lists
+			createCustomerLists(allStripeCustomers, localUsers);
 
 		} catch (err) {
 			error = 'Failed to load data';
@@ -139,14 +141,17 @@
 		}
 	}
 
-	// Create a hybrid list starting with Stripe customers and checking against local users
-	function createHybridCustomerList(stripeCustomers: any[], localUsers: any[]) {
-		console.log('🔄 Creating hybrid customer list...');
+	// Create separate customer lists for different sync states
+	function createCustomerLists(allStripeCustomers: any[], localUsers: any[]) {
+		console.log('🔄 Creating customer lists...');
 
-		// Create a map of local users by email and by stripe_customer_id for fast lookup
+		// Create maps for fast lookup
 		const usersByEmail = new Map();
 		const usersByStripeId = new Map();
+		const stripeCustomersByEmail = new Map();
+		const stripeCustomersById = new Map();
 		
+		// Map local users
 		localUsers.forEach((user: any) => {
 			const email = (user.Email || user.email || '').toLowerCase();
 			if (email) {
@@ -159,87 +164,108 @@
 			}
 		});
 
-		// Start with Stripe customers and check if they exist locally
-		hybridCustomers = stripeCustomers.map((stripeCustomer: any) => {
+		// Map Stripe customers
+		allStripeCustomers.forEach((customer: any) => {
+			const email = customer.Email?.toLowerCase();
+			if (email) {
+				stripeCustomersByEmail.set(email, customer);
+			}
+			stripeCustomersById.set(customer.ID, customer);
+		});
+
+		// 1. Stripe Only Customers - exist in Stripe but not locally
+		stripeOnlyCustomers = allStripeCustomers.filter((stripeCustomer: any) => {
 			const email = stripeCustomer.Email?.toLowerCase();
 			const stripeId = stripeCustomer.ID;
 			
-			// Try to find local user by stripe_customer_id first, then by email
-			let localUser = usersByStripeId.get(stripeId) || usersByEmail.get(email);
+			// Check if this Stripe customer has a local user
+			const localUser = usersByStripeId.get(stripeId) || usersByEmail.get(email);
+			return !localUser; // Only include if no local user found
+		}).map((customer: any) => ({
+			id: `stripe_${customer.ID}`,
+			source: 'stripe',
+			name: customer.Name || 'Unnamed Customer',
+			email: customer.Email,
+			localId: null,
+			role: null,
+			planName: null,
+			stripePriceId: null,
+			stripeId: customer.ID,
+			stripeCreatedAt: customer.CreatedAt,
+			stripeMetadata: customer.Metadata,
+			createdAt: customer.CreatedAt,
+			stripeCustomerId: null,
+			syncStatus: 'stripe_only'
+		}));
+
+		// 2. Synced Customers - exist in both Stripe and locally
+		syncedCustomers = allStripeCustomers.filter((stripeCustomer: any) => {
+			const email = stripeCustomer.Email?.toLowerCase();
+			const stripeId = stripeCustomer.ID;
 			
-			if (localUser) {
-				// Customer exists both in Stripe and locally - HYBRID
-				return {
-					id: `hybrid_${stripeId}`,
-					source: 'hybrid',
-					name: stripeCustomer.Name || `${localUser.FirstName || localUser.first_name || ''} ${localUser.LastName || localUser.last_name || ''}`.trim(),
-					email: stripeCustomer.Email,
-					localId: localUser.ID || localUser.id,
-					role: localUser.Role || localUser.role,
-					planName: localUser.plan_name || null,
-					stripePriceId: localUser.stripe_price_id || null,
-					stripeId: stripeId,
-					stripeCreatedAt: stripeCustomer.CreatedAt,
-					stripeMetadata: stripeCustomer.Metadata,
-					createdAt: localUser.CreatedAt || localUser.created_at,
-					stripeCustomerId: localUser.StripeCustomerID || localUser.stripe_customer_id,
-					syncStatus: 'synced'
-				};
-			} else {
-				// Customer only exists in Stripe - STRIPE ONLY
-				return {
-					id: `stripe_${stripeId}`,
-					source: 'stripe',
-					name: stripeCustomer.Name || 'Unnamed Customer',
-					email: stripeCustomer.Email,
-					localId: null,
-					role: null,
-					planName: null,
-					stripePriceId: null,
-					stripeId: stripeId,
-					stripeCreatedAt: stripeCustomer.CreatedAt,
-					stripeMetadata: stripeCustomer.Metadata,
-					createdAt: stripeCustomer.CreatedAt,
-					stripeCustomerId: null,
-					syncStatus: 'stripe_only'
-				};
-			}
+			// Check if this Stripe customer has a local user
+			const localUser = usersByStripeId.get(stripeId) || usersByEmail.get(email);
+			return !!localUser; // Only include if local user found
+		}).map((stripeCustomer: any) => {
+			const email = stripeCustomer.Email?.toLowerCase();
+			const stripeId = stripeCustomer.ID;
+			const localUser = usersByStripeId.get(stripeId) || usersByEmail.get(email);
+			
+			return {
+				id: `hybrid_${stripeId}`,
+				source: 'hybrid',
+				name: stripeCustomer.Name || `${localUser.FirstName || localUser.first_name || ''} ${localUser.LastName || localUser.last_name || ''}`.trim(),
+				email: stripeCustomer.Email,
+				localId: localUser.ID || localUser.id,
+				role: localUser.Role || localUser.role,
+				planName: localUser.plan_name || null,
+				stripePriceId: localUser.stripe_price_id || null,
+				stripeId: stripeId,
+				stripeCreatedAt: stripeCustomer.CreatedAt,
+				stripeMetadata: stripeCustomer.Metadata,
+				createdAt: localUser.CreatedAt || localUser.created_at,
+				stripeCustomerId: localUser.StripeCustomerID || localUser.stripe_customer_id,
+				syncStatus: 'synced'
+			};
 		});
 
-		// Sort by creation date (newest first)
-		hybridCustomers.sort((a, b) => {
-			const dateA = new Date(a.createdAt || a.stripeCreatedAt || 0);
-			const dateB = new Date(b.createdAt || b.stripeCreatedAt || 0);
-			return dateB.getTime() - dateA.getTime();
-		});
+		// 3. Local Only Users - exist locally but not in Stripe
+		localOnlyUsers = localUsers.filter((localUser: any) => {
+			const email = (localUser.Email || localUser.email || '').toLowerCase();
+			const stripeId = localUser.StripeCustomerID || localUser.stripe_customer_id;
+			
+			// Check if this local user has a Stripe customer
+			const stripeCustomer = stripeCustomersById.get(stripeId) || stripeCustomersByEmail.get(email);
+			return !stripeCustomer; // Only include if no Stripe customer found
+		}).map((user: any) => ({
+			id: `local_${user.ID || user.id}`,
+			source: 'local',
+			name: `${user.FirstName || user.first_name || ''} ${user.LastName || user.last_name || ''}`.trim(),
+			email: user.Email || user.email,
+			localId: user.ID || user.id,
+			role: user.Role || user.role,
+			planName: user.plan_name || null,
+			stripePriceId: user.stripe_price_id || null,
+			stripeId: null,
+			stripeCreatedAt: null,
+			stripeMetadata: null,
+			createdAt: user.CreatedAt || user.created_at,
+			stripeCustomerId: user.StripeCustomerID || user.stripe_customer_id,
+			syncStatus: 'local_only'
+		}));
 
 		// Calculate stats
-		totalCount = hybridCustomers.length;
-		syncedCount = hybridCustomers.filter(c => c.syncStatus === 'synced').length;
-		localOnlyCount = 0; // We don't show local-only customers in this view
-		stripeOnlyCount = hybridCustomers.filter(c => c.syncStatus === 'stripe_only').length;
+		totalCount = allStripeCustomers.length + localOnlyUsers.length;
+		syncedCount = syncedCustomers.length;
+		localOnlyCount = localOnlyUsers.length;
+		stripeOnlyCount = stripeOnlyCustomers.length;
 
-		console.log('✅ Hybrid customer list created:', {
+		console.log('✅ Customer lists created:', {
 			total: totalCount,
 			synced: syncedCount,
+			localOnly: localOnlyCount,
 			stripeOnly: stripeOnlyCount
 		});
-	}
-
-	// Get sync status display
-	function getSyncStatusDisplay(customer: any) {
-		switch (customer.syncStatus) {
-			case 'synced':
-				return { text: '✅ Synced', class: 'status-synced' };
-			case 'not_synced':
-				return { text: '⚠️ Not Synced', class: 'status-not-synced' };
-			case 'local_only':
-				return { text: '🏠 Local Only', class: 'status-local-only' };
-			case 'stripe_only':
-				return { text: '💳 Stripe Only', class: 'status-stripe-only' };
-			default:
-				return { text: '❓ Unknown', class: 'status-unknown' };
-		}
 	}
 
 	// Create user directly from Stripe customer data (inline)
@@ -307,6 +333,92 @@
 		}
 	}
 
+	// Create all users from Stripe-only customers (bulk action)
+	async function createAllUsersFromStripe() {
+		if (stripeOnlyCustomers.length === 0) {
+			showToast('No Stripe-only customers to create', 'info');
+			return;
+		}
+
+		if (bulkCreatingUsers) return;
+
+		try {
+			bulkCreatingUsers = true;
+			let successCount = 0;
+			let errorCount = 0;
+			const errors: string[] = [];
+
+			showToast(`Creating ${stripeOnlyCustomers.length} users...`, 'info');
+
+			// Create users one by one (could be optimized to batch API calls)
+			for (const customer of stripeOnlyCustomers) {
+				try {
+					// Parse name into first and last name if possible
+					let firstName = '';
+					let lastName = '';
+					if (customer.name) {
+						const nameParts = customer.name.trim().split(' ');
+						if (nameParts.length === 1) {
+							firstName = nameParts[0];
+						} else if (nameParts.length >= 2) {
+							firstName = nameParts[0];
+							lastName = nameParts.slice(1).join(' ');
+						}
+					}
+
+					// Create user with Stripe customer data
+					const userData = {
+						first_name: firstName,
+						last_name: lastName,
+						email: customer.email,
+						role: 'user', // Default role
+						stripe_customer_id: customer.stripeId,
+						email_verified: false,
+						is_active: true,
+						has_subbed: false
+					};
+
+					const response = await apiRequest('/admin/users', {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify(userData)
+					});
+
+					if (response.ok) {
+						successCount++;
+					} else {
+						const errorData = await response.json();
+						errors.push(`${customer.email}: ${errorData.error || 'Unknown error'}`);
+						errorCount++;
+					}
+				} catch (error: any) {
+					errors.push(`${customer.email}: ${error.message || 'Network error'}`);
+					errorCount++;
+				}
+			}
+
+			// Show results
+			if (successCount > 0) {
+				showToast(`✅ Successfully created ${successCount} users!`, 'success');
+			}
+			if (errorCount > 0) {
+				showToast(`❌ Failed to create ${errorCount} users. Check console for details.`, 'error');
+				console.error('Bulk user creation errors:', errors);
+			}
+
+			// Refresh data to show the updated status
+			await loadAllData();
+
+		} catch (error: any) {
+			console.error('Failed to create users in bulk:', error);
+			showToast('Failed to create users in bulk', 'error');
+		} finally {
+			bulkCreatingUsers = false;
+		}
+	}
+
 	// Format date
 	function formatDate(dateString: string): string {
 		if (!dateString) return 'N/A';
@@ -321,6 +433,16 @@
 	async function refreshData() {
 		await loadAllData();
 		showToast('Data refreshed', 'success');
+	}
+
+	// Event handlers for table components
+	function handleCreateUser(event: CustomEvent) {
+		const customer = event.detail;
+		createUserFromStripe(customer);
+	}
+
+	function handleCreateAllUsers() {
+		createAllUsersFromStripe();
 	}
 </script>
 
@@ -370,7 +492,7 @@
 			<p>{error}</p>
 			<button class="btn btn-primary" on:click={refreshData}>Retry</button>
 		</div>
-	{:else if hybridCustomers.length === 0}
+	{:else if localOnlyUsers.length === 0 && stripeOnlyCustomers.length === 0 && syncedCustomers.length === 0}
 		<div class="empty-state">
 			<div class="empty-icon">👥</div>
 			<h3>No Customers Found</h3>
@@ -378,93 +500,36 @@
 		</div>
 	{:else}
 		<div class="customers-table-container">
-			<table class="customers-table">
-				<thead>
-					<tr>
-						<th>Customer</th>
-						<th>Email</th>
-						<th>Source</th>
-						<th>Local ID</th>
-						<th>Stripe ID</th>
-						<th>Plan</th>
-						<th>Role</th>
-						<th>Sync Status</th>
-						<th>Created</th>
-						<th>Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each hybridCustomers as customer}
-						{@const statusDisplay = getSyncStatusDisplay(customer)}
-						<tr>
-							<td>
-								<div class="customer-info">
-									<div class="customer-name">
-										<h4>{customer.name || 'Unnamed Customer'}</h4>
-										<span class="customer-source">{customer.source}</span>
-									</div>
-								</div>
-							</td>
-							<td>
-								<span class="customer-email">{customer.email}</span>
-							</td>
-							<td>
-								<span class="source-badge source-{customer.source}">
-									{customer.source === 'local' ? '🏠 Local' : 
-									 customer.source === 'stripe' ? '💳 Stripe' : '🔗 Hybrid'}
-								</span>
-							</td>
-							<td>
-								<span class="local-id">{customer.localId || 'N/A'}</span>
-							</td>
-							<td>
-								<span class="stripe-id">
-									{customer.stripeId ? `#${customer.stripeId.slice(-8)}` : 'N/A'}
-								</span>
-							</td>
-							<td>
-								<span class="plan-name">{customer.planName || 'N/A'}</span>
-							</td>
-							<td>
-								<span class="customer-role">{customer.role || 'N/A'}</span>
-							</td>
-							<td>
-								<span class="sync-status {statusDisplay.class}">
-									{statusDisplay.text}
-								</span>
-							</td>
-							<td>
-								<span class="created-date">
-									{formatDate(customer.createdAt || customer.stripeCreatedAt)}
-								</span>
-							</td>
-							<td>
-								<div class="customer-actions">
-									{#if customer.source === 'stripe'}
-										<!-- Stripe-only customer: show Add User button -->
-										<button 
-											class="btn btn-sm btn-success"
-											on:click={() => createUserFromStripe(customer)}
-											disabled={syncingCustomers.has(customer.id)}
-											title="Create local user from Stripe customer data"
-										>
-											{#if syncingCustomers.has(customer.id)}
-												<div class="loading-spinner small"></div>
-												Creating...
-											{:else}
-												➕ Add User
-											{/if}
-										</button>
-									{:else}
-										<!-- Hybrid customer: already synced -->
-										<span class="sync-complete">✅ Synced</span>
-									{/if}
-								</div>
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
+			<!-- Debug information -->
+			<div style="background: #f0f0f0; padding: 1rem; margin: 1rem 0; border-radius: 0.5rem;">
+				<h3>🔧 Debug Info:</h3>
+				<p><strong>Stripe Only:</strong> {stripeOnlyCustomers.length}</p>
+				<p><strong>Synced:</strong> {syncedCustomers.length}</p>
+				<p><strong>Local Only:</strong> {localOnlyUsers.length}</p>
+				<p><strong>Loading:</strong> {loading}</p>
+				<p><strong>Error:</strong> {error || 'None'}</p>
+			</div>
+
+			<!-- Stripe Only Customers Table -->
+			<SimpleTable
+				title="💳 Stripe Only Customers"
+				customers={stripeOnlyCustomers}
+				showActions={true}
+			/>
+
+			<!-- Synced Customers Table -->
+			<SimpleTable
+				title="🔗 Synced Customers"
+				customers={syncedCustomers}
+				showActions={false}
+			/>
+			
+			<!-- Local Only Users Table -->
+			<SimpleTable
+				title="🏠 Local Only Users"
+				customers={localOnlyUsers}
+				showActions={false}
+			/>
 		</div>
 	{/if}
 </div>
@@ -576,16 +641,6 @@
 		transform: translateY(-1px);
 	}
 
-	.btn-success {
-		background: #059669;
-		color: white;
-	}
-
-	.btn-success:hover:not(:disabled) {
-		background: #047857;
-		transform: translateY(-1px);
-	}
-
 	.btn-secondary {
 		background: #f3f4f6;
 		color: #374151;
@@ -594,11 +649,6 @@
 
 	.btn-secondary:hover:not(:disabled) {
 		background: #e5e7eb;
-	}
-
-	.btn-sm {
-		padding: var(--space-xs, 0.5rem) var(--space-md, 1rem);
-		font-size: 0.75rem;
 	}
 
 	.loading-container, .error-container {
@@ -637,13 +687,6 @@
 		margin-bottom: var(--space-md, 1rem);
 	}
 
-	.loading-spinner.small {
-		width: 12px;
-		height: 12px;
-		border-width: 2px;
-		margin: 0 4px 0 0;
-	}
-
 	@keyframes spin {
 		0% { transform: rotate(0deg); }
 		100% { transform: rotate(360deg); }
@@ -654,124 +697,7 @@
 		border-radius: var(--radius-lg, 0.5rem);
 		border: 1px solid var(--border, #e5e7eb);
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-	}
-
-	.customers-table {
-		width: 100%;
-		border-collapse: collapse;
-		font-size: 0.875rem;
-		color: var(--text, #111827);
-	}
-
-	.customers-table th,
-	.customers-table td {
-		padding: var(--space-sm, 0.75rem) var(--space-md, 1rem);
-		text-align: left;
-		border-bottom: 1px solid var(--border, #e5e7eb);
-	}
-
-	.customers-table th {
-		background-color: var(--bg-secondary, #f9fafb);
-		font-weight: 600;
-		color: var(--text-muted, #6b7280);
-		text-transform: uppercase;
-		font-size: 0.75rem;
-		letter-spacing: 0.05em;
-	}
-
-	.customers-table tbody tr:hover {
-		background-color: var(--bg-hover, #f3f4f6);
-	}
-
-	.customer-info {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm, 0.75rem);
-	}
-
-	.customer-name h4 {
-		margin: 0 0 var(--space-xs, 0.25rem) 0;
-		color: var(--text, #111827);
-		font-size: 1rem;
-		font-weight: 600;
-	}
-
-	.customer-source {
-		font-size: 0.75rem;
-		color: var(--text-muted, #6b7280);
-		text-transform: uppercase;
-		font-weight: 500;
-	}
-
-	.source-badge {
-		padding: 0.25rem 0.5rem;
-		border-radius: 0.25rem;
-		font-size: 0.75rem;
-		font-weight: 600;
-		text-transform: uppercase;
-	}
-
-	.source-local {
-		background-color: #dbeafe;
-		color: #1e40af;
-	}
-
-	.source-stripe {
-		background-color: #fef3c7;
-		color: #d97706;
-	}
-
-	.source-hybrid {
-		background-color: #d1fae5;
-		color: #059669;
-	}
-
-	.sync-status {
-		padding: 0.25rem 0.5rem;
-		border-radius: 0.25rem;
-		font-size: 0.75rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		display: inline-block;
-		text-align: center;
-		min-width: 80px;
-	}
-
-	.sync-status.status-synced {
-		background-color: #d1fae5;
-		color: #059669;
-	}
-
-	.sync-status.status-not-synced {
-		background-color: #fef3c7;
-		color: #d97706;
-	}
-
-	.sync-status.status-local-only {
-		background-color: #dbeafe;
-		color: #2563eb;
-	}
-
-	.sync-status.status-stripe-only {
-		background-color: #fee2e2;
-		color: #dc2626;
-	}
-
-	.sync-status.status-unknown {
-		background-color: #f3f4f6;
-		color: #6b7280;
-	}
-
-	.customer-actions {
-		display: flex;
-		gap: var(--space-xs, 0.5rem);
-		align-items: center;
-	}
-
-	.sync-complete {
-		color: #059669;
-		font-weight: 600;
-		font-size: 0.875rem;
+		margin-top: var(--space-lg, 1.5rem);
 	}
 
 	@media (max-width: 768px) {
@@ -783,10 +709,6 @@
 
 		.header-stats {
 			justify-content: center;
-		}
-
-		.customers-table {
-			font-size: 0.8125rem;
 		}
 	}
 </style> 
