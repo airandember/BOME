@@ -163,7 +163,7 @@
 	<section class="zoom-section book-section active" data-section="0">
 		<div class="zoom-content">
 			<div class="book-container">
-				<img src="/src/lib/HOMEPAGE_TEST_ASSETS/book_of_mormon_close_up.webp" alt="Book of Mormon Close-up" class="book-image" />
+				<img src="/HOMEPAGE_TEST_ASSETS/book_of_mormon_close_up.webp" alt="Book of Mormon Close-up" class="book-image" />
 				<div class="book-glow"></div>
 			</div>
 			
@@ -234,7 +234,7 @@
 	<section class="zoom-section newyork-section" data-section="1">
 		<div class="zoom-content">
 			<div class="map-container">
-				<img src="/src/lib/HOMEPAGE_TEST_ASSETS/new_york_state_map_1830.jpg" alt="New York State Map 1830" class="map-image" />
+				<img src="/HOMEPAGE_TEST_ASSETS/new_york_state_map_1830.jpg" alt="New York State Map 1830" class="map-image" />
 				<div class="location-marker hill-cumorah">
 					<div class="marker-pulse"></div>
 					<div class="marker-dot"></div>
@@ -255,7 +255,7 @@
 	<section class="zoom-section usa1830-section" data-section="2">
 		<div class="zoom-content">
 			<div class="map-container">
-				<img src="/src/lib/HOMEPAGE_TEST_ASSETS/united_states_map_1830.png" alt="United States Map 1830" class="map-image vintage" />
+				<img src="/HOMEPAGE_TEST_ASSETS/united_states_map_1830.png" alt="United States Map 1830" class="map-image vintage" />
 				<div class="location-marker palmyra">
 					<div class="marker-pulse"></div>
 					<div class="marker-dot"></div>
@@ -286,7 +286,7 @@
 	<section class="zoom-section usa-modern-section" data-section="3">
 		<div class="zoom-content">
 			<div class="map-container">
-				<img src="/src/lib/HOMEPAGE_TEST_ASSETS/united_states_map_modern.jpg" alt="Modern United States Map" class="map-image modern" />
+				<img src="/HOMEPAGE_TEST_ASSETS/united_states_map_modern.jpg" alt="Modern United States Map" class="map-image modern" />
 				<div class="location-marker utah">
 					<div class="marker-pulse"></div>
 					<div class="marker-dot"></div>
@@ -317,7 +317,7 @@
 	<section class="zoom-section world-section" data-section="4">
 		<div class="zoom-content">
 			<div class="map-container">
-				<img src="/src/lib/HOMEPAGE_TEST_ASSETS/world-physical-maps-international-flat.jpg" alt="World Physical Map" class="map-image world" />
+				<img src="/HOMEPAGE_TEST_ASSETS/world-physical-maps-international-flat.jpg" alt="World Physical Map" class="map-image world" />
 				<div class="location-marker americas">
 					<div class="marker-pulse"></div>
 					<div class="marker-dot"></div>
@@ -343,7 +343,7 @@
 		<div class="zoom-content">
 			<div class="globe-container">
 				<div class="globe">
-					<img src="/src/lib/HOMEPAGE_TEST_ASSETS/The_Globe_World.png" alt="Earth Globe" class="globe-image" />
+					<img src="/HOMEPAGE_TEST_ASSETS/The_Globe_World.png" alt="Earth Globe" class="globe-image" />
 					<div class="globe-atmosphere"></div>
 					<div class="globe-rotation"></div>
 				</div>
@@ -488,7 +488,7 @@
 
 	/* Globe Section */
 	.globe-section {
-		background-image: url('/src/lib/HOMEPAGE_TEST_ASSETS/The_Globe_World_Background.png');
+		background-image: url('/HOMEPAGE_TEST_ASSETS/The_Globe_World_Background.png');
 		background-size: cover;
 		background-position: center;
 		background-repeat: no-repeat;

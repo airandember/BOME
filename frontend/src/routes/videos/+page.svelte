@@ -711,7 +711,7 @@
 										>
 											<div class="collection-image">
 												<img 
-													src="/src/lib/HOMEPAGE_TEST_ASSETS/16X10_WORDLESS_Collection_Placeholder_IMG.webp" 
+													src="/HOMEPAGE_TEST_ASSETS/16X10_WORDLESS_Collection_Placeholder_IMG.webp" 
 													alt={collection.name}
 													loading="lazy"
 												/>

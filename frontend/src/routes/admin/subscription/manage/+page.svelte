@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/auth';
-	import { subscriptionService } from '$lib/services/subscription';
+	import { subscriptionService } from '$lib/subscription';
 	import { showToast } from '$lib/toast';
 	import { formatCurrency } from '$lib/utils/currency';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
