@@ -4,7 +4,7 @@
 	import { auth } from '$lib/auth';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
-	import { MasterVideoService, type MasterVideo } from '$lib/master-video';
+	import { masterVideoService, type MasterVideo } from '$lib/master-video';
 	import { stripeFinancialService, type StripeCustomer, type FinancialMetrics, type StripePayment } from '$lib/stripe-financial';
 	import { api } from '$lib/api';
 

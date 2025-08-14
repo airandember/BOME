@@ -160,6 +160,7 @@
 		justify-content: space-between;
 		align-items: center;
 		margin-bottom: var(--space-md, 1rem);
+		padding: 1rem;
 	}
 
 	.table-header h2 {

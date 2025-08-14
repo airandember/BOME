@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
+	import { apiRequest } from '$lib/auth';
 	import { StreamingSubscriptionService } from '$lib/services/streaming-subscriptions';
 	
 	// Import analytics components
@@ -46,7 +47,7 @@
 				metric: selectedMetric
 			});
 
-			const response = await fetch(`/api/admin/streaming/analytics/overview?${params}`);
+			const response = await apiRequest(`/admin/streaming/analytics/overview?${params}`);
 			
 			if (response.ok) {
 				analyticsData = await response.json();

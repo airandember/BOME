@@ -12,6 +12,7 @@
 	import Coupons from './coupons/+page.svelte';
 	import Invoices from './invoices/+page.svelte';
 	import Payments from './payments/+page.svelte';
+	import Subscriptions from './subscriptions/+page.svelte';
 	import Setup from './setup/+page.svelte';
 
 	let summary: any = null;
@@ -42,6 +43,7 @@
 		console.log('=== MAIN STRIPE DEBUG ===');
 		console.log('Summary data changed:', summary);
 		console.log('Summary enabled:', summary?.enabled);
+		console.log('Should show setup form:', !summary?.enabled);
 		console.log('Coupons count:', summary?.coupons_count);
 		console.log('Coupons array length:', summary?.coupons?.length);
 		console.log('Active tab:', activeTab);
@@ -56,7 +58,7 @@
 		{ id: 'coupons', name: 'Coupons', icon: '🎟️', component: Coupons },
 		{ id: 'invoices', name: 'Invoices', icon: '📄', component: Invoices },
 		{ id: 'payments', name: 'Payments', icon: '💳', component: Payments },
-		{ id: 'subscriptions', name: 'Subscriptions', icon: '🔄', component: null },
+		{ id: 'subscriptions', name: 'Subscriptions', icon: '🔄', component: Subscriptions },
 		{ id: 'setup', name: 'Setup', icon: '⚙️', component: Setup }
 	];
 
@@ -74,16 +76,21 @@
 		try {
 			loading = true;
 			error = '';
+			console.log('🔍 Fetching Stripe summary...');
 			const res = await apiRequest('/admin/streaming/stripe/summary');
 			if (res.ok) {
 				const data = await res.json();
+				console.log('📥 Raw API response:', data);
 				summary = data.summary;
+				console.log('📊 Summary assigned:', summary);
+				console.log('🔧 Summary enabled:', summary?.enabled);
 			} else {
 				error = 'Failed to load Stripe data';
+				console.error('❌ API request failed:', res.status, res.statusText);
 			}
 		} catch (err) {
 			error = 'Failed to load Stripe data';
-			console.error(err);
+			console.error('❌ Fetch summary error:', err);
 		} finally {
 			loading = false;
 		}
@@ -184,6 +191,8 @@
 				await fetchSummary(); // Refresh the summary
 				
 				console.log('✅ Fresh summary loaded:', summary);
+				console.log('✅ Summary enabled status:', summary?.enabled);
+				console.log('✅ Should show setup form:', !summary?.enabled);
 			} else {
 				const errorData = await res.json();
 				setupError = errorData.error || 'Failed to clear key';
@@ -554,29 +563,15 @@
 				{:else if activeTab === 'payments' && activeTabConfig?.component}
 					<!-- @ts-ignore -->
 					<svelte:component this={activeTabConfig.component} data={summary as any} />
+				{:else if activeTab === 'subscriptions' && activeTabConfig?.component}
+					<!-- @ts-ignore -->
+					<svelte:component this={activeTabConfig.component} data={summary as any} />
 				{:else if activeTab === 'setup' && activeTabConfig?.component}
 					<!-- @ts-ignore -->
 					<svelte:component this={activeTabConfig.component} data={summary as any} />
 
 
-				{:else if activeTab === 'subscriptions'}
-					<div class="coming-soon">
-						<div class="coming-soon-icon">🔄</div>
-						<h3>Subscriptions Coming Soon</h3>
-						<p>Subscription management features are currently in development.</p>
-						{#if summary?.subscriptions && summary.subscriptions.length > 0}
-							<div class="preview-stats">
-								<div class="stat">
-									<span class="stat-value">{summary.subscriptions_count}</span>
-									<span class="stat-label">Total Subscriptions</span>
-								</div>
-								<div class="stat">
-									<span class="stat-value">{summary.subscriptions.filter((sub: any) => sub.Status === 'active').length}</span>
-									<span class="stat-label">Active</span>
-								</div>
-							</div>
-						{/if}
-					</div>
+
 				{/if}
 			</div>
 		{/if}

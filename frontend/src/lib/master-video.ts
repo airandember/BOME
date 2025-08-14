@@ -106,7 +106,7 @@ export interface MasterVideoStats {
 }
 
 // Master Video List Service
-export class MasterVideoService {
+class MasterVideoService {
 	// Get all master videos with filtering and pagination
 	async getMasterVideos(params: {
 		page?: number;
@@ -344,18 +344,26 @@ export class MasterVideoService {
 			// Get additional analytics from existing endpoints
 			const [viewAnalyticsResponse, subscriberMetricsResponse] = await Promise.allSettled([
 				apiRequest('/admin/streaming/dashboard').then(r => r.json()),
-				apiRequest('/admin/dashboard/analytics').then(r => r.json())
+				apiRequest('/admin/analytics').then(r => r.json())
 			]);
+
+			// Debug logging (can be removed once stable)
+			console.log('🔍 Dashboard API responses:');
+			console.log('View analytics response:', viewAnalyticsResponse);
+			console.log('Subscriber metrics response:', subscriberMetricsResponse);
 
 			// Build comprehensive analytics from working data
 			const videoStats = videoStatsResponse.stats;
-			const viewAnalytics = viewAnalyticsResponse.status === 'fulfilled' 
-				? viewAnalyticsResponse.value?.data?.view_analytics 
-				: { total_views: videoStats.total_views, views_today: 0, views_week: 0, growth_rate: 0 };
 			
+			// Safely extract view analytics with fallbacks
+			const viewAnalytics = viewAnalyticsResponse.status === 'fulfilled' 
+				? viewAnalyticsResponse.value?.data?.view_analytics || {}
+				: {};
+			
+			// Safely extract subscriber metrics with fallbacks
 			const subscriberMetrics = subscriberMetricsResponse.status === 'fulfilled'
-				? subscriberMetricsResponse.value?.data?.subscriptions
-				: { total_subscribers: 0, active_subscriptions: 0, monthly_revenue: 0, churn_rate: 0 };
+				? subscriberMetricsResponse.value?.data?.subscriptions || {}
+				: {};
 
 			return {
 				success: true,
@@ -481,5 +489,6 @@ export class MasterVideoService {
 	}
 }
 
-// Export singleton instance
+// Export both the class and singleton instance
+export { MasterVideoService };
 export const masterVideoService = new MasterVideoService(); 

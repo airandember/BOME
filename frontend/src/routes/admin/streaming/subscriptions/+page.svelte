@@ -81,7 +81,7 @@
 	};
 
 	// Optimistic updates
-	let optimisticUpdates = new Map();
+	let optimisticUpdates = new Map<string | number, any>();
 
 	// --- CRUD: CREATE ---
 	async function addPlan(formData: CreateSubscriptionPlanData) {
@@ -295,15 +295,15 @@
 	}
 
 	// Optimistic update helpers
-	function addOptimisticUpdate(planId: string, updates: Partial<SubscriptionPlan>) {
-		optimisticUpdates.set(planId, updates);
+	function addOptimisticUpdate(id: string | number, updates: any) {
+		optimisticUpdates.set(id, updates);
 	}
 
-	function removeOptimisticUpdate(planId: string) {
-		optimisticUpdates.delete(planId);
+	function removeOptimisticUpdate(id: string | number) {
+		optimisticUpdates.delete(id);
 	}
 
-	$: isOptimisticallyUpdating = (planId: string) => optimisticUpdates.has(planId);
+	$: isOptimisticallyUpdating = (id: string | number) => optimisticUpdates.has(id);
 
 	// Plan actions
 	async function createSubscriptionPlan() {
@@ -629,13 +629,27 @@
 
 	// Toggle offer status
 	async function toggleOfferStatus(offer: SubscriptionOffer) {
+		const newStatus = !offer.is_active;
+		addOptimisticUpdate(offer.id, { is_active: newStatus });
+		
 		try {
-			const updatedOffer = await SubscriptionOfferService.toggleStatus(offer.id.toString(), !offer.is_active);
+			const updatedOffer = await SubscriptionOfferService.toggleStatus(offer.id.toString(), newStatus);
+			removeOptimisticUpdate(offer.id);
 			subscriptionOffers = subscriptionOffers.map(o => o.id === offer.id ? updatedOffer : o);
 			showToast(`Offer ${updatedOffer.is_active ? 'activated' : 'deactivated'} successfully`, 'success');
 		} catch (err) {
 			console.error('Error toggling offer status:', err);
+			removeOptimisticUpdate(offer.id);
 			showToast('Failed to update offer status', 'error');
+		}
+	}
+
+	// Wrapper functions for modal compatibility
+	function handleOfferSubmit(formData: CreateSubscriptionOfferData | UpdateSubscriptionOfferData) {
+		if ('id' in formData) {
+			return updateSubscriptionOffer(formData as UpdateSubscriptionOfferData);
+		} else {
+			return createSubscriptionOffer(formData as CreateSubscriptionOfferData);
 		}
 	}
 </script>
@@ -794,7 +808,7 @@
 <PlanModal
 	isOpen={showCreateModal}
 	title="Create Subscription Plan"
-	{formData}
+	plan={formData}
 	{isSubmitting}
 	mode="create"
 	onSave={createSubscriptionPlan}
@@ -804,7 +818,7 @@
 <PlanModal
 	isOpen={showEditModal}
 	title="Edit Subscription Plan"
-	{formData}
+	plan={formData}
 	{isSubmitting}
 	mode="edit"
 	onSave={updateSubscriptionPlan}
@@ -832,7 +846,7 @@
 	offer={null}
 	{subscriptionPlans}
 	{isSubmitting}
-	onSubmit={createSubscriptionOffer}
+	onSubmit={handleOfferSubmit}
 	onCancel={() => showCreateOfferModal = false}
 />
 
@@ -842,7 +856,7 @@
 	offer={selectedOffer}
 	{subscriptionPlans}
 	{isSubmitting}
-	onSubmit={updateSubscriptionOffer}
+	onSubmit={handleOfferSubmit}
 	onCancel={() => showEditOfferModal = false}
 />
 

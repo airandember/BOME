@@ -7,7 +7,7 @@
 	export let offer: SubscriptionOffer;
 	export let subscriptionPlans: SubscriptionPlan[] = [];
 	export let showStripeStatus: boolean = true; // Default to true like PlanCard
-	export let isOptimisticallyUpdating: (id: number) => boolean = () => false;
+	export let isOptimisticallyUpdating: (id: string | number) => boolean = () => false;
 	export let onEdit: (offer: SubscriptionOffer) => void = () => {};
 	export let onToggleStatus: (offer: SubscriptionOffer) => void = () => {};
 	export let onViewDetails: (offer: SubscriptionOffer) => void = () => {};

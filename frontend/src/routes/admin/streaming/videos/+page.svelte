@@ -1,11 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
-	import { MasterVideoService, type MasterVideo } from '$lib/master-video';
+	import { masterVideoService, type MasterVideo } from '$lib/master-video';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
-
-	const masterVideoService = new MasterVideoService();
 
 	// Reactive variables
 	let isLoading = true;

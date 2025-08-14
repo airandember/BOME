@@ -429,7 +429,7 @@ export class AnalyticsService {
 
         try {
             const response = await this.makeAuthenticatedRequest(
-                `/admin/dashboard/analytics?period=${period}`
+                `/admin/analytics?period=${period}`
             );
             const data = await response.json();
             this.setCachedData(cacheKey, data);
@@ -749,7 +749,7 @@ export class AnalyticsService {
             // Transform events from frontend format to backend format
             const transformedEvents = events.map(event => this.transformEventForBackend(event));
 
-            const response = await this.makeAuthenticatedRequest('/admin/dashboard/analytics/batch', {
+            const response = await this.makeAuthenticatedRequest('/admin/analytics/batch', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

@@ -4,7 +4,7 @@
 	import StripeIntegrationStatus from './StripeIntegrationStatus.svelte'; // Add Stripe status component
 
 	export let plan: SubscriptionPlan;
-	export let isOptimisticallyUpdating: (planId: string) => boolean;
+	export let isOptimisticallyUpdating: (planId: string | number) => boolean;
 	export let showStripeStatus: boolean = true; // Add prop to control Stripe status display
 	
 	// Callback props for Svelte 5 compatibility

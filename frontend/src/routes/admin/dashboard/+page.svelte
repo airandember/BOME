@@ -4,9 +4,7 @@
 	import { auth } from '$lib/auth';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
-	import { MasterVideoService } from '$lib/master-video';
-
-	const masterVideoService = new MasterVideoService();
+	import { masterVideoService } from '$lib/master-video';
 
 	let analytics: any = null;
 	let recentActivity: Array<{type: string; message: string; time: string; user?: string}> = [];
