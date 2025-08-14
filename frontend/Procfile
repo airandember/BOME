@@ -1,1 +1,1 @@
-web: PORT=3000 node build/index.js
+web: PORT=8080 node build/index.js
