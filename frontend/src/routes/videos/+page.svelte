@@ -543,7 +543,7 @@
 						</header>
 
 						<!-- Navigation Tabs -->
-						<div class="hub-tabs">
+						<!--<div class="hub-tabs">
 							<button
 								class="tab-button {activeTab === 'allVideos' ? 'active' : ''}"
 								on:click={() => switchTab('allVideos')}
@@ -568,7 +568,7 @@
 							>
 								Topics
 							</button>
-						</div>
+						</div>-->
 
 						<!-- All Videos Section -->
 						{#if activeTab === 'allVideos'}

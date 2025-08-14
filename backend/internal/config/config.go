@@ -144,7 +144,7 @@ type Config struct {
 func New() *Config {
 	return &Config{
 		// Server Configuration
-		ServerPort:  getEnv("SERVER_PORT", "8080"),
+		ServerPort:  getEnv("PORT", getEnv("SERVER_PORT", "8080")),
 		ServerHost:  getEnv("SERVER_HOST", "0.0.0.0"),
 		Environment: getEnv("ENVIRONMENT", "development"),
 		Debug:       getEnvBool("DEBUG", true),
