@@ -4,11 +4,16 @@
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/auth';
 	import { fade } from 'svelte/transition';
+	import { api } from '$lib/api';
+	import { StreamingSubscriberService, type Subscriber } from '$lib/services/streaming-subscribers';
 
 	// Reactive variables
 	let currentUser: any = null;
 	let isStreamingAdmin = false;
 	let isLoading = true;
+	let quickActiveSubscriptions = 0;
+	let quickMonthlyRevenue = 0;
+	let quickChurnRate = 0;
 
 	// Navigation items for streaming admin
 	const navigationItems = [
@@ -97,6 +102,9 @@
 				goto('/admin?error=unauthorized');
 			}
 
+			// Load quick stats (non-blocking)
+			loadQuickStats();
+
 			return unsubscribe;
 		} catch (error) {
 			console.error('Error initializing streaming admin layout:', error);
@@ -106,6 +114,66 @@
 
 	// Get current navigation item
 	$: currentNav = navigationItems.find(item => $page.url.pathname === item.href) || navigationItems[0];
+
+	async function loadQuickStats() {
+		try {
+			const response = await api.get('/admin/streaming/dashboard');
+			const raw = (response?.data as any) || {};
+			const data = raw.dashboard?.metrics as any;
+			if (data) {
+				quickActiveSubscriptions = data.active_subscriptions || 0;
+				// Prefer a monthly figure if provided; fallback to revenue_30_days total
+				quickMonthlyRevenue = (data.monthly_revenue || data.revenue_30_days?.total || 0);
+				quickChurnRate = (data.churn_rate?.rate || 0);
+			}
+			// If empty, derive from subscribers
+			if (!data || (quickActiveSubscriptions === 0 && quickMonthlyRevenue === 0 && quickChurnRate === 0)) {
+				await deriveQuickStatsFromSubscribers();
+			}
+		} catch (e) {
+			// Fallback entirely to subscribers
+			try { await deriveQuickStatsFromSubscribers(); } catch {}
+		}
+	}
+
+	function toMonthly(price?: number, interval?: string, count?: number): number {
+		const p = price || 0;
+		const c = count && count > 0 ? count : 1;
+		switch ((interval || 'month').toLowerCase()) {
+			case 'year': return (p / 12) * c;
+			case 'week': return (p * 4.345) * c;
+			case 'day': return (p * 30) * c;
+			case 'month': default: return p * c;
+		}
+	}
+
+	async function deriveQuickStatsFromSubscribers() {
+		const resp = await StreamingSubscriberService.getSubscribers({ limit: 1000 });
+		const subs: Subscriber[] = resp.subscribers || [];
+		const now = new Date();
+		const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+		const isWithinPeriod = (s: Subscriber) => {
+			const start = s.current_period_start ? new Date(s.current_period_start) : StreamingSubscriberService.calculateSubscriptionStartDate(s);
+			const end = s.current_period_end ? new Date(s.current_period_end) : StreamingSubscriberService.calculateSubscriptionEndDate(s);
+			if (start && start > now) return false;
+			if (end && end > now) return true;
+			return s.subscription_status === 'active' || s.subscription_status === 'trialing';
+		};
+
+		const activeSubs = subs.filter(isWithinPeriod);
+		quickActiveSubscriptions = activeSubs.length;
+		quickMonthlyRevenue = Math.round(activeSubs.reduce((sum, s) => sum + toMonthly(s.plan_price, s.plan_interval, s.plan_interval_count), 0) * 100) / 100;
+
+		const canceledThisPeriod = subs.filter(s => s.subscription_status === 'canceled' && s.updated_at && new Date(s.updated_at) >= thirtyDaysAgo).length;
+		const previousActiveBase = quickActiveSubscriptions + canceledThisPeriod;
+		const churn = previousActiveBase > 0 ? (canceledThisPeriod / previousActiveBase) * 100 : 0;
+		quickChurnRate = Math.round(churn * 10) / 10;
+	}
+
+	function formatCurrency(amount: number): string {
+		return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
+	}
 </script>
 
 <svelte:head>
@@ -209,15 +277,15 @@
 						<div class="stats-list">
 							<div class="stat-item">
 								<span class="stat-label">Active Subscriptions</span>
-								<span class="stat-value">--</span>
+							<span class="stat-value">{quickActiveSubscriptions.toLocaleString()}</span>
 							</div>
 							<div class="stat-item">
-								<span class="stat-label">Monthly Revenue</span>
-								<span class="stat-value">--</span>
+							<span class="stat-label">Projected Monthly Revenue</span>
+							<span class="stat-value">{formatCurrency(quickMonthlyRevenue)}</span>
 							</div>
 							<div class="stat-item">
 								<span class="stat-label">Churn Rate</span>
-								<span class="stat-value">--</span>
+							<span class="stat-value">{quickChurnRate.toFixed(1)}%</span>
 							</div>
 						</div>
 					</div>

@@ -82,6 +82,7 @@
 	let error = '';
 	let selectedView = 'overview';
 	let refreshInterval: NodeJS.Timeout | undefined;
+	let visibilityHandler: (() => void) | null = null;
 	let subsiteFilter = 'all';
 	let webhookTypeFilter = 'all';
 
@@ -91,12 +92,40 @@
 		}
 
 		await loadMonitoringData();
-		startRealTimeUpdates();
+
+		const startPolling = () => {
+			if (refreshInterval) clearInterval(refreshInterval);
+			refreshInterval = setInterval(async () => {
+				await loadMonitoringData();
+			}, 10000);
+		};
+
+		const stopPolling = () => {
+			if (refreshInterval) {
+				clearInterval(refreshInterval);
+				refreshInterval = undefined;
+			}
+		};
+
+		visibilityHandler = () => {
+			if (document.hidden) {
+				stopPolling();
+			} else {
+				startPolling();
+			}
+		};
+
+		document.addEventListener('visibilitychange', visibilityHandler);
+		startPolling();
 	});
 
 	onDestroy(() => {
 		if (refreshInterval) {
 			clearInterval(refreshInterval);
+		}
+		if (visibilityHandler) {
+			document.removeEventListener('visibilitychange', visibilityHandler);
+			visibilityHandler = null;
 		}
 	});
 
@@ -180,13 +209,7 @@
 		}
 	}
 
-	function startRealTimeUpdates() {
-		if (!browser) return;
-
-		refreshInterval = setInterval(async () => {
-			await loadMonitoringData();
-		}, 30000); // Update every 30 seconds
-	}
+	// polling handled via onMount visibility-aware logic
 
 	function getStatusColor(status: string) {
 		switch (status) {

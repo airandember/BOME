@@ -7,6 +7,7 @@
 	import { masterVideoService, type MasterVideo } from '$lib/master-video';
 	import { stripeFinancialService, type StripeCustomer, type FinancialMetrics, type StripePayment } from '$lib/stripe-financial';
 	import { api } from '$lib/api';
+	import { StreamingSubscriberService, type Subscriber } from '$lib/services/streaming-subscribers';
 
 	// Tab management
 	let activeTab = 'overview'; // 'overview', 'videos', 'subscriptions', 'subscribers', 'financial'
@@ -58,12 +59,79 @@
 			} else {
 				throw new Error(response.error || 'Failed to load dashboard data');
 			}
+
+			// Fallback or enhancement: derive metrics from subscribers if missing or zeroed
+			const needsDerivedMetrics = !metrics || (
+				(metrics.activeSubscriptions === 0 && metrics.monthlyRevenue === 0 && metrics.churnRate === 0 && metrics.newSubscriptions === 0)
+			);
+			if (needsDerivedMetrics) {
+				await deriveMetricsFromSubscribers();
+			}
 		} catch (err: unknown) {
 			console.error('Error loading dashboard data:', err);
 			error = err instanceof Error ? err.message : 'An unknown error occurred';
+			// If API fails, still try to populate metrics from subscribers as a graceful fallback
+			try { await deriveMetricsFromSubscribers(); } catch {}
 		} finally {
 			isLoading = false;
 		}
+	}
+
+	// Compute metrics directly from subscribers as a fallback
+	async function deriveMetricsFromSubscribers() {
+		const resp = await StreamingSubscriberService.getSubscribers({ limit: 1000 });
+		const subs: Subscriber[] = resp.subscribers || [];
+
+		// Active subs: treat as active when current date is within subscription period
+		const now = new Date();
+		const isActive = (s: Subscriber) => {
+			// Prefer explicit period fields if present
+			const start = s.current_period_start ? new Date(s.current_period_start) : StreamingSubscriberService.calculateSubscriptionStartDate(s);
+			const end = s.current_period_end ? new Date(s.current_period_end) : StreamingSubscriberService.calculateSubscriptionEndDate(s);
+			if (start && start > now) return false; // upcoming period
+			if (end && end > now) return true;     // within period
+			// Fallback to status-based when dates are missing
+			return s.subscription_status === 'active' || s.subscription_status === 'trialing';
+		};
+		const activeSubs = subs.filter(isActive);
+		const activeSubscriptions = activeSubs.length;
+
+		// Monthly revenue (projected): normalize any interval to monthly
+		function toMonthly(price: number | undefined, interval?: string, count?: number): number {
+			const p = price || 0;
+			const c = count && count > 0 ? count : 1;
+			const unit = (interval || 'month').toLowerCase();
+			switch (unit) {
+				case 'year': return (p / 12) * c;
+				case 'week': return (p * 4.345) * c; // avg weeks/month
+				case 'day': return (p * 30) * c; // approx days/month
+				case 'month': default: return p * c;
+			}
+		}
+		const monthlyRevenue = activeSubs.reduce((sum, s) => sum + toMonthly(s.plan_price, s.plan_interval, s.plan_interval_count), 0);
+
+		// New subs this month: created_at within current month
+		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+		const newSubscriptions = subs.filter(s => {
+			if (!s.created_at) return false;
+			const d = new Date(s.created_at);
+			return d >= monthStart && d <= now;
+		}).length;
+
+		// Churn: cancellations in last 30 days over previous active base
+		const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+		const canceledThisPeriod = subs.filter(s => s.subscription_status === 'canceled' && s.updated_at && new Date(s.updated_at) >= thirtyDaysAgo).length;
+		const previousActiveBase = activeSubscriptions + canceledThisPeriod;
+		const churnRate = previousActiveBase > 0 ? (canceledThisPeriod / previousActiveBase) * 100 : 0;
+
+		metrics = {
+			activeSubscriptions,
+			monthlyRevenue: Math.round(monthlyRevenue * 100) / 100,
+			churnRate: Math.round(churnRate * 10) / 10,
+			newSubscriptions,
+			totalCustomers: subs.length,
+			avgRevenuePerUser: activeSubscriptions > 0 ? Math.round((monthlyRevenue / activeSubscriptions) * 100) / 100 : 0
+		};
 	}
 
 	onMount(() => {
@@ -108,7 +176,7 @@
 
 			<div class="stat-card">
 				<div class="stat-header">
-					<h3>Monthly Revenue</h3>
+					<h3>Projected Monthly Revenue</h3>
 					<svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 						<path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
 					</svg>

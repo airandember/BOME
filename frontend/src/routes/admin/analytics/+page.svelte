@@ -53,34 +53,54 @@
 	let error: string | null = null;
 	let refreshInterval: NodeJS.Timeout | null = null;
 	let lastUpdated = new Date();
+let visibilityHandler: (() => void) | null = null;
 
-	onMount(async () => {
-		// Check authentication first
-		if (!$auth.isAuthenticated) {
-			showToast('Please log in to access analytics', 'error');
-			goto('/admin');
-			return;
-		}
+onMount(async () => {
+    // Check authentication first
+    if (!$auth.isAuthenticated) {
+        showToast('Please log in to access analytics', 'error');
+        goto('/admin');
+        return;
+    }
 
-		// Check if user has admin privileges
-		const user = $auth.user;
-		if (!user || !isAdminUser(user)) {
-			showToast('Access denied. Admin privileges required.', 'error');
-			goto('/admin');
-			return;
-		}
+    // Check if user has admin privileges
+    const user = $auth.user;
+    if (!user || !isAdminUser(user)) {
+        showToast('Access denied. Admin privileges required.', 'error');
+        goto('/admin');
+        return;
+    }
 
-		await loadDashboard();
-		
-		// Refresh every 30 seconds
-		refreshInterval = setInterval(loadDashboard, 30000);
-	});
+    await loadDashboard();
 
-	onDestroy(() => {
-		if (refreshInterval) {
-			clearInterval(refreshInterval);
-		}
-	});
+    const startPolling = () => {
+        if (refreshInterval) clearInterval(refreshInterval);
+        refreshInterval = setInterval(loadDashboard, 15000); // 15s for dashboard
+    };
+    const stopPolling = () => {
+        if (refreshInterval) {
+            clearInterval(refreshInterval);
+            refreshInterval = null;
+        }
+    };
+    visibilityHandler = () => {
+        if (document.hidden) stopPolling();
+        else startPolling();
+    };
+    document.addEventListener('visibilitychange', visibilityHandler);
+    startPolling();
+});
+
+onDestroy(() => {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+    }
+    if (visibilityHandler) {
+        document.removeEventListener('visibilitychange', visibilityHandler);
+        visibilityHandler = null;
+    }
+});
 
 	function isAdminUser(user: any): boolean {
 		if (!user) return false;
@@ -103,8 +123,8 @@
 				throw new Error('Authentication required');
 			}
 
-			// Fetch analytics data
-			const response = await apiRequest('/admin/dashboard/analytics');
+			// Fetch analytics data (hub-level)
+			const response = await apiRequest('/admin/analytics');
 
 			if (!response.ok) {
 				if (response.status === 401) {
@@ -121,7 +141,7 @@
 			// Fetch system health data
 			let systemHealth = null;
 			try {
-				const healthResponse = await apiRequest('/admin/dashboard/analytics/system-health');
+				const healthResponse = await apiRequest('/admin/analytics/system-health');
 				if (healthResponse.ok) {
 					const healthData = await healthResponse.json();
 					systemHealth = healthData.data;
