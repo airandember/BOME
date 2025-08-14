@@ -1,0 +1,1 @@
+web: PORT=3000 node .svelte-kit/output/server/index.js
