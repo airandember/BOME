@@ -37,7 +37,8 @@ func main() {
 		900,       // 15 minutes
 		150000000, // 150MB
 		[]string{"test", "archaeology", "evidence"},
-		1, // created by user ID 1
+		1,    // created by user ID 1
+		true, // vid_status
 	)
 	if err != nil {
 		log.Fatal("Failed to create video:", err)

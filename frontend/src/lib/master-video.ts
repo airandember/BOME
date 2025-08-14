@@ -33,6 +33,7 @@ export interface MasterVideo {
 	CreatedBy: number;
 	CreatedAt: string;
 	UpdatedAt: string;
+	Vid_Status: boolean;
 }
 
 export interface SyncConflict {
@@ -105,7 +106,7 @@ export interface MasterVideoStats {
 }
 
 // Master Video List Service
-export class MasterVideoService {
+class MasterVideoService {
 	// Get all master videos with filtering and pagination
 	async getMasterVideos(params: {
 		page?: number;
@@ -113,6 +114,7 @@ export class MasterVideoService {
 		category?: string;
 		status?: string;
 		sync_status?: string;
+		vid_status?: string;
 		search?: string;
 		sort_field?: string;
 		sort_direction?: 'asc' | 'desc';
@@ -133,6 +135,7 @@ export class MasterVideoService {
 		if (params.category) searchParams.append('category', params.category);
 		if (params.status) searchParams.append('status', params.status);
 		if (params.sync_status) searchParams.append('sync_status', params.sync_status);
+		if (params.vid_status) searchParams.append('vid_status', params.vid_status);
 		if (params.search) searchParams.append('search', params.search);
 		if (params.sort_field) searchParams.append('sort_field', params.sort_field);
 		if (params.sort_direction) searchParams.append('sort_direction', params.sort_direction);
@@ -166,16 +169,32 @@ export class MasterVideoService {
 		return response.json();
 	}
 
-	// Delete master video
-	async deleteMasterVideo(id: number): Promise<{
+	// Toggle video status (vid_status only)
+	async toggleVideoStatus(id: number, vidStatus: boolean): Promise<{
 		success: boolean;
 		message: string;
+		video: MasterVideo;
 	}> {
-		const response = await apiRequest(`/admin/master-videos/${id}`, {
-			method: 'DELETE'
+		const response = await apiRequest(`/admin/master-videos/${id}/toggle-status`, {
+			method: 'PUT',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({ vid_status: vidStatus })
 		});
 		return response.json();
 	}
+
+	// Delete master video
+	// async deleteMasterVideo(id: number): Promise<{
+	// 	success: boolean;
+	// 	message: string;
+	// }> {
+	// 	const response = await apiRequest(`/admin/master-videos/${id}`, {
+	// 		method: 'DELETE'
+	// 	});
+	// 	return response.json();
+	// }
 
 	// Sync from Bunny.net to master list
 	async syncFromBunny(): Promise<{
@@ -243,6 +262,36 @@ export class MasterVideoService {
 		return response.json();
 	}
 
+	// Upload video
+	async uploadVideo(formData: FormData): Promise<{
+		success: boolean;
+		message: string;
+		video?: MasterVideo;
+		error?: string;
+	}> {
+		try {
+			const response = await apiRequest('/videos/upload', {
+				method: 'POST',
+				body: formData
+			});
+			
+			const data = await response.json();
+			
+			return {
+				success: data.success || false,
+				message: data.message || 'Upload completed',
+				video: data.video,
+				error: data.error
+			};
+		} catch (error) {
+			return {
+				success: false,
+				message: 'Upload failed',
+				error: error instanceof Error ? error.message : 'Unknown error'
+			};
+		}
+	}
+
 	// Get comprehensive dashboard analytics (extends the working stats method)
 	async getDashboardAnalytics(): Promise<{
 		success: boolean;
@@ -295,18 +344,26 @@ export class MasterVideoService {
 			// Get additional analytics from existing endpoints
 			const [viewAnalyticsResponse, subscriberMetricsResponse] = await Promise.allSettled([
 				apiRequest('/admin/streaming/dashboard').then(r => r.json()),
-				apiRequest('/admin/dashboard/analytics').then(r => r.json())
+				apiRequest('/admin/analytics').then(r => r.json())
 			]);
+
+			// Debug logging (can be removed once stable)
+			console.log('🔍 Dashboard API responses:');
+			console.log('View analytics response:', viewAnalyticsResponse);
+			console.log('Subscriber metrics response:', subscriberMetricsResponse);
 
 			// Build comprehensive analytics from working data
 			const videoStats = videoStatsResponse.stats;
-			const viewAnalytics = viewAnalyticsResponse.status === 'fulfilled' 
-				? viewAnalyticsResponse.value?.data?.view_analytics 
-				: { total_views: videoStats.total_views, views_today: 0, views_week: 0, growth_rate: 0 };
 			
+			// Safely extract view analytics with fallbacks
+			const viewAnalytics = viewAnalyticsResponse.status === 'fulfilled' 
+				? viewAnalyticsResponse.value?.data?.view_analytics || {}
+				: {};
+			
+			// Safely extract subscriber metrics with fallbacks
 			const subscriberMetrics = subscriberMetricsResponse.status === 'fulfilled'
-				? subscriberMetricsResponse.value?.data?.subscriptions
-				: { total_subscribers: 0, active_subscriptions: 0, monthly_revenue: 0, churn_rate: 0 };
+				? subscriberMetricsResponse.value?.data?.subscriptions || {}
+				: {};
 
 			return {
 				success: true,
@@ -432,5 +489,6 @@ export class MasterVideoService {
 	}
 }
 
-// Export singleton instance
+// Export both the class and singleton instance
+export { MasterVideoService };
 export const masterVideoService = new MasterVideoService(); 

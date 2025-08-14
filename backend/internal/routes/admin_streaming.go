@@ -1,8 +1,6 @@
 package routes
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,912 +10,1142 @@ import (
 	"bome-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stripe/stripe-go/v74"
+	"github.com/stripe/stripe-go/v74/coupon"
 )
 
-// AdminStreamingStats represents comprehensive streaming statistics for admin
-type AdminStreamingStats struct {
-	TotalVideos      int     `json:"total_videos"`
-	ReadyVideos      int     `json:"ready_videos"`
-	ProcessingVideos int     `json:"processing_videos"`
-	ErrorVideos      int     `json:"error_videos"`
-	DraftVideos      int     `json:"draft_videos"`
-	ScheduledVideos  int     `json:"scheduled_videos"`
-	TotalStorage     int64   `json:"total_storage_bytes"`
-	TotalDuration    int     `json:"total_duration_seconds"`
-	TotalViews       int     `json:"total_views"`
-	AverageFileSize  float64 `json:"average_file_size_mb"`
-	ProcessingErrors int     `json:"processing_errors"`
-	UploadQueueSize  int     `json:"upload_queue_size"`
-	CDNUsage         float64 `json:"cdn_usage_gb"`
-	BandwidthUsage   float64 `json:"bandwidth_usage_gb"`
-	LastSyncTime     string  `json:"last_sync_time"`
-	SyncStatus       string  `json:"sync_status"`
-}
+// SetupAdminStreamingRoutes sets up streaming admin dashboard routes
+func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeService *services.StripeService, analyticsService *services.SubscriptionAnalyticsService, biService *services.BusinessIntelligenceService, subscriptionPlanStripeService *services.SubscriptionPlanStripeService, subscriptionOffersStripeService *services.SubscriptionOffersStripeService) {
+	// Streaming admin routes - requires streaming manager role or higher
+	streaming := admin.Group("/streaming")
+	streaming.Use(middleware.AuthRequired())
+	streaming.Use(middleware.StreamingAdminRequired())
 
-// AdminVideoResponse represents enhanced video data for admin management
-type AdminVideoResponse struct {
-	ID                   int        `json:"id"`
-	Title                string     `json:"title"`
-	Description          string     `json:"description"`
-	BunnyVideoID         string     `json:"bunny_video_id"`
-	ThumbnailURL         string     `json:"thumbnail_url"`
-	Duration             int        `json:"duration"`
-	FileSize             int64      `json:"file_size"`
-	Status               string     `json:"status"`
-	Category             string     `json:"category"`
-	Tags                 []string   `json:"tags"`
-	ViewCount            int        `json:"view_count"`
-	LikeCount            int        `json:"like_count"`
-	CreatedBy            int        `json:"created_by"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
-	ScheduledPublishDate *time.Time `json:"scheduled_publish_date,omitempty"`
-
-	// Admin-specific fields
-	ProcessingProgress int                    `json:"processing_progress"`
-	ProcessingErrors   []string               `json:"processing_errors"`
-	UploadStatus       string                 `json:"upload_status"`
-	UploadProgress     int                    `json:"upload_progress"`
-	FileFormat         string                 `json:"file_format"`
-	Resolution         string                 `json:"resolution"`
-	Bitrate            int                    `json:"bitrate"`
-	Framerate          float64                `json:"framerate"`
-	EncodingProfile    string                 `json:"encoding_profile"`
-	StorageLocation    string                 `json:"storage_location"`
-	CDNStatus          string                 `json:"cdn_status"`
-	AccessControl      string                 `json:"access_control"`
-	Monetization       string                 `json:"monetization"`
-	Analytics          map[string]interface{} `json:"analytics"`
-
-	// Bunny.net specific data
-	BunnyData *services.BunnyVideo    `json:"bunny_data,omitempty"`
-	PlayData  *services.VideoPlayData `json:"play_data,omitempty"`
-}
-
-// SetupAdminStreamingRoutes configures admin streaming routes
-func SetupAdminStreamingRoutes(router *gin.RouterGroup, db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) {
-	fmt.Printf("🔥 ADMIN STREAMING: Starting SetupAdminStreamingRoutes function\n")
-
-	// Test endpoint without authentication for debugging
-	router.GET("/streaming/test", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":    "success",
-			"message":   "Admin streaming test endpoint working",
-			"timestamp": time.Now().Format(time.RFC3339),
-		})
-	})
-
-	// Create admin streaming group with authentication and admin middleware
-	adminStreaming := router.Group("/streaming")
-	adminStreaming.Use(middleware.AuthRequired())
-	adminStreaming.Use(middleware.AdminRequired())
-
-	// Dashboard analytics endpoint
-	adminStreaming.GET("/dashboard", func(c *gin.Context) {
-		// Get real-time active users
-		activeUsers, err := db.GetActiveUsersCount()
-		if err != nil {
-			fmt.Printf("Warning: Failed to get active users: %v\n", err)
-			activeUsers = 0
-		}
-
-		// Get recent activity
-		recentActivity, err := db.GetRecentActivity(10)
-		if err != nil {
-			fmt.Printf("Warning: Failed to get recent activity: %v\n", err)
-			recentActivity = []*database.Activity{}
-		}
-
-		// Get view analytics
-		viewAnalytics, err := db.GetViewAnalytics()
-		if err != nil {
-			fmt.Printf("Warning: Failed to get view analytics: %v\n", err)
-			viewAnalytics = map[string]interface{}{
-				"total_views": 0,
-				"views_today": 0,
-				"views_week":  0,
-				"growth_rate": 0.0,
-			}
-		}
-
-		// Get subscriber metrics
-		subscriberMetrics, err := db.GetSubscriberMetrics()
-		if err != nil {
-			fmt.Printf("Warning: Failed to get subscriber metrics: %v\n", err)
-			subscriberMetrics = map[string]interface{}{
-				"total_subscribers":    0,
-				"active_subscriptions": 0,
-				"monthly_revenue":      0.0,
-				"churn_rate":           0.0,
-			}
-		}
-
-		// Get video stats
-		videoStats, err := db.GetVideoStats()
-		if err != nil {
-			fmt.Printf("Warning: Failed to get video stats: %v\n", err)
-			videoStats = map[string]interface{}{
-				"total_videos":    0,
-				"synced_videos":   0,
-				"needs_attention": 0,
-			}
-		}
-
-		response := gin.H{
-			"status": "success",
-			"data": gin.H{
-				"active_users":       activeUsers,
-				"recent_activity":    recentActivity,
-				"view_analytics":     viewAnalytics,
-				"subscriber_metrics": subscriberMetrics,
-				"video_stats":        videoStats,
-			},
-		}
-
-		c.JSON(http.StatusOK, response)
-	})
-
-	// Active users endpoint
-	adminStreaming.GET("/active-users", func(c *gin.Context) {
-		activeUsers, err := db.GetActiveUsersCount()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to get active users: %v", err),
-			})
-			return
-		}
-
-		// Get active users trend
-		trend, err := db.GetActiveUsersTrend()
-		if err != nil {
-			fmt.Printf("Warning: Failed to get active users trend: %v\n", err)
-			trend = []map[string]interface{}{}
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"status": "success",
-			"data": gin.H{
-				"active_users": activeUsers,
-				"trend":        trend,
-			},
-		})
-	})
-
-	// Recent activity endpoint
-	adminStreaming.GET("/recent-activity", func(c *gin.Context) {
-		limit := 20
-		if limitStr := c.Query("limit"); limitStr != "" {
-			if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
-				limit = l
-			}
-		}
-
-		activity, err := db.GetRecentActivity(limit)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to get recent activity: %v", err),
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"status": "success",
-			"data":   activity,
-		})
-	})
-
-	// View analytics endpoint
-	adminStreaming.GET("/view-analytics", func(c *gin.Context) {
-		period := c.DefaultQuery("period", "7d")
-
-		analytics, err := db.GetViewAnalyticsByPeriod(period)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to get view analytics: %v", err),
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"status": "success",
-			"data":   analytics,
-		})
-	})
-
-	// Subscriber metrics endpoint
-	adminStreaming.GET("/subscriber-metrics", func(c *gin.Context) {
-		metrics, err := db.GetSubscriberMetrics()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to get subscriber metrics: %v", err),
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"status": "success",
-			"data":   metrics,
-		})
-	})
-
-	// Enhanced admin video management
-	streaming := router.Group("/streaming")
 	{
-		// Enhanced admin video management
-		streaming.GET("/videos", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAdminStreamingVideosHandler(db, bunnyService, adminCache))
-		streaming.GET("/videos/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAdminStreamingVideoHandler(db, bunnyService, adminCache))
-		streaming.PUT("/videos/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), UpdateAdminStreamingVideoHandler(db, bunnyService, adminCache))
-		streaming.DELETE("/videos/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), DeleteAdminStreamingVideoHandler(db, bunnyService, adminCache))
+		// Dashboard overview
+		streaming.GET("/dashboard", GetStreamingDashboardHandler(db, analyticsService))
 
-		// Bulk operations
-		streaming.POST("/videos/bulk", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), BulkAdminStreamingOperationHandler(db, bunnyService, adminCache))
+		// Subscription management
+		streaming.GET("/subscriptions", GetStreamingSubscriptionsHandler(db))
+		streaming.GET("/subscriptions/:id", GetStreamingSubscriptionHandler(db))
+		streaming.PUT("/subscriptions/:id", UpdateStreamingSubscriptionHandler(db, stripeService))
+		streaming.DELETE("/subscriptions/:id", CancelStreamingSubscriptionHandler(db, stripeService))
+		streaming.POST("/subscriptions/:id/refund", ProcessStreamingRefundHandler(db, stripeService))
 
-		// Enhanced stats and analytics
-		streaming.GET("/stats", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAdminStreamingStatsHandler(db, bunnyService, adminCache))
-		streaming.GET("/videos/:id/analytics", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAdminVideoAnalyticsHandler(db, bunnyService, adminCache))
+		// Customer management
+		streaming.GET("/customers", GetStreamingCustomersHandler(db))
+		streaming.GET("/customers/:id", GetStreamingCustomerHandler(db))
+		streaming.GET("/customers/:id/subscriptions", GetCustomerSubscriptionsHandler(db))
+		streaming.POST("/customers/:id/communication", SendCustomerCommunicationHandler(db))
 
-		// Processing and sync management
-		streaming.POST("/sync", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), SyncAdminStreamingHandler(db, bunnyService, adminCache))
-		streaming.GET("/sync/status", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetSyncStatusHandler(db, bunnyService, adminCache))
-		streaming.POST("/videos/:id/retry-processing", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), RetryVideoProcessingHandler(db, bunnyService, adminCache))
+		// Analytics and reporting
+		streaming.GET("/analytics/overview", GetStreamingAnalyticsOverviewHandler(analyticsService))
+		streaming.GET("/analytics/revenue", GetStreamingRevenueAnalyticsHandler(analyticsService))
+		streaming.GET("/analytics/subscriptions", GetStreamingSubscriptionAnalyticsHandler(analyticsService))
+		streaming.GET("/analytics/customers", GetStreamingCustomerAnalyticsHandler(analyticsService))
 
-		// Upload management
-		streaming.GET("/uploads", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUploadQueueHandler(db, bunnyService, adminCache))
-		streaming.POST("/uploads/:id/cancel", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), CancelUploadHandler(db, bunnyService, adminCache))
+		// Business Intelligence Analytics
+		streaming.GET("/analytics/executive-summary", GetExecutiveSummaryHandler(biService))
+		streaming.GET("/analytics/funnel-analysis", GetFunnelAnalysisHandler(biService))
+		streaming.GET("/analytics/revenue-impact", GetRevenueImpactHandler(biService))
+		streaming.GET("/analytics/customer-journey", GetCustomerJourneyHandler(biService))
 
-		// CDN and storage management
-		streaming.GET("/cdn/usage", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetCDNUsageHandler(db, bunnyService, adminCache))
-		streaming.GET("/storage/usage", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetStorageUsageHandler(db, bunnyService, adminCache))
+		// Stripe configuration (write-only secret) and summary
+		streaming.POST("/stripe/secret", func(c *gin.Context) {
+			var req struct {
+				Key  string `json:"key" binding:"required"`
+				Type string `json:"type"` // optional: "sk" or "rk" or "pk"; we only accept secret keys for backend
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
+				return
+			}
 
-		// Quality and encoding management
-		streaming.GET("/encoding/profiles", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetEncodingProfilesHandler(db, bunnyService, adminCache))
-		streaming.POST("/videos/:id/re-encode", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), ReEncodeVideoHandler(db, bunnyService, adminCache))
+			// Only allow server secret keys (sk_ or rk_)
+			if !(len(req.Key) > 3 && (req.Key[:3] == "sk_" || req.Key[:3] == "rk_")) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "A Stripe secret or restricted secret starting with sk_ or rk_ is required"})
+				return
+			}
 
-		// Cache management
-		streaming.GET("/cache/metrics", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAdminCacheMetricsHandler(adminCache))
-		streaming.POST("/cache/clear", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), ClearAdminCacheHandler(adminCache))
+			crypto := services.GetGlobalCryptoService()
+			if crypto == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Crypto service not initialized"})
+				return
+			}
+
+			if db == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
+				return
+			}
+
+			// Check for special "clear" key
+			if req.Key == "sk_1337" {
+				// Store empty encrypted value to clear the key
+				encrypted, err := crypto.EncryptString("")
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt empty key"})
+					return
+				}
+
+				if err := db.SetSecureSetting("stripe_secret_key", encrypted); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear key"})
+					return
+				}
+
+				// Update runtime Stripe service to disable it
+				stripeService.UpdateSecretKey("")
+
+				c.JSON(http.StatusOK, gin.H{"message": "Stripe secret cleared"})
+				return
+			}
+
+			// Normal key processing
+			encrypted, err := crypto.EncryptString(req.Key)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt key"})
+				return
+			}
+
+			if err := db.SetSecureSetting("stripe_secret_key", encrypted); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store key"})
+				return
+			}
+
+			// Update runtime Stripe service to enable immediate use
+			stripeService.UpdateSecretKey(req.Key)
+
+			c.JSON(http.StatusOK, gin.H{"message": "Stripe secret updated"})
+		})
+
+		streaming.GET("/stripe/summary", func(c *gin.Context) {
+			// never return stored secret; only return runtime capability summary
+			summary, err := stripeService.GetAccountSummary()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"summary": summary})
+		})
+
+		// Customer portal link endpoints
+		streaming.GET("/stripe/portal-link", func(c *gin.Context) {
+			crypto := services.GetGlobalCryptoService()
+			if crypto == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Crypto service not initialized"})
+				return
+			}
+
+			if db == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
+				return
+			}
+
+			// Retrieve encrypted portal link
+			encrypted, err := db.GetSecureSetting("stripe_portal_url")
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve portal link"})
+				return
+			}
+
+			if encrypted == "" {
+				c.JSON(http.StatusOK, gin.H{"portal_url": ""})
+				return
+			}
+
+			// Decrypt the portal link
+			decrypted, err := crypto.DecryptString(encrypted)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decrypt portal link"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"portal_url": decrypted})
+		})
+
+		streaming.POST("/stripe/portal-link", func(c *gin.Context) {
+			var req struct {
+				PortalURL string `json:"portal_url" binding:"required"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
+				return
+			}
+
+			crypto := services.GetGlobalCryptoService()
+			if crypto == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Crypto service not initialized"})
+				return
+			}
+
+			if db == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
+				return
+			}
+
+			// Encrypt the portal URL
+			encrypted, err := crypto.EncryptString(req.PortalURL)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt portal link"})
+				return
+			}
+
+			// Store encrypted portal URL
+			if err := db.SetSecureSetting("stripe_portal_url", encrypted); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store portal link"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"message": "Portal link saved successfully"})
+		})
+
+		streaming.DELETE("/stripe/portal-link", func(c *gin.Context) {
+			crypto := services.GetGlobalCryptoService()
+			if crypto == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Crypto service not initialized"})
+				return
+			}
+
+			if db == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
+				return
+			}
+
+			// Store empty encrypted value to clear the portal link
+			encrypted, err := crypto.EncryptString("")
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt empty value"})
+				return
+			}
+
+			if err := db.SetSecureSetting("stripe_portal_url", encrypted); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear portal link"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"message": "Portal link cleared successfully"})
+		})
+
+		// Debug endpoint for testing coupon listing
+		streaming.GET("/stripe/debug/coupons", func(c *gin.Context) {
+			if !stripeService.IsEnabled() {
+				c.JSON(400, gin.H{"error": "Stripe service is not enabled"})
+				return
+			}
+
+			// Test direct coupon listing
+			params := &stripe.CouponListParams{}
+			params.Limit = stripe.Int64(10)
+
+			iter := coupon.List(params)
+			var coupons []map[string]interface{}
+			var count int
+
+			for iter.Next() {
+				count++
+				c := iter.Current().(*stripe.Coupon)
+				coupons = append(coupons, map[string]interface{}{
+					"id":             c.ID,
+					"name":           c.Name,
+					"duration":       string(c.Duration),
+					"percent_off":    c.PercentOff,
+					"amount_off":     c.AmountOff,
+					"currency":       string(c.Currency),
+					"valid":          c.Valid,
+					"times_redeemed": c.TimesRedeemed,
+					"created":        c.Created,
+				})
+			}
+
+			if err := iter.Err(); err != nil {
+				c.JSON(500, gin.H{"error": err.Error(), "coupons": coupons, "count": count})
+				return
+			}
+
+			c.JSON(200, gin.H{
+				"coupons": coupons,
+				"count":   count,
+				"error":   nil,
+			})
+		})
+
+		// Promotions and deals
+		streaming.GET("/promotions", GetStreamingPromotionsHandler(db))
+		streaming.POST("/promotions", CreateStreamingPromotionHandler(db))
+		streaming.PUT("/promotions/:id", UpdateStreamingPromotionHandler(db))
+		streaming.DELETE("/promotions/:id", DeleteStreamingPromotionHandler(db))
+
+		// Event-based deals
+		streaming.GET("/events", GetStreamingEventsHandler(db))
+		streaming.POST("/events", CreateStreamingEventHandler(db))
+		streaming.PUT("/events/:id", UpdateStreamingEventHandler(db))
+		streaming.DELETE("/events/:id", DeleteStreamingEventHandler(db))
+		streaming.POST("/events/:id/subscription-deals", CreateEventSubscriptionDealHandler(db))
+
+		// Setup Stripe-integrated subscription plan routes
+		SetupSubscriptionPlanStripeRoutes(streaming, stripeService, subscriptionPlanStripeService)
+
+		// Setup Stripe-integrated subscription offers routes
+		SetupSubscriptionOffersStripeRoutes(streaming, stripeService, subscriptionOffersStripeService)
+
+		// Setup Stripe customer sync routes
+		customerSyncService := services.NewStripeCustomerSyncService(stripeService, db)
+		SetupStripeCustomerSyncRoutes(streaming.Group("/stripe"), customerSyncService)
 	}
 }
 
-// GetAdminStreamingVideosHandler returns enhanced video list for admin management
-func GetAdminStreamingVideosHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
+// GetStreamingDashboardHandler handles streaming admin dashboard overview
+func GetStreamingDashboardHandler(db *database.DB, analyticsService *services.SubscriptionAnalyticsService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Parse query parameters with admin-specific options
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-		status := c.DefaultQuery("status", "") // Can be empty to get all statuses
-		category := c.DefaultQuery("category", "")
-		search := c.DefaultQuery("search", "")
-		sortBy := c.DefaultQuery("sort", "created_at")
-		sortOrder := c.DefaultQuery("order", "desc")
-		includeProcessing := c.DefaultQuery("include_processing", "true") == "true"
-
-		// Create cache key based on query parameters
-		cacheKey := fmt.Sprintf("%s:%d:%d:%s:%s:%s:%s:%s:%t",
-			services.AdminCacheKeyVideos, page, limit, status, category, search, sortBy, sortOrder, includeProcessing)
-
-		// Try to get from cache first
-		if cached, found := adminCache.Get(cacheKey); found {
-			c.JSON(http.StatusOK, cached)
-			return
+		// Get key metrics for the dashboard
+		metrics := map[string]interface{}{
+			"timestamp": time.Now(),
 		}
 
-		// Validate parameters
-		if limit > 100 {
-			limit = 100
+		// Get active subscriptions count
+		if analyticsService != nil {
+			activeCount, err := analyticsService.GetActiveSubscriptionsCount(nil)
+			if err == nil {
+				metrics["active_subscriptions"] = activeCount
+			}
+
+			// Get revenue metrics for last 30 days
+			revenueMetrics, err := analyticsService.GetRevenueMetrics(
+				time.Now().AddDate(0, 0, -30),
+				time.Now(),
+				nil,
+			)
+			if err == nil {
+				metrics["revenue_30_days"] = revenueMetrics
+			}
+
+			// Get MRR
+			mrr, err := analyticsService.CalculateMRR(time.Now(), nil)
+			if err == nil {
+				metrics["mrr"] = mrr
+			}
+
+			// Get churn rate
+			churnData, err := analyticsService.CalculateChurnRate(
+				time.Now().AddDate(0, 0, -30),
+				time.Now(),
+				nil,
+			)
+			if err == nil {
+				metrics["churn_rate"] = churnData
+			}
+
+			// Get new subscriptions count
+			newSubs, err := db.GetNewSubscriptionsCount(
+				time.Now().AddDate(0, 0, -30),
+				time.Now(),
+			)
+			if err == nil {
+				metrics["new_subscriptions"] = newSubs
+			}
+
+			// Get total customers count
+			totalCustomers, err := db.GetTotalCustomersCount()
+			if err == nil {
+				metrics["total_customers"] = totalCustomers
+			}
+
+			// Calculate average revenue per user
+			if revenueMetrics != nil {
+				if avgRev, ok := revenueMetrics["avg_revenue_per_user"]; ok {
+					metrics["avg_revenue_per_user"] = avgRev
+				}
+			}
 		}
-		if limit < 1 {
+
+		// Get recent subscription events
+		// TODO: Implement recent events retrieval
+
+		c.JSON(http.StatusOK, gin.H{
+			"dashboard": gin.H{
+				"metrics":       metrics,
+				"recent_events": []interface{}{}, // TODO: Implement
+			},
+		})
+	}
+}
+
+// GetStreamingSubscriptionsHandler handles retrieving subscriptions for streaming admin
+func GetStreamingSubscriptionsHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Parse query parameters
+		limitStr := c.DefaultQuery("limit", "20")
+		offsetStr := c.DefaultQuery("offset", "0")
+		status := c.Query("status")
+		planID := c.Query("plan_id")
+		dateFrom := c.Query("date_from")
+		dateTo := c.Query("date_to")
+
+		limit, err := strconv.Atoi(limitStr)
+		if err != nil || limit <= 0 {
 			limit = 20
 		}
 
-		// Calculate offset
-		offset := (page - 1) * limit
+		offset, err := strconv.Atoi(offsetStr)
+		if err != nil || offset < 0 {
+			offset = 0
+		}
 
-		// Get videos with admin-specific query
-		videos, err := getAdminVideos(db, limit, offset, status, category, search, sortBy, sortOrder, includeProcessing)
+		// TODO: Implement proper filtering in database layer
+		subscriptions, err := db.GetUserSubscriptionHistory(0, limit, offset) // Placeholder
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to fetch videos",
-				"details": err.Error(),
-			})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get subscriptions", "details": err.Error()})
 			return
 		}
-
-		// Enhance videos with Bunny.net data and admin metadata
-		enhancedVideos, err := enhanceVideosWithAdminData(videos, bunnyService)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to enhance video data",
-				"details": err.Error(),
-			})
-			return
-		}
-
-		// Get total count for pagination
-		totalCount, err := getAdminVideoCount(db, status, category, search)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to get video count",
-				"details": err.Error(),
-			})
-			return
-		}
-
-		response := gin.H{
-			"success": true,
-			"videos":  enhancedVideos,
-			"pagination": gin.H{
-				"current_page": page,
-				"per_page":     limit,
-				"total":        totalCount,
-				"total_pages":  (totalCount + limit - 1) / limit,
-				"has_more":     page*limit < totalCount,
-			},
-			"filters": gin.H{
-				"status":             status,
-				"category":           category,
-				"search":             search,
-				"sort_by":            sortBy,
-				"sort_order":         sortOrder,
-				"include_processing": includeProcessing,
-			},
-		}
-
-		// Cache the response
-		adminCache.Set(cacheKey, response, services.AdminCacheTTLs.Videos, "videos")
-
-		c.JSON(http.StatusOK, response)
-	}
-}
-
-// GetAdminStreamingVideoHandler returns enhanced single video for admin management
-func GetAdminStreamingVideoHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		videoID := c.Param("id")
-		if videoID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Video ID is required"})
-			return
-		}
-
-		// Create cache key
-		cacheKey := fmt.Sprintf("admin_video:%s", videoID)
-
-		// Try to get from cache first
-		if cached, found := adminCache.Get(cacheKey); found {
-			c.JSON(http.StatusOK, cached)
-			return
-		}
-
-		// Try to get video by numeric ID first
-		videoIDInt, err := strconv.Atoi(videoID)
-		var video *database.Video
-
-		if err == nil {
-			// It's a numeric ID, get from database
-			video, err = db.GetVideoByID(videoIDInt)
-		} else {
-			// It's a Bunny GUID, get from database
-			video, err = db.GetVideoByBunnyID(videoID)
-		}
-
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{
-				"error":   "Video not found",
-				"details": err.Error(),
-			})
-			return
-		}
-
-		// Enhance video with admin data
-		enhancedVideo, err := enhanceVideoWithAdminData(video, bunnyService)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to enhance video data",
-				"details": err.Error(),
-			})
-			return
-		}
-
-		response := gin.H{
-			"success": true,
-			"video":   enhancedVideo,
-		}
-
-		// Cache the response
-		adminCache.Set(cacheKey, response, services.AdminCacheTTLs.Videos, "video")
-
-		c.JSON(http.StatusOK, response)
-	}
-}
-
-// UpdateAdminStreamingVideoHandler updates video with admin-specific fields
-func UpdateAdminStreamingVideoHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		videoID := c.Param("id")
-		if videoID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Video ID is required"})
-			return
-		}
-
-		var updateData map[string]interface{}
-		if err := c.ShouldBindJSON(&updateData); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		// Get video from database
-		videoIDInt, err := strconv.Atoi(videoID)
-		var video *database.Video
-
-		if err == nil {
-			video, err = db.GetVideoByID(videoIDInt)
-		} else {
-			video, err = db.GetVideoByBunnyID(videoID)
-		}
-
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Video not found in database"})
-			return
-		}
-
-		// Update video in database
-		if err := db.UpdateVideo(video.ID, updateData); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update video"})
-			return
-		}
-
-		// Invalidate related cache entries
-		adminCache.Delete(fmt.Sprintf("admin_video:%s", videoID))
-		adminCache.InvalidateByType("videos")
-
-		// Log admin action
-		adminID := c.GetInt("user_id")
-		go db.CreateAdminLog(&adminID, "admin_video_updated", "video", &video.ID, updateData, c.ClientIP(), c.GetHeader("User-Agent"))
 
 		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"message": "Video updated successfully",
+			"subscriptions": subscriptions,
+			"filters": gin.H{
+				"status":    status,
+				"plan_id":   planID,
+				"date_from": dateFrom,
+				"date_to":   dateTo,
+			},
+			"pagination": gin.H{
+				"limit":  limit,
+				"offset": offset,
+			},
 		})
 	}
 }
 
-// DeleteAdminStreamingVideoHandler deletes video with enhanced cleanup
-func DeleteAdminStreamingVideoHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
+// GetStreamingSubscriptionHandler handles retrieving a specific subscription
+func GetStreamingSubscriptionHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		videoID := c.Param("id")
-		if videoID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Video ID is required"})
-			return
-		}
-
-		// Get video from database
-		videoIDInt, err := strconv.Atoi(videoID)
-		var video *database.Video
-
-		if err == nil {
-			video, err = db.GetVideoByID(videoIDInt)
-		} else {
-			video, err = db.GetVideoByBunnyID(videoID)
-		}
-
+		idStr := c.Param("id")
+		id, err := strconv.Atoi(idStr)
 		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Video not found in database"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid subscription ID"})
 			return
 		}
 
-		// Delete from Bunny.net if it has a Bunny ID
-		if video.BunnyVideoID != "" {
-			if err := bunnyService.DeleteVideo(video.BunnyVideoID); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete video from Bunny.net"})
+		subscription, err := db.GetSubscriptionByID(id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Subscription not found"})
+			return
+		}
+
+		// Get subscription plan details
+		var plan *database.SubscriptionPlan
+		if subscription.PlanID.Valid {
+			plan, err = db.GetSubscriptionPlanByID(int(subscription.PlanID.Int32))
+			if err != nil {
+				// Plan not found, but continue without it
+				plan = nil
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"subscription": subscription,
+			"plan":         plan,
+		})
+	}
+}
+
+// UpdateStreamingSubscriptionHandler handles updating a subscription
+func UpdateStreamingSubscriptionHandler(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid subscription ID"})
+			return
+		}
+
+		var req struct {
+			Status            string `json:"status"`
+			PlanID            int    `json:"plan_id"`
+			CancelAtPeriodEnd bool   `json:"cancel_at_period_end"`
+			Notes             string `json:"notes"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body", "details": err.Error()})
+			return
+		}
+
+		// Update subscription in database
+		updates := map[string]interface{}{
+			"status": req.Status,
+		}
+
+		if req.PlanID > 0 {
+			updates["plan_id"] = req.PlanID
+		}
+
+		_, err = db.UpdateSubscriptionPlan(id, updates)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update subscription", "details": err.Error()})
+			return
+		}
+
+		// Get updated subscription
+		subscription, err := db.GetSubscriptionByID(id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get updated subscription"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message":      "Subscription updated successfully",
+			"subscription": subscription,
+		})
+	}
+}
+
+// CancelStreamingSubscriptionHandler handles cancelling a subscription
+func CancelStreamingSubscriptionHandler(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid subscription ID"})
+			return
+		}
+
+		var req struct {
+			Reason      string `json:"reason"`
+			AtPeriodEnd bool   `json:"at_period_end"`
+			AdminNotes  string `json:"admin_notes"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body", "details": err.Error()})
+			return
+		}
+
+		subscription, err := db.GetSubscriptionByID(id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Subscription not found"})
+			return
+		}
+
+		// Cancel subscription in Stripe if enabled
+		if stripeService != nil && stripeService.IsEnabled() {
+			if err := stripeService.CancelSubscription(subscription.StripeSubscriptionID, req.AtPeriodEnd); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to cancel subscription in Stripe", "details": err.Error()})
 				return
 			}
 		}
 
-		// Delete from database
-		if err := db.DeleteVideo(video.ID); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete video from database"})
+		// Update subscription in database
+		if err := db.CancelSubscription(id, req.Reason); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update subscription", "details": err.Error()})
 			return
 		}
 
-		// Invalidate related cache entries
-		adminCache.Delete(fmt.Sprintf("admin_video:%s", videoID))
-		adminCache.InvalidateByType("videos")
-
-		// Log admin action
-		adminID := c.GetInt("user_id")
-		go db.CreateAdminLog(&adminID, "admin_video_deleted", "video", &video.ID, map[string]interface{}{"title": video.Title}, c.ClientIP(), c.GetHeader("User-Agent"))
-
 		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"message": "Video deleted successfully",
+			"message":                 "Subscription cancelled successfully",
+			"cancelled_at_period_end": req.AtPeriodEnd,
 		})
 	}
 }
 
-// GetAdminStreamingStatsHandler returns comprehensive streaming statistics
-func GetAdminStreamingStatsHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
+// ProcessStreamingRefundHandler handles processing refunds
+func ProcessStreamingRefundHandler(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Try to get from cache first
-		if cached, found := adminCache.Get(services.AdminCacheKeyVideoStats); found {
-			c.JSON(http.StatusOK, cached)
+		idStr := c.Param("id")
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid subscription ID"})
 			return
 		}
 
-		stats, err := getAdminStreamingStats(db, bunnyService)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to get streaming stats",
-				"details": err.Error(),
-			})
+		var req struct {
+			Amount     int64  `json:"amount" binding:"required,min=1"`
+			Reason     string `json:"reason" binding:"required"`
+			AdminNotes string `json:"admin_notes"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body", "details": err.Error()})
 			return
 		}
 
-		response := gin.H{
-			"success": true,
-			"stats":   stats,
-		}
-
-		// Cache the response
-		adminCache.Set(services.AdminCacheKeyVideoStats, response, services.AdminCacheTTLs.Stats, "stats")
-
-		c.JSON(http.StatusOK, response)
-	}
-}
-
-// Helper functions
-
-func getAdminVideos(db *database.DB, limit, offset int, status, category, search, sortBy, sortOrder string, includeProcessing bool) ([]*database.Video, error) {
-	// Build query with admin-specific filters
-	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at FROM videos WHERE 1=1`
-	args := []interface{}{}
-	argCount := 0
-
-	// Add status filter (admin can see all statuses or filter by specific ones)
-	if status != "" {
-		argCount++
-		query += fmt.Sprintf(` AND status = $%d`, argCount)
-		args = append(args, status)
-	} else if !includeProcessing {
-		// Only show ready videos if not including processing
-		argCount++
-		query += fmt.Sprintf(` AND status = $%d`, argCount)
-		args = append(args, "ready")
-	}
-
-	if category != "" {
-		argCount++
-		query += fmt.Sprintf(` AND category = $%d`, argCount)
-		args = append(args, category)
-	}
-
-	if search != "" {
-		argCount++
-		query += fmt.Sprintf(` AND (title ILIKE $%d OR description ILIKE $%d)`, argCount, argCount)
-		args = append(args, "%"+search+"%")
-	}
-
-	// Add sorting
-	validSortFields := map[string]string{
-		"created_at": "created_at",
-		"updated_at": "updated_at",
-		"title":      "title",
-		"status":     "status",
-		"duration":   "duration",
-		"file_size":  "file_size",
-		"view_count": "view_count",
-	}
-
-	sortField := validSortFields[sortBy]
-	if sortField == "" {
-		sortField = "created_at"
-	}
-
-	validOrders := map[string]string{
-		"asc":  "ASC",
-		"desc": "DESC",
-	}
-
-	order := validOrders[sortOrder]
-	if order == "" {
-		order = "DESC"
-	}
-
-	argCount++
-	query += fmt.Sprintf(` ORDER BY %s %s LIMIT $%d`, sortField, order, argCount)
-	args = append(args, limit)
-
-	argCount++
-	query += fmt.Sprintf(` OFFSET $%d`, argCount)
-	args = append(args, offset)
-
-	rows, err := db.Query(query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var videos []*database.Video
-	for rows.Next() {
-		video := &database.Video{}
-		var tagsStr string
-		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
+		subscription, err := db.GetSubscriptionByID(id)
 		if err != nil {
-			return nil, err
+			c.JSON(http.StatusNotFound, gin.H{"error": "Subscription not found"})
+			return
 		}
 
-		// Parse tags from JSON string
-		if tagsStr != "" {
-			if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
+		// Process refund in Stripe if enabled
+		var refund *services.Refund
+		if stripeService != nil && stripeService.IsEnabled() {
+			refund, err = stripeService.CreateRefund(subscription.StripeSubscriptionID, req.Amount, req.Reason)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process refund", "details": err.Error()})
+				return
 			}
 		}
 
-		videos = append(videos, video)
-	}
-
-	return videos, nil
-}
-
-func getAdminVideoCount(db *database.DB, status, category, search string) (int, error) {
-	query := `SELECT COUNT(*) FROM videos WHERE 1=1`
-	args := []interface{}{}
-	argCount := 0
-
-	if status != "" {
-		argCount++
-		query += fmt.Sprintf(` AND status = $%d`, argCount)
-		args = append(args, status)
-	}
-
-	if category != "" {
-		argCount++
-		query += fmt.Sprintf(` AND category = $%d`, argCount)
-		args = append(args, category)
-	}
-
-	if search != "" {
-		argCount++
-		query += fmt.Sprintf(` AND (title ILIKE $%d OR description ILIKE $%d)`, argCount, argCount)
-		args = append(args, "%"+search+"%")
-	}
-
-	var count int
-	err := db.QueryRow(query, args...).Scan(&count)
-	return count, err
-}
-
-func enhanceVideosWithAdminData(videos []*database.Video, bunnyService *services.BunnyService) ([]*AdminVideoResponse, error) {
-	var enhancedVideos []*AdminVideoResponse
-
-	for _, video := range videos {
-		enhancedVideo, err := enhanceVideoWithAdminData(video, bunnyService)
-		if err != nil {
-			// Log error but continue with other videos
-			fmt.Printf("Failed to enhance video %d: %v\n", video.ID, err)
-			continue
-		}
-		enhancedVideos = append(enhancedVideos, enhancedVideo)
-	}
-
-	return enhancedVideos, nil
-}
-
-func enhanceVideoWithAdminData(video *database.Video, bunnyService *services.BunnyService) (*AdminVideoResponse, error) {
-	enhanced := &AdminVideoResponse{
-		ID:                   video.ID,
-		Title:                video.Title,
-		Description:          video.Description,
-		BunnyVideoID:         video.BunnyVideoID,
-		ThumbnailURL:         video.ThumbnailURL,
-		Duration:             video.Duration,
-		FileSize:             video.FileSize,
-		Status:               video.Status,
-		Category:             video.Category,
-		Tags:                 video.Tags,
-		ViewCount:            video.ViewCount,
-		LikeCount:            video.LikeCount,
-		CreatedBy:            video.CreatedBy,
-		CreatedAt:            video.CreatedAt,
-		UpdatedAt:            video.UpdatedAt,
-		ScheduledPublishDate: video.ScheduledPublishDate,
-
-		// Initialize admin-specific fields
-		ProcessingProgress: 0,
-		ProcessingErrors:   []string{},
-		UploadStatus:       "unknown",
-		UploadProgress:     0,
-		FileFormat:         "mp4",
-		Resolution:         "unknown",
-		Bitrate:            0,
-		Framerate:          0,
-		EncodingProfile:    "default",
-		StorageLocation:    "bunny-cdn",
-		CDNStatus:          "active",
-		AccessControl:      "public",
-		Monetization:       "none",
-		Analytics:          make(map[string]interface{}),
-	}
-
-	// Get Bunny.net data if available
-	if video.BunnyVideoID != "" {
-		bunnyVideo, err := bunnyService.GetVideo(video.BunnyVideoID)
-		if err == nil {
-			enhanced.BunnyData = bunnyVideo
-
-			// Extract admin-specific data from Bunny.net
-			enhanced.ProcessingProgress = bunnyVideo.EncodeProgress
-			enhanced.Resolution = fmt.Sprintf("%dx%d", bunnyVideo.Width, bunnyVideo.Height)
-			enhanced.Framerate = bunnyVideo.Framerate
-			enhanced.FileFormat = "mp4" // Bunny.net default
-
-			// Determine upload status based on Bunny.net status
-			switch bunnyVideo.Status {
-			case 0:
-				enhanced.UploadStatus = "created"
-			case 1:
-				enhanced.UploadStatus = "uploaded"
-			case 2:
-				enhanced.UploadStatus = "processing"
-			case 3:
-				enhanced.UploadStatus = "transcoding"
-			case 4:
-				enhanced.UploadStatus = "ready"
-			case 5:
-				enhanced.UploadStatus = "error"
-				enhanced.ProcessingErrors = append(enhanced.ProcessingErrors, "Bunny.net processing error")
-			case 6:
-				enhanced.UploadStatus = "upload_failed"
-				enhanced.ProcessingErrors = append(enhanced.ProcessingErrors, "Upload failed")
-			default:
-				enhanced.UploadStatus = "unknown"
-			}
+		// Update subscription with refund information
+		if err := db.ProcessRefund(id, float64(req.Amount)/100, req.Reason); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update subscription with refund", "details": err.Error()})
+			return
 		}
 
-		// Get play data
-		playData, err := bunnyService.GetVideoPlayData(video.BunnyVideoID)
-		if err == nil {
-			enhanced.PlayData = playData
-		}
-	}
-
-	return enhanced, nil
-}
-
-func getAdminStreamingStats(db *database.DB, bunnyService *services.BunnyService) (*AdminStreamingStats, error) {
-	// Get basic stats from database
-	query := `
-		SELECT 
-			COUNT(*) as total_videos,
-			COUNT(CASE WHEN status = 'ready' THEN 1 END) as ready_videos,
-			COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing_videos,
-			COUNT(CASE WHEN status = 'error' THEN 1 END) as error_videos,
-			COUNT(CASE WHEN status = 'draft' THEN 1 END) as draft_videos,
-			COUNT(CASE WHEN status = 'scheduled' THEN 1 END) as scheduled_videos,
-			COALESCE(SUM(file_size), 0) as total_storage,
-			COALESCE(SUM(duration), 0) as total_duration,
-			COALESCE(SUM(view_count), 0) as total_views,
-			COALESCE(AVG(file_size), 0) as avg_file_size
-		FROM videos
-	`
-
-	var stats AdminStreamingStats
-	err := db.QueryRow(query).Scan(
-		&stats.TotalVideos,
-		&stats.ReadyVideos,
-		&stats.ProcessingVideos,
-		&stats.ErrorVideos,
-		&stats.DraftVideos,
-		&stats.ScheduledVideos,
-		&stats.TotalStorage,
-		&stats.TotalDuration,
-		&stats.TotalViews,
-		&stats.AverageFileSize,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert average file size to MB
-	stats.AverageFileSize = float64(stats.AverageFileSize) / (1024 * 1024)
-
-	// Add mock CDN and bandwidth usage (in real implementation, get from Bunny.net API)
-	stats.CDNUsage = float64(stats.TotalStorage) / (1024 * 1024 * 1024) * 0.1 // Estimate 10% of storage
-	stats.BandwidthUsage = float64(stats.TotalViews) * 0.001                  // Estimate 1MB per view
-
-	// Add sync status
-	stats.LastSyncTime = time.Now().Format(time.RFC3339)
-	stats.SyncStatus = "up_to_date"
-
-	return &stats, nil
-}
-
-// Placeholder handlers for additional admin functionality
-
-func BulkAdminStreamingOperationHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Bulk operation endpoint - to be implemented"})
-	}
-}
-
-func GetAdminVideoAnalyticsHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Video analytics endpoint - to be implemented"})
-	}
-}
-
-func SyncAdminStreamingHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Sync endpoint - to be implemented"})
-	}
-}
-
-func GetSyncStatusHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Sync status endpoint - to be implemented"})
-	}
-}
-
-func RetryVideoProcessingHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Retry processing endpoint - to be implemented"})
-	}
-}
-
-func GetUploadQueueHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Upload queue endpoint - to be implemented"})
-	}
-}
-
-func CancelUploadHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Cancel upload endpoint - to be implemented"})
-	}
-}
-
-func GetCDNUsageHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "CDN usage endpoint - to be implemented"})
-	}
-}
-
-func GetStorageUsageHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Storage usage endpoint - to be implemented"})
-	}
-}
-
-func GetEncodingProfilesHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Encoding profiles endpoint - to be implemented"})
-	}
-}
-
-func ReEncodeVideoHandler(db *database.DB, bunnyService *services.BunnyService, adminCache *services.AdminCacheService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Re-encode endpoint - to be implemented"})
-	}
-}
-
-// Cache management handlers
-
-func GetAdminCacheMetricsHandler(adminCache *services.AdminCacheService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		metrics := adminCache.GetMetrics()
 		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"metrics": metrics,
+			"message": "Refund processed successfully",
+			"refund":  refund,
 		})
 	}
 }
 
-func ClearAdminCacheHandler(adminCache *services.AdminCacheService) gin.HandlerFunc {
+// GetStreamingCustomersHandler handles retrieving customers for streaming admin
+func GetStreamingCustomersHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		adminCache.Clear()
+		// Parse query parameters
+		limitStr := c.DefaultQuery("limit", "20")
+		offsetStr := c.DefaultQuery("offset", "0")
+		hasSubscription := c.Query("has_subscription")
+		status := c.Query("status")
+
+		limit, err := strconv.Atoi(limitStr)
+		if err != nil || limit <= 0 {
+			limit = 20
+		}
+
+		offset, err := strconv.Atoi(offsetStr)
+		if err != nil || offset < 0 {
+			offset = 0
+		}
+
+		// TODO: Implement customer retrieval with subscription filtering
+		// For now, return placeholder data
+		customers := []map[string]interface{}{
+			{
+				"id":                  1,
+				"email":               "customer@example.com",
+				"name":                "John Doe",
+				"has_subscription":    true,
+				"subscription_status": "active",
+				"created_at":          time.Now().AddDate(0, -1, 0),
+			},
+		}
+
 		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"message": "Admin cache cleared successfully",
+			"customers": customers,
+			"filters": gin.H{
+				"has_subscription": hasSubscription,
+				"status":           status,
+			},
+			"pagination": gin.H{
+				"limit":  limit,
+				"offset": offset,
+			},
+		})
+	}
+}
+
+// GetStreamingCustomerHandler handles retrieving a specific customer
+func GetStreamingCustomerHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid customer ID"})
+			return
+		}
+
+		// TODO: Implement customer retrieval
+		customer := map[string]interface{}{
+			"id":                 id,
+			"email":              "customer@example.com",
+			"name":               "John Doe",
+			"created_at":         time.Now().AddDate(0, -1, 0),
+			"subscription_count": 1,
+		}
+
+		c.JSON(http.StatusOK, gin.H{"customer": customer})
+	}
+}
+
+// GetCustomerSubscriptionsHandler handles retrieving subscriptions for a customer
+func GetCustomerSubscriptionsHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid customer ID"})
+			return
+		}
+
+		// Get subscription history for customer
+		subscriptions, err := db.GetUserSubscriptionHistory(id, 50, 0)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get customer subscriptions", "details": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"subscriptions": subscriptions})
+	}
+}
+
+// SendCustomerCommunicationHandler handles sending communications to customers
+func SendCustomerCommunicationHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid customer ID"})
+			return
+		}
+
+		var req struct {
+			Type    string `json:"type" binding:"required"` // email, sms, notification
+			Subject string `json:"subject"`
+			Message string `json:"message" binding:"required"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body", "details": err.Error()})
+			return
+		}
+
+		// TODO: Implement customer communication
+		// This would integrate with email/SMS services
+
+		c.JSON(http.StatusOK, gin.H{
+			"message":          "Communication sent successfully",
+			"communication_id": "comm_" + strconv.Itoa(id),
+		})
+	}
+}
+
+// GetStreamingAnalyticsOverviewHandler handles streaming analytics overview
+func GetStreamingAnalyticsOverviewHandler(analyticsService *services.SubscriptionAnalyticsService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if analyticsService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Analytics service not available"})
+			return
+		}
+
+		// Parse date range
+		startDateStr := c.DefaultQuery("start_date", time.Now().AddDate(0, -1, 0).Format("2006-01-02"))
+		endDateStr := c.DefaultQuery("end_date", time.Now().Format("2006-01-02"))
+
+		startDate, err := time.Parse("2006-01-02", startDateStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid start_date format"})
+			return
+		}
+
+		endDate, err := time.Parse("2006-01-02", endDateStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid end_date format"})
+			return
+		}
+
+		// Generate comprehensive analytics report
+		report, err := analyticsService.GenerateSubscriptionReport(startDate, endDate, nil)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate analytics report", "details": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"analytics": report})
+	}
+}
+
+// GetStreamingRevenueAnalyticsHandler handles revenue analytics
+func GetStreamingRevenueAnalyticsHandler(analyticsService *services.SubscriptionAnalyticsService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if analyticsService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Analytics service not available"})
+			return
+		}
+
+		// Get revenue metrics
+		revenueMetrics, err := analyticsService.GetRevenueMetrics(
+			time.Now().AddDate(0, -1, 0),
+			time.Now(),
+			nil,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get revenue metrics"})
+			return
+		}
+
+		// Get MRR
+		mrr, err := analyticsService.CalculateMRR(time.Now(), nil)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to calculate MRR"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"revenue": revenueMetrics,
+			"mrr":     mrr,
+		})
+	}
+}
+
+// GetStreamingSubscriptionAnalyticsHandler handles subscription analytics
+func GetStreamingSubscriptionAnalyticsHandler(analyticsService *services.SubscriptionAnalyticsService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if analyticsService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Analytics service not available"})
+			return
+		}
+
+		// Get active subscriptions count
+		activeCount, err := analyticsService.GetActiveSubscriptionsCount(nil)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get active subscriptions count"})
+			return
+		}
+
+		// Get churn rate
+		churnData, err := analyticsService.CalculateChurnRate(
+			time.Now().AddDate(0, 0, -30),
+			time.Now(),
+			nil,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to calculate churn rate"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"active_subscriptions": activeCount,
+			"churn_rate":           churnData,
+		})
+	}
+}
+
+// GetStreamingCustomerAnalyticsHandler handles customer analytics
+func GetStreamingCustomerAnalyticsHandler(analyticsService *services.SubscriptionAnalyticsService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if analyticsService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Analytics service not available"})
+			return
+		}
+
+		// TODO: Implement customer-specific analytics
+		// This would include customer acquisition, retention, etc.
+
+		c.JSON(http.StatusOK, gin.H{
+			"customer_analytics": map[string]interface{}{
+				"total_customers": 0,
+				"new_customers":   0,
+				"retention_rate":  0.0,
+			},
+		})
+	}
+}
+
+// GetExecutiveSummaryHandler handles retrieving the executive summary
+func GetExecutiveSummaryHandler(biService *services.BusinessIntelligenceService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if biService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Business Intelligence service not available"})
+			return
+		}
+
+		period := c.Query("period")
+		if period == "" {
+			period = "30d"
+		}
+
+		summary, err := biService.GetExecutiveSummary(period)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get executive summary", "details": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"executive_summary": summary})
+	}
+}
+
+// GetFunnelAnalysisHandler handles retrieving funnel analysis
+func GetFunnelAnalysisHandler(biService *services.BusinessIntelligenceService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if biService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Business Intelligence service not available"})
+			return
+		}
+
+		period := c.Query("period")
+		if period == "" {
+			period = "30d"
+		}
+
+		analysis, err := biService.GetFunnelAnalysis(period)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get funnel analysis", "details": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"funnel_analysis": analysis})
+	}
+}
+
+// GetRevenueImpactHandler handles retrieving revenue impact analysis
+func GetRevenueImpactHandler(biService *services.BusinessIntelligenceService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if biService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Business Intelligence service not available"})
+			return
+		}
+
+		period := c.Query("period")
+		if period == "" {
+			period = "30d"
+		}
+
+		impact, err := biService.GetRevenueImpact(period)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get revenue impact", "details": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"revenue_impact": impact})
+	}
+}
+
+// GetCustomerJourneyHandler handles retrieving customer journey analytics
+func GetCustomerJourneyHandler(biService *services.BusinessIntelligenceService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if biService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Business Intelligence service not available"})
+			return
+		}
+
+		period := c.Query("period")
+		if period == "" {
+			period = "30d"
+		}
+
+		journey, err := biService.GetCustomerJourney(period)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get customer journey", "details": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"customer_journey": journey})
+	}
+}
+
+// GetStreamingPromotionsHandler handles retrieving promotions
+func GetStreamingPromotionsHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// TODO: Implement promotions retrieval
+		promotions := []map[string]interface{}{
+			{
+				"id":               1,
+				"name":             "Summer Sale",
+				"description":      "20% off all plans",
+				"discount_percent": 20,
+				"start_date":       time.Now(),
+				"end_date":         time.Now().AddDate(0, 0, 30),
+				"is_active":        true,
+			},
+		}
+
+		c.JSON(http.StatusOK, gin.H{"promotions": promotions})
+	}
+}
+
+// CreateStreamingPromotionHandler handles creating promotions
+func CreateStreamingPromotionHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			Name            string    `json:"name" binding:"required"`
+			Description     string    `json:"description"`
+			DiscountPercent int       `json:"discount_percent" binding:"required,min=1,max=100"`
+			StartDate       time.Time `json:"start_date" binding:"required"`
+			EndDate         time.Time `json:"end_date" binding:"required"`
+			IsActive        bool      `json:"is_active"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body", "details": err.Error()})
+			return
+		}
+
+		// TODO: Implement promotion creation
+
+		c.JSON(http.StatusCreated, gin.H{
+			"message":      "Promotion created successfully",
+			"promotion_id": 1,
+		})
+	}
+}
+
+// UpdateStreamingPromotionHandler handles updating promotions
+func UpdateStreamingPromotionHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		_, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid promotion ID"})
+			return
+		}
+
+		var req struct {
+			Name            string    `json:"name"`
+			Description     string    `json:"description"`
+			DiscountPercent int       `json:"discount_percent"`
+			StartDate       time.Time `json:"start_date"`
+			EndDate         time.Time `json:"end_date"`
+			IsActive        bool      `json:"is_active"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body", "details": err.Error()})
+			return
+		}
+
+		// TODO: Implement promotion update
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Promotion updated successfully",
+		})
+	}
+}
+
+// DeleteStreamingPromotionHandler handles deleting promotions
+func DeleteStreamingPromotionHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		_, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid promotion ID"})
+			return
+		}
+
+		// TODO: Implement promotion deletion
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Promotion deleted successfully",
+		})
+	}
+}
+
+// GetStreamingEventsHandler handles retrieving events
+func GetStreamingEventsHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// TODO: Implement events retrieval
+		events := []map[string]interface{}{
+			{
+				"id":          1,
+				"name":        "Summer Festival",
+				"description": "Annual summer streaming festival",
+				"start_date":  time.Now().AddDate(0, 1, 0),
+				"end_date":    time.Now().AddDate(0, 1, 7),
+				"is_active":   true,
+			},
+		}
+
+		c.JSON(http.StatusOK, gin.H{"events": events})
+	}
+}
+
+// CreateStreamingEventHandler handles creating events
+func CreateStreamingEventHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			Name        string    `json:"name" binding:"required"`
+			Description string    `json:"description"`
+			StartDate   time.Time `json:"start_date" binding:"required"`
+			EndDate     time.Time `json:"end_date" binding:"required"`
+			IsActive    bool      `json:"is_active"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body", "details": err.Error()})
+			return
+		}
+
+		// TODO: Implement event creation
+
+		c.JSON(http.StatusCreated, gin.H{
+			"message":  "Event created successfully",
+			"event_id": 1,
+		})
+	}
+}
+
+// UpdateStreamingEventHandler handles updating events
+func UpdateStreamingEventHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		_, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid event ID"})
+			return
+		}
+
+		var req struct {
+			Name        string    `json:"name"`
+			Description string    `json:"description"`
+			StartDate   time.Time `json:"start_date"`
+			EndDate     time.Time `json:"end_date"`
+			IsActive    bool      `json:"is_active"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body", "details": err.Error()})
+			return
+		}
+
+		// TODO: Implement event update
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Event updated successfully",
+		})
+	}
+}
+
+// DeleteStreamingEventHandler handles deleting events
+func DeleteStreamingEventHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		_, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid event ID"})
+			return
+		}
+
+		// TODO: Implement event deletion
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Event deleted successfully",
+		})
+	}
+}
+
+// CreateEventSubscriptionDealHandler handles creating subscription deals for events
+func CreateEventSubscriptionDealHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		_, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid event ID"})
+			return
+		}
+
+		var req struct {
+			PlanID          int    `json:"plan_id" binding:"required"`
+			DiscountPercent int    `json:"discount_percent" binding:"required,min=1,max=100"`
+			Description     string `json:"description"`
+			IsActive        bool   `json:"is_active"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body", "details": err.Error()})
+			return
+		}
+
+		// TODO: Implement event subscription deal creation
+
+		c.JSON(http.StatusCreated, gin.H{
+			"message": "Event subscription deal created successfully",
+			"deal_id": 1,
 		})
 	}
 }

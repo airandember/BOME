@@ -80,8 +80,8 @@ func (s *MasterVideoSyncService) SyncToBunny() (*SyncResult, error) {
 		ErrorDetails: []string{},
 	}
 
-	// Get all videos that need syncing to Bunny
-	videos, err := s.db.GetMasterVideos(1000, 0, "", "", "", "id", "desc")
+	// Get all videos from master list
+	videos, err := s.db.GetMasterVideos(1000, 0, "", "", "", "", "id", "desc")
 	if err != nil {
 		result.ErrorDetails = append(result.ErrorDetails, fmt.Sprintf("Failed to fetch master videos: %v", err))
 		return result, err
@@ -121,7 +121,7 @@ func (s *MasterVideoSyncService) CheckConflicts() (*ConflictCheckResult, error) 
 	}
 
 	// Get all videos from master list
-	videos, err := s.db.GetMasterVideos(1000, 0, "", "", "", "id", "desc")
+	videos, err := s.db.GetMasterVideos(1000, 0, "", "", "", "", "id", "desc")
 	if err != nil {
 		result.ErrorDetails = append(result.ErrorDetails, fmt.Sprintf("Failed to fetch master videos: %v", err))
 		return result, err

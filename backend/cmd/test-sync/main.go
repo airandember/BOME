@@ -254,7 +254,8 @@ func syncVideoToDatabase(db *database.DB, bunnyService *services.BunnyService, b
 		bunnyVideo.Length,
 		bunnyVideo.StorageSize,
 		tags,
-		1, // Default to admin user ID
+		1,    // Default to admin user ID
+		true, // vid_status
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create video in database: %w", err)

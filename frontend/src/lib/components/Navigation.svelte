@@ -70,6 +70,9 @@
 			<a href="/" class="nav-link" on:click={closeMenu}>
 				<span>Home</span>
 			</a>
+			<a href="/subscription" class="nav-link" on:click={closeMenu}>
+				<span>Subscribe</span>
+			</a>
 			
 			<!-- Video Dropdown -->
 			<div class="nav-dropdown">

@@ -87,10 +87,12 @@
 			
 			// Load collection details and its videos in parallel
 			const [collectionResponse, videosResponse] = await Promise.all([
+				//@ts-ignore
 				videoService.getCollection(collectionId).catch(err => {
 					console.error('Collection fetch error:', err);
 					throw new Error(`Failed to fetch collection: ${err.message}`);
 				}),
+				//@ts-ignore
 				videoService.getVideosByCollection(collectionId, currentPage, itemsPerPage).catch(err => {
 					console.error('Videos fetch error:', err);
 					throw new Error(`Failed to fetch videos: ${err.message}`);
@@ -132,7 +134,7 @@
 		try {
 			loadingMore = true;
 			console.log(`Loading more videos. Page ${currentPage + 1}`);
-			
+			//@ts-ignore
 			const response = await videoService.getVideosByCollection(collectionId, currentPage + 1, itemsPerPage);
 			console.log('Load more response:', response);
 			
@@ -153,8 +155,15 @@
 		}
 	}
 
-	function handleAuthComplete() {
-		authChecking = false;
+	function handleAuthLoadingChange(data: {loading: boolean}) {
+		authChecking = data.loading;
+	}
+
+	function handleAccessGranted() {
+		// This function is called when the user is granted access.
+		// You can perform actions here, such as re-fetching data or updating UI.
+		console.log('Access granted!');
+		loadCollectionData(); // Re-fetch data after successful access
 	}
 </script>
 
@@ -168,10 +177,11 @@
 	
 	<main class="collection-page">
 		<SubscriptionCheck 
+			redirectTo="/login"
 			requireSubscription={true}
 			requiredTier="premium"
-			on:authComplete={handleAuthComplete}
-			bind:checking={authChecking}
+			onLoadingChange={handleAuthLoadingChange}
+			onAccessGranted={handleAccessGranted}
 		>
 			{#if loading}
 				<div class="loading-container">

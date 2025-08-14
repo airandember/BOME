@@ -1,10 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { MasterVideoService, type MasterVideo } from '$lib/master-video';
+	import { masterVideoService, type MasterVideo } from '$lib/master-video';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
-
-	const masterVideoService = new MasterVideoService();
 
 	let videos: MasterVideo[] = [];
 	let loading = true;
@@ -38,7 +36,7 @@
 		}
 	}
 
-	async function deleteVideo(videoId: number) {
+	/*async function deleteVideo(videoId: number) {
 		if (!confirm('Are you sure you want to delete this video? This action cannot be undone.')) {
 			return;
 		}
@@ -53,7 +51,7 @@
 			showToast('Failed to delete video', 'error');
 			console.error('Error deleting video:', error);
 		}
-	}
+	}*/
 
 	function formatDuration(seconds: number): string {
 		if (!seconds) return '0:00';
@@ -145,6 +143,7 @@
 		</div>
 	{:else}
 		<div class="videos-container">
+			<h1>THESE VIDEOS</h1>
 			{#each videos as video}
 				<div class="video-row">
 					<div class="video-thumbnail">
@@ -176,9 +175,9 @@
 					</div>
 					
 					<div class="video-actions">
-						<button class="btn btn-secondary btn-sm" on:click={() => deleteVideo(video.ID)}>
+						<!-- <button class="btn btn-secondary btn-sm" on:click={() => deleteVideo(video.ID)}>
 							Delete
-						</button>
+						</button> -->
 					</div>
 				</div>
 			{/each}

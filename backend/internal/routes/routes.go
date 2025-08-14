@@ -4,10 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +13,10 @@ import (
 	"bome-backend/internal/database"
 	"bome-backend/internal/middleware"
 	"bome-backend/internal/services"
+
+	"mime/multipart"
+	"os"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 )
@@ -77,6 +78,7 @@ func SetupRoutes(
 	stripeService *services.StripeService,
 	spacesService *services.SpacesService,
 	emailService *services.EmailService,
+	biService *services.BusinessIntelligenceService,
 ) {
 	// Debug logging
 	fmt.Printf("Setting up routes...\n")
@@ -97,13 +99,63 @@ func SetupRoutes(
 	// Admin routes
 	admin := v1.Group("/admin")
 	SetupAdminRoutes(admin, db)
-	SetupAnalyticsRoutes(admin, db)
-	SetupMonitoringRoutes(admin, db)
+
+	// Create plan history service for analytics
+	planHistoryService := services.NewPlanHistoryService(db)
+	SetupAnalyticsRoutes(admin, db, planHistoryService)
+
+	// Initialize subscription services
+	subscriptionPlanService := services.NewSubscriptionPlanService(db)
+	subscriptionPlanStripeService := services.NewSubscriptionPlanStripeService(db, stripeService)     // Add Stripe-integrated service
+	subscriptionOffersStripeService := services.NewSubscriptionOffersStripeService(db, stripeService) // Add Stripe-integrated offers service
 
 	// Create admin cache service
-	adminCache := services.NewAdminCacheService(nil)
-	SetupAdminStreamingRoutes(admin, db, bunnyService, adminCache)
+	analyticsService := services.NewSubscriptionAnalyticsService(db)
+	SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService, subscriptionPlanStripeService, subscriptionOffersStripeService)
 	SetupMasterVideoRoutes(admin, db, bunnyService)
+
+	// Initialize remaining subscription services
+	subscriberService := services.NewSubscriberService(db)
+	subscriptionOffersService := services.NewSubscriptionOffersService(db)
+	subscriberHistoryService := services.NewSubscriberHistoryService(db)
+
+	// Setup subscription-related routes under admin group
+	fmt.Printf("Setting up subscription plan routes...\n")
+	SetupSubscriptionPlanRoutes(admin, db, subscriptionPlanService)
+	fmt.Printf("Setting up subscription plan Stripe integration routes...\n")
+	// Note: Stripe routes are now set up within SetupAdminStreamingRoutes
+	fmt.Printf("Setting up subscription offers routes...\n")
+	SetupSubscriptionOfferRoutes(router, db, subscriptionOffersService)
+	fmt.Printf("Setting up subscriber routes...\n")
+	SetupSubscriberRoutes(admin, db, subscriberService)
+	fmt.Printf("Setting up subscriber history routes...\n")
+	SetupSubscriberHistoryRoutes(admin, db, subscriberHistoryService)
+	SetupSubscriptionRoutes(router, db, stripeService, analyticsService)
+
+	// Public subscription plan routes using existing functions
+	publicPlans := v1.Group("/subscription-plans")
+	{
+		// Get all subscription data (plans + offers) - MUST come before /:id
+		publicPlans.GET("/all", func(c *gin.Context) {
+			getAllSubscriptionData(c, subscriptionPlanService, subscriptionOffersService)
+		})
+
+		// Get active subscription plans
+		publicPlans.GET("/active", func(c *gin.Context) {
+			getActiveSubscriptionPlans(c, subscriptionPlanService)
+		})
+
+		// Get promoted subscription plans
+		publicPlans.GET("/promoted", func(c *gin.Context) {
+			getPromotedSubscriptionPlans(c, subscriptionPlanService)
+		})
+
+		// Get subscription plan by ID (public) - MUST come last
+		publicPlans.GET("/:id", func(c *gin.Context) {
+			getSubscriptionPlanPublic(c, subscriptionPlanService)
+		})
+	}
+
 	fmt.Printf("Admin routes setup complete\n")
 
 	// Setup all mock data routes for development/testing
@@ -559,7 +611,8 @@ func SetupRoutes(
 				bunnyVideo.Length,
 				bunnyVideo.StorageSize,
 				[]string{},
-				1,
+				1,    // createdBy - system //SHOULD WE CONSIDER CHANGING THIS TO USER ID?
+				true, // vid_status
 			)
 			if err != nil {
 				fmt.Printf("Failed to create video in database: %v\n", err)
@@ -799,960 +852,6 @@ func SetupRoutes(
 			"collection_id": collectionID,
 		})
 	})
-
-	// Subscription routes
-	subscriptions := v1.Group("/subscriptions")
-	{
-		subscriptions.GET("/plans", GetSubscriptionPlansHandler(stripeService))
-		subscriptions.GET("/current", middleware.AuthRequired(), middleware.SessionActivityTracker(db), GetSubscriptionHandler(db))
-		subscriptions.POST("", middleware.AuthRequired(), middleware.SessionActivityTracker(db), CreateSubscriptionHandler(db))
-		subscriptions.POST("/:id/cancel", middleware.AuthRequired(), middleware.SessionActivityTracker(db), CancelSubscriptionHandler(db))
-		subscriptions.POST("/checkout", CreateCheckoutSessionHandler(stripeService))
-	}
-
-	// User profile routes
-	users := v1.Group("/users")
-	{
-		users.GET("/profile", middleware.AuthRequired(), middleware.SessionActivityTracker(db), GetProfileHandler(db))
-		users.PUT("/profile", middleware.AuthRequired(), middleware.SessionActivityTracker(db), UpdateProfileHandler(db))
-	}
-
-	// User dashboard
-	v1.GET("/dashboard", GetDashboardDataHandler)
-
-	// Advertisement routes for public ad serving
-	ads := v1.Group("/ads")
-	{
-		ads.GET("/serve/:placement", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"message": "Ad serving endpoint (mock)"})
-		})
-	}
-
-	// Bunny.net test endpoint
-	v1.GET("/test/bunny", func(c *gin.Context) {
-		// Enhanced configuration check with more details
-		configStatus := gin.H{
-			"stream_library": gin.H{
-				"value": cfg.BunnyStreamLibrary,
-				"set":   cfg.BunnyStreamLibrary != "",
-				"valid": len(cfg.BunnyStreamLibrary) > 0,
-			},
-			"stream_api_key": gin.H{
-				"set":     cfg.BunnyStreamAPIKey != "",
-				"length":  len(cfg.BunnyStreamAPIKey),
-				"valid":   len(cfg.BunnyStreamAPIKey) >= 40, // Bunny.net API keys are typically long
-				"preview": cfg.BunnyStreamAPIKey[:min(8, len(cfg.BunnyStreamAPIKey))] + "...",
-			},
-			"storage_zone": gin.H{
-				"value": cfg.BunnyStorageZone,
-				"set":   cfg.BunnyStorageZone != "",
-				"valid": len(cfg.BunnyStorageZone) > 0,
-			},
-			"storage_api_key": gin.H{
-				"set":     cfg.BunnyAPIKey != "",
-				"length":  len(cfg.BunnyAPIKey),
-				"valid":   len(cfg.BunnyAPIKey) >= 40,
-				"preview": cfg.BunnyAPIKey[:min(8, len(cfg.BunnyAPIKey))] + "...",
-			},
-			"pull_zone": gin.H{
-				"value": cfg.BunnyPullZone,
-				"set":   cfg.BunnyPullZone != "",
-				"valid": len(cfg.BunnyPullZone) > 0,
-			},
-			"region": gin.H{
-				"value": cfg.BunnyRegion,
-				"set":   cfg.BunnyRegion != "",
-				"valid": len(cfg.BunnyRegion) > 0,
-			},
-			"webhook_secret": gin.H{
-				"set":    cfg.BunnyWebhookSecret != "",
-				"length": len(cfg.BunnyWebhookSecret),
-				"valid":  len(cfg.BunnyWebhookSecret) >= 10,
-			},
-		}
-
-		// Calculate overall configuration status
-		requiredFields := []bool{
-			cfg.BunnyStreamLibrary != "",
-			cfg.BunnyStreamAPIKey != "",
-			cfg.BunnyStorageZone != "",
-			cfg.BunnyAPIKey != "",
-			cfg.BunnyPullZone != "",
-		}
-
-		allConfigured := true
-		for _, field := range requiredFields {
-			if !field {
-				allConfigured = false
-				break
-			}
-		}
-
-		// Test API connectivity if configured
-		var connectivityTest gin.H
-		if allConfigured {
-			// Test Stream API
-			streamURL := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos", cfg.BunnyStreamLibrary)
-			streamReq, streamErr := http.NewRequest("GET", streamURL, nil)
-			if streamErr == nil {
-				streamReq.Header.Set("AccessKey", cfg.BunnyStreamAPIKey)
-				streamReq.Header.Set("Content-Type", "application/json")
-
-				client := &http.Client{Timeout: 5 * time.Second}
-				streamResp, streamRespErr := client.Do(streamReq)
-
-				if streamRespErr == nil {
-					defer streamResp.Body.Close()
-					connectivityTest = gin.H{
-						"stream_api": gin.H{
-							"status":        "tested",
-							"url":           streamURL,
-							"response_code": streamResp.StatusCode,
-							"success":       streamResp.StatusCode == 200,
-							"message":       getStatusMessage(streamResp.StatusCode),
-						},
-					}
-				} else {
-					connectivityTest = gin.H{
-						"stream_api": gin.H{
-							"status":  "error",
-							"url":     streamURL,
-							"error":   streamRespErr.Error(),
-							"success": false,
-						},
-					}
-				}
-			}
-		} else {
-			connectivityTest = gin.H{
-				"stream_api": gin.H{
-					"status":  "skipped",
-					"message": "Configuration incomplete - cannot test connectivity",
-					"success": false,
-				},
-			}
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"status":       "configuration_check",
-			"timestamp":    time.Now().Format(time.RFC3339),
-			"config":       configStatus,
-			"connectivity": connectivityTest,
-			"summary": gin.H{
-				"all_configured":    allConfigured,
-				"ready_for_testing": allConfigured,
-				"missing_fields":    getMissingFields(cfg),
-			},
-		})
-	})
-
-	// Bunny.net connection test endpoint
-	v1.GET("/test/bunny/connect", func(c *gin.Context) {
-		if bunnyService == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{
-				"error": "Bunny service not configured",
-				"config": gin.H{
-					"streamLibrary": cfg.BunnyStreamLibrary,
-					"streamAPIKey":  cfg.BunnyStreamAPIKey != "",
-					"storageZone":   cfg.BunnyStorageZone,
-					"apiKey":        cfg.BunnyAPIKey != "",
-					"pullZone":      cfg.BunnyPullZone,
-				},
-			})
-			return
-		}
-
-		// Test Bunny Stream library access
-		libraryID := cfg.BunnyStreamLibrary
-		apiKey := cfg.BunnyStreamAPIKey
-
-		if libraryID == "" || apiKey == "" {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Bunny Stream library ID or API key not configured",
-				"config": gin.H{
-					"streamLibrary": libraryID,
-					"streamAPIKey":  apiKey != "",
-				},
-			})
-			return
-		}
-
-		// Make a test request to Bunny Stream API
-		url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos", libraryID)
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to create request",
-				"details": err.Error(),
-			})
-			return
-		}
-
-		req.Header.Set("AccessKey", apiKey)
-		req.Header.Set("Content-Type", "application/json")
-
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to connect to Bunny Stream API",
-				"details": err.Error(),
-				"url":     url,
-			})
-			return
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode == 200 {
-			c.JSON(http.StatusOK, gin.H{
-				"status":        "success",
-				"message":       "Successfully connected to Bunny Stream library",
-				"library_id":    libraryID,
-				"response_code": resp.StatusCode,
-				"config": gin.H{
-					"streamLibrary": libraryID,
-					"streamAPIKey":  apiKey != "",
-					"storageZone":   cfg.BunnyStorageZone,
-					"apiKey":        cfg.BunnyAPIKey != "",
-					"pullZone":      cfg.BunnyPullZone,
-				},
-			})
-		} else {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":         "Failed to access Bunny Stream library",
-				"response_code": resp.StatusCode,
-				"library_id":    libraryID,
-				"url":           url,
-			})
-		}
-	})
-
-	// Manual sync endpoint for Bunny.net videos
-	v1.POST("/admin/sync-bunny-videos", middleware.AuthRequired(), func(c *gin.Context) {
-		// Check if user is admin
-		userRole := c.GetString("user_role")
-		if userRole != "admin" && userRole != "super_admin" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
-			return
-		}
-
-		// Fetch videos from Bunny.net
-		videos, _, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey, 1, 100, "")
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to fetch videos from Bunny.net",
-				"details": err.Error(),
-			})
-			return
-		}
-
-		// Sync videos to database
-		syncedCount := 0
-		skippedCount := 0
-		errorCount := 0
-		var errors []string
-
-		for _, bunnyVideo := range videos {
-			err := syncVideoToDatabase(db, bunnyService, bunnyVideo)
-			if err != nil {
-				if strings.Contains(err.Error(), "already exists") {
-					skippedCount++
-				} else {
-					errorCount++
-					errors = append(errors, fmt.Sprintf("%s: %v", bunnyVideo.Title, err))
-				}
-				continue
-			}
-			syncedCount++
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"success":       true,
-			"message":       "Sync completed",
-			"total_videos":  len(videos),
-			"synced":        syncedCount,
-			"skipped":       skippedCount,
-			"errors":        errorCount,
-			"error_details": errors,
-		})
-	})
-
-	// Test sync endpoint (no auth required for testing)
-	v1.POST("/test/sync-bunny-videos", func(c *gin.Context) {
-		// Fetch videos from Bunny.net
-		videos, _, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey, 1, 100, "")
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to fetch videos from Bunny.net",
-				"details": err.Error(),
-			})
-			return
-		}
-
-		// Sync videos to database
-		syncedCount := 0
-		skippedCount := 0
-		errorCount := 0
-		var errors []string
-
-		for _, bunnyVideo := range videos {
-			err := syncVideoToDatabase(db, bunnyService, bunnyVideo)
-			if err != nil {
-				if strings.Contains(err.Error(), "already exists") {
-					skippedCount++
-				} else {
-					errorCount++
-					errors = append(errors, fmt.Sprintf("%s: %v", bunnyVideo.Title, err))
-				}
-				continue
-			}
-			syncedCount++
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"success":       true,
-			"message":       "Test sync completed",
-			"total_videos":  len(videos),
-			"synced":        syncedCount,
-			"skipped":       skippedCount,
-			"errors":        errorCount,
-			"error_details": errors,
-		})
-	})
-
-	// Simple sync endpoint (no auth or webhook secret required for testing)
-	v1.POST("/sync-bunny-videos", func(c *gin.Context) {
-		// Validate configuration
-		if cfg.BunnyStreamLibrary == "" || cfg.BunnyStreamAPIKey == "" {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Bunny.net configuration missing",
-				"details": gin.H{
-					"library_id_set": cfg.BunnyStreamLibrary != "",
-					"api_key_set":    cfg.BunnyStreamAPIKey != "",
-				},
-			})
-			return
-		}
-
-		// Fetch videos from Bunny.net
-		videos, _, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey, 1, 100, "")
-		if err != nil {
-			// Categorize errors for better client handling
-			var statusCode int
-			var errorType string
-
-			switch {
-			case strings.Contains(err.Error(), "unauthorized"):
-				statusCode = http.StatusUnauthorized
-				errorType = "authentication_error"
-			case strings.Contains(err.Error(), "forbidden"):
-				statusCode = http.StatusForbidden
-				errorType = "permission_error"
-			case strings.Contains(err.Error(), "not found"):
-				statusCode = http.StatusNotFound
-				errorType = "resource_not_found"
-			case strings.Contains(err.Error(), "rate limited"):
-				statusCode = http.StatusTooManyRequests
-				errorType = "rate_limit_error"
-			case strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "connection"):
-				statusCode = http.StatusServiceUnavailable
-				errorType = "network_error"
-			default:
-				statusCode = http.StatusInternalServerError
-				errorType = "api_error"
-			}
-
-			c.JSON(statusCode, gin.H{
-				"error":      "Failed to fetch videos from Bunny.net",
-				"error_type": errorType,
-				"details":    err.Error(),
-				"timestamp":  time.Now().Format(time.RFC3339),
-			})
-			return
-		}
-
-		// Sync videos to database with detailed tracking
-		syncedCount := 0
-		skippedCount := 0
-		errorCount := 0
-		var errors []gin.H
-		var skipped []gin.H
-
-		for i, bunnyVideo := range videos {
-			err := syncVideoToDatabase(db, bunnyService, bunnyVideo)
-			if err != nil {
-				if strings.Contains(err.Error(), "already exists") {
-					skippedCount++
-					skipped = append(skipped, gin.H{
-						"title":  bunnyVideo.Title,
-						"guid":   bunnyVideo.GUID,
-						"reason": "already_exists",
-					})
-				} else {
-					errorCount++
-					errors = append(errors, gin.H{
-						"title": bunnyVideo.Title,
-						"guid":  bunnyVideo.GUID,
-						"error": err.Error(),
-						"index": i,
-					})
-				}
-				continue
-			}
-			syncedCount++
-		}
-
-		// Determine overall success status
-		overallSuccess := errorCount == 0 || syncedCount > 0
-		statusCode := http.StatusOK
-		if errorCount > 0 && syncedCount == 0 {
-			statusCode = http.StatusPartialContent
-		}
-
-		c.JSON(statusCode, gin.H{
-			"success":         overallSuccess,
-			"message":         fmt.Sprintf("Sync completed: %d synced, %d skipped, %d errors", syncedCount, skippedCount, errorCount),
-			"total_videos":    len(videos),
-			"synced":          syncedCount,
-			"skipped":         skippedCount,
-			"errors":          errorCount,
-			"error_details":   errors,
-			"skipped_details": skipped,
-			"timestamp":       time.Now().Format(time.RFC3339),
-		})
-	})
-
-	// Webhook endpoint for Bunny.net sync (no auth required)
-	v1.POST("/webhook/bunny-sync", func(c *gin.Context) {
-		// Simple webhook secret validation - allow if no secret is configured
-		webhookSecret := c.GetHeader("X-Webhook-Secret")
-		if cfg.BunnyWebhookSecret != "" && webhookSecret != cfg.BunnyWebhookSecret {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid webhook secret"})
-			return
-		}
-
-		// Fetch videos from Bunny.net
-		videos, _, err := fetchBunnyVideos(cfg.BunnyStreamLibrary, cfg.BunnyStreamAPIKey, 1, 100, "")
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to fetch videos from Bunny.net",
-				"details": err.Error(),
-			})
-			return
-		}
-
-		// Sync videos to database
-		syncedCount := 0
-		skippedCount := 0
-		errorCount := 0
-		var errors []string
-
-		for _, bunnyVideo := range videos {
-			err := syncVideoToDatabase(db, bunnyService, bunnyVideo)
-			if err != nil {
-				if strings.Contains(err.Error(), "already exists") {
-					skippedCount++
-				} else {
-					errorCount++
-					errors = append(errors, fmt.Sprintf("%s: %v", bunnyVideo.Title, err))
-				}
-				continue
-			}
-			syncedCount++
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"success":       true,
-			"message":       "Webhook sync completed",
-			"total_videos":  len(videos),
-			"synced":        syncedCount,
-			"skipped":       skippedCount,
-			"errors":        errorCount,
-			"error_details": errors,
-		})
-	})
-
-	// Add video streaming proxy endpoint with OPTIONS handling
-	v1.OPTIONS("/stream/:videoId/*path", func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
-		c.Status(http.StatusOK)
-	})
-
-	v1.GET("/stream/:videoId/*path", middleware.AuthRequired(), func(c *gin.Context) {
-		videoID := c.Param("videoId")
-		path := c.Param("path")
-
-		// Get user info from context
-		userID := c.GetInt("user_id")
-		if userID == 0 {
-			fmt.Printf("[Stream] No user ID in context\n")
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
-			return
-		}
-
-		// Debug logging
-		fmt.Printf("[Stream] Request received: videoID=%s, path=%s, userID=%d\n", videoID, path, userID)
-		fmt.Printf("[Stream] Request headers: %+v\n", c.Request.Header)
-
-		// Get the stream URL from Bunny
-		streamURL := fmt.Sprintf("https://vz-%s-%s.b-cdn.net/%s%s",
-			bunnyService.GetStreamLibrary(),
-			bunnyService.GetRegion(),
-			videoID,
-			path)
-
-		fmt.Printf("[Stream] Proxying to Bunny URL: %s\n", streamURL)
-		fmt.Printf("[Stream] Using Bunny library: %s, region: %s\n", bunnyService.GetStreamLibrary(), bunnyService.GetRegion())
-
-		// Create the request
-		req, err := http.NewRequest("GET", streamURL, nil)
-		if err != nil {
-			fmt.Printf("[Stream] Failed to create request: %v\n", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
-			return
-		}
-
-		// Add Bunny.net authentication
-		bunnyToken := bunnyService.GetStreamAPIKey()
-		fmt.Printf("[Stream] Using Bunny token: %s\n", bunnyToken[:10]+"..."+bunnyToken[len(bunnyToken)-10:])
-		req.Header.Set("Accept", "*/*") // Accept any content type
-		// TEMPORARILY DISABLED: req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", bunnyToken))
-
-		// Try without authentication first (for public videos)
-		// If that fails, we'll try with authentication
-		fmt.Printf("[Stream] Attempting request without authentication first\n")
-		req.Header.Set("Accept", "*/*")
-		req.Header.Set("User-Agent", "BOME-Backend/1.0")
-
-		// Copy relevant request headers (no Authorization for first attempt)
-		for k, v := range c.Request.Header {
-			if k != "Authorization" && k != "Host" && k != "Connection" {
-				req.Header[k] = v
-				fmt.Printf("[Stream] Copying header %s: %v\n", k, v)
-			}
-		}
-
-		// Forward the request
-		client := &http.Client{Timeout: 30 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			fmt.Printf("[Stream] Request to Bunny failed: %v\n", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to stream video"})
-			return
-		}
-		defer resp.Body.Close()
-
-		// Debug logging
-		fmt.Printf("[Stream] Bunny response status: %d\n", resp.StatusCode)
-		fmt.Printf("[Stream] Bunny response headers: %+v\n", resp.Header)
-
-		// If error from Bunny, log the response body
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			fmt.Printf("[Stream] Bunny error response: %s\n", string(body))
-			// Forward the error status but with our own message
-			c.JSON(resp.StatusCode, gin.H{"error": "Failed to stream video from CDN"})
-			return
-		}
-
-		// Copy response headers
-		for k, v := range resp.Header {
-			c.Header(k, v[0])
-			fmt.Printf("[Stream] Setting response header %s: %s\n", k, v[0])
-		}
-
-		// Add CORS headers
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
-
-		// Set content type for m3u8 playlists
-		if strings.HasSuffix(path, ".m3u8") {
-			c.Header("Content-Type", "application/vnd.apple.mpegurl")
-		} else if strings.HasSuffix(path, ".ts") {
-			c.Header("Content-Type", "video/mp2t")
-		}
-
-		// Stream the response
-		c.Status(resp.StatusCode)
-		written, err := io.Copy(c.Writer, resp.Body)
-		if err != nil {
-			fmt.Printf("[Stream] Error streaming response: %v\n", err)
-		} else {
-			fmt.Printf("[Stream] Successfully streamed %d bytes\n", written)
-		}
-	})
-}
-
-// Placeholder handler functions - these will be implemented in separate files
-func handleRegister(db *database.DB, emailService *services.EmailService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Register endpoint - TODO"})
-	}
-}
-
-func handleLogin(db *database.DB, cfg *config.Config) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Login endpoint - TODO"})
-	}
-}
-
-func handleLogout() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Logout endpoint - TODO"})
-	}
-}
-
-func handleRefreshToken(db *database.DB, cfg *config.Config) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Refresh token endpoint - TODO"})
-	}
-}
-
-func handleForgotPassword(db *database.DB, emailService *services.EmailService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Forgot password endpoint - TODO"})
-	}
-}
-
-func handleResetPassword(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Reset password endpoint - TODO"})
-	}
-}
-
-func handleVerifyEmail(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Verify email endpoint - TODO"})
-	}
-}
-
-func handleGetVideos(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Get videos endpoint - TODO"})
-	}
-}
-
-func handleGetVideo(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Get video endpoint - TODO"})
-	}
-}
-
-func handleStreamVideo(db *database.DB, bunnyService *services.BunnyService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Stream video endpoint - TODO"})
-	}
-}
-
-func handleGetCategories(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Get categories endpoint - TODO"})
-	}
-}
-
-func handleSearchVideos(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Search videos endpoint - TODO"})
-	}
-}
-
-func handleGetSubscriptionPlans(stripeService *services.StripeService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Get subscription plans endpoint - TODO"})
-	}
-}
-
-func handleCreateSubscription(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Create subscription endpoint - TODO"})
-	}
-}
-
-func handleStripeWebhook(db *database.DB, stripeService *services.StripeService, emailService *services.EmailService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Stripe webhook endpoint - TODO"})
-	}
-}
-
-// GetProfileHandler handles retrieving user profile
-func GetProfileHandler(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID := c.GetInt("user_id")
-		if userID == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-			return
-		}
-
-		profile, err := db.GetUserProfile(userID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get profile"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"user": profile})
-	}
-}
-
-// UpdateProfileHandler handles updating user profile
-func UpdateProfileHandler(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID := c.GetInt("user_id")
-		if userID == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-			return
-		}
-
-		var updates map[string]interface{}
-		if err := c.ShouldBindJSON(&updates); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
-			return
-		}
-
-		// Validate required fields
-		if firstName, exists := updates["first_name"]; exists {
-			if firstNameStr, ok := firstName.(string); !ok || firstNameStr == "" {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "First name is required"})
-				return
-			}
-		}
-
-		if email, exists := updates["email"]; exists {
-			if emailStr, ok := email.(string); !ok || emailStr == "" {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Email is required"})
-				return
-			}
-		}
-
-		// Update profile
-		if err := db.UpdateUserProfile(userID, updates); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update profile"})
-			return
-		}
-
-		// Get updated profile
-		profile, err := db.GetUserProfile(userID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get updated profile"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"message": "Profile updated successfully",
-			"user":    profile,
-		})
-	}
-}
-
-func handleGetUserActivity(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Get user activity endpoint - TODO"})
-	}
-}
-
-func handleGetFavorites(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Get favorites endpoint - TODO"})
-	}
-}
-
-func handleLikeVideo(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Like video endpoint - TODO"})
-	}
-}
-
-func handleUnlikeVideo(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Unlike video endpoint - TODO"})
-	}
-}
-
-func handleFavoriteVideo(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Favorite video endpoint - TODO"})
-	}
-}
-
-func handleUnfavoriteVideo(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Unfavorite video endpoint - TODO"})
-	}
-}
-
-func handleAddComment(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Add comment endpoint - TODO"})
-	}
-}
-
-func handleGetComments(db *database.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Get comments endpoint - TODO"})
-	}
-}
-
-func handleGetCurrentSubscription(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Get current subscription endpoint - TODO"})
-	}
-}
-
-func handleCancelSubscription(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Cancel subscription endpoint - TODO"})
-	}
-}
-
-func handleReactivateSubscription(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "Reactivate subscription endpoint - TODO"})
-	}
-}
-
-func handleGetBillingHistory(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID := c.GetInt("user_id")
-		if userID == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-			return
-		}
-
-		// Get pagination parameters
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-
-		if page < 1 {
-			page = 1
-		}
-		if limit < 1 || limit > 100 {
-			limit = 20
-		}
-
-		// Get user to find their Stripe customer ID
-		user, err := db.GetUserByID(userID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
-			return
-		}
-
-		if !user.StripeCustomerID.Valid || user.StripeCustomerID.String == "" {
-			// User has no Stripe customer ID, return empty billing history
-			c.JSON(http.StatusOK, gin.H{
-				"invoices": []interface{}{},
-				"total":    0,
-				"page":     page,
-				"limit":    limit,
-			})
-			return
-		}
-
-		// Get starting after parameter for pagination
-		startingAfter := c.Query("starting_after")
-
-		// Get invoices from Stripe
-		invoices, hasMore, err := stripeService.GetCustomerInvoices(user.StripeCustomerID.String, limit, startingAfter)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get billing history"})
-			return
-		}
-
-		// Calculate total (approximation since Stripe doesn't provide exact counts)
-		total := len(invoices)
-		if hasMore {
-			total = page*limit + 1 // Indicate there are more items
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"invoices": invoices,
-			"total":    total,
-			"page":     page,
-			"limit":    limit,
-			"has_more": hasMore,
-		})
-	}
-}
-
-func handleGetInvoice(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID := c.GetInt("user_id")
-		if userID == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-			return
-		}
-
-		invoiceID := c.Param("id")
-		if invoiceID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invoice ID is required"})
-			return
-		}
-
-		// Get user to verify ownership
-		user, err := db.GetUserByID(userID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
-			return
-		}
-
-		if !user.StripeCustomerID.Valid || user.StripeCustomerID.String == "" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Invoice not found"})
-			return
-		}
-
-		// Get invoice from Stripe
-		invoice, err := stripeService.GetInvoice(invoiceID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Invoice not found"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"invoice": invoice})
-	}
-}
-
-func handleDownloadInvoice(db *database.DB, stripeService *services.StripeService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID := c.GetInt("user_id")
-		if userID == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-			return
-		}
-
-		invoiceID := c.Param("id")
-		if invoiceID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invoice ID is required"})
-			return
-		}
-
-		// Get user to verify ownership
-		user, err := db.GetUserByID(userID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
-			return
-		}
-
-		if !user.StripeCustomerID.Valid || user.StripeCustomerID.String == "" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Invoice not found"})
-			return
-		}
-
-		// Get invoice from Stripe
-		invoice, err := stripeService.GetInvoice(invoiceID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Invoice not found"})
-			return
-		}
-
-		if invoice.DownloadURL == "" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Invoice download not available"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"downloadUrl": invoice.DownloadURL})
-	}
 }
 
 // UploadVideoHandler handles secure video uploads via backend - ADMIN/CONTENT MANAGER ONLY
@@ -1848,7 +947,8 @@ func UploadVideoHandler(db *database.DB, bunnyService *services.BunnyService) gi
 			0, // duration will be updated when processing is complete
 			header.Size,
 			tags,
-			userID,
+			1,    // createdBy - system //SHOULD WE CONSIDER CHANGING THIS TO USER ID?
+			true, // vid_status
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save video metadata"})
@@ -1912,30 +1012,4 @@ func RoleRequired(allowedRoles ...string) gin.HandlerFunc {
 		c.JSON(403, gin.H{"error": "Insufficient permissions"})
 		c.Abort()
 	}
-}
-
-// BunnyVideo represents a video in Bunny Stream
-type BunnyVideo struct {
-	VideoLibraryID       int     `json:"videoLibraryId"`
-	GUID                 string  `json:"guid"`
-	Title                string  `json:"title"`
-	Description          *string `json:"description"`
-	DateUploaded         string  `json:"dateUploaded"`
-	Views                int     `json:"views"`
-	IsPublic             bool    `json:"isPublic"`
-	Length               int     `json:"length"`
-	Status               int     `json:"status"`
-	Framerate            float64 `json:"framerate"`
-	Width                int     `json:"width"`
-	Height               int     `json:"height"`
-	AvailableResolutions string  `json:"availableResolutions"`
-	ThumbnailCount       int     `json:"thumbnailCount"`
-	EncodeProgress       int     `json:"encodeProgress"`
-	StorageSize          int64   `json:"storageSize"`
-	HasMP4Fallback       bool    `json:"hasMP4Fallback"`
-	CollectionID         string  `json:"collectionId"`
-	ThumbnailFileName    string  `json:"thumbnailFileName"`
-	AverageWatchTime     int     `json:"averageWatchTime"`
-	TotalWatchTime       int64   `json:"totalWatchTime"`
-	Category             string  `json:"category"`
 }

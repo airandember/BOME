@@ -71,6 +71,13 @@ func main() {
 	redis = nil
 
 	// Initialize services
+	// Initialize crypto service for secure settings
+	if cryptoSvc, err := services.NewCryptoServiceFromEnv(); err != nil {
+		log.Printf("Crypto service not initialized: %v", err)
+	} else {
+		services.SetGlobalCryptoService(cryptoSvc)
+		log.Println("Crypto service initialized for secure settings")
+	}
 	bunnyService := services.NewBunnyService()
 	optimizedBunnyService := services.NewOptimizedBunnyService(bunnyService)
 	optimizedBunnyService.StartBackgroundTasks()
@@ -86,7 +93,7 @@ func main() {
 		log.Println("Analytics service and system monitoring started")
 	}
 
-	stripeService := services.NewStripeService()
+	stripeService := services.NewStripeService(db)
 	spacesService, err := services.NewSpacesService()
 	if err != nil {
 		log.Printf("Failed to initialize Spaces service: %v", err)
@@ -94,6 +101,14 @@ func main() {
 		spacesService = nil
 	}
 	emailService := services.NewEmailService()
+
+	// Initialize business intelligence service
+	var biService *services.BusinessIntelligenceService
+	if db != nil {
+		biService = services.NewBusinessIntelligenceService(db)
+		log.Println("Business Intelligence service initialized")
+	}
+
 	services.StartTokenBlacklistCleanup()
 
 	// Start database cleanup tasks if database is available
@@ -130,7 +145,7 @@ func main() {
 
 	// Setup routes
 	log.Println("Setting up routes...")
-	routes.SetupRoutes(router, cfg, db, redis, optimizedBunnyService.GetBunnyService(), stripeService, spacesService, emailService)
+	routes.SetupRoutes(router, cfg, db, redis, optimizedBunnyService.GetBunnyService(), stripeService, spacesService, emailService, biService)
 	log.Println("Routes setup completed successfully")
 
 	// Create HTTP server with optimized settings for high traffic

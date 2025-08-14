@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -33,6 +34,11 @@ type User struct {
 	MaxSessions int
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	// New columns
+	RoleID    sql.NullString
+	IsActive  sql.NullBool
+	SubID     sql.NullString
+	HasSubbed sql.NullBool
 }
 
 // UserProfile represents the public profile data for a user
@@ -81,13 +87,85 @@ func (db *DB) CreateUser(email, passwordHash, firstName, lastName, role string) 
 	return db.GetUserByID(id)
 }
 
+// CreateUserWithDetails creates a new user with all available fields
+func (db *DB) CreateUserWithDetails(userData map[string]interface{}) (*User, error) {
+	// Build dynamic INSERT query based on provided fields
+	fields := []string{}
+	placeholders := []string{}
+	values := []interface{}{}
+	argCount := 0
+
+	// Required fields
+	requiredFields := map[string]string{
+		"email":         "email",
+		"password_hash": "password_hash",
+		"first_name":    "first_name",
+		"last_name":     "last_name",
+	}
+
+	for field, dbField := range requiredFields {
+		if value, exists := userData[field]; exists {
+			argCount++
+			fields = append(fields, dbField)
+			placeholders = append(placeholders, fmt.Sprintf("$%d", argCount))
+			values = append(values, value)
+		} else {
+			return nil, fmt.Errorf("required field '%s' is missing", field)
+		}
+	}
+
+	// Optional fields
+	optionalFields := map[string]string{
+		"role":               "role",
+		"role_id":            "role_id",
+		"email_verified":     "email_verified",
+		"stripe_customer_id": "stripe_customer_id",
+		"bio":                "bio",
+		"location":           "location",
+		"website":            "website",
+		"phone":              "phone",
+		"avatar_url":         "avatar_url",
+		"is_active":          "is_active",
+		"sub_id":             "sub_id",
+		"has_subbed":         "has_subbed",
+	}
+
+	for field, dbField := range optionalFields {
+		if value, exists := userData[field]; exists {
+			argCount++
+			fields = append(fields, dbField)
+			placeholders = append(placeholders, fmt.Sprintf("$%d", argCount))
+			values = append(values, value)
+		}
+	}
+
+	// Always add timestamps
+	argCount++
+	fields = append(fields, "created_at", "updated_at")
+	placeholders = append(placeholders, fmt.Sprintf("$%d", argCount), fmt.Sprintf("$%d", argCount+1))
+	values = append(values, "NOW()", "NOW()")
+
+	query := fmt.Sprintf(
+		"INSERT INTO users (%s) VALUES (%s) RETURNING id",
+		strings.Join(fields, ", "),
+		strings.Join(placeholders, ", "),
+	)
+
+	var id int
+	err := db.QueryRow(query, values...).Scan(&id)
+	if err != nil {
+		return nil, err
+	}
+	return db.GetUserByID(id)
+}
+
 // GetUserByID retrieves a user by ID
 func (db *DB) GetUserByID(id int) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
-		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at FROM users WHERE id = $1`,
+		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed FROM users WHERE id = $1`,
 		id,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed)
 	if err != nil {
 		return nil, err
 	}
@@ -98,9 +176,9 @@ func (db *DB) GetUserByID(id int) (*User, error) {
 func (db *DB) GetUserByEmail(email string) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
-		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at FROM users WHERE email = $1`,
+		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed FROM users WHERE email = $1`,
 		email,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed)
 	if err != nil {
 		return nil, err
 	}
@@ -244,9 +322,9 @@ func (db *DB) SetPasswordResetToken(userID int, token string, expiry time.Time) 
 func (db *DB) GetUserByResetToken(token string) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
-		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, created_at, updated_at FROM users WHERE reset_token = $1 AND reset_token_expiry > NOW()`,
+		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed FROM users WHERE reset_token = $1 AND reset_token_expiry > NOW()`,
 		token,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed)
 	if err != nil {
 		return nil, err
 	}
@@ -269,9 +347,9 @@ func (db *DB) SetVerificationToken(userID int, token string) error {
 func (db *DB) GetUserByVerificationToken(token string) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
-		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, created_at, updated_at FROM users WHERE verification_token = $1 AND updated_at > NOW() - INTERVAL '24 hours'`,
+		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed FROM users WHERE verification_token = $1 AND updated_at > NOW() - INTERVAL '24 hours'`,
 		token,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed)
 	if err != nil {
 		return nil, err
 	}
@@ -288,6 +366,88 @@ func (db *DB) ClearVerificationToken(userID int) error {
 func (db *DB) UpdateUserStripeCustomerID(userID int, stripeCustomerID string) error {
 	_, err := db.Exec(`UPDATE users SET stripe_customer_id = $1, updated_at = NOW() WHERE id = $2`, stripeCustomerID, userID)
 	return err
+}
+
+// UpdateUserActiveStatus updates a user's active status
+func (db *DB) UpdateUserActiveStatus(userID int, isActive bool) error {
+	_, err := db.Exec(`UPDATE users SET is_active = $1, updated_at = NOW() WHERE id = $2`, isActive, userID)
+	return err
+}
+
+// UpdateUserSubscriptionInfo updates a user's subscription information
+func (db *DB) UpdateUserSubscriptionInfo(userID int, subID string, hasSubbed bool) error {
+	_, err := db.Exec(`UPDATE users SET sub_id = $1, has_subbed = $2, updated_at = NOW() WHERE id = $3`, subID, hasSubbed, userID)
+	return err
+}
+
+// UpdateUserRoleID updates a user's role ID (separate from the legacy role field)
+func (db *DB) UpdateUserRoleID(userID int, roleID string) error {
+	_, err := db.Exec(`UPDATE users SET role_id = $1, updated_at = NOW() WHERE id = $2`, roleID, userID)
+	return err
+}
+
+// GetActiveUsers retrieves all active users
+func (db *DB) GetActiveUsers() ([]*User, error) {
+	rows, err := db.Query(`
+		SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
+		       stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, 
+		       location, website, phone, avatar_url, preferences, last_login, last_logout, 
+		       max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed
+		FROM users 
+		WHERE is_active = true
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*User
+	for rows.Next() {
+		user := &User{}
+		err := rows.Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName,
+			&user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken,
+			&user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location,
+			&user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin,
+			&user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, nil
+}
+
+// GetSubscribedUsers retrieves all users who have subscribed
+func (db *DB) GetSubscribedUsers() ([]*User, error) {
+	rows, err := db.Query(`
+		SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
+		       stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, 
+		       location, website, phone, avatar_url, preferences, last_login, last_logout, 
+		       max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed
+		FROM users 
+		WHERE has_subbed = true
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*User
+	for rows.Next() {
+		user := &User{}
+		err := rows.Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName,
+			&user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken,
+			&user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location,
+			&user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin,
+			&user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, nil
 }
 
 // CreateSession creates a new user session
@@ -422,13 +582,13 @@ func (db *DB) GetUsers(limit, offset int, role, search string) ([]*User, error) 
 		query = `SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
               stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, 
               location, website, phone, avatar_url, preferences, last_login, last_logout, 
-              max_sessions, created_at, updated_at 
+              max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed
               FROM users WHERE 1=1`
 	} else {
 		query = `SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
               stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, 
               location, website, phone, avatar_url, preferences, last_login, last_logout, 
-              5 as max_sessions, created_at, updated_at 
+              5 as max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed
               FROM users WHERE 1=1`
 	}
 
@@ -465,7 +625,7 @@ func (db *DB) GetUsers(limit, offset int, role, search string) ([]*User, error) 
 			&user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken,
 			&user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location,
 			&user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin,
-			&user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt)
+			&user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed)
 		if err != nil {
 			return nil, err
 		}
@@ -493,6 +653,69 @@ func (db *DB) GetUserCount() (int, error) {
 	var count int
 	err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count)
 	return count, err
+}
+
+// GetUserStats returns comprehensive user statistics
+func (db *DB) GetUserStats() (map[string]interface{}, error) {
+	stats := make(map[string]interface{})
+
+	// Total users
+	var total int
+	err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&total)
+	if err != nil {
+		return nil, err
+	}
+	stats["total"] = total
+
+	// Active users
+	var active int
+	err = db.QueryRow(`SELECT COUNT(*) FROM users WHERE is_active = true`).Scan(&active)
+	if err != nil {
+		return nil, err
+	}
+	stats["active"] = active
+
+	// Inactive users
+	var inactive int
+	err = db.QueryRow(`SELECT COUNT(*) FROM users WHERE is_active = false`).Scan(&inactive)
+	if err != nil {
+		return nil, err
+	}
+	stats["inactive"] = inactive
+
+	// Users with subscriptions
+	var subscribed int
+	err = db.QueryRow(`SELECT COUNT(*) FROM users WHERE has_subbed = true`).Scan(&subscribed)
+	if err != nil {
+		return nil, err
+	}
+	stats["subscribed"] = subscribed
+
+	// Users with Stripe customer IDs
+	var stripeCustomers int
+	err = db.QueryRow(`SELECT COUNT(*) FROM users WHERE stripe_customer_id IS NOT NULL`).Scan(&stripeCustomers)
+	if err != nil {
+		return nil, err
+	}
+	stats["stripe_customers"] = stripeCustomers
+
+	// Email verified users
+	var verified int
+	err = db.QueryRow(`SELECT COUNT(*) FROM users WHERE email_verified = true`).Scan(&verified)
+	if err != nil {
+		return nil, err
+	}
+	stats["verified"] = verified
+
+	// Pending verification users
+	var pending int
+	err = db.QueryRow(`SELECT COUNT(*) FROM users WHERE email_verified = false`).Scan(&pending)
+	if err != nil {
+		return nil, err
+	}
+	stats["pending"] = pending
+
+	return stats, nil
 }
 
 // GetFilteredUserCount returns the total number of users with filters applied
@@ -541,7 +764,7 @@ func (db *DB) GetUsersWithRoles(limit, offset int, role, search, status string) 
               COALESCE(ur.role_id, u.role_id, 'user') as role, u.email_verified, 
               u.stripe_customer_id, u.reset_token, u.reset_token_expiry, u.verification_token, u.bio, 
               u.location, u.website, u.phone, u.avatar_url, u.preferences, u.last_login, u.last_logout, 
-              u.max_sessions, u.created_at, u.updated_at 
+              u.max_sessions, u.created_at, u.updated_at, u.role_id, u.is_active, u.sub_id, u.has_subbed
               FROM users u 
               LEFT JOIN user_roles ur ON u.id = ur.user_id 
               WHERE 1=1`
@@ -550,7 +773,7 @@ func (db *DB) GetUsersWithRoles(limit, offset int, role, search, status string) 
               COALESCE(ur.role_id, u.role_id, 'user') as role, u.email_verified, 
               u.stripe_customer_id, u.reset_token, u.reset_token_expiry, u.verification_token, u.bio, 
               u.location, u.website, u.phone, u.avatar_url, u.preferences, u.last_login, u.last_logout, 
-              5 as max_sessions, u.created_at, u.updated_at 
+              5 as max_sessions, u.created_at, u.updated_at, u.role_id, u.is_active, u.sub_id, u.has_subbed
               FROM users u 
               LEFT JOIN user_roles ur ON u.id = ur.user_id 
               WHERE 1=1`
@@ -598,7 +821,7 @@ func (db *DB) GetUsersWithRoles(limit, offset int, role, search, status string) 
 			&user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken,
 			&user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location,
 			&user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin,
-			&user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt)
+			&user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed)
 		if err != nil {
 			return nil, err
 		}

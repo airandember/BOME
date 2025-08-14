@@ -17,6 +17,13 @@
 	--success: #00d4aa;
 	--warning: #ffa726;
 	--error: #ff6b6b;
+	--bg-green-100: #dcfce7;
+	--bg-green-200: #d9f99d;
+	--bg-green-300: #bef264;
+	--bg-green-400: #a3e635;
+	--bg-green-500: #84cc16;
+	--bg-green-600: #65a30d;
+	
 	
 	/* Neutral Colors */
 	--white: #ffffff;
@@ -37,11 +44,16 @@
 	--text-secondary: var(--gray-600);
 	--text-muted: var(--gray-500);
 	--text-inverse: var(--white);
+	--text-tertiary: var(--gray-50);
+	--text-quaternary: var(--gray-300);
+	--text-muted-light: var(--gray-400);
 	
 	/* Background Colors */
 	--bg-primary: var(--white);
 	--bg-secondary: var(--gray-50);
 	--bg-tertiary: var(--gray-100);
+	--bg-quaternary: var(--gray-600);
+	--bg-quinary: var(--gray-700);
 	--bg-dark: var(--gray-900);
 	--bg-glass: rgba(255, 255, 255, 0.1);
 	--bg-glass-dark: rgba(0, 0, 0, 0.1);

@@ -3,9 +3,10 @@
 
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
+import { get } from 'svelte/store';
 
-// Import the centralized token storage
-import { SecureTokenStorage } from '$lib/auth';
+// Import the auth store for token management
+import { auth } from '$lib/auth';
 
 export interface ApiResponse<T> {
 	data?: T;
@@ -31,54 +32,21 @@ export interface TokenInfo {
 
 class ApiClient {
 	private baseUrl: string;
-	private tokenInfo: TokenInfo | null = null;
 
 	constructor() {
-		this.baseUrl = browser ? (import.meta.env.VITE_API_URL || '/api/v1') : '';
-		this.loadTokenFromStorage();
-	}
-
-	private loadTokenFromStorage(): void {
-		if (!browser) return;
-
-		try {
-			const token = SecureTokenStorage.getAccessToken();
-			if (token) {
-				this.tokenInfo = {
-					token,
-					expiresAt: Date.now() + (4 * 60 * 60 * 1000), // 4 hours
-					refreshToken: SecureTokenStorage.getRefreshToken() || undefined
-				};
-			}
-		} catch (error) {
-			console.error('Failed to load token from storage:', error);
-			this.tokenInfo = null;
-		}
-	}
-
-	private saveTokenToStorage(): void {
-		if (!browser || !this.tokenInfo) return;
-
-		try {
-			if (this.tokenInfo.refreshToken) {
-				SecureTokenStorage.storeTokens(this.tokenInfo.token, this.tokenInfo.refreshToken);
-			}
-		} catch (error) {
-			console.error('Failed to save token to storage:', error);
-		}
+		this.baseUrl = browser ? (import.meta.env.VITE_API_BASE_URL || '/api/v1') : '';
 	}
 
 	get token(): string | null {
-		if (!this.tokenInfo) return null;
+		if (!browser) return null;
 		
-		// Check if token is expired
-		if (Date.now() >= this.tokenInfo.expiresAt) {
-			this.tokenInfo = null;
-			SecureTokenStorage.clearTokens();
+		// Get token from auth store
+		const authState = get(auth);
+		if (!authState.isAuthenticated || !authState.token) {
 			return null;
 		}
 		
-		return this.tokenInfo.token;
+		return authState.token;
 	}
 
 	private async request<T>(
@@ -89,6 +57,10 @@ class ApiClient {
 			const url = `${this.baseUrl}${endpoint}`;
 			const token = this.token;
 			
+			console.log('ApiClient: Making request to:', url);
+			console.log('ApiClient: Token available:', !!token);
+			console.log('ApiClient: Token value:', token ? `${token.substring(0, 20)}...` : 'null');
+			
 			const config: RequestInit = {
 				headers: {
 					'Content-Type': 'application/json',
@@ -98,12 +70,13 @@ class ApiClient {
 				...options,
 			};
 
+			console.log('ApiClient: Request headers:', config.headers);
 			const response = await fetch(url, config);
 			
 			// Handle 401 - token expired
 			if (response.status === 401 && token) {
-				this.tokenInfo = null;
-				SecureTokenStorage.clearTokens();
+				// Clear tokens regardless of response
+				// The auth store will handle clearing tokens on 401
 				
 				// Redirect to login for auth endpoints
 				if (browser && !endpoint.includes('/auth/')) {
@@ -111,6 +84,23 @@ class ApiClient {
 				}
 				
 				return { error: 'Authentication required' };
+			}
+			
+			// Check if response is JSON
+			const contentType = response.headers.get('content-type');
+			if (!contentType || !contentType.includes('application/json')) {
+				// Handle non-JSON responses (like HTML error pages)
+				const text = await response.text();
+				console.error('Non-JSON response received:', {
+					status: response.status,
+					contentType,
+					url,
+					text: text.substring(0, 200) // Log first 200 chars
+				});
+				
+				return {
+					error: `Expected JSON response but got ${contentType || 'unknown content type'} (HTTP ${response.status})`
+				};
 			}
 			
 			const data = await response.json();
@@ -138,11 +128,7 @@ class ApiClient {
 		});
 
 		if (response.data) {
-			this.tokenInfo = {
-				token: response.data.token,
-				expiresAt: Date.now() + (4 * 60 * 60 * 1000), // 4 hours
-			};
-			this.saveTokenToStorage();
+			// The auth store will handle saving tokens
 		}
 
 		return response;
@@ -154,8 +140,7 @@ class ApiClient {
 		});
 
 		// Clear tokens regardless of response
-		this.tokenInfo = null;
-		SecureTokenStorage.clearTokens();
+		// The auth store will handle clearing tokens on 401
 
 		return response;
 	}
@@ -171,10 +156,26 @@ class ApiClient {
 		});
 	}
 
+	async postWithHeaders<T>(endpoint: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
+		return this.request<T>(endpoint, {
+			method: 'POST',
+			body: data ? JSON.stringify(data) : undefined,
+			headers: customHeaders,
+		});
+	}
+
 	async put<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
 		return this.request<T>(endpoint, {
 			method: 'PUT',
 			body: data ? JSON.stringify(data) : undefined,
+		});
+	}
+
+	async putWithHeaders<T>(endpoint: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
+		return this.request<T>(endpoint, {
+			method: 'PUT',
+			body: data ? JSON.stringify(data) : undefined,
+			headers: customHeaders,
 		});
 	}
 

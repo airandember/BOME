@@ -4,11 +4,22 @@ export interface SubscriptionPlan {
 	id: string;
 	name: string;
 	description: string;
+	short_desc: string;
 	price: number;
 	currency: string;
-	interval: 'month' | 'year';
+	interval: 'month' | 'year' | 'week' | 'day';
+	interval_count: number;
+	stripe_price_id?: string;
 	features: string[];
+	is_active: boolean;
+	promotion_end_date?: string;
+	promotion_start_date?: string;
+	plan_change_history?: Record<string, any>[]; // Array of history event objects
+	promotion_metadata?: Record<string, any>; // New field for promotion analytics
+	created_at: string;
+	updated_at: string;
 	popular?: boolean;
+	sub_type: string; // stnd = standard plan, prmo = promotional plan
 }
 
 export interface Subscription {
@@ -63,19 +74,23 @@ export interface Refund {
 export const subscriptionService = {
 	// Get available subscription plans
 	getPlans: async () => {
-		const response = await apiRequest('/subscriptions/plans');
-		return response.json();
+		const response = await apiRequest('/subscription-plans/active');
+		const data = await response.json();
+		// Handle the wrapped response structure
+		return {
+			plans: data.data?.subscription_plans || data.subscription_plans || []
+		};
 	},
 
 	// Get current user's subscription
 	getCurrentSubscription: async () => {
-		const response = await apiRequest('/subscriptions/current');
+		const response = await apiRequest('/api/subscriptions/');
 		return response.json();
 	},
 
 	// Create a new subscription
 	createSubscription: async (planId: string, paymentMethodId: string) => {
-		const response = await apiRequest('/subscriptions', {
+		const response = await apiRequest('/api/subscriptions/', {
 			method: 'POST',
 			body: JSON.stringify({
 				planId,
@@ -87,10 +102,10 @@ export const subscriptionService = {
 
 	// Cancel subscription
 	cancelSubscription: async (subscriptionId: string, cancelAtPeriodEnd: boolean = true) => {
-		const response = await apiRequest(`/subscriptions/${subscriptionId}/cancel`, {
-			method: 'POST',
+		const response = await apiRequest('/api/subscriptions/', {
+			method: 'DELETE',
 			body: JSON.stringify({
-				cancelAtPeriodEnd
+				at_period_end: cancelAtPeriodEnd
 			})
 		});
 		return response.json();
@@ -107,10 +122,10 @@ export const subscriptionService = {
 
 	// Update subscription (change plan)
 	updateSubscription: async (subscriptionId: string, planId: string) => {
-		const response = await apiRequest(`/subscriptions/${subscriptionId}`, {
+		const response = await apiRequest('/api/subscriptions/', {
 			method: 'PUT',
 			body: JSON.stringify({
-				planId
+				plan_id: planId
 			})
 		});
 		return response.json();
@@ -173,12 +188,12 @@ export const subscriptionService = {
 
 	// Create checkout session for Stripe
 	createCheckoutSession: async (planId: string, successUrl: string, cancelUrl: string) => {
-		const response = await apiRequest('/subscriptions/checkout', {
+		const response = await apiRequest('/api/subscription/checkout', {
 			method: 'POST',
 			body: JSON.stringify({
-				planId,
-				successUrl,
-				cancelUrl
+				plan_id: planId,
+				success_url: successUrl,
+				cancel_url: cancelUrl
 			})
 		});
 		return response.json();
@@ -232,15 +247,23 @@ export const subscriptionUtils = {
 		return new Intl.NumberFormat('en-US', {
 			style: 'currency',
 			currency: currency.toUpperCase()
-		}).format(amount / 100); // Convert from cents
+		}).format(amount); // Price is already in dollars
 	},
 
 	// Get plan price per month
 	getMonthlyPrice: (plan: SubscriptionPlan): number => {
-		if (plan.interval === 'month') {
-			return plan.price;
+		switch (plan.interval) {
+			case 'month':
+				return plan.price;
+			case 'year':
+				return Math.round(plan.price / 12);
+			case 'week':
+				return Math.round(plan.price * 4.33); // Average weeks per month
+			case 'day':
+				return Math.round(plan.price * 30); // Average days per month
+			default:
+				return plan.price;
 		}
-		return Math.round(plan.price / 12);
 	},
 
 	// Check if subscription is active

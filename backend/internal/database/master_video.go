@@ -43,6 +43,9 @@ type MasterVideo struct {
 	CreatedBy       int
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+
+	// Vid Status - True or False Video is active or not
+	Vid_Status bool
 }
 
 // SyncConflict represents a conflict between master list and Bunny.net
@@ -122,7 +125,7 @@ func (db *DB) GetMasterVideoByID(id int) (*MasterVideo, error) {
 		       status, views, likes, is_public, encode_progress, available_resolutions,
 		       collection_id, average_watch_time, total_watch_time, last_bunny_sync,
 		       last_master_update, sync_status, sync_notes, metadata_version, created_by,
-		       created_at, updated_at
+		       created_at, updated_at, vid_status
 		FROM master_video_list WHERE id = $1`,
 		id,
 	).Scan(
@@ -132,7 +135,7 @@ func (db *DB) GetMasterVideoByID(id int) (*MasterVideo, error) {
 		&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 		&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 		&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-		&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt,
+		&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status,
 	)
 	if err != nil {
 		return nil, err
@@ -166,7 +169,7 @@ func (db *DB) GetMasterVideoByBunnyID(bunnyVideoID string) (*MasterVideo, error)
 		       status, views, likes, is_public, encode_progress, available_resolutions,
 		       collection_id, average_watch_time, total_watch_time, last_bunny_sync,
 		       last_master_update, sync_status, sync_notes, metadata_version, created_by,
-		       created_at, updated_at
+		       created_at, updated_at, vid_status
 		FROM master_video_list WHERE bunny_video_id = $1`,
 		bunnyVideoID,
 	).Scan(
@@ -176,7 +179,7 @@ func (db *DB) GetMasterVideoByBunnyID(bunnyVideoID string) (*MasterVideo, error)
 		&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 		&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 		&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-		&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt,
+		&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status,
 	)
 	if err != nil {
 		return nil, err
@@ -200,14 +203,14 @@ func (db *DB) GetMasterVideoByBunnyID(bunnyVideoID string) (*MasterVideo, error)
 }
 
 // GetMasterVideos retrieves videos from the master list with filtering and pagination
-func (db *DB) GetMasterVideos(limit, offset int, category, status, syncStatus, sortField, sortDirection string) ([]*MasterVideo, error) {
+func (db *DB) GetMasterVideos(limit, offset int, category, status, syncStatus, vidStatus, sortField, sortDirection string) ([]*MasterVideo, error) {
 	query := `
 		SELECT id, bunny_video_id, title, description, category, tags, duration, file_size,
 		       resolution, framerate, thumbnail_url, video_url, iframe_src, playback_url,
 		       status, views, likes, is_public, encode_progress, available_resolutions,
 		       collection_id, average_watch_time, total_watch_time, last_bunny_sync,
 		       last_master_update, sync_status, sync_notes, metadata_version, created_by,
-		       created_at, updated_at
+		       created_at, updated_at, vid_status
 		FROM master_video_list WHERE 1=1`
 	args := []interface{}{}
 	argCount := 0
@@ -230,11 +233,17 @@ func (db *DB) GetMasterVideos(limit, offset int, category, status, syncStatus, s
 		args = append(args, syncStatus)
 	}
 
+	if vidStatus != "" {
+		argCount++
+		query += fmt.Sprintf(` AND vid_status = $%d`, argCount)
+		args = append(args, vidStatus == "true")
+	}
+
 	// Add sorting
 	validSortFields := map[string]string{
 		"id": "id", "title": "title", "category": "category", "status": "status",
 		"sync_status": "sync_status", "views": "views", "created_at": "created_at",
-		"duration": "duration", "file_size": "file_size",
+		"duration": "duration", "file_size": "file_size", "vid_status": "vid_status",
 	}
 
 	sortColumn, valid := validSortFields[sortField]
@@ -268,7 +277,7 @@ func (db *DB) GetMasterVideos(limit, offset int, category, status, syncStatus, s
 			&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 			&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 			&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-			&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt,
+			&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status,
 		)
 		if err != nil {
 			return nil, err
@@ -313,15 +322,15 @@ func (db *DB) UpdateMasterVideo(video *MasterVideo) error {
 			video_url = $10, iframe_src = $11, playback_url = $12, status = $13,
 			views = $14, likes = $15, is_public = $16, encode_progress = $17,
 			available_resolutions = $18, collection_id = $19, average_watch_time = $20,
-			total_watch_time = $21, sync_status = $22, sync_notes = $23,
+			total_watch_time = $21, sync_status = $22, sync_notes = $23, vid_status = $24,
 			metadata_version = metadata_version + 1, last_master_update = NOW()
-		WHERE id = $24`,
+		WHERE id = $25`,
 		video.Title, video.Description, video.Category, string(tagsJSON), video.Duration,
 		video.FileSize, video.Resolution, video.Framerate, video.ThumbnailURL,
 		video.VideoURL, video.IframeSrc, video.PlaybackURL, video.Status, video.Views,
 		video.Likes, video.IsPublic, video.EncodeProgress, string(resolutionsJSON),
 		video.CollectionID, video.AverageWatchTime, video.TotalWatchTime, video.SyncStatus,
-		video.SyncNotes, video.ID,
+		video.SyncNotes, video.Vid_Status, video.ID,
 	)
 	return err
 }
@@ -495,7 +504,7 @@ func (db *DB) SearchMasterVideos(query string, limit, offset int, sortField, sor
 		       status, views, likes, is_public, encode_progress, available_resolutions,
 		       collection_id, average_watch_time, total_watch_time, last_bunny_sync,
 		       last_master_update, sync_status, sync_notes, metadata_version, created_by,
-		       created_at, updated_at
+		       created_at, updated_at, vid_status
 		FROM master_video_list 
 		WHERE title ILIKE $1 OR description ILIKE $1 OR category ILIKE $1`
 
@@ -503,7 +512,7 @@ func (db *DB) SearchMasterVideos(query string, limit, offset int, sortField, sor
 	validSortFields := map[string]string{
 		"id": "id", "title": "title", "category": "category", "status": "status",
 		"sync_status": "sync_status", "views": "views", "created_at": "created_at",
-		"duration": "duration", "file_size": "file_size",
+		"duration": "duration", "file_size": "file_size", "vid_status": "vid_status",
 	}
 
 	sortColumn, valid := validSortFields[sortField]
@@ -536,7 +545,7 @@ func (db *DB) SearchMasterVideos(query string, limit, offset int, sortField, sor
 			&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 			&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 			&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-			&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt,
+			&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status,
 		)
 		if err != nil {
 			return nil, err
@@ -563,7 +572,7 @@ func (db *DB) SearchMasterVideos(query string, limit, offset int, sortField, sor
 }
 
 // GetMasterVideoCount returns the total count of master videos with optional filtering
-func (db *DB) GetMasterVideoCount(category, status, syncStatus string) (int, error) {
+func (db *DB) GetMasterVideoCount(category, status, syncStatus, vidStatus string) (int, error) {
 	query := `SELECT COUNT(*) FROM master_video_list WHERE 1=1`
 	args := []interface{}{}
 	argCount := 0
@@ -584,6 +593,12 @@ func (db *DB) GetMasterVideoCount(category, status, syncStatus string) (int, err
 		argCount++
 		query += fmt.Sprintf(` AND sync_status = $%d`, argCount)
 		args = append(args, syncStatus)
+	}
+
+	if vidStatus != "" {
+		argCount++
+		query += fmt.Sprintf(` AND vid_status = $%d`, argCount)
+		args = append(args, vidStatus == "true")
 	}
 
 	var count int

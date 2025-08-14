@@ -121,8 +121,12 @@ func (db *DB) RunMigrations() error {
 		createAdAuditLogTable,
 		createAnalyticsTables, // Add analytics tables migration
 		createIndexes,
-		applyPerformanceOptimizations, // Add the new optimization migration
-		createMasterVideoList,         // Add master video list migration
+		applyPerformanceOptimizations,     // Add the new optimization migration
+		createMasterVideoList,             // Add master video list migration
+		addShortDescToSubscriptionPlans,   // Add short_desc column to existing subscription_plans table
+		addMissingSubscriptionPlanColumns, // Add missing columns for subscription plans
+		createSubscriberHistoryTable,      // Add subscriber history table
+		createSecureSettingsTable,         // Add secure settings table for encrypted config
 	}
 
 	for i, migration := range migrations {
@@ -205,6 +209,46 @@ func (db *DB) CreateAlert(alert *Alert) error {
 	}
 
 	return nil
+}
+
+// Secure settings table stores encrypted key-value configuration
+const createSecureSettingsTable = `
+CREATE TABLE IF NOT EXISTS secure_settings (
+    id SERIAL PRIMARY KEY,
+    key VARCHAR(255) UNIQUE NOT NULL,
+    value TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+`
+
+// SetSecureSetting stores or updates an encrypted secure setting value
+func (db *DB) SetSecureSetting(key, encryptedValue string) error {
+	if db == nil || db.DB == nil {
+		return fmt.Errorf("database not initialized")
+	}
+	// Upsert behavior
+	_, err := db.Exec(`
+        INSERT INTO secure_settings (key, value) VALUES ($1, $2)
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
+    `, key, encryptedValue)
+	return err
+}
+
+// GetSecureSetting retrieves an encrypted setting by key
+func (db *DB) GetSecureSetting(key string) (string, error) {
+	if db == nil || db.DB == nil {
+		return "", fmt.Errorf("database not initialized")
+	}
+	var value string
+	err := db.QueryRow(`SELECT value FROM secure_settings WHERE key = $1`, key).Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", err
+	}
+	return value, nil
 }
 
 // Migration SQL statements - PostgreSQL compatible
@@ -1397,4 +1441,171 @@ LEFT JOIN video_sync_conflicts vsc ON mvl.id = vsc.master_video_id
 GROUP BY mvl.id, mvl.bunny_video_id, mvl.title, mvl.category, mvl.status, 
          mvl.views, mvl.duration, mvl.file_size, mvl.sync_status, 
          mvl.last_bunny_sync, mvl.last_master_update;
+`
+
+const addShortDescToSubscriptionPlans = `
+-- Add short_desc column to existing subscription_plans table
+ALTER TABLE subscription_plans 
+ADD COLUMN IF NOT EXISTS short_desc VARCHAR(500);
+
+-- Update interval constraint to match actual database values
+ALTER TABLE subscription_plans 
+DROP CONSTRAINT IF EXISTS subscription_plans_interval_check;
+
+ALTER TABLE subscription_plans 
+ADD CONSTRAINT subscription_plans_interval_check 
+CHECK (interval IN ('month', 'year', 'week', 'day'));
+
+-- Update existing data to use correct interval values
+UPDATE subscription_plans 
+SET interval = 'month' 
+WHERE interval = 'monthly';
+
+UPDATE subscription_plans 
+SET interval = 'year' 
+WHERE interval = 'annual';
+
+UPDATE subscription_plans 
+SET interval = 'week' 
+WHERE interval = 'weekly';
+
+UPDATE subscription_plans 
+SET interval = 'day' 
+WHERE interval = 'daily';
+
+-- Add default short_desc values for existing plans
+UPDATE subscription_plans 
+SET short_desc = 'Essential Monthly Access'
+WHERE name = 'Essential Monthly' AND short_desc IS NULL;
+
+UPDATE subscription_plans 
+SET short_desc = 'Best Value - Save 33%'
+WHERE name = 'Premium Annual' AND short_desc IS NULL;
+
+UPDATE subscription_plans 
+SET short_desc = 'Complete Library Access'
+WHERE name = 'Premium Monthly' AND short_desc IS NULL;
+
+UPDATE subscription_plans 
+SET short_desc = 'Maximum Savings - Pro Benefits'
+WHERE name = 'Annual Pro' AND short_desc IS NULL;
+
+UPDATE subscription_plans 
+SET short_desc = 'Complete Conference Access'
+WHERE name = 'Conference + Library Bundle' AND short_desc IS NULL;
+
+UPDATE subscription_plans 
+SET short_desc = 'Premium + Conference Benefits'
+WHERE name = 'Semi-Annual Premium' AND short_desc IS NULL;
+
+UPDATE subscription_plans 
+SET short_desc = 'Ultimate Annual Package'
+WHERE name = 'Annual Premium' AND short_desc IS NULL;
+
+UPDATE subscription_plans 
+SET short_desc = 'Get Started Today'
+WHERE name = 'Starter Monthly' AND short_desc IS NULL;
+
+UPDATE subscription_plans 
+SET short_desc = 'Professional Choice'
+WHERE name = 'Professional Annual' AND short_desc IS NULL;
+
+-- Set default short_desc for any remaining plans
+UPDATE subscription_plans 
+SET short_desc = name
+WHERE short_desc IS NULL;
+
+-- Add comment for the new column
+COMMENT ON COLUMN subscription_plans.short_desc IS 'Short description or tagline for the subscription plan';
+
+-- Update the interval comment
+COMMENT ON COLUMN subscription_plans.interval IS 'Billing interval (month, year, week, day)';
+`
+
+const addMissingSubscriptionPlanColumns = `
+-- Add sub_type column for plan classification (100 = standard, 300 = promotional)
+ALTER TABLE subscription_plans 
+ADD COLUMN IF NOT EXISTS sub_type INTEGER DEFAULT 100 CHECK (sub_type IN (100, 300));
+
+-- Add promotion_start_date column
+ALTER TABLE subscription_plans 
+ADD COLUMN IF NOT EXISTS promotion_start_date TIMESTAMP WITH TIME ZONE;
+
+-- Add promotion_history column for tracking promotion changes
+ALTER TABLE subscription_plans 
+ADD COLUMN IF NOT EXISTS promotion_history JSONB DEFAULT '[]'::jsonb;
+
+-- Add is_deleted column for soft delete status
+ALTER TABLE subscription_plans 
+ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
+
+-- Update existing plans to have proper sub_type values
+UPDATE subscription_plans 
+SET sub_type = CASE 
+    WHEN is_promoted = true THEN 300 
+    ELSE 100 
+END
+WHERE sub_type IS NULL;
+
+-- Add comments for the new columns
+COMMENT ON COLUMN subscription_plans.sub_type IS 'Plan type: 100 = standard plan, 300 = promotional plan';
+COMMENT ON COLUMN subscription_plans.promotion_start_date IS 'When the promotion started (NULL if not promoted)';
+COMMENT ON COLUMN subscription_plans.promotion_history IS 'JSON array of promotion history events';
+COMMENT ON COLUMN subscription_plans.is_deleted IS 'Soft delete flag (true if plan is deleted)';
+
+-- Create index on sub_type for better performance
+CREATE INDEX IF NOT EXISTS idx_subscription_plans_sub_type ON subscription_plans(sub_type) WHERE deleted_at IS NULL;
+`
+
+const createSubscriberHistoryTable = `
+-- Create the subscriber_history table
+CREATE TABLE IF NOT EXISTS subscriber_history (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    usr_sub_hstry JSONB DEFAULT '{}'::jsonb,
+    usr_off_hstry JSONB DEFAULT '{}'::jsonb,
+    updated_at JSONB DEFAULT '{}'::jsonb,
+    notes JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create indexes for performance
+CREATE INDEX IF NOT EXISTS idx_subscriber_history_user_id ON subscriber_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_subscriber_history_created_at ON subscriber_history(created_at);
+CREATE INDEX IF NOT EXISTS idx_subscriber_history_usr_sub_hstry ON subscriber_history USING GIN (usr_sub_hstry);
+CREATE INDEX IF NOT EXISTS idx_subscriber_history_usr_off_hstry ON subscriber_history USING GIN (usr_off_hstry);
+CREATE INDEX IF NOT EXISTS idx_subscriber_history_updated_at ON subscriber_history USING GIN (updated_at);
+CREATE INDEX IF NOT EXISTS idx_subscriber_history_notes ON subscriber_history USING GIN (notes);
+
+-- Add table and column comments for documentation
+COMMENT ON TABLE subscriber_history IS 'Comprehensive history tracking for subscribers including subscriptions, offers, updates, and notes';
+COMMENT ON COLUMN subscriber_history.id IS 'Unique identifier for history record';
+COMMENT ON COLUMN subscriber_history.user_id IS 'Foreign key reference to users table';
+COMMENT ON COLUMN subscriber_history.usr_sub_hstry IS 'JSONB field storing subscription history entries';
+COMMENT ON COLUMN subscriber_history.usr_off_hstry IS 'JSONB field storing offer history entries';
+COMMENT ON COLUMN subscriber_history.updated_at IS 'JSONB field storing account update entries';
+COMMENT ON COLUMN subscriber_history.notes IS 'JSONB field storing admin, system, and user notes';
+COMMENT ON COLUMN subscriber_history.created_at IS 'When this history record was created';
+
+-- Add constraint to ensure user_id is not null
+ALTER TABLE subscriber_history 
+ADD CONSTRAINT chk_user_id_not_null 
+CHECK (user_id IS NOT NULL);
+
+-- Add constraint to ensure JSONB fields are valid JSON when not empty
+ALTER TABLE subscriber_history 
+ADD CONSTRAINT chk_usr_sub_hstry_jsonb 
+CHECK (usr_sub_hstry IS NULL OR jsonb_typeof(usr_sub_hstry) = 'object');
+
+ALTER TABLE subscriber_history 
+ADD CONSTRAINT chk_usr_off_hstry_jsonb 
+CHECK (usr_off_hstry IS NULL OR jsonb_typeof(usr_off_hstry) = 'object');
+
+ALTER TABLE subscriber_history 
+ADD CONSTRAINT chk_updated_at_jsonb 
+CHECK (updated_at IS NULL OR jsonb_typeof(updated_at) = 'object');
+
+ALTER TABLE subscriber_history 
+ADD CONSTRAINT chk_notes_jsonb 
+CHECK (notes IS NULL OR jsonb_typeof(notes) = 'object');
 `
