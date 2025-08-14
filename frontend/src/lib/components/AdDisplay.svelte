@@ -93,7 +93,7 @@
 			campaign_id: 1,
 			title: 'Discover Ancient Civilizations',
 			content: 'Explore archaeological evidence and historical insights. Join our premium membership for exclusive content.',
-			image_url: '/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
+			image_url: '/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 			click_url: '/subscription',
 			ad_type: 'banner',
 			width: 728,

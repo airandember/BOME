@@ -44,7 +44,7 @@
 			price: 150,
 			capacity: 500,
 			registrations: 342,
-			image: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
+			image: "/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 			organizer: "BOME Research Institute",
 			tags: ["archaeology", "research", "Book of Mormon"],
 			featured: true
@@ -60,7 +60,7 @@
 			price: 75,
 			capacity: 200,
 			registrations: 156,
-			image: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
+			image: "/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 			organizer: "Genetic Research Foundation",
 			tags: ["DNA", "genetics", "ancient migrations"],
 			featured: false
@@ -76,7 +76,7 @@
 			price: 25,
 			capacity: 1000,
 			registrations: 687,
-			image: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
+			image: "/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 			organizer: "Desert Museum",
 			tags: ["exhibition", "artifacts", "civilizations"],
 			featured: true
@@ -92,7 +92,7 @@
 			price: 200,
 			capacity: 50,
 			registrations: 23,
-			image: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
+			image: "/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 			organizer: "International Archaeological Society",
 			tags: ["Mesoamerica", "workshop", "archaeology"],
 			featured: false
@@ -108,7 +108,7 @@
 			price: 125,
 			capacity: 300,
 			registrations: 189,
-			image: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
+			image: "/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 			organizer: "Geography Research Center",
 			tags: ["geography", "theories", "symposium"],
 			featured: true
@@ -124,7 +124,7 @@
 			price: 85,
 			capacity: 150,
 			registrations: 98,
-			image: "/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
+			image: "/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png",
 			organizer: "Metallurgy Institute",
 			tags: ["metallurgy", "ancient technology", "pre-Columbian"],
 			featured: false

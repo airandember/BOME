@@ -342,7 +342,7 @@ export const youtubeUtils = {
 
 	// Get video thumbnail with fallback
 	getThumbnail(video: YouTubeVideo, quality: 'default' | 'medium' | 'high' | 'maxres' = 'medium'): string {
-		const PLACEHOLDER_IMG = '/src/lib/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_WEBP.webp'; // Using WEBP format for better performance
+		const PLACEHOLDER_IMG = '/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_WEBP.webp'; // Using WEBP format for better performance
 
 		if (!video?.thumbnail_url) {
 			return PLACEHOLDER_IMG;
