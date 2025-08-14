@@ -1,5 +1,5 @@
-# Multi-stage build for optimized production image
-FROM golang:1.24-alpine AS builder
+# Build stage
+FROM golang:1.21-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
@@ -16,17 +16,14 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application with optimizations
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -a -installsuffix cgo \
-    -ldflags="-w -s" \
-    -o main .
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
-# Final stage - minimal runtime image
+# Final stage
 FROM alpine:latest
 
 # Install runtime dependencies
-RUN apk --no-cache add ca-certificates wget
+RUN apk --no-cache add ca-certificates tzdata curl
 
 # Create non-root user
 RUN addgroup -g 1001 -S bome && \
@@ -38,9 +35,11 @@ WORKDIR /app
 # Copy binary from builder stage
 COPY --from=builder /app/main .
 
-# Create necessary directories
-RUN mkdir -p /app/logs /app/tmp && \
-    chown -R bome:bome /app
+# Copy any additional files needed
+COPY --from=builder /app/internal/MOCK_DATA ./internal/MOCK_DATA
+
+# Change ownership to non-root user
+RUN chown -R bome:bome /app
 
 # Switch to non-root user
 USER bome
@@ -48,9 +47,9 @@ USER bome
 # Expose port
 EXPOSE 8080
 
-# Enhanced health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
 
 # Run the application
 CMD ["./main"] 

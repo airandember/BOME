@@ -177,7 +177,9 @@
 			</div>
 
 			<!-- Three Navigation Cards -->
+			 
 			<div class="navigation-cards">
+				<!-- REMOVE WHEN ARTICLES SITE IS UP
 				<a href="/articles" class="nav-card">
 					<div class="card-action">READ</div>
 					<div class="nav-card-content">
@@ -193,7 +195,7 @@
 						<h3>Articles & Research</h3>
 						<p>Explore scholarly articles and archaeological evidence</p>
 					</div>
-				</a>
+				</a>-->
 
 				<a href="/videos" class="nav-card" on:click|preventDefault={handleGetStarted}>
 					<div class="card-action">WATCH</div>
@@ -208,7 +210,7 @@
 						<p>Watch exclusive documentaries and presentations</p>
 					</div>
 				</a>
-
+				<!-- REMOVE WHEN EVENTS SITE IS UP
 				<a href="/events" class="nav-card">
 					<div class="card-action">ATTEND</div>
 					<div class="nav-card-content">
@@ -223,7 +225,7 @@
 						<h3>Events & Expo</h3>
 						<p>Join conferences, seminars, and exhibitions</p>
 					</div>
-				</a>
+				</a>-->
 			</div>
 		</div>
 	</section>

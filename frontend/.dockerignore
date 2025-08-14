@@ -1,0 +1,52 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Test files
+test/
+tests/
+coverage/
+
+# Documentation
+README.md
+docs/
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Build artifacts
+build/
+dist/
+.svelte-kit/
+
+# Dependencies (will be installed during build)
+node_modules/
+
+# Cache
+.cache/
+.parcel-cache/

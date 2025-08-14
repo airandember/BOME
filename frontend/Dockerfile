@@ -19,6 +19,9 @@ RUN npm run build
 # Production stage
 FROM node:18-alpine AS runner
 
+# Install runtime dependencies
+RUN apk add --no-cache dumb-init
+
 # Create non-root user
 RUN addgroup -g 1001 -S bome && \
     adduser -u 1001 -S bome -G bome
@@ -33,6 +36,9 @@ COPY --from=builder --chown=bome:bome /app/package.json ./package.json
 # Install only production dependencies
 RUN npm ci --only=production && npm cache clean --force
 
+# Change ownership
+RUN chown -R bome:bome /app
+
 # Switch to non-root user
 USER bome
 
@@ -40,8 +46,9 @@ USER bome
 EXPOSE 3000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
 
 # Start the application
-CMD ["npm", "start"] 
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["npm", "run", "preview"] 

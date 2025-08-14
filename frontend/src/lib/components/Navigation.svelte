@@ -110,12 +110,14 @@
 				</div>
 			</div>
 			
+			<!-- REMOVE WHEN ARTICLES AND EVENTS ARE UP
+			
 			<a href="/articles" class="nav-link" on:click={closeMenu}>
 				<span>Articles</span>
 			</a>
 			<a href="/events" class="nav-link" on:click={closeMenu}>
 				<span>Events</span>
-			</a>
+			</a>-->
 			<a href="/about" class="nav-link" on:click={closeMenu}>
 				<span>About</span>
 			</a>
