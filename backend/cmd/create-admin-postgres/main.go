@@ -71,9 +71,9 @@ func main() {
 	// Create admin user
 	var id int
 	err = db.QueryRow(
-		`INSERT INTO users (email, password_hash, first_name, last_name, role, email_verified, created_at, updated_at) 
-		 VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) RETURNING id`,
-		adminEmail, passwordHash, adminFirstName, adminLastName, "super_admin", true,
+		`INSERT INTO users (email, password_hash, first_name, last_name, role, email_verified, password_changed, created_at, updated_at) 
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) RETURNING id`,
+		adminEmail, passwordHash, adminFirstName, adminLastName, "super_admin", true, false,
 	).Scan(&id)
 	if err != nil {
 		log.Fatalf("Failed to create admin user: %v", err)
@@ -84,9 +84,11 @@ func main() {
 	log.Printf("🔑 Password: %s", adminPassword)
 	log.Printf("👤 Role: super_admin")
 	log.Printf("✅ Email verified: true")
+	log.Printf("🔒 Password change required on first login")
 	log.Printf("")
 	log.Printf("🌐 You can now log in to the admin dashboard")
 	log.Printf("⚠️  Remember to change the password in production!")
+	log.Printf("🔐 You will be forced to change this password on first login!")
 }
 
 func getEnv(key, defaultValue string) string {

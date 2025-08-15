@@ -47,6 +47,7 @@ func main() {
 		reset_token TEXT,
 		reset_token_expiry TEXT,
 		verification_token TEXT,
+		password_changed INTEGER DEFAULT 0,
 		created_at TEXT DEFAULT CURRENT_TIMESTAMP,
 		updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 	);
@@ -82,8 +83,8 @@ func main() {
 
 	// Create admin user
 	result, err := db.Exec(
-		`INSERT INTO users (email, password_hash, first_name, last_name, role, email_verified, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-		adminEmail, passwordHash, adminFirstName, adminLastName, "admin", 1,
+		`INSERT INTO users (email, password_hash, first_name, last_name, role, email_verified, password_changed, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+		adminEmail, passwordHash, adminFirstName, adminLastName, "admin", 1, 0,
 	)
 	if err != nil {
 		log.Fatalf("Failed to create admin user: %v", err)
@@ -101,11 +102,13 @@ func main() {
 	log.Printf("🆔 User ID: %d", userID)
 	log.Printf("🔐 Role: admin")
 	log.Printf("✅ Email Verified: true")
+	log.Printf("🔒 Password change required on first login")
 	log.Printf("🗄️  Database: %s", dbPath)
 	log.Printf("")
 	log.Printf("You can now log in to the admin dashboard at:")
 	log.Printf("http://localhost:5174/admin")
 	log.Printf("")
 	log.Printf("⚠️  IMPORTANT: Change these credentials in production!")
+	log.Printf("🔐 You will be forced to change this password on first login!")
 	log.Printf("📁 SQLite database file: %s", dbPath)
 }

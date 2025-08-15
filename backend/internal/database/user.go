@@ -39,6 +39,8 @@ type User struct {
 	IsActive  sql.NullBool
 	SubID     sql.NullString
 	HasSubbed sql.NullBool
+	// Security fields
+	PasswordChanged bool
 }
 
 // UserProfile represents the public profile data for a user
@@ -78,8 +80,8 @@ type Session struct {
 func (db *DB) CreateUser(email, passwordHash, firstName, lastName, role string) (*User, error) {
 	var id int
 	err := db.QueryRow(
-		`INSERT INTO users (email, password_hash, first_name, last_name, role, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING id`,
-		email, passwordHash, firstName, lastName, role,
+		`INSERT INTO users (email, password_hash, first_name, last_name, role, password_changed, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) RETURNING id`,
+		email, passwordHash, firstName, lastName, role, false,
 	).Scan(&id)
 	if err != nil {
 		return nil, err
@@ -128,6 +130,7 @@ func (db *DB) CreateUserWithDetails(userData map[string]interface{}) (*User, err
 		"is_active":          "is_active",
 		"sub_id":             "sub_id",
 		"has_subbed":         "has_subbed",
+		"password_changed":   "password_changed",
 	}
 
 	for field, dbField := range optionalFields {
@@ -163,9 +166,9 @@ func (db *DB) CreateUserWithDetails(userData map[string]interface{}) (*User, err
 func (db *DB) GetUserByID(id int) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
-		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed FROM users WHERE id = $1`,
+		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed, password_changed FROM users WHERE id = $1`,
 		id,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed, &user.PasswordChanged)
 	if err != nil {
 		return nil, err
 	}
@@ -176,9 +179,9 @@ func (db *DB) GetUserByID(id int) (*User, error) {
 func (db *DB) GetUserByEmail(email string) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
-		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed FROM users WHERE email = $1`,
+		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed, password_changed FROM users WHERE email = $1`,
 		email,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed, &user.PasswordChanged)
 	if err != nil {
 		return nil, err
 	}
@@ -303,6 +306,12 @@ func (db *DB) CheckUserExists(email string) (bool, error) {
 // UpdateUserPassword updates a user's password hash
 func (db *DB) UpdateUserPassword(userID int, newPasswordHash string) error {
 	_, err := db.Exec(`UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`, newPasswordHash, userID)
+	return err
+}
+
+// UpdateUserPasswordWithChange updates a user's password hash and marks it as changed
+func (db *DB) UpdateUserPasswordWithChange(userID int, newPasswordHash string) error {
+	_, err := db.Exec(`UPDATE users SET password_hash = $1, password_changed = TRUE, updated_at = NOW() WHERE id = $2`, newPasswordHash, userID)
 	return err
 }
 

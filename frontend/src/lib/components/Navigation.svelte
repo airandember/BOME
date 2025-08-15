@@ -117,13 +117,13 @@
 			</a>
 			<a href="/events" class="nav-link" on:click={closeMenu}>
 				<span>Events</span>
-			</a>-->
+			</a>
 			<a href="/about" class="nav-link" on:click={closeMenu}>
 				<span>About</span>
 			</a>
 			<a href="/contact" class="nav-link" on:click={closeMenu}>
 				<span>Contact</span>
-			</a>
+			</a>-->
 			<a href="/admin" class="admin-link" title="Admin Panel" aria-label="Admin Login" style="height: 36px; width: 36px; padding: 0.5rem; border-radius: 50px;">
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
 					<rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
@@ -191,7 +191,7 @@
 							</a>
 							<div class="dropdown-divider"></div>
 						{/if}
-						<a href="/dashboard" class="dropdown-item" on:click={closeMenu}>
+						<!--<a href="/dashboard" class="dropdown-item" on:click={closeMenu}>
 							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<rect x="3" y="3" width="7" height="9"></rect>
 								<rect x="14" y="3" width="7" height="5"></rect>
@@ -199,7 +199,7 @@
 								<rect x="3" y="16" width="7" height="5"></rect>
 							</svg>
 							<span>Dashboard</span>
-						</a>
+						</a>-->
 						<a href="/dashboard?tab=profile" class="dropdown-item" on:click={closeMenu}>
 							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
@@ -207,7 +207,7 @@
 							</svg>
 							<span>Profile</span>
 						</a>
-						<a href="/subscription" class="dropdown-item" on:click={closeMenu}>
+						<!--<a href="/subscription" class="dropdown-item" on:click={closeMenu}>
 							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"></path>
 								<polyline points="16,21 12,17 8,21"></polyline>
@@ -221,7 +221,7 @@
 								<line x1="1" y1="10" x2="23" y2="10"></line>
 							</svg>
 							<span>Billing</span>
-						</a>
+						</a>-->
 						<div class="dropdown-divider"></div>
 						<button class="dropdown-item logout" on:click={handleLogout}>
 							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

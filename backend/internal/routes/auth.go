@@ -373,12 +373,13 @@ func LoginHandler(db *database.DB) gin.HandlerFunc {
 			"token_type":    tokenPair.TokenType,
 			"session_id":    session.ID,
 			"user": gin.H{
-				"id":             user.ID,
-				"email":          user.Email,
-				"role":           user.Role,
-				"first_name":     user.FirstName,
-				"last_name":      user.LastName,
-				"email_verified": user.EmailVerified,
+				"id":                user.ID,
+				"email":             user.Email,
+				"role":              user.Role,
+				"first_name":        user.FirstName,
+				"last_name":         user.LastName,
+				"email_verified":    user.EmailVerified,
+				"password_changed":  user.PasswordChanged,
 			},
 		})
 	}
@@ -645,8 +646,8 @@ func ChangePasswordHandler(db *database.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Update password
-		if err := db.UpdateUserPassword(user.ID, hash); err != nil {
+		// Update password and mark as changed
+		if err := db.UpdateUserPasswordWithChange(user.ID, hash); err != nil {
 			log.Printf("Failed to update password: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": "Service temporarily unavailable. Please try again later.",
