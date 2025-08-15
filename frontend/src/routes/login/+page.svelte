@@ -2,6 +2,7 @@
 	import { auth, isAdmin } from '$lib/auth';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import Navigation from '$lib/components/Navigation.svelte';
 
 	let email = '';
 	let password = '';
@@ -47,7 +48,7 @@
 <svelte:head>
 	<title>Login - Book of Mormon Evidences</title>
 </svelte:head>
-
+<Navigation />
 <div class="auth-container">
 	<div class="auth-card">
 		<div class="auth-header">
@@ -114,13 +115,14 @@
 
 	.auth-card {
 		width: 100%;
-		max-width: 400px;
+		max-width: 650px;
+		min-height: 650px;
 		padding: 2.5rem;
 		background: var(--card-bg);
-		border-radius: 20px;
-		box-shadow: 
-			8px 8px 16px var(--shadow-dark),
-			-8px -8px 16px var(--shadow-light);
+	    border-radius: 18px;
+        background: linear-gradient(145deg, var(--bg-quaternary), var(--bg-primary));
+        box-shadow:  26px 26px 36px var(--bg-quaternary),
+             -26px -26px 36px var(--bg-secondary);
 	}
 
 	.auth-header {
@@ -136,7 +138,7 @@
 	}
 
 	.auth-header p {
-		color: var(--text-secondary);
+		color: var(--text-inverse);
 		font-size: 0.9rem;
 	}
 
@@ -160,6 +162,7 @@
 
 	.form-group input {
 		padding: 0.75rem 1rem;
+		min-height: 70px;
 		border: none;
 		border-radius: 12px;
 		background: var(--input-bg);
@@ -181,9 +184,10 @@
 
 	.btn-primary {
 		padding: 0.75rem 1.5rem;
+		min-height: 70px;
 		border: none;
 		border-radius: 12px;
-		background: var(--accent-color);
+		background: var(--bg-glass-dark);
 		color: white;
 		font-size: 1rem;
 		font-weight: 600;
