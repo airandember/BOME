@@ -93,10 +93,9 @@ func CORS() gin.HandlerFunc {
 		// In production, implement proper origin validation
 		// For now, allow specific origins or all during development
 		allowedOrigins := []string{
-			"http://localhost:3000",    // Production frontend
-			"http://localhost:4173",    // SvelteKit preview
-			"http://localhost:5173",    // SvelteKit dev server
-			"https://bome.example.com", // Replace with actual domain
+			"http://localhost:3000", // Production frontend
+			"http://localhost:4173", // SvelteKit preview
+			"http://localhost:5173", // SvelteKit dev server
 		}
 
 		// Check if origin is allowed
@@ -106,6 +105,11 @@ func CORS() gin.HandlerFunc {
 				allowed = true
 				break
 			}
+		}
+
+		// Also allow DigitalOcean App Platform URLs
+		if !allowed && strings.HasSuffix(origin, ".ondigitalocean.app") && strings.HasPrefix(origin, "https://") {
+			allowed = true
 		}
 
 		if allowed {

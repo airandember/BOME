@@ -25,8 +25,9 @@ const getEnvironment = (): 'development' | 'production' | 'staging' => {
 	return 'development';
 };
 
-// Configuration object
+// Configuration object with explicit fallbacks for preview mode
 export const config: AppConfig = {
+	// Always use localhost:8080 for local development/preview
 	apiBaseUrl: getEnvVar('VITE_API_BASE_URL', 'http://localhost:8080/api/v1'),
 	wsUrl: getEnvVar('VITE_WS_URL', 'ws://localhost:8080/ws'),
 	appName: getEnvVar('VITE_APP_NAME', 'Book of Mormon Evidences'),
@@ -51,3 +52,12 @@ export const isDevelopment = (): boolean => {
 
 // Export individual config values for convenience
 export const { apiBaseUrl, wsUrl, appName, appVersion, environment } = config;
+
+// Debug logging in development
+if (isDevelopment() && typeof console !== 'undefined') {
+	console.log('🔧 Config loaded:', {
+		apiBaseUrl: config.apiBaseUrl,
+		wsUrl: config.wsUrl,
+		environment: config.environment
+	});
+}
