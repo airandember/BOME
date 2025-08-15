@@ -23,7 +23,7 @@ func main() {
 	dbHost := getEnv("DB_HOST", "localhost")
 	dbPort := getEnv("DB_PORT", "25060")
 	dbName := getEnv("DB_NAME", "bomedb")
-	dbUser := getEnv("DB_USER", "doadmin")
+	dbUser := getEnv("DB_USER", "bomedb")
 	dbPassword := getEnv("DB_PASSWORD", "")
 
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=require",
