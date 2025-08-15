@@ -3,6 +3,7 @@ import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import type { Role } from './types/roles';
+import { apiBaseUrl } from './config';
 
 export interface User {
 	id: number;
@@ -39,7 +40,7 @@ export interface AuthError {
 }
 
 // Configuration
-const API_BASE_URL = browser ? (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1') : 'http://localhost:8080/api/v1';
+const API_BASE_URL = apiBaseUrl;
 
 // Stores
 export const authTokens = writable<AuthTokens | null>(null);
