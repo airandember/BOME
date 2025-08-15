@@ -2,6 +2,7 @@
 	import { auth } from '$lib/auth';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import Navigation from '$lib/components/Navigation.svelte';
 
 	let email = '';
 	let password = '';
@@ -63,7 +64,7 @@
 <svelte:head>
 	<title>Register - Book of Mormon Evidences</title>
 </svelte:head>
-
+<Navigation />
 <div class="auth-container">
 	<div class="auth-card">
 		<div class="auth-header">
@@ -166,17 +167,19 @@
 		justify-content: center;
 		padding: 2rem;
 		background: var(--bg-color);
+		
 	}
 
 	.auth-card {
 		width: 100%;
-		max-width: 450px;
+		max-width: 650px;
 		padding: 2.5rem;
 		background: var(--card-bg);
-		border-radius: 20px;
-		box-shadow: 
-			8px 8px 16px var(--shadow-dark),
-			-8px -8px 16px var(--shadow-light);
+		border-radius: 50px;
+		background: #fffefe;
+		box-shadow:  20px 20px 60px #bebebe,
+             -20px -20px 60px #ffffff;
+		
 	}
 
 	.auth-header {
@@ -222,6 +225,7 @@
 
 	.form-group input {
 		padding: 0.75rem 1rem;
+		min-height: 70px;
 		border: none;
 		border-radius: 12px;
 		background: var(--input-bg);
@@ -231,6 +235,9 @@
 			inset 2px 2px 4px var(--shadow-dark),
 			inset -2px -2px 4px var(--shadow-light);
 		transition: all 0.2s ease;
+		border-radius: 14px;
+box-shadow: inset 5px 5px 10px #cccccc,
+            inset -5px -5px 10px #ffffff;
 	}
 
 	.form-group input:focus {
@@ -243,10 +250,11 @@
 
 	.btn-primary {
 		padding: 0.75rem 1.5rem;
+		min-height: 70px;
 		border: none;
 		border-radius: 12px;
-		background: var(--accent-color);
-		color: white;
+		background: var(--bg-glass-dark);
+		color: var(--bg-inverse);
 		font-size: 1rem;
 		font-weight: 600;
 		cursor: pointer;
