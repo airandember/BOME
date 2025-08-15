@@ -636,6 +636,12 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}): P
 function getCurrentTokens(): AuthTokens | null {
     let tokens: AuthTokens | null = null;
     authTokens.subscribe(value => tokens = value)();
+    
+    // If store is empty, try to get tokens directly from storage
+    if (!tokens) {
+        tokens = SecureTokenStorage.getTokens();
+    }
+    
     return tokens;
 }
 
