@@ -11,6 +11,7 @@ export interface User {
 	first_name: string;
 	last_name: string;
 	email_verified: boolean;
+	password_changed: boolean;
 }
 
 export interface AuthTokens {
@@ -218,7 +219,8 @@ function createAuthStore() {
 					role: data.user.role,
 					first_name: data.user.first_name,
 					last_name: data.user.last_name,
-					email_verified: data.user.email_verified
+					email_verified: data.user.email_verified,
+					password_changed: data.user.password_changed ?? true
 				};
 				
 				// console.log('Auth: Parsed tokens and user:', { tokens, user });
