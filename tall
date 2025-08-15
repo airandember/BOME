@@ -1,0 +1,70 @@
+{
+	"name": "bome-frontend",
+	"private": true,
+	"version": "1.0.0",
+	"license": "UNLICENSED",
+	"author": "BOME Development Team",
+	"description": "Book of Mormon Evidence Hub - Frontend Application (Proprietary)",
+	"type": "module",
+	"engines": {
+		"node": ">=18.0.0",
+		"npm": ">=8.0.0"
+	},
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"start": "PORT=8080 node build/index.js",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"format": "prettier --write .",
+		"lint": "prettier --check ."
+	},
+	"overrides": {
+		"picomatch": "^4.0.3",
+		"yaml": "^2.4.2"
+	},
+	"devDependencies": {
+		"@sveltejs/kit": "^2.30.1",
+		"@sveltejs/adapter-node": "^5.2.16",
+		"@sveltejs/vite-plugin-svelte": "^3.0.0",
+		"@sveltejs/adapter-auto": "^6.1.0",
+		"@sveltejs/check": "^4.0.0",
+		"@sveltejs/tsconfig": "^5.0.0",
+		"@types/node": "^20.0.0",
+		"@typescript-eslint/eslint-plugin": "^6.0.0",
+		"@typescript-eslint/parser": "^6.0.0",
+		"eslint": "^8.0.0",
+		"eslint-config-prettier": "^9.0.0",
+		"eslint-plugin-svelte": "^2.30.0",
+		"prettier": "^3.0.0",
+		"prettier-plugin-svelte": "^3.0.0",
+		"svelte": "^5.0.0",
+		"svelte-check": "^4.0.0",
+		"tslib": "^2.0.0",
+		"typescript": "^5.0.0",
+		"vite": "^5.0.0"
+	},
+	"dependencies": {
+		"@sveltejs/kit": "^2.30.1",
+		"@sveltejs/adapter-node": "^5.2.16",
+		"@sveltejs/vite-plugin-svelte": "^3.0.0",
+		"@sveltejs/adapter-auto": "^6.1.0",
+		"@sveltejs/check": "^4.0.0",
+		"@sveltejs/tsconfig": "^5.0.0",
+		"@types/node": "^20.0.0",
+		"@typescript-eslint/eslint-plugin": "^6.0.0",
+		"@typescript-eslint/parser": "^6.0.0",
+		"eslint": "^8.0.0",
+		"eslint-config-prettier": "^9.0.0",
+		"eslint-plugin-svelte": "^2.30.0",
+		"prettier": "^3.0.0",
+		"prettier-plugin-svelte": "^3.0.0",
+		"svelte": "^5.0.0",
+		"svelte-check": "^4.0.0",
+		"tslib": "^2.0.0",
+		"typescript": "^5.0.0",
+		"vite": "^5.0.0"
+	}
+}
