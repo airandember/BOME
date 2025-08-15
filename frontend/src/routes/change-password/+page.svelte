@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { auth, SecureTokenStorage, isAdmin } from '$lib/auth';
+	import { auth, SecureTokenStorage, isAdmin, apiRequest } from '$lib/auth';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 
@@ -39,11 +39,10 @@
 		error = '';
 
 		try {
-			const response = await fetch('/api/v1/auth/change-password', {
+			const response = await apiRequest('/auth/change-password', {
 				method: 'POST',
 				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${SecureTokenStorage.getAccessToken()}`
+					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({
 					current_password: currentPassword,
