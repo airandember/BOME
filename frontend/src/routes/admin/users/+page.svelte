@@ -84,12 +84,7 @@
 				throw new Error('No authentication token available');
 			}
 
-			const response = await fetch('/api/v1/admin/rolesAndDepartments', {
-				headers: {
-					'Authorization': `Bearer ${token}`,
-					'Content-Type': 'application/json'
-				}
-			});
+					const response = await apiRequest('/admin/rolesAndDepartments');
 
 			if (!response.ok) {
 				throw new Error(`HTTP error! status: ${response.status}`);
@@ -124,11 +119,7 @@
 		}
 
 		try {
-			const response = await fetch('/api/v1/admin/users/stats', {
-				headers: {
-					'Authorization': `Bearer ${token}`
-				}
-			});
+					const response = await apiRequest('/admin/users/stats');
 
 			if (response.ok) {
 				const data = await response.json();
@@ -169,11 +160,7 @@
 			if (roleFilter) params.append('role', roleFilter);
 			if (statusFilter) params.append('status', statusFilter);
 
-			const response = await fetch(`/api/v1/admin/users?${params}`, {
-				headers: {
-					'Authorization': `Bearer ${token}`
-				}
-			});
+					const response = await apiRequest(`/admin/users?${params}`);
 
 			if (response.ok) {
 				const data = await response.json();

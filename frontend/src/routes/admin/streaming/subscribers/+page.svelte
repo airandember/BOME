@@ -100,12 +100,7 @@
 				return;
 			}
 			
-			const response = await fetch('/api/v1/admin/rolesAndDepartments', {
-				headers: {
-					'Authorization': `Bearer ${token}`,
-					'Content-Type': 'application/json'
-				}
-			});
+					const response = await apiRequest('/admin/rolesAndDepartments');
 			
 			if (response.ok) {
 				const data = await response.json();
