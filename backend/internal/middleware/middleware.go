@@ -64,12 +64,10 @@ func SecurityHeaders() gin.HandlerFunc {
 			"style-src 'self' 'unsafe-inline'; " +
 			"img-src 'self' data: https: blob:; " +
 			"font-src 'self' data:; " +
-			"connect-src 'self' https://api.stripe.com https://bunnycdn.com; " +
+			"connect-src 'self' http://localhost:3000 http://localhost:4173 http://localhost:5173 http://localhost:8080 https://api.stripe.com https://bunnycdn.com; " +
 			"frame-ancestors 'none'; " +
 			"base-uri 'self'; " +
-			"form-action 'self'; " +
-			"upgrade-insecure-requests; " +
-			"block-all-mixed-content;"
+			"form-action 'self';"
 
 		c.Header("Content-Security-Policy", csp)
 
@@ -95,8 +93,9 @@ func CORS() gin.HandlerFunc {
 		// In production, implement proper origin validation
 		// For now, allow specific origins or all during development
 		allowedOrigins := []string{
-			"http://localhost:3000",
-			"http://localhost:5173",
+			"http://localhost:3000",    // Production frontend
+			"http://localhost:4173",    // SvelteKit preview
+			"http://localhost:5173",    // SvelteKit dev server
 			"https://bome.example.com", // Replace with actual domain
 		}
 

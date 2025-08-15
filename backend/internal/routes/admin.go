@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,8 +15,6 @@ import (
 	"bome-backend/internal/database"
 	"bome-backend/internal/middleware"
 	"bome-backend/internal/services"
-
-	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -1637,6 +1636,9 @@ func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
 	router.GET("/placements/performance", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAdPlacementsPerformanceHandler(db))
 	router.POST("/placements", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), CreateAdPlacementHandler(db))
 	router.PUT("/placements/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), UpdateAdPlacementHandler(db))
+
+	// Database Management
+	router.GET("/database/export", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), DatabaseExportHandler(db))
 
 	// Design System Routes
 	// Temporarily disabled for debugging
