@@ -4,6 +4,7 @@
 	import { auth } from '$lib/auth';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import { apiBaseUrl } from '$lib/config';
 
 	let user: any = null;
 	let loading = true;
@@ -156,7 +157,7 @@
 
 	// Import apiRequest from auth module
 	async function apiRequest(endpoint: string, options: RequestInit = {}): Promise<Response> {
-		const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1';
+		const baseURL = apiBaseUrl;
 		const url = `${baseURL}${endpoint}`;
 		
 		const defaultHeaders: Record<string, string> = {
