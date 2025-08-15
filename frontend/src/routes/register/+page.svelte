@@ -174,11 +174,10 @@
 		width: 100%;
 		max-width: 650px;
 		padding: 2.5rem;
-		background: var(--card-bg);
 		border-radius: 50px;
-		background: #fffefe;
-		box-shadow:  20px 20px 60px #bebebe,
-             -20px -20px 60px #ffffff;
+		background: var(--bg-primary);
+		box-shadow:  20px 20px 60px var(--bg-quaternary),
+             -20px -20px 60px var(--bg-secondary);
 		
 	}
 
@@ -229,15 +228,15 @@
 		border: none;
 		border-radius: 12px;
 		background: var(--input-bg);
-		color: var(--text-primary);
+		color: var(--text-secondary);
 		font-size: 1rem;
 		box-shadow: 
 			inset 2px 2px 4px var(--shadow-dark),
 			inset -2px -2px 4px var(--shadow-light);
 		transition: all 0.2s ease;
 		border-radius: 14px;
-box-shadow: inset 5px 5px 10px #cccccc,
-            inset -5px -5px 10px #ffffff;
+        box-shadow: inset 5px 5px 10px var(--bg-quaternary),
+            inset -5px -5px 10px var(--bg-secondary);
 	}
 
 	.form-group input:focus {

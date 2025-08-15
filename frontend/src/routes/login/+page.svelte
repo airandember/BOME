@@ -121,8 +121,8 @@
 		background: var(--card-bg);
 	    border-radius: 18px;
         background: linear-gradient(145deg, var(--bg-quaternary), var(--bg-primary));
-        box-shadow:  26px 26px 36px #b0b0b0,
-             -26px -26px 36px #ffffff;
+        box-shadow:  26px 26px 36px var(--bg-quaternary),
+             -26px -26px 36px var(--bg-secondary);
 	}
 
 	.auth-header {
