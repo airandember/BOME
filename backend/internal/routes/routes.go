@@ -173,6 +173,7 @@ func SetupRoutes(
 		auth.POST("/login", LoginHandler(db))
 		auth.POST("/register", RegisterHandler(db, emailService))
 		auth.POST("/logout", LogoutHandler(db))
+		auth.POST("/change-password", middleware.AuthRequired(), ChangePasswordHandler(db))
 	}
 
 	// Video routes using database handlers with bunny.net integration

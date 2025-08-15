@@ -121,3 +121,7 @@ ehthumbs.db
 *.test
 *.out
 go.work 
+data/database_sql.sql
+data/schema_only.sql
+.gitignore
+data/static_tables.sql
