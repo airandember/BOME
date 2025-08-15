@@ -176,6 +176,15 @@ func SetupRoutes(
 		auth.POST("/change-password", middleware.AuthRequired(), ChangePasswordHandler(db))
 	}
 
+	// User profile routes
+	users := v1.Group("/users")
+	{
+		users.GET("/me", middleware.AuthRequired(), GetCurrentUserHandler(db))
+		users.PUT("/me", middleware.AuthRequired(), UpdateCurrentUserHandler(db))
+		users.GET("/profile", middleware.AuthRequired(), GetCurrentUserHandler(db))    // Alias for /me
+		users.PUT("/profile", middleware.AuthRequired(), UpdateCurrentUserHandler(db)) // Alias for /me
+	}
+
 	// Video routes using database handlers with bunny.net integration
 	videos := v1.Group("/videos")
 	{

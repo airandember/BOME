@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/auth';
+	import { auth, apiRequest } from '$lib/auth';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import { apiBaseUrl } from '$lib/config';
@@ -155,31 +155,7 @@
 					 isValidEmail(formData.email) && 
 					 isValidWebsite(formData.website);
 
-	// Import apiRequest from auth module
-	async function apiRequest(endpoint: string, options: RequestInit = {}): Promise<Response> {
-		const baseURL = apiBaseUrl;
-		const url = `${baseURL}${endpoint}`;
-		
-		const defaultHeaders: Record<string, string> = {
-			'Content-Type': 'application/json',
-		};
-		
-		// Add auth token if available
-		const tokens = JSON.parse(localStorage.getItem('bome_auth_tokens') || 'null');
-		if (tokens?.access_token) {
-			defaultHeaders['Authorization'] = `Bearer ${tokens.access_token}`;
-		}
-		
-		const response = await fetch(url, {
-			...options,
-			headers: {
-				...defaultHeaders,
-				...options.headers,
-			},
-		});
-		
-		return response;
-	}
+
 </script>
 
 <svelte:head>

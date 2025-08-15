@@ -755,3 +755,144 @@ func LogoutHandler(db *database.DB) gin.HandlerFunc {
 		})
 	}
 }
+
+// UpdateUserRequest represents the user profile update payload
+type UpdateUserRequest struct {
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Bio       string `json:"bio"`
+	Location  string `json:"location"`
+	Website   string `json:"website"`
+	Phone     string `json:"phone"`
+}
+
+// GetCurrentUserHandler returns the current user's profile information
+func GetCurrentUserHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Get user ID from context (set by AuthRequired middleware)
+		userID, exists := c.Get("user_id")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			return
+		}
+
+		// Get user from database
+		user, err := db.GetUserByID(userID.(int))
+		if err != nil {
+			if err == sql.ErrNoRows {
+				c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+				return
+			}
+			log.Printf("Failed to get user: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Service temporarily unavailable. Please try again later.",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"user": gin.H{
+				"id":             user.ID,
+				"email":          user.Email,
+				"first_name":     user.FirstName,
+				"last_name":      user.LastName,
+				"role":           user.Role,
+				"email_verified": user.EmailVerified,
+				"bio":            user.Bio,
+				"location":       user.Location,
+				"website":        user.Website,
+				"phone":          user.Phone,
+				"avatar_url":     user.AvatarURL,
+				"created_at":     user.CreatedAt,
+				"last_login":     user.LastLogin,
+			},
+		})
+	}
+}
+
+// UpdateCurrentUserHandler updates the current user's profile information
+func UpdateCurrentUserHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Get user ID from context (set by AuthRequired middleware)
+		userID, exists := c.Get("user_id")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			return
+		}
+
+		var req UpdateUserRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Sanitize input
+		req.FirstName = services.SanitizeString(req.FirstName)
+		req.LastName = services.SanitizeString(req.LastName)
+		req.Bio = services.SanitizeString(req.Bio)
+		req.Location = services.SanitizeString(req.Location)
+		req.Website = services.SanitizeString(req.Website)
+		req.Phone = services.SanitizeString(req.Phone)
+
+		// Validate names if provided
+		if req.FirstName != "" {
+			if err := services.ValidateName(req.FirstName); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid first name: " + err.Error()})
+				return
+			}
+		}
+		if req.LastName != "" {
+			if err := services.ValidateName(req.LastName); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid last name: " + err.Error()})
+				return
+			}
+		}
+
+		// Update user profile
+		updates := map[string]interface{}{
+			"first_name": req.FirstName,
+			"last_name":  req.LastName,
+			"bio":        req.Bio,
+			"location":   req.Location,
+			"website":    req.Website,
+			"phone":      req.Phone,
+		}
+		err := db.UpdateUserProfile(userID.(int), updates)
+		if err != nil {
+			log.Printf("Failed to update user profile: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Service temporarily unavailable. Please try again later.",
+			})
+			return
+		}
+
+		// Get updated user data
+		user, err := db.GetUserByID(userID.(int))
+		if err != nil {
+			log.Printf("Failed to get updated user: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Profile updated but failed to retrieve updated data.",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Profile updated successfully",
+			"user": gin.H{
+				"id":             user.ID,
+				"email":          user.Email,
+				"first_name":     user.FirstName,
+				"last_name":      user.LastName,
+				"role":           user.Role,
+				"email_verified": user.EmailVerified,
+				"bio":            user.Bio,
+				"location":       user.Location,
+				"website":        user.Website,
+				"phone":          user.Phone,
+				"avatar_url":     user.AvatarURL,
+				"created_at":     user.CreatedAt,
+				"last_login":     user.LastLogin,
+			},
+		})
+	}
+}

@@ -166,12 +166,34 @@
 		}
 	}
 
-	// Check Conflicts between Bunny and Local
+	// Check Conflicts between Bunny and Local, and sync if master list is empty
 	async function checkConflicts() {
 		try {
 			checkingConflicts = true;
-			showToast('Checking for conflicts...', 'info');
 			
+			// If master list is empty, sync from Bunny.net first
+			if (videos.length === 0 && totalVideos === 0) {
+				showToast('Master list is empty. Syncing videos from Bunny.net...', 'info');
+				
+				const syncResponse = await masterVideoService.syncFromBunny();
+				if (syncResponse.success) {
+					showToast(`Successfully synced ${syncResponse.result.synced || 0} videos from Bunny.net`, 'success');
+					
+					// Reload videos after sync
+					await loadVideos();
+					await loadAnalytics();
+					
+					// Now check for conflicts after sync
+					showToast('Checking for conflicts...', 'info');
+				} else {
+					showToast('Failed to sync from Bunny.net', 'error');
+					return;
+				}
+			} else {
+				showToast('Checking for conflicts...', 'info');
+			}
+			
+			// Check for conflicts
 			const response = await masterVideoService.checkConflicts();
 			if (response.success) {
 				lastConflictCheck = response.result;
@@ -182,8 +204,9 @@
 				
 				showToast(message, type);
 				
-				// Reload data
-				loadVideos();
+				// Reload data to show any updates
+				await loadVideos();
+				await loadAnalytics();
 			} else {
 				showToast('Conflict check failed', 'error');
 			}
