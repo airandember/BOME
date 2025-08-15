@@ -756,8 +756,8 @@ func LogoutHandler(db *database.DB) gin.HandlerFunc {
 	}
 }
 
-// UpdateUserRequest represents the user profile update payload
-type UpdateUserRequest struct {
+// UpdateUserProfileRequest represents the user profile update payload
+type UpdateUserProfileRequest struct {
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 	Bio       string `json:"bio"`
@@ -820,7 +820,7 @@ func UpdateCurrentUserHandler(db *database.DB) gin.HandlerFunc {
 			return
 		}
 
-		var req UpdateUserRequest
+		var req UpdateUserProfileRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
