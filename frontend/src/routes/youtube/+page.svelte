@@ -5,11 +5,16 @@
 	import Footer from '$lib/components/Footer.svelte';
 	import LazyImage from '$lib/components/LazyImage.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import FullscreenVideoModal from '$lib/components/FullscreenVideoModal.svelte';
 	import type { YouTubeVideo, ChannelInfo } from '$lib/types/youtube';
 
 	let searchTerm = '';
 	let selectedCategory = '';
 	let filteredVideos: YouTubeVideo[] = [];
+	
+	// Fullscreen video modal state
+	let selectedVideo: YouTubeVideo | null = null;
+	let isModalOpen = false;
 
 	// Subscribe to store
 	$: state = $youtubeStore;
@@ -65,9 +70,16 @@
 		youtubeActions.getAllVideos(20);
 	}
 
-	// Open video in new tab
+	// Open video in fullscreen modal
 	function openVideo(video: YouTubeVideo) {
-		window.open(video.video_url, '_blank');
+		selectedVideo = video;
+		isModalOpen = true;
+	}
+	
+	// Close video modal
+	function closeVideoModal() {
+		isModalOpen = false;
+		selectedVideo = null;
 	}
 
 	// Format date for display
@@ -169,6 +181,7 @@
 						<button 
 							class="clear-search"
 							on:click={() => { searchTerm = ''; youtubeActions.clearSearch(); }}
+							aria-label="Clear search"
 						>
 							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<line x1="18" y1="6" x2="6" y2="18"></line>
@@ -469,7 +482,7 @@
 	}
 
 	.container {
-		max-width: 1200px;
+		max-width: 100%;
 		margin: 0 auto;
 		padding: 0 var(--space-xl);
 	}
@@ -650,6 +663,7 @@
 		cursor: pointer;
 		border: 1px solid rgba(255, 255, 255, 0.1);
 		position: relative;
+		transform-origin: center;
 	}
 
 	.video-card::before {
@@ -672,6 +686,11 @@
 
 	.video-card:hover::before {
 		opacity: 1;
+	}
+
+	.video-card:active {
+		transform: translateY(-8px) scale(0.98);
+		transition: transform 0.1s ease-out;
 	}
 
 	.video-thumbnail {
@@ -715,6 +734,12 @@
 		transform: translate(-50%, -50%) scale(1.1);
 	}
 
+	.video-card:active .play-overlay {
+		transform: translate(-50%, -50%) scale(1.2);
+		background: rgba(255, 0, 0, 0.9);
+		border-color: rgba(255, 255, 255, 0.6);
+	}
+
 	.duration-badge {
 		position: absolute;
 		bottom: var(--space-sm);
@@ -744,6 +769,7 @@
 		line-height: var(--leading-snug);
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
+		line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 	}
@@ -904,4 +930,11 @@
 			font-size: var(--text-xl);
 		}
 	}
-</style> 
+</style>
+
+<!-- Fullscreen Video Modal -->
+<FullscreenVideoModal 
+	video={selectedVideo} 
+	bind:isOpen={isModalOpen}
+	on:close={closeVideoModal}
+/> 

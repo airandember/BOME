@@ -4,6 +4,7 @@
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 import { get } from 'svelte/store';
+import { config } from '$lib/config';
 
 // Import the auth store for token management
 import { auth } from '$lib/auth';
@@ -34,7 +35,7 @@ class ApiClient {
 	private baseUrl: string;
 
 	constructor() {
-		this.baseUrl = browser ? (import.meta.env.VITE_API_BASE_URL || '/api/v1') : '';
+		this.baseUrl = browser ? config.apiBaseUrl : '';
 	}
 
 	get token(): string | null {

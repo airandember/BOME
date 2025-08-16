@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { apiRequest } from '$lib/auth';
 
 // Types
 interface YouTubeVideo {
@@ -79,13 +80,10 @@ const initialState: YouTubeState = {
 // Create stores
 export const youtubeStore = writable<YouTubeState>(initialState);
 
-// API Configuration
-const API_BASE_URL = '/api/v1/youtube';
-
-// Helper function for API calls
+// Helper function for API calls using apiRequest
 async function apiCall<T>(endpoint: string): Promise<T> {
 	try {
-		const response = await fetch(`${API_BASE_URL}${endpoint}`);
+		const response = await apiRequest(`/youtube${endpoint}`);
 		
 		if (!response.ok) {
 			throw new Error(`HTTP error! status: ${response.status}`);
@@ -93,7 +91,7 @@ async function apiCall<T>(endpoint: string): Promise<T> {
 		
 		return await response.json();
 	} catch (error) {
-		console.error(`API call failed for ${endpoint}:`, error);
+		console.error(`API call failed for /youtube${endpoint}:`, error);
 		throw error;
 	}
 }

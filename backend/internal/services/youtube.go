@@ -13,9 +13,12 @@ import (
 	"bome-backend/internal/database"
 )
 
-// YouTubeService handles YouTube operations - production ready but using mock data
+// YouTubeService handles YouTube operations - production ready with database integration
 type YouTubeService struct {
+	db           *database.DB
+	rssService   *YouTubeRSSService
 	mockDataPath string
+	useDatabase  bool
 }
 
 // YouTubeMockData represents the structure of our mock JSON file
@@ -94,13 +97,28 @@ type ChannelInfo struct {
 
 // NewYouTubeService creates a new YouTube service
 func NewYouTubeService(db *database.DB) *YouTubeService {
-	// Mock data path - in production this would be replaced with real API calls
+	// Mock data path - fallback when database is empty
 	mockDataPath := filepath.Join("internal", "MOCK_DATA", "YOUTUBE_MOCK.json")
 
-	log.Printf("YouTube service initialized with mock data from: %s", mockDataPath)
+	// Initialize RSS service with Book of Mormon Evidence channel
+	channelID := "UCHp1EBgpKytZt_-j72EZ83Q"
+	rssService := NewYouTubeRSSService(db, channelID)
+
+	// Check if we have videos in database
+	videoCount, err := db.GetYouTubeVideoCount()
+	useDatabase := err == nil && videoCount > 0
+
+	if useDatabase {
+		log.Printf("YouTube service initialized with database (%d videos)", videoCount)
+	} else {
+		log.Printf("YouTube service initialized with mock data from: %s", mockDataPath)
+	}
 
 	return &YouTubeService{
+		db:           db,
+		rssService:   rssService,
 		mockDataPath: mockDataPath,
+		useDatabase:  useDatabase,
 	}
 }
 
@@ -150,6 +168,22 @@ func (y *YouTubeService) convertMockToDatabase(mockVideo YouTubeVideoMock) (data
 
 // GetLatestVideos returns the latest YouTube videos sorted by newest first
 func (y *YouTubeService) GetLatestVideos(limit int) (*YouTubeVideosResponse, error) {
+	if y.useDatabase {
+		// Get videos from database
+		videos, err := y.db.GetYouTubeVideos(limit)
+		if err != nil {
+			log.Printf("Database query failed, falling back to mock data: %v", err)
+			// Fall through to mock data
+		} else {
+			return &YouTubeVideosResponse{
+				Videos:      videos,
+				LastUpdated: time.Now(),
+				TotalCount:  len(videos),
+			}, nil
+		}
+	}
+
+	// Fallback to mock data
 	mockData, err := y.loadMockData()
 	if err != nil {
 		return nil, err
@@ -184,6 +218,18 @@ func (y *YouTubeService) GetLatestVideos(limit int) (*YouTubeVideosResponse, err
 
 // GetVideoByID returns a specific video by ID
 func (y *YouTubeService) GetVideoByID(id string) (*database.YouTubeVideo, error) {
+	if y.useDatabase {
+		// Try to get video from database first
+		video, err := y.db.GetYouTubeVideoByID(id)
+		if err != nil {
+			log.Printf("Database query failed for video %s, falling back to mock data: %v", id, err)
+			// Fall through to mock data
+		} else if video != nil {
+			return video, nil
+		}
+	}
+
+	// Fallback to mock data
 	mockData, err := y.loadMockData()
 	if err != nil {
 		return nil, err
@@ -379,4 +425,84 @@ func (y *YouTubeService) GetAllTags() ([]string, error) {
 
 	sort.Strings(tags)
 	return tags, nil
+}
+
+// SyncFromRSS manually triggers a sync from the RSS feed
+func (y *YouTubeService) SyncFromRSS() (*YouTubeSyncResult, error) {
+	if y.rssService == nil {
+		return nil, fmt.Errorf("RSS service not initialized")
+	}
+
+	result, err := y.rssService.SyncVideosFromRSS()
+	if err != nil {
+		return nil, err
+	}
+
+	// Update useDatabase flag if we now have videos
+	if result.NewVideos > 0 && !y.useDatabase {
+		y.useDatabase = true
+		log.Printf("YouTube service switched to database mode after sync")
+	}
+
+	return result, nil
+}
+
+// GetSyncStatus returns information about the current sync status
+func (y *YouTubeService) GetSyncStatus() (map[string]interface{}, error) {
+	if y.rssService == nil {
+		return map[string]interface{}{
+			"sync_enabled": false,
+			"error":        "RSS service not initialized",
+		}, nil
+	}
+
+	return y.rssService.GetSyncStatus()
+}
+
+// SeedDatabaseFromMockData seeds the database with mock data (for initial setup)
+func (y *YouTubeService) SeedDatabaseFromMockData() (*YouTubeSyncResult, error) {
+	mockData, err := y.loadMockData()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load mock data: %w", err)
+	}
+
+	result := &YouTubeSyncResult{
+		TotalFetched:  len(mockData.Videos),
+		NewVideos:     0,
+		UpdatedVideos: 0,
+		Errors:        []string{},
+		SyncTime:      time.Now(),
+	}
+
+	for _, mockVideo := range mockData.Videos {
+		video, err := y.convertMockToDatabase(mockVideo)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("Failed to convert mock video %s: %v", mockVideo.ID, err))
+			continue
+		}
+
+		// Check if video already exists
+		existingVideo, err := y.db.GetYouTubeVideoByID(video.ID)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("Failed to check existing video %s: %v", video.ID, err))
+			continue
+		}
+
+		if existingVideo == nil {
+			// Video doesn't exist, create it
+			if err := y.db.CreateYouTubeVideo(video); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("Failed to create video %s: %v", video.ID, err))
+				continue
+			}
+			result.NewVideos++
+		}
+	}
+
+	// Update useDatabase flag if we now have videos
+	if result.NewVideos > 0 {
+		y.useDatabase = true
+		log.Printf("YouTube service switched to database mode after seeding with %d videos", result.NewVideos)
+	}
+
+	return result, nil
 }
