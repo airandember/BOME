@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"bome-backend/internal/database"
+	"bome-backend/internal/middleware"
 	"bome-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -27,6 +28,11 @@ func SetupYouTubeRoutes(router *gin.RouterGroup, db *database.DB) {
 		youtube.GET("/channel", getYouTubeChannelInfo(youtubeService))
 		youtube.GET("/categories", getYouTubeCategories(youtubeService))
 		youtube.GET("/tags", getYouTubeTags(youtubeService))
+
+		// Admin sync endpoints
+		youtube.POST("/sync/rss", middleware.AuthRequired(), middleware.AdminRequired(), syncFromRSS(youtubeService))
+		youtube.POST("/sync/seed", middleware.AuthRequired(), middleware.AdminRequired(), seedFromMockData(youtubeService))
+		youtube.GET("/sync/status", middleware.AuthRequired(), middleware.AdminRequired(), getSyncStatus(youtubeService))
 	}
 }
 
@@ -222,5 +228,67 @@ func getYouTubeTags(youtubeService *services.YouTubeService) gin.HandlerFunc {
 			"tags":  tags,
 			"count": len(tags),
 		})
+	}
+}
+
+// syncFromRSS manually triggers a sync from the YouTube RSS feed
+func syncFromRSS(youtubeService *services.YouTubeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		result, err := youtubeService.SyncFromRSS()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to sync from RSS feed",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message":        "RSS sync completed successfully",
+			"total_fetched":  result.TotalFetched,
+			"new_videos":     result.NewVideos,
+			"updated_videos": result.UpdatedVideos,
+			"errors":         result.Errors,
+			"sync_time":      result.SyncTime,
+		})
+	}
+}
+
+// seedFromMockData seeds the database with mock data
+func seedFromMockData(youtubeService *services.YouTubeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		result, err := youtubeService.SeedDatabaseFromMockData()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to seed database from mock data",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message":        "Database seeded successfully",
+			"total_fetched":  result.TotalFetched,
+			"new_videos":     result.NewVideos,
+			"updated_videos": result.UpdatedVideos,
+			"errors":         result.Errors,
+			"sync_time":      result.SyncTime,
+		})
+	}
+}
+
+// getSyncStatus returns information about the current sync status
+func getSyncStatus(youtubeService *services.YouTubeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		status, err := youtubeService.GetSyncStatus()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to get sync status",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, status)
 	}
 }
