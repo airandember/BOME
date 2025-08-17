@@ -1250,6 +1250,7 @@ CREATE TABLE IF NOT EXISTS master_video_list (
     description TEXT,
     category VARCHAR(100),
     tags JSONB DEFAULT '[]',
+    tagged BOOLEAN DEFAULT FALSE,
     duration INTEGER DEFAULT 0,
     file_size BIGINT DEFAULT 0,
     resolution VARCHAR(50),
@@ -1289,6 +1290,51 @@ CREATE INDEX IF NOT EXISTS idx_master_video_sync_status ON master_video_list(syn
 CREATE INDEX IF NOT EXISTS idx_master_video_created_at ON master_video_list(created_at);
 CREATE INDEX IF NOT EXISTS idx_master_video_views ON master_video_list(views DESC);
 CREATE INDEX IF NOT EXISTS idx_master_video_collection ON master_video_list(collection_id);
+CREATE INDEX IF NOT EXISTS idx_master_video_tagged ON master_video_list(tagged);
+
+-- Create video tags table for word analytics
+CREATE TABLE IF NOT EXISTS video_tags (
+    id SERIAL PRIMARY KEY,
+    word VARCHAR(100) NOT NULL UNIQUE,
+    frequency INTEGER DEFAULT 1,
+    category_id INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create tag categories table for classification
+CREATE TABLE IF NOT EXISTS tag_categories (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    description TEXT,
+    color VARCHAR(7) DEFAULT '#6b7280',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for video tags
+CREATE INDEX IF NOT EXISTS idx_video_tags_word ON video_tags(word);
+CREATE INDEX IF NOT EXISTS idx_video_tags_frequency ON video_tags(frequency DESC);
+CREATE INDEX IF NOT EXISTS idx_video_tags_category ON video_tags(category_id);
+
+-- Create indexes for tag categories
+CREATE INDEX IF NOT EXISTS idx_tag_categories_name ON tag_categories(name);
+
+-- Insert default tag categories
+INSERT INTO tag_categories (name, description, color) VALUES
+    ('Archaeology', 'Archaeological terms and concepts', '#8b5cf6'),
+    ('Geography', 'Geographic locations and features', '#06b6d4'),
+    ('DNA Research', 'Genetic and DNA-related terms', '#10b981'),
+    ('Linguistics', 'Language and linguistic terms', '#f59e0b'),
+    ('Historical Evidence', 'Historical documentation and evidence', '#ef4444'),
+    ('Cultural Studies', 'Cultural and anthropological terms', '#ec4899'),
+    ('Religious Studies', 'Religious and theological terms', '#6366f1'),
+    ('Documentary', 'Documentary and media terms', '#84cc16'),
+    ('Lecture', 'Educational and lecture terms', '#f97316'),
+    ('Interview', 'Interview and discussion terms', '#06b6d4'),
+    ('Presentation', 'Presentation and presentation terms', '#8b5cf6'),
+    ('Virtual Tour', 'Tour and exploration terms', '#10b981')
+ON CONFLICT (name) DO NOTHING;
 
 -- Create sync conflicts table for tracking discrepancies
 CREATE TABLE IF NOT EXISTS video_sync_conflicts (

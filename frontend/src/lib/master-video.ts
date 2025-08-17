@@ -34,6 +34,7 @@ export interface MasterVideo {
 	CreatedAt: string;
 	UpdatedAt: string;
 	Vid_Status: boolean;
+	Tagged: boolean;
 }
 
 export interface SyncConflict {
@@ -484,6 +485,192 @@ class MasterVideoService {
 					total_views: 0,
 					total_revenue: 0
 				}
+			};
+		}
+	}
+
+	// Smart Tagging Methods
+	async autoTagVideo(videoID: number): Promise<{
+		success: boolean;
+		message?: string;
+		result?: {
+			tags: string[];
+			name: string;
+			processed_title: string;
+			categorized_tags: Record<string, string>;
+		};
+		error?: string;
+	}> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/${videoID}/auto-tag`, {
+				method: 'POST'
+			});
+
+			const data = await response.json();
+
+			if (data.success) {
+				return {
+					success: true,
+					message: data.message,
+					result: data.result
+				};
+			} else {
+				return {
+					success: false,
+					message: data.message || 'Failed to tag video',
+					error: data.error
+				};
+			}
+		} catch (error) {
+			console.error('Failed to auto-tag video:', error);
+			return {
+				success: false,
+				message: 'Failed to tag video',
+				error: error instanceof Error ? error.message : 'Unknown error'
+			};
+		}
+	}
+
+	async batchAutoTagVideos(videoIDs: number[]): Promise<{
+		success: boolean;
+		message?: string;
+		total?: number;
+		successful?: number;
+		failed?: number;
+		results?: Array<{
+			video_id: number;
+			success: boolean;
+			result?: any;
+			error?: string;
+		}>;
+		error?: string;
+	}> {
+		try {
+			// Split into batches of 100 (backend limit)
+			const batchSize = 100;
+			const batches = [];
+			for (let i = 0; i < videoIDs.length; i += batchSize) {
+				batches.push(videoIDs.slice(i, i + batchSize));
+			}
+
+			let totalSuccessful = 0;
+			let totalFailed = 0;
+			let allResults: any[] = [];
+
+			// Process each batch
+			for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+				const batch = batches[batchIndex];
+				console.log(`Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} videos`);
+
+				const response = await apiRequest('/admin/master-videos/batch-auto-tag', {
+					method: 'POST',
+					body: JSON.stringify({ video_ids: batch })
+				});
+
+				const data = await response.json();
+
+				if (data.success) {
+					totalSuccessful += data.successful || 0;
+					totalFailed += data.failed || 0;
+					if (data.results) {
+						allResults = allResults.concat(data.results);
+					}
+				} else {
+					// If batch fails, mark all videos in batch as failed
+					totalFailed += batch.length;
+					allResults = allResults.concat(batch.map(id => ({
+						video_id: id,
+						success: false,
+						error: data.error || 'Batch processing failed'
+					})));
+				}
+
+				// Add a small delay between batches to be respectful
+				if (batchIndex < batches.length - 1) {
+					await new Promise(resolve => setTimeout(resolve, 100));
+				}
+			}
+
+			return {
+				success: true,
+				message: `Batch tagging completed. ${totalSuccessful} successful, ${totalFailed} failed`,
+				total: videoIDs.length,
+				successful: totalSuccessful,
+				failed: totalFailed,
+				results: allResults
+			};
+		} catch (error) {
+			console.error('Failed to batch auto-tag videos:', error);
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : 'Unknown error'
+			};
+		}
+	}
+
+	async getTagAnalytics(): Promise<{
+		success: boolean;
+		data?: {
+			tag_frequency: Array<{ word: string; frequency: number }>;
+			categories: Array<{ name: string; description: string; color: string }>;
+			total_videos: number;
+			tagged_videos: number;
+			untagged_videos: number;
+			tagging_percentage: number;
+		};
+		error?: string;
+	}> {
+		try {
+			const response = await apiRequest('/admin/master-videos/tags/analytics');
+			const data = await response.json();
+			
+			if (data.success) {
+				return {
+					success: true,
+					data: data.data
+				};
+			} else {
+				return {
+					success: false,
+					error: data.message || 'Failed to get tag analytics'
+				};
+			}
+		} catch (error) {
+			console.error('Failed to get tag analytics:', error);
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : 'Unknown error'
+			};
+		}
+	}
+
+	async getUntaggedVideos(limit: number = 50): Promise<{
+		success: boolean;
+		videos?: MasterVideo[];
+		count?: number;
+		error?: string;
+	}> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/tags/untagged?limit=${limit}`);
+			const data = await response.json();
+			
+			if (data.success) {
+				return {
+					success: true,
+					videos: data.videos,
+					count: data.count
+				};
+			} else {
+				return {
+					success: false,
+					error: data.message || 'Failed to get untagged videos'
+				};
+			}
+		} catch (error) {
+			console.error('Failed to get untagged videos:', error);
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : 'Unknown error'
 			};
 		}
 	}

@@ -1,8 +1,11 @@
 package database
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
+	"strings"
 	"time"
 )
 
@@ -14,6 +17,7 @@ type MasterVideo struct {
 	Description          string
 	Category             string
 	Tags                 []string
+	Tagged               bool
 	Duration             int
 	FileSize             int64
 	Resolution           string
@@ -120,7 +124,7 @@ func (db *DB) GetMasterVideoByID(id int) (*MasterVideo, error) {
 	var tagsStr, resolutionsStr string
 
 	err := db.QueryRow(`
-		SELECT id, bunny_video_id, title, description, category, tags, duration, file_size,
+		SELECT id, bunny_video_id, title, description, category, tags, tagged, duration, file_size,
 		       resolution, framerate, thumbnail_url, video_url, iframe_src, playback_url,
 		       status, views, likes, is_public, encode_progress, available_resolutions,
 		       collection_id, average_watch_time, total_watch_time, last_bunny_sync,
@@ -130,7 +134,7 @@ func (db *DB) GetMasterVideoByID(id int) (*MasterVideo, error) {
 		id,
 	).Scan(
 		&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
-		&tagsStr, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
+		&tagsStr, &video.Tagged, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
 		&video.ThumbnailURL, &video.VideoURL, &video.IframeSrc, &video.PlaybackURL,
 		&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 		&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
@@ -164,7 +168,7 @@ func (db *DB) GetMasterVideoByBunnyID(bunnyVideoID string) (*MasterVideo, error)
 	var tagsStr, resolutionsStr string
 
 	err := db.QueryRow(`
-		SELECT id, bunny_video_id, title, description, category, tags, duration, file_size,
+		SELECT id, bunny_video_id, title, description, category, tags, tagged, duration, file_size,
 		       resolution, framerate, thumbnail_url, video_url, iframe_src, playback_url,
 		       status, views, likes, is_public, encode_progress, available_resolutions,
 		       collection_id, average_watch_time, total_watch_time, last_bunny_sync,
@@ -174,7 +178,7 @@ func (db *DB) GetMasterVideoByBunnyID(bunnyVideoID string) (*MasterVideo, error)
 		bunnyVideoID,
 	).Scan(
 		&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
-		&tagsStr, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
+		&tagsStr, &video.Tagged, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
 		&video.ThumbnailURL, &video.VideoURL, &video.IframeSrc, &video.PlaybackURL,
 		&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 		&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
@@ -205,7 +209,7 @@ func (db *DB) GetMasterVideoByBunnyID(bunnyVideoID string) (*MasterVideo, error)
 // GetMasterVideos retrieves videos from the master list with filtering and pagination
 func (db *DB) GetMasterVideos(limit, offset int, category, status, syncStatus, vidStatus, sortField, sortDirection string) ([]*MasterVideo, error) {
 	query := `
-		SELECT id, bunny_video_id, title, description, category, tags, duration, file_size,
+		SELECT id, bunny_video_id, title, description, category, tags, tagged, duration, file_size,
 		       resolution, framerate, thumbnail_url, video_url, iframe_src, playback_url,
 		       status, views, likes, is_public, encode_progress, available_resolutions,
 		       collection_id, average_watch_time, total_watch_time, last_bunny_sync,
@@ -272,7 +276,7 @@ func (db *DB) GetMasterVideos(limit, offset int, category, status, syncStatus, v
 
 		err := rows.Scan(
 			&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
-			&tagsStr, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
+			&tagsStr, &video.Tagged, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
 			&video.ThumbnailURL, &video.VideoURL, &video.IframeSrc, &video.PlaybackURL,
 			&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 			&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
@@ -499,7 +503,7 @@ func (db *DB) GetMasterVideoStats() (map[string]interface{}, error) {
 // SearchMasterVideos searches videos in the master list
 func (db *DB) SearchMasterVideos(query string, limit, offset int, sortField, sortDirection string) ([]*MasterVideo, error) {
 	searchQuery := `
-		SELECT id, bunny_video_id, title, description, category, tags, duration, file_size,
+		SELECT id, bunny_video_id, title, description, category, tags, tagged, duration, file_size,
 		       resolution, framerate, thumbnail_url, video_url, iframe_src, playback_url,
 		       status, views, likes, is_public, encode_progress, available_resolutions,
 		       collection_id, average_watch_time, total_watch_time, last_bunny_sync,
@@ -540,7 +544,7 @@ func (db *DB) SearchMasterVideos(query string, limit, offset int, sortField, sor
 
 		err := rows.Scan(
 			&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
-			&tagsStr, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
+			&tagsStr, &video.Tagged, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
 			&video.ThumbnailURL, &video.VideoURL, &video.IframeSrc, &video.PlaybackURL,
 			&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 			&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
@@ -616,4 +620,213 @@ func (db *DB) GetMasterVideoSearchCount(query string) (int, error) {
 	var count int
 	err := db.QueryRow(searchQuery, searchTerm).Scan(&count)
 	return count, err
+}
+
+// UpdateVideoTags updates the tags for a video and sets tagged to true
+func (db *DB) UpdateVideoTags(videoID int, tags []string) error {
+	tagsJSON, err := json.Marshal(tags)
+	if err != nil {
+		return fmt.Errorf("failed to marshal tags: %v", err)
+	}
+
+	_, err = db.Exec(`
+		UPDATE master_video_list 
+		SET tags = $1, tagged = true, updated_at = CURRENT_TIMESTAMP 
+		WHERE id = $2
+	`, tagsJSON, videoID)
+
+	if err != nil {
+		return fmt.Errorf("failed to update video tags: %v", err)
+	}
+
+	// Update tag frequency in video_tags table
+	return db.updateTagFrequency(tags)
+}
+
+// updateTagFrequency updates the frequency count for tags
+func (db *DB) updateTagFrequency(tags []string) error {
+	log.Printf("🔄 Updating tag frequency for %d tags: %v", len(tags), tags)
+
+	for _, tag := range tags {
+		// Clean the tag
+		cleanTag := strings.ToLower(strings.TrimSpace(tag))
+		if cleanTag == "" {
+			log.Printf("⚠️ Skipping empty tag: '%s'", tag)
+			continue
+		}
+
+		log.Printf("📊 Processing tag: '%s' -> '%s'", tag, cleanTag)
+
+		// Check if tag already exists
+		var existingID int
+		err := db.QueryRow("SELECT id FROM video_tags WHERE word = $1", cleanTag).Scan(&existingID)
+
+		if err != nil && err != sql.ErrNoRows {
+			log.Printf("❌ Error checking existing tag '%s': %v", cleanTag, err)
+			return fmt.Errorf("failed to check existing tag '%s': %v", cleanTag, err)
+		}
+
+		if err == sql.ErrNoRows {
+			// Tag doesn't exist, insert new one
+			log.Printf("➕ Inserting new tag: '%s'", cleanTag)
+			_, err = db.Exec(`
+				INSERT INTO video_tags (word, frequency) 
+				VALUES ($1, 1)
+			`, cleanTag)
+
+			if err != nil {
+				log.Printf("❌ Failed to insert new tag '%s': %v", cleanTag, err)
+				return fmt.Errorf("failed to insert new tag '%s': %v", cleanTag, err)
+			}
+
+			log.Printf("✅ New tag '%s' inserted successfully", cleanTag)
+		} else {
+			// Tag exists, increment frequency
+			log.Printf("🔄 Updating existing tag: '%s' (ID: %d)", cleanTag, existingID)
+			_, err = db.Exec(`
+				UPDATE video_tags 
+				SET frequency = frequency + 1, updated_at = CURRENT_TIMESTAMP 
+				WHERE id = $1
+			`, existingID)
+
+			if err != nil {
+				log.Printf("❌ Failed to update tag frequency for '%s': %v", cleanTag, err)
+				return fmt.Errorf("failed to update tag frequency for '%s': %v", cleanTag, err)
+			}
+
+			log.Printf("✅ Tag '%s' frequency updated successfully", cleanTag)
+		}
+	}
+
+	log.Printf("🎉 Tag frequency update completed for %d tags", len(tags))
+	return nil
+}
+
+// GetTagAnalytics returns tag frequency and basic statistics
+func (db *DB) GetTagAnalytics() (map[string]interface{}, error) {
+	log.Printf("📊 Getting tag analytics...")
+	
+	// Get tag frequency (simple version without categories)
+	rows, err := db.Query(`
+		SELECT word, frequency 
+		FROM video_tags 
+		ORDER BY frequency DESC 
+		LIMIT 100
+	`)
+	if err != nil {
+		log.Printf("❌ Failed to query tag frequency: %v", err)
+		return nil, fmt.Errorf("failed to query tag frequency: %v", err)
+	}
+	defer rows.Close()
+
+	var tagFrequency []map[string]interface{}
+	for rows.Next() {
+		var word string
+		var frequency int
+		if err := rows.Scan(&word, &frequency); err != nil {
+			log.Printf("❌ Failed to scan tag frequency row: %v", err)
+			return nil, fmt.Errorf("failed to scan tag frequency: %v", err)
+		}
+		
+		tagFrequency = append(tagFrequency, map[string]interface{}{
+			"word":      word,
+			"frequency": frequency,
+		})
+	}
+
+	log.Printf("✅ Retrieved %d tag frequency records", len(tagFrequency))
+
+	// Get tagging statistics
+	var totalVideos, taggedVideos int
+	err = db.QueryRow(`SELECT COUNT(*) FROM master_video_list`).Scan(&totalVideos)
+	if err != nil {
+		log.Printf("❌ Failed to get total video count: %v", err)
+		return nil, fmt.Errorf("failed to get total video count: %v", err)
+	}
+
+	err = db.QueryRow(`SELECT COUNT(*) FROM master_video_list WHERE tagged = true`).Scan(&taggedVideos)
+	if err != nil {
+		log.Printf("❌ Failed to get tagged video count: %v", err)
+		return nil, fmt.Errorf("failed to get tagged video count: %v", err)
+	}
+
+	// Get total unique tags
+	var totalUniqueTags int
+	err = db.QueryRow(`SELECT COUNT(*) FROM video_tags`).Scan(&totalUniqueTags)
+	if err != nil {
+		log.Printf("❌ Failed to get total unique tags count: %v", err)
+		return nil, fmt.Errorf("failed to get total unique tags count: %v", err)
+	}
+
+	log.Printf("📊 Analytics summary: %d total videos, %d tagged, %d unique tags", 
+		totalVideos, taggedVideos, totalUniqueTags)
+
+	result := map[string]interface{}{
+		"tag_frequency":      tagFrequency,
+		"total_videos":       totalVideos,
+		"tagged_videos":      taggedVideos,
+		"untagged_videos":    totalVideos - taggedVideos,
+		"total_unique_tags":  totalUniqueTags,
+		"tagging_percentage": float64(taggedVideos) / float64(totalVideos) * 100,
+	}
+
+	log.Printf("✅ Tag analytics retrieved successfully")
+	return result, nil
+}
+
+// GetUntaggedVideos returns videos that haven't been tagged yet
+func (db *DB) GetUntaggedVideos(limit int) ([]*MasterVideo, error) {
+	rows, err := db.Query(`
+		SELECT id, bunny_video_id, title, description, category, tags, tagged, duration, 
+		       file_size, resolution, framerate, thumbnail_url, video_url, iframe_src, 
+		       playback_url, status, views, likes, is_public, encode_progress, 
+		       available_resolutions, collection_id, average_watch_time, total_watch_time,
+		       last_bunny_sync, last_master_update, sync_status, sync_notes, 
+		       metadata_version, created_by, created_at, updated_at, vid_status
+		FROM master_video_list 
+		WHERE tagged = false 
+		ORDER BY created_at DESC 
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query untagged videos: %v", err)
+	}
+	defer rows.Close()
+
+	var videos []*MasterVideo
+	for rows.Next() {
+		video := &MasterVideo{}
+		var tagsStr, resolutionsStr string
+
+		err := rows.Scan(
+			&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
+			&tagsStr, &video.Tagged, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
+			&video.ThumbnailURL, &video.VideoURL, &video.IframeSrc, &video.PlaybackURL,
+			&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
+			&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
+			&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
+			&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Parse tags from JSON
+		if tagsStr != "" {
+			if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
+			}
+		}
+
+		// Parse resolutions from JSON
+		if resolutionsStr != "" {
+			if err := json.Unmarshal([]byte(resolutionsStr), &video.AvailableResolutions); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal resolutions: %v", err)
+			}
+		}
+
+		videos = append(videos, video)
+	}
+
+	return videos, nil
 }

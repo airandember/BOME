@@ -3,10 +3,12 @@ package routes
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 
 	"bome-backend/internal/database"
+	"bome-backend/internal/middleware"
 	"bome-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -16,9 +18,11 @@ import (
 func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyService *services.BunnyService) {
 	fmt.Printf("Setting up master video routes...\n")
 	masterVideoService := services.NewMasterVideoSyncService(db, bunnyService)
+	smartTaggingService := services.NewSmartTaggingService()
 
 	// Master video list routes
 	masterVideos := router.Group("/master-videos")
+	masterVideos.Use(middleware.AuthRequired(), middleware.AdminRequired())
 	{
 		fmt.Printf("Registered master video routes:\n")
 		fmt.Printf("  GET /master-videos\n")
@@ -26,6 +30,9 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 		fmt.Printf("  PUT /master-videos/:id/toggle-status\n")
 		fmt.Printf("  PUT /master-videos/:id\n")
 		fmt.Printf("  DELETE /master-videos/:id\n")
+		fmt.Printf("  POST /master-videos/:id/auto-tag\n")
+		fmt.Printf("  GET /master-videos/tags/analytics\n")
+		fmt.Printf("  GET /master-videos/tags/untagged\n")
 		// Get all master videos with filtering and pagination
 		masterVideos.GET("", func(c *gin.Context) {
 			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
@@ -472,4 +479,160 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 			})
 		})
 	}
+
+	// Smart tagging routes
+	tags := masterVideos.Group("/tags")
+	{
+		// Get tag analytics
+		tags.GET("/analytics", func(c *gin.Context) {
+			analytics, err := db.GetTagAnalytics()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error":   "Failed to fetch tag analytics",
+					"details": err.Error(),
+				})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"data":    analytics,
+			})
+		})
+
+		// Get untagged videos
+		tags.GET("/untagged", func(c *gin.Context) {
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+			videos, err := db.GetUntaggedVideos(limit)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error":   "Failed to fetch untagged videos",
+					"details": err.Error(),
+				})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"videos":  videos,
+				"count":   len(videos),
+			})
+		})
+	}
+
+	// Auto-tag a specific video
+	masterVideos.POST("/:id/auto-tag", func(c *gin.Context) {
+		id, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid video ID"})
+			return
+		}
+
+		// Get the video
+		video, err := db.GetMasterVideoByID(id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Video not found"})
+			return
+		}
+
+		// Generate tags using smart tagging service
+		taggingResult := smartTaggingService.GenerateTagsFromTitle(video.Title)
+
+		// Update video with generated tags
+		err = db.UpdateVideoTags(id, taggingResult.Tags)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to update video tags",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Video tagged successfully",
+			"result":  taggingResult,
+		})
+	})
+
+	// Batch auto-tag multiple videos
+	masterVideos.POST("/batch-auto-tag", func(c *gin.Context) {
+		var request struct {
+			VideoIDs []int `json:"video_ids" binding:"required"`
+		}
+
+		if err := c.ShouldBindJSON(&request); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
+			return
+		}
+
+		if len(request.VideoIDs) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No video IDs provided"})
+			return
+		}
+
+		if len(request.VideoIDs) > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Maximum 100 videos per batch"})
+			return
+		}
+
+		log.Printf("🔄 Starting batch tagging for %d videos: %v", len(request.VideoIDs), request.VideoIDs)
+
+		var results []map[string]interface{}
+		var successCount, errorCount int
+
+		for _, videoID := range request.VideoIDs {
+			// Get the video
+			video, err := db.GetMasterVideoByID(videoID)
+			if err != nil {
+				log.Printf("❌ Failed to get video %d: %v", videoID, err)
+				results = append(results, map[string]interface{}{
+					"video_id": videoID,
+					"success":  false,
+					"error":    "Video not found",
+				})
+				errorCount++
+				continue
+			}
+
+			log.Printf("📝 Processing video %d: '%s'", videoID, video.Title)
+
+			// Generate tags using smart tagging service
+			taggingResult := smartTaggingService.GenerateTagsFromTitle(video.Title)
+			log.Printf("🏷️ Generated tags for video %d: %v", videoID, taggingResult.Tags)
+
+			// Update video with generated tags
+			err = db.UpdateVideoTags(videoID, taggingResult.Tags)
+			if err != nil {
+				log.Printf("❌ Failed to update tags for video %d: %v", videoID, err)
+				results = append(results, map[string]interface{}{
+					"video_id": videoID,
+					"success":  false,
+					"error":    err.Error(),
+				})
+				errorCount++
+				continue
+			}
+
+			log.Printf("✅ Successfully tagged video %d with %d tags", videoID, len(taggingResult.Tags))
+
+			results = append(results, map[string]interface{}{
+				"video_id": videoID,
+				"success":  true,
+				"result":   taggingResult,
+			})
+			successCount++
+		}
+
+		log.Printf("🎉 Batch tagging completed: %d successful, %d failed", successCount, errorCount)
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":    true,
+			"message":    fmt.Sprintf("Batch tagging completed. %d successful, %d failed", successCount, errorCount),
+			"total":      len(request.VideoIDs),
+			"successful": successCount,
+			"failed":     errorCount,
+			"results":    results,
+		})
+	})
 }
