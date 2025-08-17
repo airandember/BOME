@@ -661,32 +661,43 @@
 					<!--<p class="stat-change positive">+0.8%</p>-->
 				</div>
 			</div>
-			<button 
-				class="btn btn-secondary" 
-				style="background: linear-gradient(135deg, #f59e0b, #d97706);"
-				on:click={checkConflicts} 
-				disabled={checkingConflicts}
-			>
-				{#if checkingConflicts}
-					<LoadingSpinner size="small" />
-					Checking...
-				{:else}
-					
-					<span style="color: white !important; font-size: clamp(12px, 2vw, 2.5rem">Run Check<br> 🐇</span>
-				{/if}
-			</button>
-				<a
-						href="/admin/streaming/upload"
-						class="btn bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-
+			<div class="vid_buttons" style="gap: 1rem; display: flex; flex-direction: column;">
+				<div class="rabbitButtons" style="display: flex; flex-direction: row; gap: 1rem;">
+					<button 
+						class="btn btn-secondary" 
+						style="background: linear-gradient(135deg, #f59e0b, #d97706); "
+						on:click={checkConflicts} 
+						disabled={checkingConflicts}
 					>
-						<svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-							<polyline points="7,10 12,15 17,10"></polyline>
-							<line x1="12" y1="15" x2="12" y2="3"></line>
-						</svg>
-						<span style="color: white !important; font-size: clamp(12px, 2vw, 4rem">Upload</span>
-					</a>
+						{#if checkingConflicts}
+							<LoadingSpinner size="small" />
+							Checking...
+						{:else}
+							
+							<span style="color: white !important; font-size: clamp(12px, 1vw, 2.5rem);">Run Check<br> 🐇</span>
+						{/if}
+					</button>
+					
+					<button class="bt btn-secondary"
+						style="background: linear-gradient(135deg, #f59e0b, #d97706); ;"
+						
+					>
+						<span style="color: white !important; font-size: clamp(12px, 1vw, 2.5rem);">🏷️Tags </span>
+					</button>
+				</div>
+				<a
+					href="/admin/streaming/upload"
+					class="btn bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+
+				>
+					<svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+						<polyline points="7,10 12,15 17,10"></polyline>
+						<line x1="12" y1="15" x2="12" y2="3"></line>
+					</svg>
+					<span style="color: white !important; font-size: clamp(12px, 1.5vw, 4rem">Upload</span>
+				</a>
+			</div>
 		</div>
 
 		<!-- Filters -->
@@ -1383,8 +1394,10 @@
 
 	/* Stats Grid */
 	.stats-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+		display: flex;
+		width: 100%;
+		justify-content: space-between;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 		gap: 1.5rem;
 		margin-bottom: 2rem;
 	}
@@ -1454,6 +1467,11 @@
 
 	.stat-content {
 		flex: 1;
+	}
+
+	.rabbitButtons {
+		display: flex;
+		flex-direction: row;
 	}
 
 	.stat-value {
