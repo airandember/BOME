@@ -670,11 +670,12 @@
 						disabled={checkingConflicts}
 					>
 						{#if checkingConflicts}
-							<LoadingSpinner size="small" />
-							Checking...
+							<div class="bouncing-rabbit-container">
+								<div class="bouncing-rabbit">🐇</div>
+							</div>
+							<span style="color: white !important; font-size: clamp(10px, 0.8vw, 1.5rem);">Checking...</span>
 						{:else}
-							
-							<span style="color: white !important; font-size: clamp(12px, 1vw, 2.5rem);">Run Check<br> 🐇</span>
+							<span style="color: white !important; font-size: clamp(12px, 1vw, 2.5rem);">Run Check<br> <span class="bouncing">🐇</span></span>
 						{/if}
 					</button>
 					
@@ -1354,6 +1355,72 @@
 	.error-content h2 {
 		color: var(--error);
 		margin-bottom: var(--space-md);
+	}
+
+	/* Bouncing Rabbit Animation */
+	.bouncing-rabbit-container {
+		width: 60px;
+		height: 24px;
+		position: relative;
+		overflow: hidden;
+		margin: 0.25rem 0;
+		overflow: visible;
+	}
+
+	.bouncing-rabbit {
+		position: absolute;
+		font-size: 1.5rem;
+		animation: rabbitBounce 1.5s ease-in-out infinite;
+		transform: scaleX(-1);
+		filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+	}
+
+	@keyframes rabbitBounce {
+		0% {
+			left: -30px;
+			transform: translateY(0px) rotate(-10deg) scaleX(-1);
+		}
+		25% {
+			left: 15px;
+			transform: translateY(-8px) rotate(0deg) scaleX(-1);
+		}
+		50% {
+			left: 45px;
+			transform: translateY(0px) rotate(10deg) ;
+		}
+		75% {
+			left: 75px;
+			transform: translateY(-6px) rotate(0deg);
+		}
+		100% {
+			left: 190px;
+			transform: translateY(0px) rotate(10deg) scaleX(-1);
+		}
+	}
+
+	/* Add some extra style to the rabbit button */
+	.rabbit-button {
+		position: relative;
+		overflow: hidden;
+	}
+
+	.rabbit-button:disabled {
+		cursor: not-allowed;
+		opacity: 0.8;
+	}
+
+	/* Optional: Add a subtle pulse effect to the button when checking */
+	.rabbit-button:disabled {
+		animation: buttonPulse 2s ease-in-out infinite;
+	}
+
+	@keyframes buttonPulse {
+		0%, 100% {
+			box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+		}
+		50% {
+			box-shadow: 0 0 0 8px rgba(245, 158, 11, 0);
+		}
 	}
 
 	/* Header Styling */
