@@ -52,6 +52,16 @@ type MasterVideo struct {
 	Vid_Status bool
 }
 
+// ArticleExclusion represents a word that should be excluded from tag generation
+type ArticleExclusion struct {
+	ID        int
+	Word      string
+	Excluded  bool
+	SubsiteID int
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 // SyncConflict represents a conflict between master list and Bunny.net
 type SyncConflict struct {
 	ID             int
@@ -657,9 +667,17 @@ func (db *DB) updateTagFrequency(tags []string) error {
 
 		log.Printf("📊 Processing tag: '%s' -> '%s'", tag, cleanTag)
 
-		// Check if tag already exists
+		// Get streaming subsite ID
+		var streamingSubsiteID int
+		err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = 'streaming'").Scan(&streamingSubsiteID)
+		if err != nil {
+			log.Printf("❌ Failed to get streaming subsite ID: %v", err)
+			return fmt.Errorf("failed to get streaming subsite ID: %v", err)
+		}
+
+		// Check if tag already exists in streaming subsite
 		var existingID int
-		err := db.QueryRow("SELECT id FROM video_tags WHERE word = $1", cleanTag).Scan(&existingID)
+		err = db.QueryRow("SELECT id FROM tags WHERE word = $1 AND subsite_id = $2", cleanTag, streamingSubsiteID).Scan(&existingID)
 
 		if err != nil && err != sql.ErrNoRows {
 			log.Printf("❌ Error checking existing tag '%s': %v", cleanTag, err)
@@ -667,50 +685,52 @@ func (db *DB) updateTagFrequency(tags []string) error {
 		}
 
 		if err == sql.ErrNoRows {
-			// Tag doesn't exist, insert new one
-			log.Printf("➕ Inserting new tag: '%s'", cleanTag)
+			// Tag doesn't exist, insert new one in streaming subsite
+			log.Printf("➕ Inserting new tag '%s' in streaming subsite", cleanTag)
 			_, err = db.Exec(`
-				INSERT INTO video_tags (word, frequency) 
-				VALUES ($1, 1)
-			`, cleanTag)
+				INSERT INTO tags (word, frequency, subsite_id, active_tag) 
+				VALUES ($1, 1, $2, true)
+			`, cleanTag, streamingSubsiteID)
 
 			if err != nil {
 				log.Printf("❌ Failed to insert new tag '%s': %v", cleanTag, err)
 				return fmt.Errorf("failed to insert new tag '%s': %v", cleanTag, err)
 			}
 
-			log.Printf("✅ New tag '%s' inserted successfully", cleanTag)
+			log.Printf("✅ New tag '%s' inserted successfully in streaming", cleanTag)
 		} else {
 			// Tag exists, increment frequency
-			log.Printf("🔄 Updating existing tag: '%s' (ID: %d)", cleanTag, existingID)
+			log.Printf("🔄 Updating existing tag '%s' (ID: %d) in streaming", cleanTag, existingID)
 			_, err = db.Exec(`
-				UPDATE video_tags 
+				UPDATE tags 
 				SET frequency = frequency + 1, updated_at = CURRENT_TIMESTAMP 
 				WHERE id = $1
 			`, existingID)
 
 			if err != nil {
-				log.Printf("❌ Failed to update tag frequency for '%s': %v", cleanTag, err)
+				log.Printf("❌ Failed to update tag frequency for '%s' in streaming: %v", cleanTag, err)
 				return fmt.Errorf("failed to update tag frequency for '%s': %v", cleanTag, err)
 			}
 
-			log.Printf("✅ Tag '%s' frequency updated successfully", cleanTag)
+			log.Printf("✅ Tag '%s' frequency updated successfully in streaming", cleanTag)
 		}
 	}
 
-	log.Printf("🎉 Tag frequency update completed for %d tags", len(tags))
+	log.Printf("🎉 Tag frequency update completed for %d tags in streaming subsite", len(tags))
 	return nil
 }
 
 // GetTagAnalytics returns tag frequency and basic statistics
 func (db *DB) GetTagAnalytics() (map[string]interface{}, error) {
 	log.Printf("📊 Getting tag analytics...")
-	
-	// Get tag frequency (simple version without categories)
+
+	// Get tag frequency from streaming subsite
 	rows, err := db.Query(`
-		SELECT word, frequency 
-		FROM video_tags 
-		ORDER BY frequency DESC 
+		SELECT t.word, t.frequency 
+		FROM tags t
+		JOIN subsites s ON t.subsite_id = s.id
+		WHERE s.subsite_name = 'streaming'
+		ORDER BY t.frequency DESC 
 		LIMIT 100
 	`)
 	if err != nil {
@@ -727,7 +747,7 @@ func (db *DB) GetTagAnalytics() (map[string]interface{}, error) {
 			log.Printf("❌ Failed to scan tag frequency row: %v", err)
 			return nil, fmt.Errorf("failed to scan tag frequency: %v", err)
 		}
-		
+
 		tagFrequency = append(tagFrequency, map[string]interface{}{
 			"word":      word,
 			"frequency": frequency,
@@ -750,16 +770,45 @@ func (db *DB) GetTagAnalytics() (map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to get tagged video count: %v", err)
 	}
 
-	// Get total unique tags
+	// Get total unique tags in streaming subsite
 	var totalUniqueTags int
-	err = db.QueryRow(`SELECT COUNT(*) FROM video_tags`).Scan(&totalUniqueTags)
+	err = db.QueryRow(`
+		SELECT COUNT(*) 
+		FROM tags t
+		JOIN subsites s ON t.subsite_id = s.id
+		WHERE s.subsite_name = 'streaming'
+	`).Scan(&totalUniqueTags)
 	if err != nil {
 		log.Printf("❌ Failed to get total unique tags count: %v", err)
 		return nil, fmt.Errorf("failed to get total unique tags count: %v", err)
 	}
 
-	log.Printf("📊 Analytics summary: %d total videos, %d tagged, %d unique tags", 
-		totalVideos, taggedVideos, totalUniqueTags)
+	// Get active vs inactive tag counts
+	var activeTags, inactiveTags int
+	err = db.QueryRow(`
+		SELECT COUNT(*) 
+		FROM tags t
+		JOIN subsites s ON t.subsite_id = s.id
+		WHERE s.subsite_name = 'streaming' AND t.active_tag = true
+	`).Scan(&activeTags)
+	if err != nil {
+		log.Printf("❌ Failed to get active tags count: %v", err)
+		return nil, fmt.Errorf("failed to get active tags count: %v", err)
+	}
+
+	err = db.QueryRow(`
+		SELECT COUNT(*) 
+		FROM tags t
+		JOIN subsites s ON t.subsite_id = s.id
+		WHERE s.subsite_name = 'streaming' AND t.active_tag = false
+	`).Scan(&inactiveTags)
+	if err != nil {
+		log.Printf("❌ Failed to get inactive tags count: %v", err)
+		return nil, fmt.Errorf("failed to get inactive tags count: %v", err)
+	}
+
+	log.Printf("📊 Analytics summary: %d total videos, %d tagged, %d unique tags (%d active, %d inactive)",
+		totalVideos, taggedVideos, totalUniqueTags, activeTags, inactiveTags)
 
 	result := map[string]interface{}{
 		"tag_frequency":      tagFrequency,
@@ -767,6 +816,8 @@ func (db *DB) GetTagAnalytics() (map[string]interface{}, error) {
 		"tagged_videos":      taggedVideos,
 		"untagged_videos":    totalVideos - taggedVideos,
 		"total_unique_tags":  totalUniqueTags,
+		"active_tags":        activeTags,
+		"inactive_tags":      inactiveTags,
 		"tagging_percentage": float64(taggedVideos) / float64(totalVideos) * 100,
 	}
 
@@ -829,4 +880,557 @@ func (db *DB) GetUntaggedVideos(limit int) ([]*MasterVideo, error) {
 	}
 
 	return videos, nil
+}
+
+// GetSubsiteTags returns tags for a specific subsite
+func (db *DB) GetSubsiteTags(subsite string) ([]map[string]interface{}, error) {
+	log.Printf("📊 Getting tags for subsite: %s", subsite)
+
+	// Get subsite ID
+	var subsiteID int
+	err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = $1", subsite).Scan(&subsiteID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("⚠️ Subsite '%s' not found, returning empty tags", subsite)
+			return []map[string]interface{}{}, nil
+		}
+		log.Printf("❌ Failed to get subsite ID for '%s': %v", subsite, err)
+		return nil, fmt.Errorf("failed to get subsite ID for '%s': %v", subsite, err)
+	}
+
+	// Get tags for this subsite
+	rows, err := db.Query(`
+		SELECT t.id, t.word, t.frequency, t.category_id, t.active_tag, tc.name as category_name, tc.color as category_color
+		FROM tags t
+		LEFT JOIN tag_categories tc ON t.category_id = tc.id
+		WHERE t.subsite_id = $1
+		ORDER BY t.frequency DESC, t.word ASC
+	`, subsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to query subsite tags: %v", err)
+		return nil, fmt.Errorf("failed to query subsite tags: %v", err)
+	}
+	defer rows.Close()
+
+	var tags []map[string]interface{}
+	for rows.Next() {
+		var id int
+		var word string
+		var frequency int
+		var categoryID sql.NullInt64
+		var activeTag bool
+		var categoryName sql.NullString
+		var categoryColor sql.NullString
+
+		if err := rows.Scan(&id, &word, &frequency, &categoryID, &activeTag, &categoryName, &categoryColor); err != nil {
+			log.Printf("❌ Failed to scan subsite tag row: %v", err)
+			return nil, fmt.Errorf("failed to scan subsite tag: %v", err)
+		}
+
+		tag := map[string]interface{}{
+			"id":         id,
+			"word":       word,
+			"frequency":  frequency,
+			"active_tag": activeTag,
+		}
+
+		if categoryID.Valid {
+			tag["category_id"] = categoryID.Int64
+			tag["category_name"] = categoryName.String
+			tag["category_color"] = categoryColor.String
+		}
+
+		tags = append(tags, tag)
+	}
+
+	log.Printf("✅ Retrieved %d tags for subsite '%s'", len(tags), subsite)
+	return tags, nil
+}
+
+// GetSubsiteCategories returns categories for a specific subsite
+func (db *DB) GetSubsiteCategories(subsite string) ([]map[string]interface{}, error) {
+	log.Printf("📁 Getting categories for subsite: %s", subsite)
+
+	// Get subsite ID
+	var subsiteID int
+	err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = $1", subsite).Scan(&subsiteID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("⚠️ Subsite '%s' not found, returning empty categories", subsite)
+			return []map[string]interface{}{}, nil
+		}
+		log.Printf("❌ Failed to get subsite ID for '%s': %v", subsite, err)
+		return nil, fmt.Errorf("failed to get subsite ID for '%s': %v", subsite, err)
+	}
+
+	// Get categories for this subsite
+	rows, err := db.Query(`
+		SELECT id, name, description, color, created_at, updated_at
+		FROM tag_categories
+		WHERE subsite_id = $1
+		ORDER BY name ASC
+	`, subsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to query subsite categories: %v", err)
+		return nil, fmt.Errorf("failed to query subsite categories: %v", err)
+	}
+	defer rows.Close()
+
+	var categories []map[string]interface{}
+	for rows.Next() {
+		var id int
+		var name, description, color string
+		var createdAt, updatedAt time.Time
+
+		if err := rows.Scan(&id, &name, &description, &color, &createdAt, &updatedAt); err != nil {
+			log.Printf("❌ Failed to scan subsite category row: %v", err)
+			return nil, fmt.Errorf("failed to scan subsite category: %v", err)
+		}
+
+		category := map[string]interface{}{
+			"id":          id,
+			"name":        name,
+			"description": description,
+			"color":       color,
+			"created_at":  createdAt,
+			"updated_at":  updatedAt,
+		}
+
+		categories = append(categories, category)
+	}
+
+	log.Printf("✅ Retrieved %d categories for subsite '%s'", len(categories), subsite)
+	return categories, nil
+}
+
+// AddSubsiteTag adds a new tag to a specific subsite
+func (db *DB) AddSubsiteTag(subsite, word string) error {
+	log.Printf("➕ Adding tag '%s' to subsite '%s'", word, subsite)
+
+	// Get subsite ID
+	var subsiteID int
+	err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = $1", subsite).Scan(&subsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to get subsite ID for '%s': %v", subsite, err)
+		return fmt.Errorf("failed to get subsite ID for '%s': %v", subsite, err)
+	}
+
+	// Clean the tag
+	cleanWord := strings.ToLower(strings.TrimSpace(word))
+	if cleanWord == "" {
+		return fmt.Errorf("tag cannot be empty")
+	}
+
+	// Check if tag already exists for this subsite
+	var existingID int
+	err = db.QueryRow("SELECT id FROM tags WHERE word = $1 AND subsite_id = $2", cleanWord, subsiteID).Scan(&existingID)
+
+	if err != nil && err != sql.ErrNoRows {
+		log.Printf("❌ Error checking existing tag '%s' in subsite '%s': %v", cleanWord, subsite, err)
+		return fmt.Errorf("failed to check existing tag: %v", err)
+	}
+
+	if err == sql.ErrNoRows {
+		// Tag doesn't exist, insert new one
+		log.Printf("➕ Inserting new tag '%s' in subsite '%s'", cleanWord, subsite)
+		_, err = db.Exec(`
+			INSERT INTO tags (word, frequency, subsite_id, active_tag) 
+			VALUES ($1, 1, $2, true)
+		`, cleanWord, subsiteID)
+
+		if err != nil {
+			log.Printf("❌ Failed to insert new tag '%s' in subsite '%s': %v", cleanWord, subsite, err)
+			return fmt.Errorf("failed to insert new tag: %v", err)
+		}
+
+		log.Printf("✅ New tag '%s' inserted successfully in subsite '%s'", cleanWord, subsite)
+	} else {
+		// Tag exists, increment frequency
+		log.Printf("🔄 Updating existing tag '%s' frequency in subsite '%s'", cleanWord, subsite)
+		_, err = db.Exec(`
+			UPDATE tags 
+			SET frequency = frequency + 1, updated_at = CURRENT_TIMESTAMP 
+			WHERE id = $1
+		`, existingID)
+
+		if err != nil {
+			log.Printf("❌ Failed to update tag frequency for '%s' in subsite '%s': %v", cleanWord, subsite, err)
+			return fmt.Errorf("failed to update tag frequency: %v", err)
+		}
+
+		log.Printf("✅ Tag '%s' frequency updated successfully in subsite '%s'", cleanWord, subsite)
+	}
+
+	return nil
+}
+
+// DeleteSubsiteTag deletes a tag from a specific subsite
+func (db *DB) DeleteSubsiteTag(subsite string, tagID int) error {
+	log.Printf("🗑️ Deleting tag ID %d from subsite '%s'", tagID, subsite)
+
+	// Get subsite ID
+	var subsiteID int
+	err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = $1", subsite).Scan(&subsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to get subsite ID for '%s': %v", subsite, err)
+		return fmt.Errorf("failed to get subsite ID for '%s': %v", subsite, err)
+	}
+
+	// Delete the tag (this will cascade to remove any category assignments)
+	result, err := db.Exec(`
+		DELETE FROM tags 
+		WHERE id = $1 AND subsite_id = $2
+	`, tagID, subsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to delete tag ID %d from subsite '%s': %v", tagID, subsite, err)
+		return fmt.Errorf("failed to delete tag: %v", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("⚠️ Could not determine rows affected for tag deletion")
+	} else if rowsAffected == 0 {
+		log.Printf("⚠️ No tag found with ID %d in subsite '%s'", tagID, subsite)
+		return fmt.Errorf("tag not found in subsite")
+	}
+
+	log.Printf("✅ Tag ID %d deleted successfully from subsite '%s'", tagID, subsite)
+	return nil
+}
+
+// AddSubsiteCategory adds a new category to a specific subsite
+func (db *DB) AddSubsiteCategory(subsite, name, color, description string) error {
+	log.Printf("➕ Adding category '%s' to subsite '%s'", name, subsite)
+
+	// Get subsite ID
+	var subsiteID int
+	err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = $1", subsite).Scan(&subsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to get subsite ID for '%s': %v", subsite, err)
+		return fmt.Errorf("failed to get subsite ID for '%s': %v", subsite, err)
+	}
+
+	// Clean the name
+	cleanName := strings.TrimSpace(name)
+	if cleanName == "" {
+		return fmt.Errorf("category name cannot be empty")
+	}
+
+	// Check if category already exists for this subsite
+	var existingID int
+	err = db.QueryRow("SELECT id FROM tag_categories WHERE name = $1 AND subsite_id = $2", cleanName, subsiteID).Scan(&existingID)
+
+	if err != nil && err != sql.ErrNoRows {
+		log.Printf("❌ Error checking existing category '%s' in subsite '%s': %v", cleanName, subsite, err)
+		return fmt.Errorf("failed to check existing category: %v", err)
+	}
+
+	if err == sql.ErrNoRows {
+		// Category doesn't exist, insert new one
+		log.Printf("➕ Inserting new category '%s' in subsite '%s'", cleanName, subsite)
+		_, err = db.Exec(`
+			INSERT INTO tag_categories (name, color, description, subsite_id) 
+			VALUES ($1, $2, $3, $4)
+		`, cleanName, color, description, subsiteID)
+
+		if err != nil {
+			log.Printf("❌ Failed to insert new category '%s' in subsite '%s': %v", cleanName, subsite, err)
+			return fmt.Errorf("failed to insert new category: %v", err)
+		}
+
+		log.Printf("✅ New category '%s' inserted successfully in subsite '%s'", cleanName, subsite)
+	} else {
+		log.Printf("⚠️ Category '%s' already exists in subsite '%s'", cleanName, subsite)
+		return fmt.Errorf("category already exists in subsite")
+	}
+
+	return nil
+}
+
+// DeleteSubsiteCategory deletes a category from a specific subsite
+func (db *DB) DeleteSubsiteCategory(subsite string, categoryID int) error {
+	log.Printf("🗑️ Deleting category ID %d from subsite '%s'", categoryID, subsite)
+
+	// Get subsite ID
+	var subsiteID int
+	err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = $1", subsite).Scan(&subsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to get subsite ID for '%s': %v", subsite, err)
+		return fmt.Errorf("failed to get subsite ID for '%s': %v", subsite, err)
+	}
+
+	// Delete the category (this will cascade to remove any tag assignments)
+	result, err := db.Exec(`
+		DELETE FROM tag_categories 
+		WHERE id = $1 AND subsite_id = $2
+	`, categoryID, subsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to delete category ID %d from subsite '%s': %v", categoryID, subsite, err)
+		return fmt.Errorf("failed to delete category: %v", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("⚠️ Could not determine rows affected for category deletion")
+	} else if rowsAffected == 0 {
+		log.Printf("⚠️ No category found with ID %d in subsite '%s'", categoryID, subsite)
+		return fmt.Errorf("category not found in subsite")
+	}
+
+	log.Printf("✅ Category ID %d deleted successfully from subsite '%s'", categoryID, subsite)
+	return nil
+}
+
+// AssignSubsiteTagToCategory assigns a tag to a category within a specific subsite
+func (db *DB) AssignSubsiteTagToCategory(subsite string, tagID, categoryID int) error {
+	log.Printf("🔗 Assigning tag ID %d to category ID %d in subsite '%s'", tagID, categoryID, subsite)
+
+	// Get subsite ID
+	var subsiteID int
+	err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = $1", subsite).Scan(&subsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to get subsite ID for '%s': %v", subsite, err)
+		return fmt.Errorf("failed to get subsite ID for '%s': %v", subsite, err)
+	}
+
+	// Verify both tag and category belong to this subsite
+	var tagSubsiteID, categorySubsiteID int
+	err = db.QueryRow("SELECT subsite_id FROM tags WHERE id = $1", tagID).Scan(&tagSubsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to get tag subsite ID: %v", err)
+		return fmt.Errorf("failed to get tag subsite ID: %v", err)
+	}
+
+	err = db.QueryRow("SELECT subsite_id FROM tag_categories WHERE id = $1", categoryID).Scan(&categorySubsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to get category subsite ID: %v", err)
+		return fmt.Errorf("failed to get category subsite ID: %v", err)
+	}
+
+	if tagSubsiteID != subsiteID || categorySubsiteID != subsiteID {
+		log.Printf("❌ Tag or category does not belong to subsite '%s'", subsite)
+		return fmt.Errorf("tag or category does not belong to subsite")
+	}
+
+	// Update the tag's category_id
+	_, err = db.Exec(`
+		UPDATE tags 
+		SET category_id = $1, updated_at = CURRENT_TIMESTAMP 
+		WHERE id = $2
+	`, categoryID, tagID)
+	if err != nil {
+		log.Printf("❌ Failed to assign tag to category: %v", err)
+		return fmt.Errorf("failed to assign tag to category: %v", err)
+	}
+
+	log.Printf("✅ Tag ID %d successfully assigned to category ID %d in subsite '%s'", tagID, categoryID, subsite)
+	return nil
+}
+
+// ToggleTagActiveStatus toggles the active status of a tag
+func (db *DB) ToggleTagActiveStatus(subsite string, tagID int) error {
+	log.Printf("🔄 Toggling active status for tag ID %d in subsite '%s'", tagID, subsite)
+
+	// Get subsite ID
+	var subsiteID int
+	err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = $1", subsite).Scan(&subsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to get subsite ID for '%s': %v", subsite, err)
+		return fmt.Errorf("failed to get subsite ID for '%s': %v", subsite, err)
+	}
+
+	// Toggle the active status
+	_, err = db.Exec(`
+		UPDATE tags 
+		SET active_tag = NOT active_tag, updated_at = CURRENT_TIMESTAMP 
+		WHERE id = $1 AND subsite_id = $2
+	`, tagID, subsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to toggle tag active status: %v", err)
+		return fmt.Errorf("failed to toggle tag active status: %v", err)
+	}
+
+	log.Printf("✅ Tag ID %d active status toggled successfully in subsite '%s'", tagID, subsite)
+	return nil
+}
+
+// GetTagCategories returns all tag categories (for admin dashboard)
+func (db *DB) GetTagCategories() ([]map[string]interface{}, error) {
+	log.Printf("📁 Getting all tag categories...")
+
+	rows, err := db.Query(`
+		SELECT tc.id, tc.name, tc.description, tc.color, tc.created_at, tc.updated_at,
+		       s.subsite_name as subsite_name, s.subsite_name as subsite_display_name
+		FROM tag_categories tc
+		JOIN subsites s ON tc.subsite_id = s.id
+		ORDER BY s.subsite_name ASC, tc.name ASC
+	`)
+	if err != nil {
+		log.Printf("❌ Failed to query tag categories: %v", err)
+		return nil, fmt.Errorf("failed to query tag categories: %v", err)
+	}
+	defer rows.Close()
+
+	var categories []map[string]interface{}
+	for rows.Next() {
+		var id int
+		var name, description, color, subsiteName, subsiteDisplayName string
+		var createdAt, updatedAt time.Time
+
+		if err := rows.Scan(&id, &name, &description, &color, &createdAt, &updatedAt, &subsiteName, &subsiteDisplayName); err != nil {
+			log.Printf("❌ Failed to scan tag category row: %v", err)
+			return nil, fmt.Errorf("failed to scan tag category: %v", err)
+		}
+
+		category := map[string]interface{}{
+			"id":                   id,
+			"name":                 name,
+			"description":          description,
+			"color":                color,
+			"created_at":           createdAt,
+			"updated_at":           updatedAt,
+			"subsite_name":         subsiteName,
+			"subsite_display_name": subsiteDisplayName,
+		}
+
+		categories = append(categories, category)
+	}
+
+	log.Printf("✅ Retrieved %d tag categories", len(categories))
+	return categories, nil
+}
+
+// Article Exclusions Management
+func (db *DB) GetArticleExclusions(subsiteID int) ([]*ArticleExclusion, error) {
+	query := `
+		SELECT id, word, excluded, subsite_id, created_at, updated_at
+		FROM article_exclusions 
+		WHERE subsite_id = $1
+		ORDER BY word ASC
+	`
+
+	rows, err := db.Query(query, subsiteID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query article exclusions: %v", err)
+	}
+	defer rows.Close()
+
+	var exclusions []*ArticleExclusion
+	for rows.Next() {
+		var exclusion ArticleExclusion
+		err := rows.Scan(
+			&exclusion.ID,
+			&exclusion.Word,
+			&exclusion.Excluded,
+			&exclusion.SubsiteID,
+			&exclusion.CreatedAt,
+			&exclusion.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan article exclusion: %v", err)
+		}
+		exclusions = append(exclusions, &exclusion)
+	}
+
+	return exclusions, nil
+}
+
+func (db *DB) AddArticleExclusion(subsiteID int, word string) error {
+	query := `
+		INSERT INTO article_exclusions (word, excluded, subsite_id)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (word) DO UPDATE SET 
+			excluded = EXCLUDED.excluded,
+			updated_at = CURRENT_TIMESTAMP
+	`
+
+	_, err := db.Exec(query, strings.ToLower(word), true, subsiteID)
+	if err != nil {
+		return fmt.Errorf("failed to add article exclusion: %v", err)
+	}
+
+	return nil
+}
+
+func (db *DB) ToggleArticleExclusion(subsiteID int, word string, excluded bool) error {
+	query := `
+		UPDATE article_exclusions 
+		SET excluded = $1, updated_at = CURRENT_TIMESTAMP
+		WHERE word = $2 AND subsite_id = $3
+	`
+
+	result, err := db.Exec(query, excluded, strings.ToLower(word), subsiteID)
+	if err != nil {
+		return fmt.Errorf("failed to toggle article exclusion: %v", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %v", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("article exclusion not found: %s", word)
+	}
+
+	return nil
+}
+
+func (db *DB) RemoveArticleExclusion(subsiteID int, word string) error {
+	query := `DELETE FROM article_exclusions WHERE word = $1 AND subsite_id = $2`
+
+	result, err := db.Exec(query, strings.ToLower(word), subsiteID)
+	if err != nil {
+		return fmt.Errorf("failed to remove article exclusion: %v", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %v", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("article exclusion not found: %s", word)
+	}
+
+	return nil
+}
+
+func (db *DB) GetExcludedWords(subsiteID int) (map[string]bool, error) {
+	query := `
+		SELECT word 
+		FROM article_exclusions 
+		WHERE subsite_id = $1 AND excluded = true
+	`
+
+	rows, err := db.Query(query, subsiteID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query excluded words: %v", err)
+	}
+	defer rows.Close()
+
+	excludedWords := make(map[string]bool)
+	for rows.Next() {
+		var word string
+		err := rows.Scan(&word)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan excluded word: %v", err)
+		}
+		excludedWords[word] = true
+	}
+
+	return excludedWords, nil
+}
+
+// GetSubsiteID returns the ID for a given subsite name
+func (db *DB) GetSubsiteID(subsiteName string) (int, error) {
+	var subsiteID int
+	err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = $1", subsiteName).Scan(&subsiteID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, fmt.Errorf("subsite '%s' not found", subsiteName)
+		}
+		return 0, fmt.Errorf("failed to get subsite ID for '%s': %v", subsiteName, err)
+	}
+	return subsiteID, nil
 }

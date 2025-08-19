@@ -107,7 +107,7 @@ export interface MasterVideoStats {
 }
 
 // Master Video List Service
-class MasterVideoService {
+export class MasterVideoService {
 	// Get all master videos with filtering and pagination
 	async getMasterVideos(params: {
 		page?: number;
@@ -608,6 +608,8 @@ class MasterVideoService {
 		}
 	}
 
+
+
 	async getTagAnalytics(): Promise<{
 		success: boolean;
 		data?: {
@@ -674,8 +676,330 @@ class MasterVideoService {
 			};
 		}
 	}
+
+	// Tag management methods
+	async addTag(tag: string): Promise<Response> {
+		try {
+			const response = await apiRequest('/admin/master-videos/tags', {
+				method: 'POST',
+				body: JSON.stringify({ tag })
+			});
+			return response;
+		} catch (error) {
+			console.error('Failed to add tag:', error);
+			throw error;
+		}
+	}
+
+	async deleteTag(tagId: number): Promise<Response> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/tags/${tagId}`, {
+				method: 'DELETE'
+			});
+			return response;
+		} catch (error) {
+			console.error('Failed to delete tag:', error);
+			throw error;
+		}
+	}
+
+	async assignTagToCategory(tagId: number, categoryId: number): Promise<Response> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/tags/${tagId}/category`, {
+				method: 'PUT',
+				body: JSON.stringify({ category_id: categoryId })
+			});
+			return response;
+		} catch (error) {
+			console.error('Failed to assign tag to category:', error);
+			throw error;
+		}
+	}
+
+	// Category management methods
+	async getTagCategories(): Promise<Response> {
+		try {
+			const response = await apiRequest('/admin/master-videos/tags/categories');
+			return response;
+		} catch (error) {
+			console.error('Failed to get tag categories:', error);
+			throw error;
+		}
+	}
+
+	async addTagCategory(category: { name: string; color: string }): Promise<Response> {
+		try {
+			const response = await apiRequest('/admin/master-videos/tags/categories', {
+				method: 'POST',
+				body: JSON.stringify(category)
+			});
+			return response;
+		} catch (error) {
+			console.error('Failed to add tag category:', error);
+			throw error;
+		}
+	}
+
+	async deleteTagCategory(categoryId: number): Promise<Response> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/tags/categories/${categoryId}`, {
+				method: 'DELETE'
+			});
+			return response;
+		} catch (error) {
+			console.error('Failed to delete tag category:', error);
+			throw error;
+		}
+	}
+
+	// Subsite-specific tag management methods
+	async getSubsiteTags(subsite: string): Promise<Response> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/tags/subsites/${subsite}`);
+			return response;
+		} catch (error) {
+			console.error(`Failed to get ${subsite} tags:`, error);
+			throw error;
+		}
+	}
+
+	async addSubsiteTag(subsite: string, tag: string): Promise<Response> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/tags/subsites/${subsite}`, {
+				method: 'POST',
+				body: JSON.stringify({ tag })
+			});
+			return response;
+		} catch (error) {
+			console.error(`Failed to add ${subsite} tag:`, error);
+			throw error;
+		}
+	}
+
+	async deleteSubsiteTag(subsite: string, tagId: number): Promise<Response> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/tags/subsites/${subsite}/${tagId}`, {
+				method: 'DELETE'
+			});
+			return response;
+		} catch (error) {
+			console.error(`Failed to delete ${subsite} tag:`, error);
+			throw error;
+		}
+	}
+
+	async assignSubsiteTagToCategory(subsite: string, tagId: number, categoryId: number): Promise<Response> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/tags/subsites/${subsite}/${tagId}/category`, {
+				method: 'PUT',
+				body: JSON.stringify({ category_id: categoryId })
+			});
+			return response;
+		} catch (error) {
+			console.error(`Failed to assign ${subsite} tag to category:`, error);
+			throw error;
+		}
+	}
+
+	async toggleTagActiveStatus(subsite: string, tagId: number, active: boolean): Promise<{
+		success: boolean;
+		message?: string;
+		error?: string;
+	}> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/tags/subsites/${subsite}/${tagId}/toggle-active`, {
+				method: 'PUT'
+			});
+			const data = await response.json();
+			
+			if (data.success) {
+				return {
+					success: true,
+					message: data.message
+				};
+			} else {
+				return {
+					success: false,
+					error: data.error || 'Failed to toggle tag active status'
+				};
+			}
+		} catch (error) {
+			console.error('Failed to toggle tag active status:', error);
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : 'Unknown error'
+			};
+		}
+	}
+
+	// Subsite-specific category management methods
+	async getSubsiteCategories(subsite: string): Promise<Response> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/tags/subsites/${subsite}/categories`);
+			return response;
+		} catch (error) {
+			console.error(`Failed to get ${subsite} categories:`, error);
+			throw error;
+		}
+	}
+
+	async addSubsiteCategory(subsite: string, category: { name: string; color: string; description?: string }): Promise<Response> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/tags/subsites/${subsite}/categories`, {
+				method: 'POST',
+				body: JSON.stringify(category)
+			});
+			return response;
+		} catch (error) {
+			console.error(`Failed to add ${subsite} category:`, error);
+			throw error;
+		}
+	}
+
+	async deleteSubsiteCategory(subsite: string, categoryId: number): Promise<Response> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/tags/subsites/${subsite}/categories/${categoryId}`, {
+				method: 'DELETE'
+			});
+			return response;
+		} catch (error) {
+			console.error(`Failed to delete ${subsite} category:`, error);
+			throw error;
+		}
+	}
+
+	// Article Exclusions Management
+	async getArticleExclusions(subsite: string): Promise<{
+		success: boolean;
+		result?: Array<{
+			id: number;
+			word: string;
+			excluded: boolean;
+			subsite_id: number;
+			created_at: string;
+			updated_at: string;
+		}>;
+		error?: string;
+	}> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/article-exclusions/${subsite}`);
+			const data = await response.json();
+			
+			if (data.success) {
+				return {
+					success: true,
+					result: data.result
+				};
+			} else {
+				return {
+					success: false,
+					error: data.error || 'Failed to get article exclusions'
+				};
+			}
+		} catch (error) {
+			console.error('Failed to get article exclusions:', error);
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : 'Unknown error'
+			};
+		}
+	}
+
+	async addArticleExclusion(subsite: string, word: string): Promise<{
+		success: boolean;
+		message?: string;
+		error?: string;
+	}> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/article-exclusions/${subsite}`, {
+				method: 'POST',
+				body: JSON.stringify({ word })
+			});
+			const data = await response.json();
+			
+			if (data.success) {
+				return {
+					success: true,
+					message: data.message
+				};
+			} else {
+				return {
+					success: false,
+					error: data.error || 'Failed to add article exclusion'
+				};
+			}
+		} catch (error) {
+			console.error('Failed to add article exclusion:', error);
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : 'Unknown error'
+			};
+		}
+	}
+
+	async toggleArticleExclusion(subsite: string, word: string, excluded: boolean): Promise<{
+		success: boolean;
+		message?: string;
+		error?: string;
+	}> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/article-exclusions/${subsite}/toggle`, {
+				method: 'PUT',
+				body: JSON.stringify({ word, excluded })
+			});
+			const data = await response.json();
+			
+			if (data.success) {
+				return {
+					success: true,
+					message: data.message
+				};
+			} else {
+				return {
+					success: false,
+					error: data.error || 'Failed to toggle article exclusion'
+				};
+			}
+		} catch (error) {
+			console.error('Failed to toggle article exclusion:', error);
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : 'Unknown error'
+			};
+		}
+	}
+
+	async removeArticleExclusion(subsite: string, word: string): Promise<{
+		success: boolean;
+		message?: string;
+		error?: string;
+	}> {
+		try {
+			const response = await apiRequest(`/admin/master-videos/article-exclusions/${subsite}/${encodeURIComponent(word)}`, {
+				method: 'DELETE'
+			});
+			const data = await response.json();
+			
+			if (data.success) {
+				return {
+					success: true,
+					message: data.message
+				};
+			} else {
+				return {
+					success: false,
+					error: data.error || 'Failed to remove article exclusion'
+				};
+			}
+		} catch (error) {
+			console.error('Failed to remove article exclusion:', error);
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : 'Unknown error'
+			};
+		}
+	}
 }
 
-// Export both the class and singleton instance
-export { MasterVideoService };
+// Export the singleton instance
 export const masterVideoService = new MasterVideoService(); 

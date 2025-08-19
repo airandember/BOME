@@ -30,6 +30,13 @@
 			description: 'Manage video content and uploads'
 		},
 		{
+			name: 'Tags & Categories',
+			href: '/admin/streaming/tags-categories',
+			icon: 'tag',
+			description: 'Manage tags and categories'
+		},
+
+		{
 			name: 'Subscriptions - Plans & Offers',
 			href: '/admin/streaming/subscriptions',
 			icon: 'credit-card',

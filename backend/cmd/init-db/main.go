@@ -26,8 +26,10 @@ func main() {
 	dbUser := getEnv("DB_USER", "bomedb")
 	dbPassword := getEnv("DB_PASSWORD", "")
 
-	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=require",
-		dbHost, dbPort, dbUser, dbPassword, dbName)
+	// Get SSL mode from environment, default to disable for local development
+	sslMode := getEnv("DB_SSL_MODE", "disable")
+	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		dbHost, dbPort, dbUser, dbPassword, dbName, sslMode)
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {

@@ -16,8 +16,12 @@
 	let tagAnalytics: any = null;
 	let isLoading = true;
 	let isTagging = false;
-	let taggingProgress = { current: 0, total: 0, message: '' };
 
+	// Single progress tracking system
+	let isProcessing = false;
+	let currentCount = 0;
+	let totalCount = 0;
+	
 	// Close modal
 	function closeModal() {
 		dispatch('close');
@@ -48,16 +52,14 @@
 	async function tagUntaggedVideos() {
 		try {
 			isTagging = true;
-			taggingProgress = { current: 0, total: 0, message: 'Finding untagged videos...' };
 			showToast('🔄 Starting to tag untagged videos...', 'info');
 			
 			// Get untagged videos
-			const response = await masterVideoService.getUntaggedVideos(1000); // Get up to 1000 untagged videos
+			const response = await masterVideoService.getUntaggedVideos(1000);
 			if (response.success && response.videos) {
 				const untaggedVideos = response.videos;
-				taggingProgress.total = untaggedVideos.length;
-				taggingProgress.message = `Processing ${untaggedVideos.length} untagged videos in batches...`;
-				showToast(`📝 Found ${untaggedVideos.length} untagged videos to process`, 'info');
+				const totalVideos = untaggedVideos.length;
+				showToast(`📝 Found ${totalVideos} untagged videos to process`, 'info');
 				
 				// Extract video IDs for batch processing
 				const videoIDs = untaggedVideos.map(video => video.ID);
@@ -66,21 +68,44 @@
 				const batchSize = 100;
 				const totalBatches = Math.ceil(videoIDs.length / batchSize);
 				
-				// Use batch tagging instead of individual calls
-				const batchResponse = await masterVideoService.batchAutoTagVideos(videoIDs);
-				
-				if (batchResponse.success) {
-					showToast(`✅ ${batchResponse.message}`, 'success');
-					console.log('Batch tagging results:', batchResponse);
+				// Initialize progress tracking
+				isProcessing = true;
+				currentCount = 0;
+				totalCount = totalVideos;
+
+				try {
+					// Process each batch with progress updates
+					for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+						// Get the current batch of video IDs
+						const startIdx = batchIndex * batchSize;
+						const endIdx = Math.min(startIdx + batchSize, videoIDs.length);
+						const batchVideoIDs = videoIDs.slice(startIdx, endIdx);
+						
+						console.log(`Processing batch ${batchIndex + 1}/${totalBatches} with ${batchVideoIDs.length} videos`);
+						
+						// Process this batch
+						const batchResponse = await masterVideoService.batchAutoTagVideos(batchVideoIDs);
+						
+						if (!batchResponse.success) {
+							throw new Error(`Batch ${batchIndex + 1} failed: ${batchResponse.error}`);
+						}
+						
+						// Update progress: add the videos we just processed
+						currentCount += batchVideoIDs.length;
+						
+						// Small delay between batches
+						if (batchIndex < totalBatches - 1) {
+							await new Promise(resolve => setTimeout(resolve, 100));
+						}
+					}
 					
-					// Update progress to show completion
-					taggingProgress.current = untaggedVideos.length;
-					taggingProgress.message = `Completed! Processed ${untaggedVideos.length} videos in ${totalBatches} batches`;
+					isProcessing = false;
+					showToast('✅ All batches completed successfully!', 'success');
 					
-					// Update analytics in real-time after successful tagging
-					await updateAnalyticsInRealTime(batchResponse.results || []);
-				} else {
-					showToast(`❌ Batch tagging failed: ${batchResponse.error}`, 'error');
+				} catch (error) {
+					console.error('Batch tagging error:', error);
+					isProcessing = false;
+					showToast(`❌ Batch tagging failed: ${error}`, 'error');
 				}
 				
 				// Final reload of analytics to show updated stats
@@ -95,7 +120,9 @@
 			// Keep progress visible for a moment to show completion
 			setTimeout(() => {
 				isTagging = false;
-				taggingProgress = { current: 0, total: 0, message: '' };
+				isProcessing = false;
+				currentCount = 0;
+				totalCount = 0;
 			}, 2000);
 		}
 	}
@@ -104,16 +131,14 @@
 	async function tagAllVideos() {
 		try {
 			isTagging = true;
-			taggingProgress = { current: 0, total: 0, message: 'Finding all videos...' };
 			showToast('🔄 Starting to tag all videos...', 'info');
 			
 			// Get all videos
 			const response = await masterVideoService.getMasterVideos({ page: 1, limit: 1000 });
 			if (response.success && response.videos) {
 				const allVideos = response.videos;
-				taggingProgress.total = allVideos.length;
-				taggingProgress.message = `Processing ${allVideos.length} videos in batches...`;
-				showToast(`📝 Found ${allVideos.length} videos to process`, 'info');
+				const totalVideos = allVideos.length;
+				showToast(`📝 Found ${totalVideos} videos to process`, 'info');
 				
 				// Extract video IDs for batch processing
 				const videoIDs = allVideos.map(video => video.ID);
@@ -122,21 +147,44 @@
 				const batchSize = 100;
 				const totalBatches = Math.ceil(videoIDs.length / batchSize);
 				
-				// Use batch tagging instead of individual calls
-				const batchResponse = await masterVideoService.batchAutoTagVideos(videoIDs);
-				
-				if (batchResponse.success) {
-					showToast(`✅ ${batchResponse.message}`, 'success');
-					console.log('Batch tagging results:', batchResponse);
+				// Initialize progress tracking
+				isProcessing = true;
+				currentCount = 0;
+				totalCount = totalVideos;
+
+				try {
+					// Process each batch with progress updates
+					for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+						// Get the current batch of video IDs
+						const startIdx = batchIndex * batchSize;
+						const endIdx = Math.min(startIdx + batchSize, videoIDs.length);
+						const batchVideoIDs = videoIDs.slice(startIdx, endIdx);
+						
+						console.log(`Processing batch ${batchIndex + 1}/${totalBatches} with ${batchVideoIDs.length} videos`);
+						
+						// Process this batch
+						const batchResponse = await masterVideoService.batchAutoTagVideos(batchVideoIDs);
+						
+						if (!batchResponse.success) {
+							throw new Error(`Batch ${batchIndex + 1} failed: ${batchResponse.error}`);
+						}
+						
+						// Update progress: add the videos we just processed
+						currentCount += batchVideoIDs.length;
+						
+						// Small delay between batches
+						if (batchIndex < totalBatches - 1) {
+							await new Promise(resolve => setTimeout(resolve, 100));
+						}
+					}
 					
-					// Update progress to show completion
-					taggingProgress.current = allVideos.length;
-					taggingProgress.message = `Completed! Processed ${allVideos.length} videos in ${totalBatches} batches`;
+					isProcessing = false;
+					showToast('✅ All batches completed successfully!', 'success');
 					
-					// Update analytics in real-time after successful tagging
-					await updateAnalyticsInRealTime(batchResponse.results || []);
-				} else {
-					showToast(`❌ Batch tagging failed: ${batchResponse.error}`, 'error');
+				} catch (error) {
+					console.error('Batch tagging error:', error);
+					isProcessing = false;
+					showToast(`❌ Batch tagging failed: ${error}`, 'error');
 				}
 				
 				// Final reload of analytics to show updated stats
@@ -145,50 +193,20 @@
 				showToast('❌ Failed to get videos', 'error');
 			}
 		} catch (error) {
-			console.error('Failed to tag all videos:', error);
+			console.error('Failed to tag all videos', error);
 			showToast('❌ Failed to tag all videos', 'error');
 		} finally {
 			// Keep progress visible for a moment to show completion
 			setTimeout(() => {
 				isTagging = false;
-				taggingProgress = { current: 0, total: 0, message: '' };
+				isProcessing = false;
+				currentCount = 0;
+				totalCount = 0;
 			}, 2000);
 		}
 	}
 
-	// Update analytics in real-time based on tagging results
-	async function updateAnalyticsInRealTime(taggingResults: any[]) {
-		if (!tagAnalytics) return;
-		
-		try {
-			// Create a copy of current analytics to update
-			const updatedAnalytics = { ...tagAnalytics };
-			
-			// Count successful vs failed tagging operations
-			const successfulResults = taggingResults.filter(r => r.success);
-			const failedResults = taggingResults.filter(r => !r.success);
-			
-			// Update counts
-			updatedAnalytics.successful_tagging = (updatedAnalytics.successful_tagging || 0) + successfulResults.length;
-			updatedAnalytics.failed_tagging = (updatedAnalytics.failed_tagging || 0) + failedResults.length;
-			
-			// Update progress indicators
-			updatedAnalytics.progress = {
-				completed: successfulResults.length,
-				total: taggingResults.length,
-				percentage: Math.round((successfulResults.length / taggingResults.length) * 100)
-			};
-			
-			// Update the analytics state (this will trigger UI updates)
-			tagAnalytics = updatedAnalytics;
-			
-			// Show progress toast
-			showToast(`📊 Analytics updated: ${successfulResults.length} videos processed`, 'info');
-			
-		} catch (error) {
-			console.error('Failed to update analytics in real-time:', error);
-		}
-	}
+
 
 	// Load analytics when modal opens
 	$: if (isOpen && !tagAnalytics) {
@@ -297,59 +315,31 @@
 				{/if}
 			</div>
 
-			<!-- Progress Indicator -->
-			{#if isTagging}
-				<div class="progress-section">
+			<!-- Single Progress Bar -->
+			{#if isProcessing}
+				<div class="progress-container">
 					<div class="progress-header">
-						<h3 class="text-lg font-semibold text-gray-800 mb-2">🔄 Tagging Progress</h3>
-						<p class="text-sm text-gray-600">{taggingProgress.message}</p>
+						<h4>Tagging in Progress</h4>
+						<p class="progress-message">Processing videos: {currentCount} of {totalCount}</p>
 					</div>
 					
 					<div class="progress-bar">
-						<div class="progress-fill" style="width: {taggingProgress.total > 0 ? (taggingProgress.current / taggingProgress.total) * 100 : 0}%"></div>
+						<div class="progress-fill" style="width: {totalCount > 0 ? (currentCount / totalCount) * 100 : 0}%"></div>
 					</div>
 					
 					<div class="progress-stats">
-						<span class="text-sm text-gray-600">
-							{taggingProgress.current} / {taggingProgress.total} videos
-						</span>
-						{#if taggingProgress.total > 0}
-							<span class="text-sm text-green-600 font-medium">
-								{Math.round((taggingProgress.current / taggingProgress.total) * 100)}% complete
-							</span>
-						{/if}
+						<span>{Math.round(totalCount > 0 ? (currentCount / totalCount) * 100 : 0)}% Complete</span>
 					</div>
-					
-					{#if taggingProgress.total > 0}
-						<div class="batch-info">
-							<span class="text-xs text-gray-500">
-								📦 Processing in batches of 100 videos
-							</span>
-						</div>
-					{/if}
-					
-					{#if tagAnalytics?.successful_tagging || tagAnalytics?.failed_tagging}
-						<div class="real-time-updates">
-							<div class="update-item success">
-								✅ Successfully tagged: {tagAnalytics.successful_tagging || 0}
-							</div>
-							{#if tagAnalytics.failed_tagging > 0}
-								<div class="update-item error">
-									❌ Failed: {tagAnalytics.failed_tagging}
-								</div>
-							{/if}
-						</div>
-					{/if}
 				</div>
 			{/if}
 
 			<div class="modal-footer">
 				<div class="tagButtons">
-					<button class="btn bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors" on:click={tagUntaggedVideos} disabled={isTagging}>
-						{isTagging ? 'Tagging...' : 'Tag Untagged'}
+					<button class="btn bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors" on:click={tagUntaggedVideos} disabled={isTagging || isProcessing}>
+						{isTagging || isProcessing ? 'Tagging...' : 'Tag Untagged'}
 					</button>
-					<button class="btn bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors" on:click={tagAllVideos} disabled={isTagging}>
-						{isTagging ? 'Tagging...' : 'Tag All'}
+					<button class="btn bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors" on:click={tagAllVideos} disabled={isTagging || isProcessing}>
+						{isTagging || isProcessing ? 'Tagging...' : 'Tag All'}
 					</button>
 				</div>
 				<button class="btn bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors" on:click={closeModal}>
@@ -785,5 +775,51 @@
 		.stats-grid {
 			grid-template-columns: repeat(2, 1fr);
 		}
+	}
+
+	/* Simple progress bar styles */
+	.progress-container {
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 8px;
+		padding: 1.5rem;
+		margin: 1rem 0;
+	}
+
+	.progress-header h4 {
+		margin: 0 0 0.5rem 0;
+		color: var(--text-primary, #ffffff);
+		font-size: 1.1rem;
+		font-weight: 600;
+	}
+
+	.progress-message {
+		margin: 0 0 1rem 0;
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 0.9rem;
+	}
+
+	.progress-bar {
+		width: 100%;
+		height: 8px;
+		background: rgba(255, 255, 255, 0.1);
+		border-radius: 4px;
+		overflow: hidden;
+		margin-bottom: 1rem;
+	}
+
+	.progress-fill {
+		height: 100%;
+		background: linear-gradient(90deg, #3b82f6, #10b981);
+		border-radius: 4px;
+		transition: width 0.3s ease;
+	}
+
+	.progress-stats {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		font-size: 0.875rem;
+		color: var(--text-secondary, #a0a0a0);
 	}
 </style>

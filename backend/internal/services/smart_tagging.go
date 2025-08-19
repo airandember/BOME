@@ -1,6 +1,8 @@
 package services
 
 import (
+	"bome-backend/internal/database"
+	"fmt"
 	"strings"
 	"unicode"
 )
@@ -9,29 +11,14 @@ import (
 type SmartTaggingService struct {
 	// Common articles and words to filter out
 	articles map[string]bool
+	db       *database.DB
 }
 
 // NewSmartTaggingService creates a new smart tagging service
-func NewSmartTaggingService() *SmartTaggingService {
+func NewSmartTaggingService(db *database.DB) *SmartTaggingService {
 	return &SmartTaggingService{
-		articles: map[string]bool{
-			"and": true, "the": true, "of": true, "for": true, "a": true, "an": true,
-			"in": true, "on": true, "at": true, "to": true, "with": true, "by": true,
-			"from": true, "into": true, "during": true, "including": true, "until": true,
-			"against": true, "among": true, "throughout": true, "despite": true,
-			"towards": true, "upon": true, "concerning": true, "excepting": true,
-			"excluding": true, "following": true, "inside": true, "outside": true,
-			"over": true, "past": true, "since": true, "under": true, "within": true,
-			"without": true, "about": true, "above": true, "across": true, "after": true,
-			"along": true, "around": true, "before": true, "behind": true, "below": true,
-			"beneath": true, "beside": true, "between": true, "beyond": true,
-			"down": true, "except": true, "near": true, "off": true, "onto": true,
-			"out": true, "through": true, "toward": true, "underneath": true,
-			"up": true, "1080p": true, "720p": true, "480p": true, "360p": true, "240p": true, "144p": true,
-			"are": true, "how": true, "is": true, "29fps": true, "your": true, "why": true, "what": true,
-			"when": true, "where": true, "who": true, "which": true, "that": true, "this": true, "these": true,
-			"they": true, "them": true, "their": true, "they're": true, "they've": true, "they'll": true,
-		},
+		articles: make(map[string]bool), // Will be populated from database
+		db:       db,
 	}
 }
 
@@ -132,6 +119,18 @@ func (s *SmartTaggingService) GenerateTagsFromTitle(title string) *TaggingResult
 		OriginalTitle:  originalTitle,
 		ProcessedTitle: remainingTitle,
 	}
+}
+
+// LoadExclusions loads excluded words from the database for a specific subsite
+func (s *SmartTaggingService) LoadExclusions(subsiteID int) error {
+	excludedWords, err := s.db.GetExcludedWords(subsiteID)
+	if err != nil {
+		return fmt.Errorf("failed to load exclusions: %v", err)
+	}
+
+	// Clear existing articles and load from database
+	s.articles = excludedWords
+	return nil
 }
 
 // cleanWord removes punctuation and converts to lowercase
