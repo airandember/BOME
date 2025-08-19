@@ -79,10 +79,10 @@
 			</button>
 			
 			<button class="bt btn-secondary"
-				style="background: linear-gradient(135deg, #f59e0b, #d97706); ;"
+				style="background: linear-gradient(135deg, #f59e0b, #d97706); border-radius: 10px; padding: 0.5rem 1rem;"
 				on:click={showTagAnalytics}
 			>
-				<span style="color: white !important; font-size: clamp(12px, 1vw, 2.5rem);">🏷️Tags </span>
+				<span style="color: white !important; font-size: clamp(12px, 1vw, 2.5rem);">Tags<br>🏷️ </span>
 			</button>
 		</div>
 		<a
@@ -224,7 +224,7 @@
 	@keyframes rabbitBounce {
 		0% {
 			left: -30px;
-			transform: translateY(0px) rotate(-10deg);
+			transform: translateY(0px) rotate(-10deg) scaleX(-1);
 		}
 		25% {
 			left: 15px;
@@ -232,15 +232,15 @@
 		}
 		50% {
 			left: 45px;
-			transform: translateY(0px) rotate(10deg);
+			transform: translateY(0px) rotate(10deg) scaleX(-1);
 		}
 		75% {
 			left: 75px;
-			transform: translateY(-6px) rotate(0deg);
+			transform: translateY(-6px) rotate(0deg) scaleX(-1);
 		}
 		100% {
 			left: 190px;
-			transform: translateY(0px) rotate(10deg);
+			transform: translateY(0px) rotate(10deg) scaleX(-1);
 		}
 	}
 

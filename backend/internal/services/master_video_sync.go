@@ -308,7 +308,7 @@ func (s *MasterVideoSyncService) createMasterVideoFromBunny(bunnyVideo BunnyVide
 
 	masterVideo := &database.MasterVideo{
 		BunnyVideoID:         bunnyVideo.GUID,
-		Title:                bunnyVideo.Title,
+		Title:                s.cleanTitleFromFileExtension(bunnyVideo.Title),
 		Description:          s.getBunnyDescription(bunnyVideo),
 		Category:             bunnyVideo.Category,
 		Tags:                 s.extractTagsFromBunny(bunnyVideo),
@@ -402,6 +402,26 @@ func (s *MasterVideoSyncService) processMasterVideo(masterVideo *database.Master
 	return s.db.UpdateMasterVideo(masterVideo)
 }
 
+// cleanTitleFromFileExtension removes common video file extensions from titles
+// This handles the pattern where Bunny.net titles include extensions like .mp4, .mov, .wmv, etc.
+func (s *MasterVideoSyncService) cleanTitleFromFileExtension(title string) string {
+	if title == "" {
+		return title
+	}
+
+	// Common video file extensions to remove
+	extensions := []string{".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv", ".mp3"}
+
+	// Check if title ends with any of these extensions
+	for _, ext := range extensions {
+		if len(title) > len(ext) && strings.HasSuffix(strings.ToLower(title), ext) {
+			return title[:len(title)-len(ext)]
+		}
+	}
+
+	return title
+}
+
 func (s *MasterVideoSyncService) checkVideoConflicts(masterVideo *database.MasterVideo) ([]*FieldConflict, error) {
 	// Get current Bunny video
 	bunnyVideo, err := s.bunnyService.GetVideo(masterVideo.BunnyVideoID)
@@ -415,12 +435,13 @@ func (s *MasterVideoSyncService) checkVideoConflicts(masterVideo *database.Maste
 func (s *MasterVideoSyncService) detectConflicts(masterVideo *database.MasterVideo, bunnyVideo BunnyVideo) []*FieldConflict {
 	var conflicts []*FieldConflict
 
-	// Check title
-	if masterVideo.Title != bunnyVideo.Title {
+	// Check title (clean file extensions from Bunny title for comparison)
+	cleanBunnyTitle := s.cleanTitleFromFileExtension(bunnyVideo.Title)
+	if masterVideo.Title != cleanBunnyTitle {
 		conflicts = append(conflicts, &FieldConflict{
 			Field:        "title",
 			MasterValue:  masterVideo.Title,
-			BunnyValue:   bunnyVideo.Title,
+			BunnyValue:   cleanBunnyTitle, // Use cleaned title for conflict reporting
 			ConflictType: "field_mismatch",
 		})
 	}
@@ -471,7 +492,8 @@ func (s *MasterVideoSyncService) determineBunnyUpdates(masterVideo *database.Mas
 	updates := make(map[string]interface{})
 
 	// Check if master has newer metadata that should be pushed to Bunny
-	if masterVideo.Title != bunnyVideo.Title {
+	cleanBunnyTitle := s.cleanTitleFromFileExtension(bunnyVideo.Title)
+	if masterVideo.Title != cleanBunnyTitle {
 		updates["title"] = masterVideo.Title
 	}
 
@@ -546,7 +568,8 @@ func (s *MasterVideoSyncService) extractTagsFromBunny(bunnyVideo BunnyVideo) []s
 	tags := []string{"bunny", "streaming"}
 
 	if bunnyVideo.Title != "" {
-		tags = append(tags, strings.ToLower(bunnyVideo.Title))
+		cleanTitle := s.cleanTitleFromFileExtension(bunnyVideo.Title)
+		tags = append(tags, strings.ToLower(cleanTitle))
 	}
 
 	if bunnyVideo.Category != "" {

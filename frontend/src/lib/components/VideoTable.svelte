@@ -144,7 +144,7 @@
 			</thead>
 			<tbody>
 				{#each videos as video (video.ID)}
-					<tr class="hover:bg-gray-50" in:fly={{ y: 20, duration: 300 }}>
+					<tr class="video-row" in:fly={{ y: 20, duration: 300 }}>
 						<td>{video.ID}</td>
 						<td class="thumbnail-cell">
 							{#if video.ThumbnailURL}
@@ -224,7 +224,7 @@
 								on:click={() => handleTagVideo(video)}
 								title="Tag video"
 							>
-								��️
+								🏷️
 							</button>
 						</td>
 					</tr>
@@ -269,6 +269,7 @@
 	.videos-table {
 		width: 100%;
 		border-collapse: collapse;
+		overflow: visible;
 	}
 
 	.videos-table th,
@@ -276,6 +277,7 @@
 		padding: 1rem;
 		text-align: left;
 		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+		
 	}
 
 	.videos-table th {
@@ -299,6 +301,21 @@
 
 	.videos-table tr:hover {
 		background: rgba(255, 255, 255, 0.05);
+	}
+
+	.video-row {
+		border-radius: 13px;
+		background: #ebebeb;
+		box-shadow: inset 5px 5px 10px var(--bg-quaternary),
+            inset -5px -5px 10px var(--bg-primary);
+		transition: all 0.3s ease;
+	}
+
+	.video-row:hover {
+		border-radius: 13px;
+		background: linear-gradient(145deg, var(--bg-glass-dark), var(--bg-glass-light));
+		box-shadow:  8px 8px 16px var(--bg-glass-dark),
+             -8px -8px 16px var(--bg-glass-light);
 	}
 
 	.thumbnail-cell {
@@ -352,12 +369,15 @@
 	.status-badge {
 		display: flex;
 		flex-wrap: nowrap;
-		padding: 0.25rem 0.75rem;
+		padding: 1.25rem 0.75rem;
 		border-radius: 20px;
-		font-size: clamp(0.3rem, 0.6vw, 0.6rem);
+		font-size: clamp(0.3rem, 0.6vw, 1.6rem);
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
+		text-align: center;
+		justify-content: center;
+		min-width: 135px;
 	}
 
 	.status-badge.success {
@@ -384,7 +404,7 @@
 		display: flex;
 		flex-direction: column;
 		height: 185.25px;
-		gap: 3rem;
+		gap: 1rem;
 		margin-top: 1rem;
 		vertical-align: top;
 	}
@@ -430,6 +450,7 @@
 		background: linear-gradient(135deg, #f59e0b, #d97706);
 		color: white;
 		border: none;
+		min-height: 30px
 	}
 
 	.btn-tag:hover {
