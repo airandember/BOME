@@ -17,10 +17,83 @@
 	// Local state
 	let taggingResult: any = null;
 	let isTagging = false;
+	let newTag = '';
+	let isAddingTag = false;
+	let isRemovingTag = false;
 
 	// Close modal
 	function closeModal() {
 		dispatch('close');
+	}
+
+	// Reset modal state when video changes
+	$: if (video && isOpen) {
+		taggingResult = null;
+		newTag = '';
+	}
+
+	// Add new tag to video
+	async function addTag() {
+		if (!video || !newTag.trim()) return;
+		
+		try {
+			isAddingTag = true;
+			const currentTags = video.Tags || [];
+			const updatedTags = [...currentTags, newTag.trim()];
+			
+			// Update video tags in database
+			const response = await masterVideoService.updateMasterVideo(video.ID, { Tags: updatedTags });
+			if (response.success) {
+				// Update local video object
+				const updatedVideo = { ...video, Tags: updatedTags, Tagged: true };
+				dispatch('videoUpdated', {
+					video: updatedVideo,
+					tags: updatedTags
+				});
+				
+				// Reset form
+				newTag = '';
+				showToast('✅ Tag added successfully', 'success');
+			} else {
+				showToast('❌ Failed to add tag', 'error');
+			}
+		} catch (error) {
+			console.error('Failed to add tag:', error);
+			showToast('❌ Failed to add tag', 'error');
+		} finally {
+			isAddingTag = false;
+		}
+	}
+
+	// Remove tag from video
+	async function removeTag(tagToRemove: string) {
+		if (!video) return;
+		
+		try {
+			isRemovingTag = true;
+			const currentTags = video.Tags || [];
+			const updatedTags = currentTags.filter(tag => tag !== tagToRemove);
+			
+			// Update video tags in database
+			const response = await masterVideoService.updateMasterVideo(video.ID, { Tags: updatedTags });
+			if (response.success) {
+				// Update local video object
+				const updatedVideo = { ...video, Tags: updatedTags, Tagged: updatedTags.length > 0 };
+				dispatch('videoUpdated', {
+					video: updatedVideo,
+					tags: updatedTags
+				});
+				
+				showToast('✅ Tag removed successfully', 'success');
+			} else {
+				showToast('❌ Failed to remove tag', 'error');
+			}
+		} catch (error) {
+			console.error('Failed to remove tag:', error);
+			showToast('❌ Failed to remove tag', 'error');
+		} finally {
+			isRemovingTag = false;
+		}
 	}
 
 	// Auto-tag video
@@ -66,8 +139,52 @@
 				{#if video}
 					<div class="video-info">
 						<h3>Video: {video.Title}</h3>
-						<p><strong>Current Tags:</strong> {video.Tags?.length ? video.Tags.join(', ') : 'None'}</p>
 						<p><strong>Tagged:</strong> {video.Tagged ? '✅ Yes' : '❌ No'}</p>
+					</div>
+
+					<!-- Current Tags Management -->
+					<div class="current-tags-section">
+						<h4>Current Tags</h4>
+						{#if video.Tags && video.Tags.length > 0}
+							<div class="tags-display">
+								{#each video.Tags as tag}
+									<div class="tag-chip">
+										<span class="tag-text">{tag}</span>
+										<button 
+											class="remove-tag-btn" 
+											on:click={() => removeTag(tag)}
+											disabled={isRemovingTag}
+											title="Remove tag"
+										>
+											❌
+										</button>
+									</div>
+								{/each}
+							</div>
+						{:else}
+							<p class="no-tags">No tags assigned</p>
+						{/if}
+					</div>
+
+					<!-- Add New Tag -->
+					<div class="add-tag-section">
+						<h4>Add New Tag</h4>
+						<div class="add-tag-form">
+							<input 
+								type="text" 
+								bind:value={newTag} 
+								placeholder="Enter new tag..."
+								on:keydown={(e) => e.key === 'Enter' && addTag()}
+								disabled={isAddingTag}
+							/>
+							<button 
+								on:click={addTag} 
+								disabled={!newTag.trim() || isAddingTag}
+								class="add-tag-btn"
+							>
+								{isAddingTag ? 'Adding...' : 'Add Tag'}
+							</button>
+						</div>
 					</div>
 
 					{#if !taggingResult}
@@ -214,6 +331,115 @@
 	.result-details p {
 		margin: 0.5rem 0;
 		color: var(--text-secondary);
+	}
+
+	/* Current Tags Management */
+	.current-tags-section,
+	.add-tag-section {
+		margin: 1.5rem 0;
+		padding: 1rem;
+		background: rgba(255, 255, 255, 0.05);
+		border-radius: 8px;
+		border: 1px solid rgba(255, 255, 255, 0.1);
+	}
+
+	.current-tags-section h4,
+	.add-tag-section h4 {
+		margin: 0 0 1rem 0;
+		color: var(--text-primary);
+		font-size: 1.1rem;
+	}
+
+	.tags-display {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+	}
+
+	.tag-chip {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		background: var(--primary-color);
+		color: var(--text-secondary);
+		padding: 0.5rem 0.75rem;
+		border-radius: 20px;
+		font-size: 0.9rem;
+	}
+
+	.tag-text {
+		font-weight: 500;
+	}
+
+	.remove-tag-btn {
+		background: none;
+		border: none;
+		color: inherit;
+		cursor: pointer;
+		padding: 0;
+		font-size: 0.8rem;
+		opacity: 0.8;
+		transition: opacity 0.2s ease;
+	}
+
+	.remove-tag-btn:hover {
+		opacity: 1;
+	}
+
+	.remove-tag-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.no-tags {
+		color: var(--text-secondary);
+		font-style: italic;
+		margin: 0;
+	}
+
+	.add-tag-form {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
+
+	.add-tag-form input {
+		flex: 1;
+		padding: 0.5rem 1rem;
+		border: 1px solid var(--border-color);
+		border-radius: 6px;
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		font-size: 0.9rem;
+	}
+
+	.add-tag-form input:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.add-tag-btn {
+		background: var(--primary-color);
+		color: var(--text-secondary);
+		border: none;
+		padding: 0.5rem 1rem;
+		border-radius: 6px;
+		cursor: pointer;
+		font-size: 0.9rem;
+		transition: all 0.3s ease;
+		white-space: nowrap;
+	}
+
+	.add-tag-btn:hover:not(:disabled) {
+		background: var(--primary-hover);
+		transform: translateY(-1px);
+	}
+
+	.add-tag-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none;
 	}
 
 	.tags-display {
