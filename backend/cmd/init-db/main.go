@@ -26,8 +26,10 @@ func main() {
 	dbUser := getEnv("DB_USER", "bomedb")
 	dbPassword := getEnv("DB_PASSWORD", "")
 
-	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=require",
-		dbHost, dbPort, dbUser, dbPassword, dbName)
+	// Get SSL mode from environment, default to disable for local development
+	sslMode := getEnv("DB_SSL_MODE", "disable")
+	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		dbHost, dbPort, dbUser, dbPassword, dbName, sslMode)
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -204,6 +206,76 @@ func initializeSchema(db *sql.DB) error {
             user_agent TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );`,
+
+		// 9. Master Video List and Tagging System
+		`CREATE TABLE IF NOT EXISTS master_video_list (
+            id SERIAL PRIMARY KEY,
+            bunny_video_id VARCHAR(255) UNIQUE NOT NULL,
+            title VARCHAR(500) NOT NULL,
+            description TEXT,
+            category VARCHAR(100),
+            tags JSONB DEFAULT '[]',
+            tagged BOOLEAN DEFAULT FALSE,
+            duration INTEGER DEFAULT 0,
+            file_size BIGINT DEFAULT 0,
+            resolution VARCHAR(50),
+            framerate DECIMAL(5,2),
+            thumbnail_url TEXT,
+            video_url TEXT,
+            iframe_src TEXT,
+            playback_url TEXT,
+            status VARCHAR(50) DEFAULT 'processing',
+            views INTEGER DEFAULT 0,
+            likes INTEGER DEFAULT 0,
+            is_public BOOLEAN DEFAULT true,
+            encode_progress INTEGER DEFAULT 0,
+            available_resolutions JSONB DEFAULT '[]',
+            collection_id VARCHAR(255),
+            average_watch_time INTEGER DEFAULT 0,
+            total_watch_time BIGINT DEFAULT 0,
+            last_bunny_sync TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_master_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            sync_status VARCHAR(50) DEFAULT 'synced',
+            sync_notes TEXT,
+            metadata_version INTEGER DEFAULT 1,
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );`,
+
+		`CREATE TABLE IF NOT EXISTS video_tags (
+            id SERIAL PRIMARY KEY,
+            word VARCHAR(100) NOT NULL UNIQUE,
+            frequency INTEGER DEFAULT 1,
+            category_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );`,
+
+		`CREATE TABLE IF NOT EXISTS tag_categories (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(50) NOT NULL UNIQUE,
+            description TEXT,
+            color VARCHAR(7) DEFAULT '#6b7280',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );`,
+
+		`CREATE TABLE IF NOT EXISTS video_sync_conflicts (
+            id SERIAL PRIMARY KEY,
+            master_video_id INTEGER REFERENCES master_video_list(id) ON DELETE CASCADE,
+            bunny_video_id VARCHAR(255) NOT NULL,
+            conflict_type VARCHAR(50) NOT NULL,
+            field_name VARCHAR(100),
+            master_value TEXT,
+            bunny_value TEXT,
+            proposed_action VARCHAR(50) NOT NULL,
+            admin_notes TEXT,
+            resolved BOOLEAN DEFAULT false,
+            resolved_by INTEGER REFERENCES users(id),
+            resolved_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );`,
 	}
 
 	// Execute each schema
@@ -222,6 +294,24 @@ func initializeSchema(db *sql.DB) error {
 		"CREATE INDEX IF NOT EXISTS idx_subscription_plans_active ON subscription_plans(is_active);",
 		"CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);",
 		"CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);",
+		
+		// Master video list indexes
+		"CREATE INDEX IF NOT EXISTS idx_master_video_bunny_id ON master_video_list(bunny_video_id);",
+		"CREATE INDEX IF NOT EXISTS idx_master_video_status ON master_video_list(status);",
+		"CREATE INDEX IF NOT EXISTS idx_master_video_category ON master_video_list(category);",
+		"CREATE INDEX IF NOT EXISTS idx_master_video_sync_status ON master_video_list(sync_status);",
+		"CREATE INDEX IF NOT EXISTS idx_master_video_created_at ON master_video_list(created_at);",
+		"CREATE INDEX IF NOT EXISTS idx_master_video_views ON master_video_list(views DESC);",
+		"CREATE INDEX IF NOT EXISTS idx_master_video_collection ON master_video_list(collection_id);",
+		"CREATE INDEX IF NOT EXISTS idx_master_video_tagged ON master_video_list(tagged);",
+		
+		// Video tags indexes
+		"CREATE INDEX IF NOT EXISTS idx_video_tags_word ON video_tags(word);",
+		"CREATE INDEX IF NOT EXISTS idx_video_tags_frequency ON video_tags(frequency DESC);",
+		"CREATE INDEX IF NOT EXISTS idx_video_tags_category ON video_tags(category_id);",
+		
+		// Tag categories indexes
+		"CREATE INDEX IF NOT EXISTS idx_tag_categories_name ON tag_categories(name);",
 	}
 
 	for _, index := range indexes {
@@ -233,6 +323,11 @@ func initializeSchema(db *sql.DB) error {
 	// Insert essential roles
 	if err := insertEssentialRoles(db); err != nil {
 		return fmt.Errorf("failed to insert essential roles: %v", err)
+	}
+
+	// Insert default tag categories
+	if err := insertDefaultTagCategories(db); err != nil {
+		return fmt.Errorf("failed to insert default tag categories: %v", err)
 	}
 
 	log.Println("✅ Schema initialization completed")
@@ -262,6 +357,69 @@ func insertEssentialRoles(db *sql.DB) error {
 		}
 	}
 
+	return nil
+}
+
+func insertDefaultTagCategories(db *sql.DB) error {
+	log.Println("Inserting default tag categories...")
+
+	categories := []string{
+		`INSERT INTO tag_categories (name, description, color) VALUES
+			('Archaeology', 'Archaeological terms and concepts', '#8b5cf6')
+			ON CONFLICT (name) DO NOTHING;`,
+
+		`INSERT INTO tag_categories (name, description, color) VALUES
+			('Geography', 'Geographic locations and features', '#06b6d4')
+			ON CONFLICT (name) DO NOTHING;`,
+
+		`INSERT INTO tag_categories (name, description, color) VALUES
+			('DNA Research', 'Genetic and DNA-related terms', '#10b981')
+			ON CONFLICT (name) DO NOTHING;`,
+
+		`INSERT INTO tag_categories (name, description, color) VALUES
+			('Linguistics', 'Language and linguistic terms', '#f59e0b')
+			ON CONFLICT (name) DO NOTHING;`,
+
+		`INSERT INTO tag_categories (name, description, color) VALUES
+			('Historical Evidence', 'Historical documentation and evidence', '#ef4444')
+			ON CONFLICT (name) DO NOTHING;`,
+
+		`INSERT INTO tag_categories (name, description, color) VALUES
+			('Cultural Studies', 'Cultural and anthropological terms', '#ec4899')
+			ON CONFLICT (name) DO NOTHING;`,
+
+		`INSERT INTO tag_categories (name, description, color) VALUES
+			('Religious Studies', 'Religious and theological terms', '#6366f1')
+			ON CONFLICT (name) DO NOTHING;`,
+
+		`INSERT INTO tag_categories (name, description, color) VALUES
+			('Documentary', 'Documentary and media terms', '#84cc16')
+			ON CONFLICT (name) DO NOTHING;`,
+
+		`INSERT INTO tag_categories (name, description, color) VALUES
+			('Lecture', 'Educational and lecture terms', '#f97316')
+			ON CONFLICT (name) DO NOTHING;`,
+
+		`INSERT INTO tag_categories (name, description, color) VALUES
+			('Interview', 'Interview and discussion terms', '#06b6d4')
+			ON CONFLICT (name) DO NOTHING;`,
+
+		`INSERT INTO tag_categories (name, description, color) VALUES
+			('Presentation', 'Presentation and presentation terms', '#8b5cf6')
+			ON CONFLICT (name) DO NOTHING;`,
+
+		`INSERT INTO tag_categories (name, description, color) VALUES
+			('Virtual Tour', 'Tour and exploration terms', '#10b981')
+			ON CONFLICT (name) DO NOTHING;`,
+	}
+
+	for _, category := range categories {
+		if _, err := db.Exec(category); err != nil {
+			return fmt.Errorf("failed to insert tag category: %v", err)
+		}
+	}
+
+	log.Println("✅ Default tag categories inserted successfully")
 	return nil
 }
 

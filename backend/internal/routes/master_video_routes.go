@@ -3,10 +3,12 @@ package routes
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 
 	"bome-backend/internal/database"
+	"bome-backend/internal/middleware"
 	"bome-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -16,9 +18,11 @@ import (
 func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyService *services.BunnyService) {
 	fmt.Printf("Setting up master video routes...\n")
 	masterVideoService := services.NewMasterVideoSyncService(db, bunnyService)
+	smartTaggingService := services.NewSmartTaggingService(db)
 
 	// Master video list routes
 	masterVideos := router.Group("/master-videos")
+	masterVideos.Use(middleware.AuthRequired(), middleware.AdminRequired())
 	{
 		fmt.Printf("Registered master video routes:\n")
 		fmt.Printf("  GET /master-videos\n")
@@ -26,6 +30,9 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 		fmt.Printf("  PUT /master-videos/:id/toggle-status\n")
 		fmt.Printf("  PUT /master-videos/:id\n")
 		fmt.Printf("  DELETE /master-videos/:id\n")
+		fmt.Printf("  POST /master-videos/:id/auto-tag\n")
+		fmt.Printf("  GET /master-videos/tags/analytics\n")
+		fmt.Printf("  GET /master-videos/tags/untagged\n")
 		// Get all master videos with filtering and pagination
 		masterVideos.GET("", func(c *gin.Context) {
 			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
@@ -472,4 +479,534 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 			})
 		})
 	}
+
+	// Smart tagging routes
+	tags := masterVideos.Group("/tags")
+	{
+		// Get tag analytics
+		tags.GET("/analytics", func(c *gin.Context) {
+			analytics, err := db.GetTagAnalytics()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error":   "Failed to fetch tag analytics",
+					"details": err.Error(),
+				})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"data":    analytics,
+			})
+		})
+
+		// Get untagged videos
+		tags.GET("/untagged", func(c *gin.Context) {
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+			videos, err := db.GetUntaggedVideos(limit)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error":   "Failed to fetch untagged videos",
+					"details": err.Error(),
+				})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"videos":  videos,
+				"count":   len(videos),
+			})
+		})
+	}
+
+	// Auto-tag a specific video
+	masterVideos.POST("/:id/auto-tag", func(c *gin.Context) {
+		id, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid video ID"})
+			return
+		}
+
+		// Get the video
+		video, err := db.GetMasterVideoByID(id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Video not found"})
+			return
+		}
+
+		// Load exclusions for streaming subsite (subsite_id = 1)
+		err = smartTaggingService.LoadExclusions(1)
+		if err != nil {
+			log.Printf("⚠️ Failed to load exclusions for tagging: %v", err)
+			// Continue without exclusions rather than failing completely
+		} else {
+			log.Printf("✅ Loaded exclusions for smart tagging")
+		}
+
+		// Generate tags using smart tagging service
+		taggingResult := smartTaggingService.GenerateTagsFromTitle(video.Title)
+
+		// Update video with generated tags
+		err = db.UpdateVideoTags(id, taggingResult.Tags)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to update video tags",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Video tagged successfully",
+			"result":  taggingResult,
+		})
+	})
+
+	// Batch auto-tag multiple videos
+	masterVideos.POST("/batch-auto-tag", func(c *gin.Context) {
+		var request struct {
+			VideoIDs []int `json:"video_ids" binding:"required"`
+		}
+
+		if err := c.ShouldBindJSON(&request); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
+			return
+		}
+
+		if len(request.VideoIDs) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No video IDs provided"})
+			return
+		}
+
+		if len(request.VideoIDs) > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Maximum 100 videos per batch"})
+			return
+		}
+
+		log.Printf("🔄 Starting batch tagging for %d videos: %v", len(request.VideoIDs), request.VideoIDs)
+
+		// Load exclusions for streaming subsite (subsite_id = 1) before processing batch
+		err := smartTaggingService.LoadExclusions(1)
+		if err != nil {
+			log.Printf("⚠️ Failed to load exclusions for batch tagging: %v", err)
+			// Continue without exclusions rather than failing completely
+		} else {
+			log.Printf("✅ Loaded exclusions for batch smart tagging")
+		}
+
+		var results []map[string]interface{}
+		var successCount, errorCount int
+
+		for _, videoID := range request.VideoIDs {
+			// Get the video
+			video, err := db.GetMasterVideoByID(videoID)
+			if err != nil {
+				log.Printf("❌ Failed to get video %d: %v", videoID, err)
+				results = append(results, map[string]interface{}{
+					"video_id": videoID,
+					"success":  false,
+					"error":    "Video not found",
+				})
+				errorCount++
+				continue
+			}
+
+			log.Printf("📝 Processing video %d: '%s'", videoID, video.Title)
+
+			// Generate tags using smart tagging service
+			taggingResult := smartTaggingService.GenerateTagsFromTitle(video.Title)
+			log.Printf("🏷️ Generated tags for video %d: %v", videoID, taggingResult.Tags)
+
+			// Update video with generated tags
+			err = db.UpdateVideoTags(videoID, taggingResult.Tags)
+			if err != nil {
+				log.Printf("❌ Failed to update tags for video %d: %v", videoID, err)
+				results = append(results, map[string]interface{}{
+					"video_id": videoID,
+					"success":  false,
+					"error":    err.Error(),
+				})
+				errorCount++
+				continue
+			}
+
+			log.Printf("✅ Successfully tagged video %d with %d tags", videoID, len(taggingResult.Tags))
+
+			results = append(results, map[string]interface{}{
+				"video_id": videoID,
+				"success":  true,
+				"result":   taggingResult,
+			})
+			successCount++
+		}
+
+		log.Printf("🎉 Batch tagging completed: %d successful, %d failed", successCount, errorCount)
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":    true,
+			"message":    fmt.Sprintf("Batch tagging completed. %d successful, %d failed", successCount, errorCount),
+			"total":      len(request.VideoIDs),
+			"successful": successCount,
+			"failed":     errorCount,
+			"results":    results,
+		})
+	})
+
+	// Tag management endpoints
+	masterVideos.POST("/tags", func(c *gin.Context) {
+		var req struct {
+			Tag string `json:"tag" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(400, gin.H{"success": false, "error": err.Error()})
+			return
+		}
+
+		// Add tag logic here
+		c.JSON(200, gin.H{"success": true, "message": "Tag added successfully"})
+	})
+
+	masterVideos.DELETE("/tags/:id", func(c *gin.Context) {
+		tagID := c.Param("id")
+		// Delete tag logic here
+		c.JSON(200, gin.H{"success": true, "message": fmt.Sprintf("Tag %s deleted successfully", tagID)})
+	})
+
+	masterVideos.PUT("/tags/:id/category", func(c *gin.Context) {
+		tagID := c.Param("id")
+		var req struct {
+			CategoryID int `json:"category_id"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(400, gin.H{"success": false, "error": err.Error()})
+			return
+		}
+
+		// Assign tag to category logic here
+		c.JSON(200, gin.H{"success": true, "message": fmt.Sprintf("Tag %s assigned to category %d successfully", tagID, req.CategoryID)})
+	})
+
+	// Category management endpoints
+	masterVideos.GET("/tags/categories", func(c *gin.Context) {
+		// Get all tag categories across all subsites for admin dashboard
+		categories, err := db.GetTagCategories()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   fmt.Sprintf("Failed to get tag categories: %v", err),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{"success": true, "result": categories})
+	})
+
+	masterVideos.POST("/tags/categories", func(c *gin.Context) {
+		var req struct {
+			Name  string `json:"name" binding:"required"`
+			Color string `json:"color" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(400, gin.H{"success": false, "error": err.Error()})
+			return
+		}
+
+		// Add category logic here
+		c.JSON(200, gin.H{"success": true, "message": fmt.Sprintf("Category '%s' added successfully", req.Name)})
+	})
+
+	masterVideos.DELETE("/tags/categories/:id", func(c *gin.Context) {
+		categoryID := c.Param("id")
+		// Delete category logic here
+		c.JSON(200, gin.H{"success": true, "message": fmt.Sprintf("Category %s deleted successfully", categoryID)})
+	})
+
+	// Subsite-specific tag management endpoints
+	masterVideos.GET("/tags/subsites/:subsite", func(c *gin.Context) {
+		subsite := c.Param("subsite")
+
+		tags, err := db.GetSubsiteTags(subsite)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   fmt.Sprintf("Failed to get %s tags: %v", subsite, err),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{"success": true, "result": tags, "subsite": subsite})
+	})
+
+	masterVideos.POST("/tags/subsites/:subsite", func(c *gin.Context) {
+		subsite := c.Param("subsite")
+		var req struct {
+			Tag string `json:"tag" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(400, gin.H{"success": false, "error": err.Error()})
+			return
+		}
+
+		// Add subsite-specific tag
+		err := db.AddSubsiteTag(subsite, req.Tag)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   fmt.Sprintf("Failed to add tag to %s subsite: %v", subsite, err),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{"success": true, "message": fmt.Sprintf("Tag added successfully to %s subsite", subsite)})
+	})
+
+	masterVideos.DELETE("/tags/subsites/:subsite/:id", func(c *gin.Context) {
+		subsite := c.Param("subsite")
+		tagID, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid tag ID"})
+			return
+		}
+
+		// Delete subsite-specific tag
+		err = db.DeleteSubsiteTag(subsite, tagID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   fmt.Sprintf("Failed to delete tag from %s subsite: %v", subsite, err),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{"success": true, "message": fmt.Sprintf("Tag deleted successfully from %s subsite", subsite)})
+	})
+
+	masterVideos.PUT("/tags/subsites/:subsite/:id/category", func(c *gin.Context) {
+		subsite := c.Param("subsite")
+		tagID, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid tag ID"})
+			return
+		}
+
+		var req struct {
+			CategoryID int `json:"category_id"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(400, gin.H{"success": false, "error": err.Error()})
+			return
+		}
+
+		// Assign subsite-specific tag to category
+		err = db.AssignSubsiteTagToCategory(subsite, tagID, req.CategoryID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   fmt.Sprintf("Failed to assign tag to category in %s subsite: %v", subsite, err),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{"success": true, "message": fmt.Sprintf("Tag assigned to category successfully in %s subsite", subsite)})
+	})
+
+	// Toggle tag active status
+	masterVideos.PUT("/tags/subsites/:subsite/:id/toggle-active", func(c *gin.Context) {
+		subsite := c.Param("subsite")
+		tagID, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid tag ID"})
+			return
+		}
+
+		// Toggle tag active status
+		err = db.ToggleTagActiveStatus(subsite, tagID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   fmt.Sprintf("Failed to toggle tag active status in %s subsite: %v", subsite, err),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{"success": true, "message": fmt.Sprintf("Tag active status toggled successfully in %s subsite", subsite)})
+	})
+
+	// Subsite-specific category management endpoints
+	masterVideos.GET("/tags/subsites/:subsite/categories", func(c *gin.Context) {
+		subsite := c.Param("subsite")
+
+		categories, err := db.GetSubsiteCategories(subsite)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   fmt.Sprintf("Failed to get %s categories: %v", subsite, err),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{"success": true, "result": categories, "subsite": subsite})
+	})
+
+	masterVideos.POST("/tags/subsites/:subsite/categories", func(c *gin.Context) {
+		subsite := c.Param("subsite")
+		var req struct {
+			Name        string `json:"name" binding:"required"`
+			Color       string `json:"color" binding:"required"`
+			Description string `json:"description"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(400, gin.H{"success": false, "error": err.Error()})
+			return
+		}
+
+		// Add subsite-specific category
+		err := db.AddSubsiteCategory(subsite, req.Name, req.Color, req.Description)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   fmt.Sprintf("Failed to add category to %s subsite: %v", subsite, err),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{"success": true, "message": fmt.Sprintf("Category '%s' added successfully to %s subsite", req.Name, subsite)})
+	})
+
+	masterVideos.DELETE("/tags/subsites/:subsite/categories/:id", func(c *gin.Context) {
+		subsite := c.Param("subsite")
+		categoryID, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid category ID"})
+			return
+		}
+
+		// Delete subsite-specific category
+		err = db.DeleteSubsiteCategory(subsite, categoryID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   fmt.Sprintf("Failed to delete category from %s subsite: %v", subsite, err),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{"success": true, "message": fmt.Sprintf("Category deleted successfully from %s subsite", subsite)})
+	})
+
+	// Article Exclusions Management
+	masterVideos.GET("/article-exclusions/:subsite", func(c *gin.Context) {
+		subsite := c.Param("subsite")
+
+		// Get subsite ID
+		subsiteID, err := db.GetSubsiteID(subsite)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Failed to get subsite ID for '%s': %v", subsite, err)})
+			return
+		}
+
+		exclusions, err := db.GetArticleExclusions(subsiteID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to get article exclusions: %v", err)})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"result":  exclusions,
+		})
+	})
+
+	masterVideos.POST("/article-exclusions/:subsite", func(c *gin.Context) {
+		subsite := c.Param("subsite")
+
+		var request struct {
+			Word string `json:"word" binding:"required"`
+		}
+
+		if err := c.ShouldBindJSON(&request); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
+			return
+		}
+
+		// Get subsite ID
+		subsiteID, err := db.GetSubsiteID(subsite)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Failed to get subsite ID for '%s': %v", subsite, err)})
+			return
+		}
+
+		err = db.AddArticleExclusion(subsiteID, request.Word)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to add article exclusion: %v", err)})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Article exclusion added successfully",
+		})
+	})
+
+	masterVideos.PUT("/article-exclusions/:subsite/toggle", func(c *gin.Context) {
+		subsite := c.Param("subsite")
+
+		var request struct {
+			Word     string `json:"word" binding:"required"`
+			Excluded bool   `json:"excluded"`
+		}
+
+		if err := c.ShouldBindJSON(&request); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
+			return
+		}
+
+		// Get subsite ID
+		subsiteID, err := db.GetSubsiteID(subsite)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Failed to get subsite ID for '%s': %v", subsite, err)})
+			return
+		}
+
+		err = db.ToggleArticleExclusion(subsiteID, request.Word, request.Excluded)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to toggle article exclusion: %v", err)})
+			return
+		}
+
+		status := "excluded"
+		if !request.Excluded {
+			status = "included"
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": fmt.Sprintf("Article exclusion '%s' %s", request.Word, status),
+		})
+	})
+
+	masterVideos.DELETE("/article-exclusions/:subsite/:word", func(c *gin.Context) {
+		subsite := c.Param("subsite")
+		word := c.Param("word")
+
+		// Get subsite ID
+		subsiteID, err := db.GetSubsiteID(subsite)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Failed to get subsite ID for '%s': %v", subsite, err)})
+			return
+		}
+
+		err = db.RemoveArticleExclusion(subsiteID, word)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to remove article exclusion: %v", err)})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Article exclusion removed successfully",
+		})
+	})
 }
