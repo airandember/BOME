@@ -64,11 +64,31 @@
 		if (!newTag.trim()) return;
 		
 		try {
-			await masterVideoService.addSubsiteTag('streaming', newTag.trim());
-			newTag = '';
-			successMessage = 'Tag added successfully to streaming subsite';
-			await loadData();
-			setTimeout(() => successMessage = '', 3000);
+			const response = await masterVideoService.addSubsiteTag('streaming', newTag.trim());
+			if (response.ok) {
+				const data = await response.json();
+				if (data.success) {
+					// Add to local state instead of reloading
+					const newTagObj = {
+						id: data.result?.id || Date.now(),
+						word: newTag.trim(),
+						frequency: 0,
+						category_id: null,
+						active_tag: true,
+						created_at: new Date().toISOString(),
+						updated_at: new Date().toISOString()
+					};
+					tags = [...tags, newTagObj];
+					
+					newTag = '';
+					successMessage = 'Tag added successfully to streaming subsite';
+					setTimeout(() => successMessage = '', 3000);
+				} else {
+					error = data.error || 'Failed to add tag';
+				}
+			} else {
+				error = 'Failed to add tag to streaming subsite';
+			}
 		} catch (err) {
 			error = 'Failed to add tag to streaming subsite';
 		}
@@ -77,10 +97,15 @@
 	async function deleteTag(tag: any) {
 		if (confirm(`Are you sure you want to delete "${tag.word}" from streaming?`)) {
 			try {
-				await masterVideoService.deleteSubsiteTag('streaming', tag.id);
-				successMessage = 'Tag removed from streaming subsite';
-				await loadData();
-				setTimeout(() => successMessage = '', 3000);
+				const response = await masterVideoService.deleteSubsiteTag('streaming', tag.id);
+				if (response.ok) {
+					// Remove from local state instead of reloading
+					tags = tags.filter(t => t.id !== tag.id);
+					successMessage = 'Tag removed from streaming subsite';
+					setTimeout(() => successMessage = '', 3000);
+				} else {
+					error = 'Failed to delete tag from streaming subsite';
+				}
 			} catch (err) {
 				error = 'Failed to delete tag from streaming subsite';
 			}
@@ -92,16 +117,35 @@
 		if (!newCategory.trim()) return;
 		
 		try {
-			await masterVideoService.addSubsiteCategory('streaming', {
+			const response = await masterVideoService.addSubsiteCategory('streaming', {
 				name: newCategory.trim(),
 				color: newCategoryColor,
 				description: `Streaming-specific category: ${newCategory.trim()}`
 			});
-			newCategory = '';
-			newCategoryColor = '#3B82F6';
-			successMessage = 'Category added successfully to streaming subsite';
-			await loadData();
-			setTimeout(() => successMessage = '', 3000);
+			if (response.ok) {
+				const data = await response.json();
+				if (data.success) {
+					// Add to local state instead of reloading
+					const newCategoryObj = {
+						id: data.result?.id || Date.now(),
+						name: newCategory.trim(),
+						color: newCategoryColor,
+						description: `Streaming-specific category: ${newCategory.trim()}`,
+						created_at: new Date().toISOString(),
+						updated_at: new Date().toISOString()
+					};
+					categories = [...categories, newCategoryObj];
+					
+					newCategory = '';
+					newCategoryColor = '#3B82F6';
+					successMessage = 'Category added successfully to streaming subsite';
+					setTimeout(() => successMessage = '', 3000);
+				} else {
+					error = data.error || 'Failed to add category';
+				}
+			} else {
+				error = 'Failed to add category to streaming subsite';
+			}
 		} catch (err) {
 			error = 'Failed to add category to streaming subsite';
 		}
@@ -110,10 +154,23 @@
 	async function deleteCategory(category: any) {
 		if (confirm(`Are you sure you want to delete "${category.name}" from streaming?`)) {
 			try {
-				await masterVideoService.deleteSubsiteCategory('streaming', category.id);
-				successMessage = 'Category removed from streaming subsite';
-				await loadData();
-				setTimeout(() => successMessage = '', 3000);
+				const response = await masterVideoService.deleteSubsiteCategory('streaming', category.id);
+				if (response.ok) {
+					// Remove from local state instead of reloading
+					categories = categories.filter(c => c.id !== category.id);
+					
+					// Also remove category_id from tags that had this category
+					tags = tags.map(t => 
+						t.category_id === category.id 
+							? { ...t, category_id: null }
+							: t
+					);
+					
+					successMessage = 'Category removed from streaming subsite';
+					setTimeout(() => successMessage = '', 3000);
+				} else {
+					error = 'Failed to delete category from streaming subsite';
+				}
 			} catch (err) {
 				error = 'Failed to delete category from streaming subsite';
 			}
@@ -122,10 +179,20 @@
 
 	async function assignTagToCategory(tagId: any, categoryId: any) {
 		try {
-			await masterVideoService.assignSubsiteTagToCategory('streaming', tagId, categoryId);
-			successMessage = 'Tag assigned to category successfully';
-			await loadData();
-			setTimeout(() => successMessage = '', 3000);
+			const response = await masterVideoService.assignSubsiteTagToCategory('streaming', tagId, categoryId);
+			if (response.ok) {
+				// Update local state instead of reloading
+				tags = tags.map(t => 
+					t.id === tagId 
+						? { ...t, category_id: categoryId === '' ? null : parseInt(categoryId) }
+						: t
+				);
+				
+				successMessage = 'Tag assigned to category successfully';
+				setTimeout(() => successMessage = '', 3000);
+			} else {
+				error = 'Failed to assign tag to category';
+			}
 		} catch (err) {
 			error = 'Failed to assign tag to category';
 		}
@@ -156,9 +223,19 @@
 		try {
 			const response = await masterVideoService.addArticleExclusion('streaming', newExclusion.trim());
 			if (response.success) {
+				// Add to local state instead of reloading
+				const newExclusionObj = {
+					id: Date.now(), // Temporary ID
+					Word: newExclusion.trim(),
+					Excluded: true,
+					subsite_id: 1, // Assuming streaming subsite ID
+					created_at: new Date().toISOString(),
+					updated_at: new Date().toISOString()
+				};
+				articleExclusions = [...articleExclusions, newExclusionObj];
+				
 				newExclusion = '';
 				successMessage = response.message || 'Article exclusion added successfully';
-				await loadArticleExclusions(); // Reload the list
 				setTimeout(() => successMessage = '', 3000);
 			} else {
 				error = response.error || 'Failed to add article exclusion';
@@ -170,10 +247,16 @@
 
 	async function toggleArticleExclusion(exclusion: any) {
 		try {
-			const response = await masterVideoService.toggleArticleExclusion('streaming', exclusion.word, !exclusion.excluded);
+			const response = await masterVideoService.toggleArticleExclusion('streaming', exclusion.Word, !exclusion.Excluded);
 			if (response.success) {
+				// Update local state instead of reloading
+				articleExclusions = articleExclusions.map(e => 
+					e.Word === exclusion.Word 
+						? { ...e, Excluded: !e.Excluded }
+						: e
+				);
+				
 				successMessage = response.message || 'Article exclusion toggled successfully';
-				await loadArticleExclusions(); // Reload the list
 				setTimeout(() => successMessage = '', 3000);
 			} else {
 				error = response.error || 'Failed to toggle article exclusion';
@@ -184,12 +267,14 @@
 	}
 
 	async function removeArticleExclusion(exclusion: any) {
-		if (confirm(`Are you sure you want to remove "${exclusion.word}" from exclusions?`)) {
+		if (confirm(`Are you sure you want to remove "${exclusion.Word}" from exclusions?`)) {
 			try {
-				const response = await masterVideoService.removeArticleExclusion('streaming', exclusion.word);
+				const response = await masterVideoService.removeArticleExclusion('streaming', exclusion.Word);
 				if (response.success) {
+					// Remove from local state instead of reloading
+					articleExclusions = articleExclusions.filter(e => e.Word !== exclusion.Word);
+					
 					successMessage = response.message || 'Article exclusion removed successfully';
-					await loadArticleExclusions(); // Reload the list
 					setTimeout(() => successMessage = '', 3000);
 				} else {
 					error = response.error || 'Failed to remove article exclusion';
@@ -208,8 +293,23 @@
 				// Then delete the tag from the tags table
 				await masterVideoService.deleteSubsiteTag('streaming', tag.id);
 				successMessage = `"${tag.word}" added to exclusions and removed from tags`;
-				await loadData(); // Reload tags
-				await loadArticleExclusions(); // Reload exclusions
+				
+				// Update local state instead of reloading
+				tags = tags.filter(t => t.id !== tag.id);
+				
+				// Add to local exclusions if not already there
+				const existingExclusion = articleExclusions.find(e => e.Word === tag.word);
+				if (!existingExclusion) {
+					articleExclusions = [...articleExclusions, {
+						id: Date.now(), // Temporary ID
+						Word: tag.word,
+						Excluded: true,
+						subsite_id: 1, // Assuming streaming subsite ID
+						created_at: new Date().toISOString(),
+						updated_at: new Date().toISOString()
+					}];
+				}
+				
 				setTimeout(() => successMessage = '', 3000);
 			} else {
 				error = response.error || 'Failed to add article exclusion';
@@ -225,7 +325,14 @@
 			const response = await masterVideoService.toggleTagActiveStatus('streaming', tag.id, !tag.active_tag);
 			if (response.success) {
 				successMessage = `Tag "${tag.word}" ${tag.active_tag ? 'deactivated' : 'activated'} successfully`;
-				await loadData(); // Reload tags
+				
+				// Update local state instead of reloading
+				tags = tags.map(t => 
+					t.id === tag.id 
+						? { ...t, active_tag: !t.active_tag }
+						: t
+				);
+				
 				setTimeout(() => successMessage = '', 3000);
 			} else {
 				error = response.error || 'Failed to toggle tag status';

@@ -535,6 +535,15 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 			return
 		}
 
+		// Load exclusions for streaming subsite (subsite_id = 1)
+		err = smartTaggingService.LoadExclusions(1)
+		if err != nil {
+			log.Printf("⚠️ Failed to load exclusions for tagging: %v", err)
+			// Continue without exclusions rather than failing completely
+		} else {
+			log.Printf("✅ Loaded exclusions for smart tagging")
+		}
+
 		// Generate tags using smart tagging service
 		taggingResult := smartTaggingService.GenerateTagsFromTitle(video.Title)
 
@@ -577,6 +586,15 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 		}
 
 		log.Printf("🔄 Starting batch tagging for %d videos: %v", len(request.VideoIDs), request.VideoIDs)
+
+		// Load exclusions for streaming subsite (subsite_id = 1) before processing batch
+		err := smartTaggingService.LoadExclusions(1)
+		if err != nil {
+			log.Printf("⚠️ Failed to load exclusions for batch tagging: %v", err)
+			// Continue without exclusions rather than failing completely
+		} else {
+			log.Printf("✅ Loaded exclusions for batch smart tagging")
+		}
 
 		var results []map[string]interface{}
 		var successCount, errorCount int
