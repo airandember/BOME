@@ -25,6 +25,12 @@
 	let newExclusion = '';
 	let exclusionsLoading = false;
 
+	// Sorting state
+	let tagsSortField: 'status' | 'word' | 'frequency' | null = null;
+	let tagsSortDirection: 'asc' | 'desc' = 'asc';
+	let exclusionsSortField: 'word' | 'status' | null = null;
+	let exclusionsSortDirection: 'asc' | 'desc' = 'asc';
+
 	onMount(() => {
 		loadData();
 		loadArticleExclusions();
@@ -339,7 +345,89 @@
 		}
 	}
 
+	// Sorting functions
+function sortTags(field: 'status' | 'word' | 'frequency') {
+	if (tagsSortField === field) {
+		tagsSortDirection = tagsSortDirection === 'asc' ? 'desc' : 'asc';
+	} else {
+		tagsSortField = field;
+		tagsSortDirection = 'asc';
+	}
+	
+	// Apply sorting
+	tags = [...tags].sort((a, b) => {
+		let aVal: any, bVal: any;
+		
+		switch (field) {
+			case 'status':
+				aVal = a.active_tag ? 1 : 0;
+				bVal = b.active_tag ? 1 : 0;
+				break;
+			case 'word':
+				aVal = a.word.toLowerCase();
+				bVal = b.word.toLowerCase();
+				break;
+			case 'frequency':
+				aVal = a.frequency || 0;
+				bVal = b.frequency || 0;
+				break;
+			default:
+				return 0;
+		}
+		
+		if (tagsSortDirection === 'asc') {
+			return aVal > bVal ? 1 : -1;
+		} else {
+			return aVal < bVal ? 1 : -1;
+		}
+	});
+}
 
+function sortExclusions(field: 'word' | 'status') {
+	if (exclusionsSortField === field) {
+		exclusionsSortDirection = exclusionsSortDirection === 'asc' ? 'desc' : 'asc';
+	} else {
+		exclusionsSortField = field;
+		exclusionsSortDirection = 'asc';
+	}
+	
+	// Apply sorting
+	articleExclusions = [...articleExclusions].sort((a, b) => {
+		let aVal: any, bVal: any;
+		
+		switch (field) {
+			case 'word':
+				// Alphanumeric sorting: numbers first, then letters
+				aVal = a.Word.toLowerCase();
+				bVal = b.Word.toLowerCase();
+				
+				// Check if both are numbers
+				const aNum = parseFloat(aVal);
+				const bNum = parseFloat(bVal);
+				if (!isNaN(aNum) && !isNaN(bNum)) {
+					return tagsSortDirection === 'asc' ? aNum - bNum : bNum - aNum;
+				}
+				// Check if only a is a number
+				if (!isNaN(aNum)) return -1;
+				// Check if only b is a number
+				if (!isNaN(bNum)) return 1;
+				// Both are strings, sort alphabetically
+				break;
+			case 'status':
+				aVal = a.Excluded ? 1 : 0;
+				bVal = b.Excluded ? 1 : 0;
+				break;
+			default:
+				return 0;
+		}
+		
+		if (exclusionsSortDirection === 'asc') {
+			return aVal > bVal ? 1 : -1;
+		} else {
+			return aVal < bVal ? 1 : -1;
+		}
+	});
+}
 
 
 	
@@ -444,9 +532,36 @@
 				<table class="exclusions-table">
 					<thead>
 						<tr>
-							<th class="exclusion-head">Status</th>
-							<th class="exclusion-head">Tag Word</th>
-							<th class="exclusion-head">Frequency</th>
+							<th class="exclusion-head sortable" on:click={() => sortTags('status')}>
+								Status
+								<span class="sort-indicator">
+									{#if tagsSortField === 'status'}
+										{tagsSortDirection === 'asc' ? '↑' : '↓'}
+									{:else}
+										↕
+									{/if}
+								</span>
+							</th>
+							<th class="exclusion-head sortable" on:click={() => sortTags('word')}>
+								Tag Word
+								<span class="sort-indicator">
+									{#if tagsSortField === 'word'}
+										{tagsSortDirection === 'asc' ? '↑' : '↓'}
+									{:else}
+										↕
+									{/if}
+								</span>
+							</th>
+							<th class="exclusion-head sortable" on:click={() => sortTags('frequency')}>
+								Frequency
+								<span class="sort-indicator">
+									{#if tagsSortField === 'frequency'}
+										{tagsSortDirection === 'asc' ? '↑' : '↓'}
+									{:else}
+										↕
+									{/if}
+								</span>
+							</th>
 							<th class="exclusion-head">Category</th>
 							<th class="exclusion-head">Actions</th>
 						</tr>
@@ -676,8 +791,26 @@
 				<table class="exclusions-table">
 					<thead>
 						<tr>
-							<th class="exclusion-head">Word/Pattern</th>
-							<th class="exclusion-head">Status</th>
+							<th class="exclusion-head sortable" on:click={() => sortExclusions('word')}>
+								Word/Pattern
+								<span class="sort-indicator">
+									{#if exclusionsSortField === 'word'}
+										{exclusionsSortDirection === 'asc' ? '↑' : '↓'}
+									{:else}
+										↕
+									{/if}
+								</span>
+							</th>
+							<th class="exclusion-head sortable" on:click={() => sortExclusions('status')}>
+								Status
+								<span class="sort-indicator">
+									{#if exclusionsSortField === 'status'}
+										{exclusionsSortDirection === 'asc' ? '↑' : '↓'}
+									{:else}
+										↕
+									{/if}
+								</span>
+							</th>
 							<th class="exclusion-head">Actions</th>
 						</tr>
 					</thead>
@@ -758,6 +891,11 @@
 
 
 <style>
+	.sort-indicator {
+		cursor: pointer;
+	}
+
+
 	.streaming-tags-categories-page {
 		padding: 2rem;
 		max-width:100%;
