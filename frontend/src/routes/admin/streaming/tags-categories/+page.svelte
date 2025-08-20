@@ -465,7 +465,81 @@
 					<p>Add tags to get started</p>
 				</div>
 			{:else}
-				<div class="tags-grid">
+			<div class="exclusions-table-container">
+				<table class="exclusions-table">
+					<thead>
+						<tr>
+							<th>Status</th>
+							<th>Tag Word</th>
+							<th>Frequency</th>
+							<th>Category</th>
+							<th>Actions</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each tags as tag}
+							<tr class="exclusion-row">
+								<td class="exclusion-status">
+									<label class="status-toggle">
+										<input 
+											type="checkbox" 
+											checked={tag.active_tag} 
+											on:change={() => toggleTagActiveStatus(tag)}
+											class="status-checkbox"
+											aria-label="Toggle tag active status"
+										/>
+										<span class="status-indicator" class:active={tag.active_tag}>
+											{tag.active_tag ? '🟢 Active' : '🔴 Inactive'}
+										</span>
+									</label>
+								</td>
+								<td class="exclusion-word">
+									<span class="word-text">{tag.word}</span>
+								</td>
+								<td class="exclusion-status">
+									<span class="tag-frequency-display">
+										{tag.frequency || 0} uses
+									</span>
+								</td>
+								<td class="exclusion-status">
+									{#if categories.length > 0}
+										<select 
+											value={tag.category_id || ''} 
+											on:change={(e) => handleCategoryChange(e, tag.id)}
+											class="category-select"
+										>
+											<option value="">No Category</option>
+											{#each categories as category}
+												<option value={category.id}>{category.name}</option>
+											{/each}
+										</select>
+									{/if}
+								</td>
+								<td class="exclusion-actions">
+									<button 
+										on:click={() => addArticleExclusionFromTag(tag)} 
+										class="remove-button"
+										title="Add to exclusions and remove tag"
+									>
+										��
+									</button>
+									<button 
+										on:click={() => deleteTag(tag)} 
+										class="remove-button"
+										title="Delete tag"
+									>
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+											<polyline points="3,6 5,6 21,6"></polyline>
+											<path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"></path>
+										</svg>
+									</button>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+				<!--<div class="tags-grid">
 					{#each tags as tag}
 						<div class="tag-card">
 							<div class="tag-info">
@@ -517,7 +591,7 @@
 							</div>
 						</div>
 					{/each}
-				</div>
+				</div>-->
 			{/if}
 		</div>
 	{/if}
@@ -623,7 +697,56 @@
 					<p>Add exclusions to prevent certain articles from being processed</p>
 				</div>
 			{:else}
-				<div class="exclusions-grid">
+			<div class="exclusions-table-container">
+				<table class="exclusions-table">
+					<thead>
+						<tr>
+							<th>Word/Pattern</th>
+							<th>Status</th>
+							<th>Actions</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each articleExclusions as exclusion}
+							<tr class="exclusion-row">
+								<td class="exclusion-word">
+									<span class="word-text">{exclusion.Word}</span>
+								</td>
+								<td class="exclusion-status">
+									<label class="status-toggle">
+									<input 
+											type="checkbox" 
+											checked={exclusion.Excluded} 
+											on:change={() => toggleArticleExclusion(exclusion)}
+											class="status-checkbox"
+											aria-label="Toggle exclusion status"
+										/>
+										
+										<span class="status-indicator" class:active={exclusion.Excluded}>
+											{exclusion.Excluded ? '🚫 Excluded' : '✅ Included'}
+										</span>
+									</label>
+								</td>
+								<td class="exclusion-actions">
+									
+									<button 
+										on:click={() => removeArticleExclusion(exclusion)} 
+										class="remove-button"
+										title="Remove exclusion"
+									>
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+											<polyline points="3,6 5,6 21,6"></polyline>
+											<path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"></path>
+										</svg>
+									</button>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+				
+				<!--<div class="exclusions-grid">
 					{#each articleExclusions as exclusion}
 						<div class="exclusion-card">
 							<div class="exclusion-info">
@@ -652,7 +775,7 @@
 							</div>
 						</div>
 					{/each}
-				</div>
+				</div>-->
 			{/if}
 		</div>
 	{/if}
@@ -1197,7 +1320,127 @@
 	min-width: 300px;
 }
 
-	
+	/* Enhanced Table Styles */
+.exclusions-table-container {
+	overflow-x: auto;
+	border-radius: 8px;
+	border: 1px solid var(--border-color);
+}
+
+.exclusions-table {
+	width: 100%;
+	border-collapse: collapse;
+	background: var(--bg-primary);
+}
+
+.exclusions-table th {
+	background: var(--bg-hover);
+	color: var(--text-primary);
+	font-weight: 600;
+	padding: 1rem;
+	text-align: left;
+	border-bottom: 2px solid var(--border-color);
+	font-size: 0.9rem;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+.exclusions-table td {
+	padding: 1rem;
+	border-bottom: 1px solid var(--border-color);
+	vertical-align: middle;
+}
+
+.exclusion-row:hover {
+	background: var(--bg-hover);
+	transition: background-color 0.2s ease;
+}
+
+.exclusion-word .word-text {
+	font-weight: 600;
+	color: var(--text-primary);
+	font-family: 'Courier New', monospace;
+	background: rgba(59, 130, 246, 0.1);
+	padding: 0.25rem 0.5rem;
+	border-radius: 4px;
+	border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.status-toggle {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	cursor: pointer;
+}
+
+.status-checkbox {
+	width: 18px;
+	height: 18px;
+	cursor: pointer;
+	accent-color: var(--primary-color);
+}
+
+.status-indicator {
+	padding: 0.25rem 0.75rem;
+	border-radius: 12px;
+	font-size: 0.8rem;
+	font-weight: 500;
+	transition: all 0.2s ease;
+}
+
+.status-indicator.active {
+	background: var(--error-bg);
+	color: var(--error-text);
+}
+
+.status-indicator:not(.active) {
+	background: var(--success-bg);
+	color: var(--success-text);
+}
+
+.remove-button {
+	background: var(--error-bg);
+	color: var(--error-text);
+	border: none;
+	padding: 0.5rem;
+	border-radius: 6px;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.remove-button:hover {
+	background: var(--error-text);
+	color: white;
+	transform: scale(1.05);
+}
+
+.remove-button svg {
+	width: 16px;
+	height: 16px;
+}
+/* Tag-specific table styles */
+.tag-frequency-display {
+	font-size: 0.9rem;
+	color: var(--text-secondary);
+	background: rgba(59, 130, 246, 0.1);
+	padding: 0.25rem 0.5rem;
+	border-radius: 4px;
+	border: 1px solid rgba(59, 130, 246, 0.2);
+	font-weight: 500;
+}
+
+.category-select {
+	padding: 0.25rem 0.5rem;
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	background: var(--bg-primary);
+	color: var(--text-primary);
+	font-size: 0.9rem;
+	min-width: 120px;
+}
 
 	@media (max-width: 768px) {
 		.streaming-tags-categories-page {
@@ -1229,5 +1472,16 @@
 		.tab-navigation {
 			justify-content: center;
 		}
+
+		.exclusions-table th,
+	.exclusions-table td {
+		padding: 0.75rem 0.5rem;
+		font-size: 0.85rem;
+	}
+	
+	.exclusion-word .word-text {
+		font-size: 0.8rem;
+		padding: 0.2rem 0.4rem;
+	}
 	}
 </style>

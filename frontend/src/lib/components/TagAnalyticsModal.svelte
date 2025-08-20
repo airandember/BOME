@@ -48,18 +48,23 @@
 		}
 	}
 
-	// Tag untagged videos
+	// Tag untagged videos (ADDITIVE - only adds tags to videos without tags)
 	async function tagUntaggedVideos() {
 		try {
 			isTagging = true;
 			showToast('🔄 Starting to tag untagged videos...', 'info');
 			
-			// Get untagged videos
-			const response = await masterVideoService.getUntaggedVideos(1000);
+			// Get ALL untagged videos (use high limit to get everything)
+			const response = await masterVideoService.getUntaggedVideos(10000);
 			if (response.success && response.videos) {
 				const untaggedVideos = response.videos;
 				const totalVideos = untaggedVideos.length;
 				showToast(`📝 Found ${totalVideos} untagged videos to process`, 'info');
+				
+				if (totalVideos === 0) {
+					showToast('✅ All videos already have tags!', 'success');
+					return;
+				}
 				
 				// Extract video IDs for batch processing
 				const videoIDs = untaggedVideos.map(video => video.ID);
@@ -83,7 +88,7 @@
 						
 						console.log(`Processing batch ${batchIndex + 1}/${totalBatches} with ${batchVideoIDs.length} videos`);
 						
-						// Process this batch
+						// Process this batch (ADDITIVE - won't overwrite existing tags)
 						const batchResponse = await masterVideoService.batchAutoTagVideos(batchVideoIDs);
 						
 						if (!batchResponse.success) {
@@ -93,14 +98,14 @@
 						// Update progress: add the videos we just processed
 						currentCount += batchVideoIDs.length;
 						
-						// Small delay between batches
+						// Small delay between batches to prevent overwhelming the server
 						if (batchIndex < totalBatches - 1) {
-							await new Promise(resolve => setTimeout(resolve, 100));
+							await new Promise(resolve => setTimeout(resolve, 200));
 						}
 					}
 					
 					isProcessing = false;
-					showToast('✅ All batches completed successfully!', 'success');
+					showToast('✅ All untagged videos processed successfully!', 'success');
 					
 				} catch (error) {
 					console.error('Batch tagging error:', error);
@@ -127,71 +132,83 @@
 		}
 	}
 
-	// Tag all videos (re-tag everything)
+	// Tag all videos (REPLACES existing tags - clears and repopulates)
 	async function tagAllVideos() {
 		try {
 			isTagging = true;
-			showToast('🔄 Starting to tag all videos...', 'info');
+			showToast('🔄 Starting to tag ALL videos (this will replace existing tags)...', 'warning');
 			
-			// Get all videos
-			const response = await masterVideoService.getMasterVideos({ page: 1, limit: 1000 });
-			if (response.success && response.videos) {
-				const allVideos = response.videos;
-				const totalVideos = allVideos.length;
-				showToast(`📝 Found ${totalVideos} videos to process`, 'info');
-				
-				// Extract video IDs for batch processing
-				const videoIDs = allVideos.map(video => video.ID);
-				
-				// Calculate batch information
-				const batchSize = 100;
-				const totalBatches = Math.ceil(videoIDs.length / batchSize);
-				
-				// Initialize progress tracking
-				isProcessing = true;
-				currentCount = 0;
-				totalCount = totalVideos;
+			// First get the total count to know how many videos we're dealing with
+			const countResponse = await masterVideoService.getMasterVideos({ page: 1, limit: 1 });
+			if (!countResponse.success) {
+				showToast('❌ Failed to get video count', 'error');
+				return;
+			}
+			
+			const totalVideos = countResponse.pagination.total;
+			showToast(`📝 Found ${totalVideos} total videos to process (replacing existing tags)`, 'info');
+			
+			if (totalVideos === 0) {
+				showToast('✅ No videos found to tag', 'success');
+				return;
+			}
+			
+			// Process videos in batches of 100
+			const batchSize = 100;
+			const totalBatches = Math.ceil(totalVideos / batchSize);
+			
+			// Initialize progress tracking
+			isProcessing = true;
+			currentCount = 0;
+			totalCount = totalVideos;
 
-				try {
-					// Process each batch with progress updates
-					for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-						// Get the current batch of video IDs
-						const startIdx = batchIndex * batchSize;
-						const endIdx = Math.min(startIdx + batchSize, videoIDs.length);
-						const batchVideoIDs = videoIDs.slice(startIdx, endIdx);
-						
-						console.log(`Processing batch ${batchIndex + 1}/${totalBatches} with ${batchVideoIDs.length} videos`);
-						
-						// Process this batch
-						const batchResponse = await masterVideoService.batchAutoTagVideos(batchVideoIDs);
-						
-						if (!batchResponse.success) {
-							throw new Error(`Batch ${batchIndex + 1} failed: ${batchResponse.error}`);
-						}
-						
-						// Update progress: add the videos we just processed
-						currentCount += batchVideoIDs.length;
-						
-						// Small delay between batches
-						if (batchIndex < totalBatches - 1) {
-							await new Promise(resolve => setTimeout(resolve, 100));
-						}
+			try {
+				// Process each batch with progress updates
+				for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+					// Get the current batch of videos
+					const page = batchIndex + 1;
+					const batchResponse = await masterVideoService.getMasterVideos({ 
+						page, 
+						limit: batchSize 
+					});
+					
+					if (!batchResponse.success || !batchResponse.videos) {
+						throw new Error(`Failed to get batch ${page}: Unknown error`);
 					}
 					
-					isProcessing = false;
-					showToast('✅ All batches completed successfully!', 'success');
+					const batchVideos = batchResponse.videos;
+					const videoIDs = batchVideos.map(video => video.ID);
 					
-				} catch (error) {
-					console.error('Batch tagging error:', error);
-					isProcessing = false;
-					showToast(`❌ Batch tagging failed: ${error}`, 'error');
+					console.log(`Processing batch ${batchIndex + 1}/${totalBatches} with ${batchVideos.length} videos`);
+					
+					// FIX: Only send replace=true for the FIRST batch
+					const isFirstBatch = batchIndex === 0;
+					const tagResponse = await masterVideoService.batchAutoTagVideos(videoIDs, isFirstBatch);
+					
+					if (!tagResponse.success) {
+						throw new Error(`Batch ${batchIndex + 1} failed: ${tagResponse.error}`);
+					}
+					
+					// Update progress: add the videos we just processed
+					currentCount += batchVideos.length;
+					
+					// Small delay between batches to prevent overwhelming the server
+					if (batchIndex < totalBatches - 1) {
+						await new Promise(resolve => setTimeout(resolve, 200));
+					}
 				}
 				
-				// Final reload of analytics to show updated stats
-				await loadTagAnalytics();
-			} else {
-				showToast('❌ Failed to get videos', 'error');
+				isProcessing = false;
+				showToast('✅ All videos re-tagged successfully! (existing tags replaced)', 'success');
+				
+			} catch (error) {
+				console.error('Batch tagging error:', error);
+				isProcessing = false;
+				showToast(`❌ Batch tagging failed: ${error}`, 'error');
 			}
+			
+			// Final reload of analytics to show updated stats
+			await loadTagAnalytics();
 		} catch (error) {
 			console.error('Failed to tag all videos', error);
 			showToast('❌ Failed to tag all videos', 'error');
@@ -334,6 +351,18 @@
 			{/if}
 
 			<div class="modal-footer">
+				<!-- Tagging Instructions -->
+				<div class="tagging-instructions">
+					<div class="instruction-item">
+						<span class="instruction-icon">🟢</span>
+						<strong>Tag Untagged:</strong> Only adds tags to videos that don't have any tags yet (additive)
+					</div>
+					<div class="instruction-item">
+						<span class="instruction-icon">🔵</span>
+						<strong>Tag All:</strong> Replaces ALL existing tags with new ones for every video (destructive)
+					</div>
+				</div>
+				
 				<div class="tagButtons">
 					<button class="btn bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors" on:click={tagUntaggedVideos} disabled={isTagging || isProcessing}>
 						{isTagging || isProcessing ? 'Tagging...' : 'Tag Untagged'}
@@ -821,5 +850,37 @@
 		align-items: center;
 		font-size: 0.875rem;
 		color: var(--text-secondary, #a0a0a0);
+	}
+
+	/* Tagging Instructions */
+	.tagging-instructions {
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 8px;
+		padding: 1rem;
+		margin-bottom: 1rem;
+	}
+
+	.instruction-item {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-bottom: 0.5rem;
+		font-size: 0.9rem;
+		color: var(--text-secondary);
+	}
+
+	.instruction-item:last-child {
+		margin-bottom: 0;
+	}
+
+	.instruction-icon {
+		font-size: 1rem;
+	}
+
+	.tagButtons {
+		display: flex;
+		gap: 1rem;
+		margin-bottom: 1rem;
 	}
 </style>
