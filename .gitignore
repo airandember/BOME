@@ -125,3 +125,8 @@ data/database_sql.sql
 data/schema_only.sql
 .gitignore
 data/static_tables.sql
+data/art_exc.csv
+data/art_exclusions
+.gitignore
+data/at_ex.sql
+data/session_aug19.sql
