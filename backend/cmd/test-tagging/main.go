@@ -1,17 +1,36 @@
 package main
 
 import (
-	"fmt"
-
+	"bome-backend/internal/config"
+	"bome-backend/internal/database"
 	"bome-backend/internal/services"
+	"fmt"
+	"log"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load environment variables
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using system environment variables")
+	}
+
+	// Initialize configuration
+	cfg := config.New()
+
+	// Initialize database connection
+	db, err := database.New(cfg)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close()
+
 	fmt.Println("🧪 Testing Smart Tagging Service")
 	fmt.Println("=================================")
 
-	// Create smart tagging service
-	taggingService := services.NewSmartTaggingService()
+	// Create smart tagging service with database
+	taggingService := services.NewSmartTaggingService(db)
 
 	// Test cases
 	testTitles := []string{
