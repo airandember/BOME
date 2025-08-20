@@ -2,13 +2,12 @@
 	import { onMount } from 'svelte';
 	import { masterVideoService } from '$lib/master-video';
 	import { createEventDispatcher } from 'svelte';
+	import { toastStore } from '$lib/stores/toast';
 
 	let activeTab = 'tags';
 	let tags: any[] = [];
 	let categories: any[] = [];
 	let loading = false;
-	let error = '';
-	let successMessage = '';
 
 	// Tag management
 	let newTag = '';
@@ -52,7 +51,7 @@
 				categories = streamingCategoriesData.result || [];
 			}
 		} catch (err) {
-			error = 'Failed to load streaming tag data';
+			toastStore.error('Failed to load streaming tag data');
 			console.error('Error loading data:', err);
 		} finally {
 			loading = false;
@@ -81,16 +80,15 @@
 					tags = [...tags, newTagObj];
 					
 					newTag = '';
-					successMessage = 'Tag added successfully to streaming subsite';
-					setTimeout(() => successMessage = '', 3000);
+					toastStore.success('Tag added successfully to streaming subsite');
 				} else {
-					error = data.error || 'Failed to add tag';
+					toastStore.error(data.error || 'Failed to add tag');
 				}
 			} else {
-				error = 'Failed to add tag to streaming subsite';
+				toastStore.error('Failed to add tag to streaming subsite');
 			}
 		} catch (err) {
-			error = 'Failed to add tag to streaming subsite';
+			toastStore.error('Failed to add tag to streaming subsite');
 		}
 	}
 
@@ -101,13 +99,12 @@
 				if (response.ok) {
 					// Remove from local state instead of reloading
 					tags = tags.filter(t => t.id !== tag.id);
-					successMessage = 'Tag removed from streaming subsite';
-					setTimeout(() => successMessage = '', 3000);
+					toastStore.success('Tag removed from streaming subsite');
 				} else {
-					error = 'Failed to delete tag from streaming subsite';
+					toastStore.error('Failed to delete tag from streaming subsite');
 				}
 			} catch (err) {
-				error = 'Failed to delete tag from streaming subsite';
+				toastStore.error('Failed to delete tag from streaming subsite');
 			}
 		}
 	}
@@ -138,16 +135,15 @@
 					
 					newCategory = '';
 					newCategoryColor = '#3B82F6';
-					successMessage = 'Category added successfully to streaming subsite';
-					setTimeout(() => successMessage = '', 3000);
+					toastStore.success('Category added successfully to streaming subsite');
 				} else {
-					error = data.error || 'Failed to add category';
+					toastStore.error(data.error || 'Failed to add category');
 				}
 			} else {
-				error = 'Failed to add category to streaming subsite';
+				toastStore.error('Failed to add category to streaming subsite');
 			}
 		} catch (err) {
-			error = 'Failed to add category to streaming subsite';
+			toastStore.error('Failed to add category to streaming subsite');
 		}
 	}
 
@@ -166,13 +162,12 @@
 							: t
 					);
 					
-					successMessage = 'Category removed from streaming subsite';
-					setTimeout(() => successMessage = '', 3000);
+					toastStore.success('Category removed from streaming subsite');
 				} else {
-					error = 'Failed to delete category from streaming subsite';
+					toastStore.error('Failed to delete category from streaming subsite');
 				}
 			} catch (err) {
-				error = 'Failed to delete category from streaming subsite';
+				toastStore.error('Failed to delete category from streaming subsite');
 			}
 		}
 	}
@@ -188,13 +183,12 @@
 						: t
 				);
 				
-				successMessage = 'Tag assigned to category successfully';
-				setTimeout(() => successMessage = '', 3000);
+				toastStore.success('Tag assigned to category successfully');
 			} else {
-				error = 'Failed to assign tag to category';
+				toastStore.error('Failed to assign tag to category');
 			}
 		} catch (err) {
-			error = 'Failed to assign tag to category';
+			toastStore.error('Failed to assign tag to category');
 		}
 	}
 
@@ -208,10 +202,10 @@
 				console.log(response);
 				articleExclusions = response.result;
 			} else {
-				error = response.error || 'Failed to load article exclusions';
+				toastStore.error(response.error || 'Failed to load article exclusions');
 			}
 		} catch (err) {
-			error = 'Failed to load article exclusions';
+			toastStore.error('Failed to load article exclusions');
 		} finally {
 			exclusionsLoading = false;
 		}
@@ -235,13 +229,12 @@
 				articleExclusions = [...articleExclusions, newExclusionObj];
 				
 				newExclusion = '';
-				successMessage = response.message || 'Article exclusion added successfully';
-				setTimeout(() => successMessage = '', 3000);
+				toastStore.success(response.message || 'Article exclusion added successfully');
 			} else {
-				error = response.error || 'Failed to add article exclusion';
+				toastStore.error(response.error || 'Failed to add article exclusion');
 			}
 		} catch (err) {
-			error = 'Failed to add article exclusion';
+			toastStore.error('Failed to add article exclusion');
 		}
 	}
 
@@ -256,13 +249,12 @@
 						: e
 				);
 				
-				successMessage = response.message || 'Article exclusion toggled successfully';
-				setTimeout(() => successMessage = '', 3000);
+				toastStore.success(response.message || 'Article exclusion toggled successfully');
 			} else {
-				error = response.error || 'Failed to toggle article exclusion';
+				toastStore.error(response.error || 'Failed to toggle article exclusion');
 			}
 		} catch (err) {
-			error = 'Failed to toggle article exclusion';
+			toastStore.error('Failed to toggle article exclusion');
 		}
 	}
 
@@ -274,13 +266,12 @@
 					// Remove from local state instead of reloading
 					articleExclusions = articleExclusions.filter(e => e.Word !== exclusion.Word);
 					
-					successMessage = response.message || 'Article exclusion removed successfully';
-					setTimeout(() => successMessage = '', 3000);
+					toastStore.success(response.message || 'Article exclusion removed successfully');
 				} else {
-					error = response.error || 'Failed to remove article exclusion';
+					toastStore.error(response.error || 'Failed to remove article exclusion');
 				}
 			} catch (err) {
-				error = 'Failed to remove article exclusion';
+				toastStore.error('Failed to remove article exclusion');
 			}
 		}
 	}
@@ -292,7 +283,7 @@
 			if (response.success) {
 				// Then delete the tag from the tags table
 				await masterVideoService.deleteSubsiteTag('streaming', tag.id);
-				successMessage = `"${tag.word}" added to exclusions and removed from tags`;
+				toastStore.success(`"${tag.word}" added to exclusions and removed from tags`);
 				
 				// Update local state instead of reloading
 				tags = tags.filter(t => t.id !== tag.id);
@@ -309,13 +300,11 @@
 						updated_at: new Date().toISOString()
 					}];
 				}
-				
-				setTimeout(() => successMessage = '', 3000);
 			} else {
-				error = response.error || 'Failed to add article exclusion';
+				toastStore.error(response.error || 'Failed to add article exclusion');
 			}
 		} catch (err) {
-			error = 'Failed to add article exclusion';
+			toastStore.error('Failed to add article exclusion');
 			console.error('Error adding article exclusion:', err);
 		}
 	}
@@ -324,7 +313,7 @@
 		try {
 			const response = await masterVideoService.toggleTagActiveStatus('streaming', tag.id, !tag.active_tag);
 			if (response.success) {
-				successMessage = `Tag "${tag.word}" ${tag.active_tag ? 'deactivated' : 'activated'} successfully`;
+				toastStore.success(`Tag "${tag.word}" ${tag.active_tag ? 'deactivated' : 'activated'} successfully`);
 				
 				// Update local state instead of reloading
 				tags = tags.map(t => 
@@ -332,13 +321,11 @@
 						? { ...t, active_tag: !t.active_tag }
 						: t
 				);
-				
-				setTimeout(() => successMessage = '', 3000);
 			} else {
-				error = response.error || 'Failed to toggle tag status';
+				toastStore.error(response.error || 'Failed to toggle tag status');
 			}
 		} catch (err) {
-			error = 'Failed to toggle tag status';
+			toastStore.error('Failed to toggle tag status');
 			console.error('Error toggling tag status:', err);
 		}
 	}
@@ -363,11 +350,11 @@
 </svelte:head>
 
 <div class="streaming-tags-categories-page">
-	<div class="page-header">
-		<div class="header-content">
+	<!--<div class="page-header">
+		 Global Integration not needed for now<div class="header-content">
 			<h1>🎥 Streaming Tags & Categories</h1>
 			<p>Manage tags and categories specifically for the streaming subsite</p>
-			<!-- Global Integration not needed for now -->
+			 -->
 			<!--<div class="header-actions">
 				<button 
 					class="global-toggle" 
@@ -379,23 +366,11 @@
 				<a href="/admin/tags-categories" class="global-link">
 					🌐 View Global Tags
 				</a>
-			</div>-->
+			</div>
 		</div>
-	</div>
+	</div>-->
 
-	{#if error}
-		<div class="error-banner">
-			{error}
-			<button on:click={() => error = ''}>×</button>
-		</div>
-	{/if}
 
-	{#if successMessage}
-		<div class="success-banner">
-			{successMessage}
-			<button on:click={() => successMessage = ''}>×</button>
-		</div>
-	{/if}
 
 	<!-- Tab Navigation -->
 	<div class="tab-navigation">
@@ -418,7 +393,7 @@
 			class:active={activeTab === 'exclusions'}
 			on:click={() => activeTab = 'exclusions'}
 		>
-			�� Article Exclusions ({articleExclusions.length})
+			🚫 Exclusions ({articleExclusions.length})
 		</button>
 	</div>
 
@@ -431,7 +406,7 @@
 					<input 
 						type="text" 
 						bind:value={newTag} 
-						placeholder="Enter new streaming tag..."
+						placeholder="Add new streaming tag..."
 						on:keydown={(e) => e.key === 'Enter' && addTag()}
 					/>
 					<button on:click={addTag} class="add-button">
@@ -469,11 +444,11 @@
 				<table class="exclusions-table">
 					<thead>
 						<tr>
-							<th>Status</th>
-							<th>Tag Word</th>
-							<th>Frequency</th>
-							<th>Category</th>
-							<th>Actions</th>
+							<th class="exclusion-head">Status</th>
+							<th class="exclusion-head">Tag Word</th>
+							<th class="exclusion-head">Frequency</th>
+							<th class="exclusion-head">Category</th>
+							<th class="exclusion-head">Actions</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -521,7 +496,7 @@
 										class="remove-button"
 										title="Add to exclusions and remove tag"
 									>
-										��
+									🚫
 									</button>
 									<button 
 										on:click={() => deleteTag(tag)} 
@@ -701,9 +676,9 @@
 				<table class="exclusions-table">
 					<thead>
 						<tr>
-							<th>Word/Pattern</th>
-							<th>Status</th>
-							<th>Actions</th>
+							<th class="exclusion-head">Word/Pattern</th>
+							<th class="exclusion-head">Status</th>
+							<th class="exclusion-head">Actions</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -845,48 +820,20 @@
 		transform: translateY(-1px);
 	}
 
-	.error-banner,
-	.success-banner {
-		padding: 1rem;
-		border-radius: 8px;
-		margin-bottom: 2rem;
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-	}
 
-	.error-banner {
-		background: var(--error-bg);
-		color: var(--error-text);
-	}
-
-	.success-banner {
-		background: var(--success-bg);
-		color: var(--success-text);
-	}
-
-	.error-banner button,
-	.success-banner button {
-		background: none;
-		border: none;
-		color: inherit;
-		font-size: 1.5rem;
-		cursor: pointer;
-	}
 
 	.tab-navigation {
 		display: flex;
 		gap: 1rem;
-		margin-bottom: 2rem;
 		border-bottom: 2px solid var(--border-color);
-		padding-bottom: 1rem;
 		flex-wrap: wrap;
+		padding-left: 1rem;
 	}
 
 	.tab-button {
 		background: none;
 		border: none;
-		padding: 0.75rem 1.5rem;
+		padding: 1.5rem;
 		border-radius: 8px;
 		cursor: pointer;
 		font-size: 1rem;
@@ -903,13 +850,17 @@
 	.tab-button.active {
 		background: var(--primary-color);
 		color: var(--text-secondary);
+		border-radius: 9px 9px 0 0;
+		background: linear-gradient(145deg, var(--bg-tertiary), var(--bg-secondary));
+		box-shadow:  10px 10px 15px var(--bg-quaternary),
+					-10px -10px 15px var(--bg-primary);
 	}
 
 	.tab-content {
 		background: var(--bg-glass);
 		border-radius: 12px;
 		padding: 2rem;
-		backdrop-filter: blur(20px);
+		backdrop-filter: blur(80px);
 		border: 1px solid var(--border-color);
 	}
 
@@ -937,13 +888,19 @@
 	}
 
 	.add-tag-form input,
-	.add-category-form input[type="text"] {
+	.add-category-form input[type="text"],
+	.add-exclusion-form input[type="text"] {
+		font-size: 1.1rem;
 		padding: 0.5rem 1rem;
 		border: 1px solid var(--border-color);
-		border-radius: 6px;
-		background: var(--bg-primary);
+		border-radius: 11px;
+		min-height: 65px;
 		color: var(--text-primary);
 		min-width: 200px;
+		border-radius: 11px;
+		background: var(--bg-primary);
+		box-shadow: inset 5px 5px 10px var(--bg-senary),
+            inset -5px -5px 10px var(--bg-secondary);
 	}
 
 	.color-picker {
@@ -955,7 +912,7 @@
 	}
 
 	.add-button {
-		background: var(--primary-color);
+		background: var(--bg-glass-dark);
 		color: var(--text-secondary);
 		border: none;
 		padding: 0.5rem 1rem;
@@ -966,11 +923,24 @@
 		gap: 0.5rem;
 		transition: all 0.3s ease;
 		white-space: nowrap;
+		min-height: 65px;
+		box-shadow: 0 0 0  var(--bg-senary),
+            0 0 0 var(--bg-secondary);
 	}
 
 	.add-button:hover {
-		background: var(--primary-hover);
+		background: var(--bg-glass);
 		transform: translateY(-1px);
+		box-shadow: 5px 5px 10px  var(--bg-senary),
+            -5px -5px 10px var(--bg-secondary);
+	}
+
+	.add-button:active {
+		transform: translateY(1px);
+		border-radius: 11px;
+		background: var(--bg-glass-dark);
+		box-shadow: inset 5px 5px 10px var(--bg-senary),
+            inset -5px -5px 10px var(--bg-secondary);
 	}
 
 	.tags-info {
@@ -1330,7 +1300,7 @@
 .exclusions-table {
 	width: 100%;
 	border-collapse: collapse;
-	background: var(--bg-primary);
+	background: var(--bg-tertiary);
 }
 
 .exclusions-table th {
@@ -1349,6 +1319,20 @@
 	padding: 1rem;
 	border-bottom: 1px solid var(--border-color);
 	vertical-align: middle;
+}
+
+thead {
+	background-color: var(--bg-quinary);
+}
+
+.exclusion-head {
+	color: var(--text-inverse) !important;
+	font-weight: 600;
+}
+
+.exclusion-row {
+	border-bottom: 5px solid var(--bg-primary);
+	color: var(--text-tertiary);
 }
 
 .exclusion-row:hover {
@@ -1383,7 +1367,7 @@
 .status-indicator {
 	padding: 0.25rem 0.75rem;
 	border-radius: 12px;
-	font-size: 0.8rem;
+	font-size: 1.25rem;
 	font-weight: 500;
 	transition: all 0.2s ease;
 }
@@ -1400,7 +1384,7 @@
 
 .remove-button {
 	background: var(--error-bg);
-	color: var(--error-text);
+	color: var(--text-secondary);
 	border: none;
 	padding: 0.5rem;
 	border-radius: 6px;
@@ -1413,7 +1397,7 @@
 
 .remove-button:hover {
 	background: var(--error-text);
-	color: white;
+	color: red;
 	transform: scale(1.05);
 }
 
