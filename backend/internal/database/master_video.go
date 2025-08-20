@@ -653,6 +653,86 @@ func (db *DB) UpdateVideoTags(videoID int, tags []string) error {
 	return db.updateTagFrequency(tags)
 }
 
+// ReplaceVideoTags completely replaces tags for a video (used for "Tag All" functionality)
+func (db *DB) ReplaceVideoTags(videoID int, tags []string) error {
+	tagsJSON, err := json.Marshal(tags)
+	if err != nil {
+		return fmt.Errorf("failed to marshal tags: %v", err)
+	}
+
+	// First, get the old tags to decrement their frequency
+	var oldTagsStr string
+	err = db.QueryRow(`SELECT tags FROM master_video_list WHERE id = $1`, videoID).Scan(&oldTagsStr)
+	if err != nil {
+		return fmt.Errorf("failed to get old tags: %v", err)
+	}
+
+	// Parse old tags and decrement their frequency
+	if oldTagsStr != "" {
+		var oldTags []string
+		if err := json.Unmarshal([]byte(oldTagsStr), &oldTags); err == nil {
+			// Decrement frequency for old tags
+			if err := db.decrementTagFrequency(oldTags); err != nil {
+				log.Printf("⚠️ Warning: Failed to decrement old tag frequencies: %v", err)
+				// Continue with the update even if decrement fails
+			}
+		}
+	}
+
+	// Update the video with new tags
+	_, err = db.Exec(`
+        UPDATE master_video_list 
+        SET tags = $1, tagged = true, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = $2
+    `, tagsJSON, videoID)
+
+	if err != nil {
+		return fmt.Errorf("failed to update video tags: %v", err)
+	}
+
+	// Update tag frequency for new tags
+	return db.updateTagFrequency(tags)
+}
+
+// decrementTagFrequency decrements the frequency count for tags
+func (db *DB) decrementTagFrequency(tags []string) error {
+	log.Printf("🔄 Decrementing tag frequency for %d tags: %v", len(tags), tags)
+
+	for _, tag := range tags {
+		cleanTag := strings.ToLower(strings.TrimSpace(tag))
+		if cleanTag == "" {
+			continue
+		}
+
+		// Get streaming subsite ID
+		var streamingSubsiteID int
+		err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = 'streaming'").Scan(&streamingSubsiteID)
+		if err != nil {
+			log.Printf("❌ Failed to get streaming subsite ID: %v", err)
+			continue
+		}
+
+		// Decrement frequency for existing tag
+		result, err := db.Exec(`
+            UPDATE tags 
+            SET frequency = GREATEST(frequency - 1, 0), updated_at = CURRENT_TIMESTAMP 
+            WHERE word = $1 AND subsite_id = $2
+        `, cleanTag, streamingSubsiteID)
+
+		if err != nil {
+			log.Printf("❌ Failed to decrement tag frequency for '%s': %v", cleanTag, err)
+			continue
+		}
+
+		rowsAffected, _ := result.RowsAffected()
+		if rowsAffected > 0 {
+			log.Printf("✅ Decremented frequency for tag '%s'", cleanTag)
+		}
+	}
+
+	return nil
+}
+
 // updateTagFrequency updates the frequency count for tags
 func (db *DB) updateTagFrequency(tags []string) error {
 	log.Printf("🔄 Updating tag frequency for %d tags: %v", len(tags), tags)
@@ -1433,4 +1513,21 @@ func (db *DB) GetSubsiteID(subsiteName string) (int, error) {
 		return 0, fmt.Errorf("failed to get subsite ID for '%s': %v", subsiteName, err)
 	}
 	return subsiteID, nil
+}
+
+// ResetAllTagFrequencies resets all tag frequencies to 0 for streaming subsite
+func (db *DB) ResetAllTagFrequencies() error {
+	var streamingSubsiteID int
+	err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = 'streaming'").Scan(&streamingSubsiteID)
+	if err != nil {
+		return fmt.Errorf("failed to get streaming subsite ID: %v", err)
+	}
+
+	_, err = db.Exec(`UPDATE tags SET frequency = 0, updated_at = CURRENT_TIMESTAMP WHERE subsite_id = $1`, streamingSubsiteID)
+	if err != nil {
+		return fmt.Errorf("failed to reset tag frequencies: %v", err)
+	}
+
+	log.Printf("✅ Reset all tag frequencies for streaming subsite")
+	return nil
 }

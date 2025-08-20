@@ -158,9 +158,9 @@
 	}
 
 	.toast-message {
-		font-size: 13px;
+		font-size: 1.25rem;
 		line-height: 1.4;
-		color: var(--text-secondary);
+		color: var(--text-inverse);
 		word-wrap: break-word;
 	}
 

@@ -2,13 +2,12 @@
 	import { onMount } from 'svelte';
 	import { masterVideoService } from '$lib/master-video';
 	import { createEventDispatcher } from 'svelte';
+	import { toastStore } from '$lib/stores/toast';
 
 	let activeTab = 'tags';
 	let tags: any[] = [];
 	let categories: any[] = [];
 	let loading = false;
-	let error = '';
-	let successMessage = '';
 
 	// Tag management
 	let newTag = '';
@@ -52,7 +51,7 @@
 				categories = streamingCategoriesData.result || [];
 			}
 		} catch (err) {
-			error = 'Failed to load streaming tag data';
+			toastStore.error('Failed to load streaming tag data');
 			console.error('Error loading data:', err);
 		} finally {
 			loading = false;
@@ -81,16 +80,15 @@
 					tags = [...tags, newTagObj];
 					
 					newTag = '';
-					successMessage = 'Tag added successfully to streaming subsite';
-					setTimeout(() => successMessage = '', 3000);
+					toastStore.success('Tag added successfully to streaming subsite');
 				} else {
-					error = data.error || 'Failed to add tag';
+					toastStore.error(data.error || 'Failed to add tag');
 				}
 			} else {
-				error = 'Failed to add tag to streaming subsite';
+				toastStore.error('Failed to add tag to streaming subsite');
 			}
 		} catch (err) {
-			error = 'Failed to add tag to streaming subsite';
+			toastStore.error('Failed to add tag to streaming subsite');
 		}
 	}
 
@@ -101,13 +99,12 @@
 				if (response.ok) {
 					// Remove from local state instead of reloading
 					tags = tags.filter(t => t.id !== tag.id);
-					successMessage = 'Tag removed from streaming subsite';
-					setTimeout(() => successMessage = '', 3000);
+					toastStore.success('Tag removed from streaming subsite');
 				} else {
-					error = 'Failed to delete tag from streaming subsite';
+					toastStore.error('Failed to delete tag from streaming subsite');
 				}
 			} catch (err) {
-				error = 'Failed to delete tag from streaming subsite';
+				toastStore.error('Failed to delete tag from streaming subsite');
 			}
 		}
 	}
@@ -138,16 +135,15 @@
 					
 					newCategory = '';
 					newCategoryColor = '#3B82F6';
-					successMessage = 'Category added successfully to streaming subsite';
-					setTimeout(() => successMessage = '', 3000);
+					toastStore.success('Category added successfully to streaming subsite');
 				} else {
-					error = data.error || 'Failed to add category';
+					toastStore.error(data.error || 'Failed to add category');
 				}
 			} else {
-				error = 'Failed to add category to streaming subsite';
+				toastStore.error('Failed to add category to streaming subsite');
 			}
 		} catch (err) {
-			error = 'Failed to add category to streaming subsite';
+			toastStore.error('Failed to add category to streaming subsite');
 		}
 	}
 
@@ -166,13 +162,12 @@
 							: t
 					);
 					
-					successMessage = 'Category removed from streaming subsite';
-					setTimeout(() => successMessage = '', 3000);
+					toastStore.success('Category removed from streaming subsite');
 				} else {
-					error = 'Failed to delete category from streaming subsite';
+					toastStore.error('Failed to delete category from streaming subsite');
 				}
 			} catch (err) {
-				error = 'Failed to delete category from streaming subsite';
+				toastStore.error('Failed to delete category from streaming subsite');
 			}
 		}
 	}
@@ -188,13 +183,12 @@
 						: t
 				);
 				
-				successMessage = 'Tag assigned to category successfully';
-				setTimeout(() => successMessage = '', 3000);
+				toastStore.success('Tag assigned to category successfully');
 			} else {
-				error = 'Failed to assign tag to category';
+				toastStore.error('Failed to assign tag to category');
 			}
 		} catch (err) {
-			error = 'Failed to assign tag to category';
+			toastStore.error('Failed to assign tag to category');
 		}
 	}
 
@@ -208,10 +202,10 @@
 				console.log(response);
 				articleExclusions = response.result;
 			} else {
-				error = response.error || 'Failed to load article exclusions';
+				toastStore.error(response.error || 'Failed to load article exclusions');
 			}
 		} catch (err) {
-			error = 'Failed to load article exclusions';
+			toastStore.error('Failed to load article exclusions');
 		} finally {
 			exclusionsLoading = false;
 		}
@@ -235,13 +229,12 @@
 				articleExclusions = [...articleExclusions, newExclusionObj];
 				
 				newExclusion = '';
-				successMessage = response.message || 'Article exclusion added successfully';
-				setTimeout(() => successMessage = '', 3000);
+				toastStore.success(response.message || 'Article exclusion added successfully');
 			} else {
-				error = response.error || 'Failed to add article exclusion';
+				toastStore.error(response.error || 'Failed to add article exclusion');
 			}
 		} catch (err) {
-			error = 'Failed to add article exclusion';
+			toastStore.error('Failed to add article exclusion');
 		}
 	}
 
@@ -256,13 +249,12 @@
 						: e
 				);
 				
-				successMessage = response.message || 'Article exclusion toggled successfully';
-				setTimeout(() => successMessage = '', 3000);
+				toastStore.success(response.message || 'Article exclusion toggled successfully');
 			} else {
-				error = response.error || 'Failed to toggle article exclusion';
+				toastStore.error(response.error || 'Failed to toggle article exclusion');
 			}
 		} catch (err) {
-			error = 'Failed to toggle article exclusion';
+			toastStore.error('Failed to toggle article exclusion');
 		}
 	}
 
@@ -274,13 +266,12 @@
 					// Remove from local state instead of reloading
 					articleExclusions = articleExclusions.filter(e => e.Word !== exclusion.Word);
 					
-					successMessage = response.message || 'Article exclusion removed successfully';
-					setTimeout(() => successMessage = '', 3000);
+					toastStore.success(response.message || 'Article exclusion removed successfully');
 				} else {
-					error = response.error || 'Failed to remove article exclusion';
+					toastStore.error(response.error || 'Failed to remove article exclusion');
 				}
 			} catch (err) {
-				error = 'Failed to remove article exclusion';
+				toastStore.error('Failed to remove article exclusion');
 			}
 		}
 	}
@@ -292,7 +283,7 @@
 			if (response.success) {
 				// Then delete the tag from the tags table
 				await masterVideoService.deleteSubsiteTag('streaming', tag.id);
-				successMessage = `"${tag.word}" added to exclusions and removed from tags`;
+				toastStore.success(`"${tag.word}" added to exclusions and removed from tags`);
 				
 				// Update local state instead of reloading
 				tags = tags.filter(t => t.id !== tag.id);
@@ -309,13 +300,11 @@
 						updated_at: new Date().toISOString()
 					}];
 				}
-				
-				setTimeout(() => successMessage = '', 3000);
 			} else {
-				error = response.error || 'Failed to add article exclusion';
+				toastStore.error(response.error || 'Failed to add article exclusion');
 			}
 		} catch (err) {
-			error = 'Failed to add article exclusion';
+			toastStore.error('Failed to add article exclusion');
 			console.error('Error adding article exclusion:', err);
 		}
 	}
@@ -324,7 +313,7 @@
 		try {
 			const response = await masterVideoService.toggleTagActiveStatus('streaming', tag.id, !tag.active_tag);
 			if (response.success) {
-				successMessage = `Tag "${tag.word}" ${tag.active_tag ? 'deactivated' : 'activated'} successfully`;
+				toastStore.success(`Tag "${tag.word}" ${tag.active_tag ? 'deactivated' : 'activated'} successfully`);
 				
 				// Update local state instead of reloading
 				tags = tags.map(t => 
@@ -332,13 +321,11 @@
 						? { ...t, active_tag: !t.active_tag }
 						: t
 				);
-				
-				setTimeout(() => successMessage = '', 3000);
 			} else {
-				error = response.error || 'Failed to toggle tag status';
+				toastStore.error(response.error || 'Failed to toggle tag status');
 			}
 		} catch (err) {
-			error = 'Failed to toggle tag status';
+			toastStore.error('Failed to toggle tag status');
 			console.error('Error toggling tag status:', err);
 		}
 	}
@@ -363,11 +350,11 @@
 </svelte:head>
 
 <div class="streaming-tags-categories-page">
-	<div class="page-header">
-		<div class="header-content">
+	<!--<div class="page-header">
+		 Global Integration not needed for now<div class="header-content">
 			<h1>🎥 Streaming Tags & Categories</h1>
 			<p>Manage tags and categories specifically for the streaming subsite</p>
-			<!-- Global Integration not needed for now -->
+			 -->
 			<!--<div class="header-actions">
 				<button 
 					class="global-toggle" 
@@ -379,23 +366,11 @@
 				<a href="/admin/tags-categories" class="global-link">
 					🌐 View Global Tags
 				</a>
-			</div>-->
+			</div>
 		</div>
-	</div>
+	</div>-->
 
-	{#if error}
-		<div class="error-banner">
-			{error}
-			<button on:click={() => error = ''}>×</button>
-		</div>
-	{/if}
 
-	{#if successMessage}
-		<div class="success-banner">
-			{successMessage}
-			<button on:click={() => successMessage = ''}>×</button>
-		</div>
-	{/if}
 
 	<!-- Tab Navigation -->
 	<div class="tab-navigation">
@@ -418,7 +393,7 @@
 			class:active={activeTab === 'exclusions'}
 			on:click={() => activeTab = 'exclusions'}
 		>
-			�� Article Exclusions ({articleExclusions.length})
+			🚫 Exclusions ({articleExclusions.length})
 		</button>
 	</div>
 
@@ -431,7 +406,7 @@
 					<input 
 						type="text" 
 						bind:value={newTag} 
-						placeholder="Enter new streaming tag..."
+						placeholder="Add new streaming tag..."
 						on:keydown={(e) => e.key === 'Enter' && addTag()}
 					/>
 					<button on:click={addTag} class="add-button">
@@ -465,7 +440,81 @@
 					<p>Add tags to get started</p>
 				</div>
 			{:else}
-				<div class="tags-grid">
+			<div class="exclusions-table-container">
+				<table class="exclusions-table">
+					<thead>
+						<tr>
+							<th class="exclusion-head">Status</th>
+							<th class="exclusion-head">Tag Word</th>
+							<th class="exclusion-head">Frequency</th>
+							<th class="exclusion-head">Category</th>
+							<th class="exclusion-head">Actions</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each tags as tag}
+							<tr class="exclusion-row">
+								<td class="exclusion-status">
+									<label class="status-toggle">
+										<input 
+											type="checkbox" 
+											checked={tag.active_tag} 
+											on:change={() => toggleTagActiveStatus(tag)}
+											class="status-checkbox"
+											aria-label="Toggle tag active status"
+										/>
+										<span class="status-indicator" class:active={tag.active_tag}>
+											{tag.active_tag ? '🟢 Active' : '🔴 Inactive'}
+										</span>
+									</label>
+								</td>
+								<td class="exclusion-word">
+									<span class="word-text">{tag.word}</span>
+								</td>
+								<td class="exclusion-status">
+									<span class="tag-frequency-display">
+										{tag.frequency || 0} uses
+									</span>
+								</td>
+								<td class="exclusion-status">
+									{#if categories.length > 0}
+										<select 
+											value={tag.category_id || ''} 
+											on:change={(e) => handleCategoryChange(e, tag.id)}
+											class="category-select"
+										>
+											<option value="">No Category</option>
+											{#each categories as category}
+												<option value={category.id}>{category.name}</option>
+											{/each}
+										</select>
+									{/if}
+								</td>
+								<td class="exclusion-actions">
+									<button 
+										on:click={() => addArticleExclusionFromTag(tag)} 
+										class="remove-button"
+										title="Add to exclusions and remove tag"
+									>
+									🚫
+									</button>
+									<button 
+										on:click={() => deleteTag(tag)} 
+										class="remove-button"
+										title="Delete tag"
+									>
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+											<polyline points="3,6 5,6 21,6"></polyline>
+											<path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"></path>
+										</svg>
+									</button>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+				<!--<div class="tags-grid">
 					{#each tags as tag}
 						<div class="tag-card">
 							<div class="tag-info">
@@ -517,7 +566,7 @@
 							</div>
 						</div>
 					{/each}
-				</div>
+				</div>-->
 			{/if}
 		</div>
 	{/if}
@@ -623,7 +672,56 @@
 					<p>Add exclusions to prevent certain articles from being processed</p>
 				</div>
 			{:else}
-				<div class="exclusions-grid">
+			<div class="exclusions-table-container">
+				<table class="exclusions-table">
+					<thead>
+						<tr>
+							<th class="exclusion-head">Word/Pattern</th>
+							<th class="exclusion-head">Status</th>
+							<th class="exclusion-head">Actions</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each articleExclusions as exclusion}
+							<tr class="exclusion-row">
+								<td class="exclusion-word">
+									<span class="word-text">{exclusion.Word}</span>
+								</td>
+								<td class="exclusion-status">
+									<label class="status-toggle">
+									<input 
+											type="checkbox" 
+											checked={exclusion.Excluded} 
+											on:change={() => toggleArticleExclusion(exclusion)}
+											class="status-checkbox"
+											aria-label="Toggle exclusion status"
+										/>
+										
+										<span class="status-indicator" class:active={exclusion.Excluded}>
+											{exclusion.Excluded ? '🚫 Excluded' : '✅ Included'}
+										</span>
+									</label>
+								</td>
+								<td class="exclusion-actions">
+									
+									<button 
+										on:click={() => removeArticleExclusion(exclusion)} 
+										class="remove-button"
+										title="Remove exclusion"
+									>
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+											<polyline points="3,6 5,6 21,6"></polyline>
+											<path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"></path>
+										</svg>
+									</button>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+				
+				<!--<div class="exclusions-grid">
 					{#each articleExclusions as exclusion}
 						<div class="exclusion-card">
 							<div class="exclusion-info">
@@ -652,7 +750,7 @@
 							</div>
 						</div>
 					{/each}
-				</div>
+				</div>-->
 			{/if}
 		</div>
 	{/if}
@@ -722,48 +820,20 @@
 		transform: translateY(-1px);
 	}
 
-	.error-banner,
-	.success-banner {
-		padding: 1rem;
-		border-radius: 8px;
-		margin-bottom: 2rem;
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-	}
 
-	.error-banner {
-		background: var(--error-bg);
-		color: var(--error-text);
-	}
-
-	.success-banner {
-		background: var(--success-bg);
-		color: var(--success-text);
-	}
-
-	.error-banner button,
-	.success-banner button {
-		background: none;
-		border: none;
-		color: inherit;
-		font-size: 1.5rem;
-		cursor: pointer;
-	}
 
 	.tab-navigation {
 		display: flex;
 		gap: 1rem;
-		margin-bottom: 2rem;
 		border-bottom: 2px solid var(--border-color);
-		padding-bottom: 1rem;
 		flex-wrap: wrap;
+		padding-left: 1rem;
 	}
 
 	.tab-button {
 		background: none;
 		border: none;
-		padding: 0.75rem 1.5rem;
+		padding: 1.5rem;
 		border-radius: 8px;
 		cursor: pointer;
 		font-size: 1rem;
@@ -780,13 +850,17 @@
 	.tab-button.active {
 		background: var(--primary-color);
 		color: var(--text-secondary);
+		border-radius: 9px 9px 0 0;
+		background: linear-gradient(145deg, var(--bg-tertiary), var(--bg-secondary));
+		box-shadow:  10px 10px 15px var(--bg-quaternary),
+					-10px -10px 15px var(--bg-primary);
 	}
 
 	.tab-content {
 		background: var(--bg-glass);
 		border-radius: 12px;
 		padding: 2rem;
-		backdrop-filter: blur(20px);
+		backdrop-filter: blur(80px);
 		border: 1px solid var(--border-color);
 	}
 
@@ -814,13 +888,19 @@
 	}
 
 	.add-tag-form input,
-	.add-category-form input[type="text"] {
+	.add-category-form input[type="text"],
+	.add-exclusion-form input[type="text"] {
+		font-size: 1.1rem;
 		padding: 0.5rem 1rem;
 		border: 1px solid var(--border-color);
-		border-radius: 6px;
-		background: var(--bg-primary);
+		border-radius: 11px;
+		min-height: 65px;
 		color: var(--text-primary);
 		min-width: 200px;
+		border-radius: 11px;
+		background: var(--bg-primary);
+		box-shadow: inset 5px 5px 10px var(--bg-senary),
+            inset -5px -5px 10px var(--bg-secondary);
 	}
 
 	.color-picker {
@@ -832,7 +912,7 @@
 	}
 
 	.add-button {
-		background: var(--primary-color);
+		background: var(--bg-glass-dark);
 		color: var(--text-secondary);
 		border: none;
 		padding: 0.5rem 1rem;
@@ -843,11 +923,24 @@
 		gap: 0.5rem;
 		transition: all 0.3s ease;
 		white-space: nowrap;
+		min-height: 65px;
+		box-shadow: 0 0 0  var(--bg-senary),
+            0 0 0 var(--bg-secondary);
 	}
 
 	.add-button:hover {
-		background: var(--primary-hover);
+		background: var(--bg-glass);
 		transform: translateY(-1px);
+		box-shadow: 5px 5px 10px  var(--bg-senary),
+            -5px -5px 10px var(--bg-secondary);
+	}
+
+	.add-button:active {
+		transform: translateY(1px);
+		border-radius: 11px;
+		background: var(--bg-glass-dark);
+		box-shadow: inset 5px 5px 10px var(--bg-senary),
+            inset -5px -5px 10px var(--bg-secondary);
 	}
 
 	.tags-info {
@@ -1197,7 +1290,141 @@
 	min-width: 300px;
 }
 
-	
+	/* Enhanced Table Styles */
+.exclusions-table-container {
+	overflow-x: auto;
+	border-radius: 8px;
+	border: 1px solid var(--border-color);
+}
+
+.exclusions-table {
+	width: 100%;
+	border-collapse: collapse;
+	background: var(--bg-tertiary);
+}
+
+.exclusions-table th {
+	background: var(--bg-hover);
+	color: var(--text-primary);
+	font-weight: 600;
+	padding: 1rem;
+	text-align: left;
+	border-bottom: 2px solid var(--border-color);
+	font-size: 0.9rem;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+.exclusions-table td {
+	padding: 1rem;
+	border-bottom: 1px solid var(--border-color);
+	vertical-align: middle;
+}
+
+thead {
+	background-color: var(--bg-quinary);
+}
+
+.exclusion-head {
+	color: var(--text-inverse) !important;
+	font-weight: 600;
+}
+
+.exclusion-row {
+	border-bottom: 5px solid var(--bg-primary);
+	color: var(--text-tertiary);
+}
+
+.exclusion-row:hover {
+	background: var(--bg-hover);
+	transition: background-color 0.2s ease;
+}
+
+.exclusion-word .word-text {
+	font-weight: 600;
+	color: var(--text-primary);
+	font-family: 'Courier New', monospace;
+	background: rgba(59, 130, 246, 0.1);
+	padding: 0.25rem 0.5rem;
+	border-radius: 4px;
+	border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.status-toggle {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	cursor: pointer;
+}
+
+.status-checkbox {
+	width: 18px;
+	height: 18px;
+	cursor: pointer;
+	accent-color: var(--primary-color);
+}
+
+.status-indicator {
+	padding: 0.25rem 0.75rem;
+	border-radius: 12px;
+	font-size: 1.25rem;
+	font-weight: 500;
+	transition: all 0.2s ease;
+}
+
+.status-indicator.active {
+	background: var(--error-bg);
+	color: var(--error-text);
+}
+
+.status-indicator:not(.active) {
+	background: var(--success-bg);
+	color: var(--success-text);
+}
+
+.remove-button {
+	background: var(--error-bg);
+	color: var(--text-secondary);
+	border: none;
+	padding: 0.5rem;
+	border-radius: 6px;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.remove-button:hover {
+	background: var(--error-text);
+	color: red;
+	transform: scale(1.05);
+}
+
+.remove-button svg {
+	width: 16px;
+	height: 16px;
+}
+/* Tag-specific table styles */
+.tag-frequency-display {
+	font-size: 0.9rem;
+	color: var(--text-secondary);
+	background: rgba(59, 130, 246, 0.1);
+	padding: 0.25rem 0.5rem;
+	border-radius: 4px;
+	border: 1px solid rgba(59, 130, 246, 0.2);
+	font-weight: 500;
+}
+
+.category-select {
+	padding: 0.25rem 0.5rem;
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	background: var(--bg-primary);
+	color: var(--text-primary);
+	font-size: 0.9rem;
+	min-width: 120px;
+}
 
 	@media (max-width: 768px) {
 		.streaming-tags-categories-page {
@@ -1229,5 +1456,16 @@
 		.tab-navigation {
 			justify-content: center;
 		}
+
+		.exclusions-table th,
+	.exclusions-table td {
+		padding: 0.75rem 0.5rem;
+		font-size: 0.85rem;
+	}
+	
+	.exclusion-word .word-text {
+		font-size: 0.8rem;
+		padding: 0.2rem 0.4rem;
+	}
 	}
 </style>

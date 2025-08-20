@@ -531,7 +531,7 @@ export class MasterVideoService {
 		}
 	}
 
-	async batchAutoTagVideos(videoIDs: number[]): Promise<{
+	async batchAutoTagVideos(videoIDs: number[], replace: boolean = false): Promise<{
 		success: boolean;
 		message?: string;
 		total?: number;
@@ -564,7 +564,7 @@ export class MasterVideoService {
 
 				const response = await apiRequest('/admin/master-videos/batch-auto-tag', {
 					method: 'POST',
-					body: JSON.stringify({ video_ids: batch })
+					body: JSON.stringify({ video_ids: batch, replace: replace })
 				});
 
 				const data = await response.json();

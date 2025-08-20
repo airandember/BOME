@@ -568,6 +568,7 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 	masterVideos.POST("/batch-auto-tag", func(c *gin.Context) {
 		var request struct {
 			VideoIDs []int `json:"video_ids" binding:"required"`
+			Replace  bool  `json:"replace"` // NEW: Add this line
 		}
 
 		if err := c.ShouldBindJSON(&request); err != nil {
@@ -594,6 +595,17 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 			// Continue without exclusions rather than failing completely
 		} else {
 			log.Printf("✅ Loaded exclusions for batch smart tagging")
+		}
+
+		// NEW: Reset frequencies ONCE if replacing, BEFORE any batch processing
+		if request.Replace {
+			log.Printf("🔄 Resetting all tag frequencies before batch replacement...")
+			if err := db.ResetAllTagFrequencies(); err != nil {
+				log.Printf("❌ Failed to reset tag frequencies: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reset tag frequencies"})
+				return
+			}
+			log.Printf("✅ Tag frequencies reset successfully")
 		}
 
 		var results []map[string]interface{}
