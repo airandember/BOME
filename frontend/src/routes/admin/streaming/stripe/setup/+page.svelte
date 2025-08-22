@@ -22,6 +22,7 @@
 	let editingPortal = false; // Whether we're in edit mode
 
 	export let data: any = null;
+	export let onClearKey: () => void;
 
 	onMount(async () => {
 		if (data) {
@@ -75,85 +76,6 @@
 			}
 		} catch (err) {
 			error = 'Failed to save key';
-			console.error(err);
-		} finally {
-			saving = false;
-		}
-	}
-
-	async function clearKey() {
-		saving = true;
-		error = '';
-		success = '';
-		
-		try {
-			const res = await apiRequest('/admin/streaming/stripe/secret', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({ key: 'sk_1337' })
-			});
-			
-			if (res.ok) {
-				success = 'Stripe key cleared successfully!';
-				summary = { enabled: false };
-			} else {
-				const errorData = await res.json();
-				error = errorData.error || 'Failed to clear key';
-			}
-		} catch (err) {
-			error = 'Failed to clear key';
-			console.error(err);
-		} finally {
-			saving = false;
-		}
-	}
-
-	// Show the clear confirmation modal
-	function showClearConfirmation() {
-		showClearModal = true;
-		clearConfirmText = '';
-	}
-
-	// Close the modal and reset
-	function closeClearModal() {
-		showClearModal = false;
-		clearConfirmText = '';
-	}
-
-	// Confirm and execute the clear action
-	async function confirmClearKey() {
-		if (clearConfirmText !== 'sk_1337') {
-			return; // Don't proceed if confirmation text doesn't match
-		}
-
-		// Close modal first
-		closeClearModal();
-
-		// Execute the clear action
-		saving = true;
-		error = '';
-		success = '';
-		
-		try {
-			const res = await apiRequest('/admin/streaming/stripe/secret', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({ key: 'sk_1337' })
-			});
-			
-			if (res.ok) {
-				success = 'Stripe key cleared successfully!';
-				summary = { enabled: false };
-			} else {
-				const errorData = await res.json();
-				error = errorData.error || 'Failed to clear key';
-			}
-		} catch (err) {
-			error = 'Failed to clear key';
 			console.error(err);
 		} finally {
 			saving = false;
@@ -258,7 +180,7 @@
 			<p>Configure your Stripe integration to start processing payments</p>
 		</div>
 
-		{#if !summary?.enabled}
+		<!--{#if !summary?.enabled}
 			<div class="setup-section">
 				<div class="setup-card">
 					<div class="card-header">
@@ -315,7 +237,7 @@
 					{/if}
 				</div>
 
-				<!-- Setup Instructions -->
+				// Setup Instructions //
 				<div class="instructions-card">
 					<h3>🚀 Getting Started</h3>
 					<div class="steps">
@@ -353,7 +275,7 @@
 					</div>
 				</div>
 
-				<!-- Security Notice -->
+				// Security Notice //
 				<div class="security-notice">
 					<div class="notice-icon">🔒</div>
 					<div class="notice-content">
@@ -367,7 +289,7 @@
 					</div>
 				</div>
 			</div>
-		{:else}
+		{:else}-->
 			<!-- Already Connected -->
 			<div class="connected-section">
 				<div class="connected-card">
@@ -404,7 +326,8 @@
 						<button class="btn btn-secondary" on:click={fetchSummary}>
 							🔄 Refresh Connection
 						</button>
-						<button class="btn btn-danger" on:click={showClearConfirmation}>
+						<!-- Use the parent's function -->
+						<button class="btn btn-danger" on:click={onClearKey}>
 							🗑️ Clear Key
 						</button>
 					</div>
@@ -496,60 +419,7 @@
 					{/if}
 				</div>
 			</div>
-		{/if}
-	</div>
-{/if}
-
-<!-- Clear Key Confirmation Modal -->
-{#if showClearModal}
-	<div class="modal-overlay" on:click={closeClearModal}>
-		<div class="modal-content" on:click|stopPropagation>
-			<div class="modal-header">
-				<h3>⚠️ Clear Stripe Key</h3>
-				<button class="modal-close" on:click={closeClearModal}>&times;</button>
-			</div>
-			
-			<div class="modal-body">
-				<p><strong>Are you sure you want to clear your Stripe secret key?</strong></p>
-				<p>This action will:</p>
-				<ul>
-					<li>Disable all Stripe payment processing</li>
-					<li>Remove your stored secret key</li>
-					<li>Return you to the setup screen</li>
-				</ul>
-				
-				<div class="confirmation-input">
-					<label for="confirm-text" class="input-label">
-						Type <code>sk_1337</code> to confirm:
-					</label>
-					<input 
-						id="confirm-text"
-						class="input" 
-						type="text" 
-						placeholder="sk_1337"
-						bind:value={clearConfirmText}
-						on:keydown={(e) => e.key === 'Enter' && clearConfirmText === 'sk_1337' && confirmClearKey()}
-					/>
-				</div>
-			</div>
-			
-			<div class="modal-footer">
-				<button class="btn btn-secondary" on:click={closeClearModal}>
-					Cancel
-				</button>
-				<button 
-					class="btn btn-danger" 
-					disabled={clearConfirmText !== 'sk_1337' || saving}
-					on:click={confirmClearKey}
-				>
-					{#if saving}
-						Clearing...
-					{:else}
-						🗑️ Clear Key
-					{/if}
-				</button>
-			</div>
-		</div>
+		<!--{/if}-->
 	</div>
 {/if}
 

@@ -4,6 +4,7 @@
 	import { apiRequest } from '$lib/auth';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
+	import { showToast } from '$lib/toast';
 
 	// Import child components
 	import Overview from './overview/+page.svelte';
@@ -15,31 +16,32 @@
 	import Subscriptions from './subscriptions/+page.svelte';
 	import Setup from './setup/+page.svelte';
 
-	let summary: any = null;
-	let loading = true;
-	let error = '';
-	let activeTab = 'overview';
+	// State variables using Svelte 5 runes
+	let summary = $state<any>(null);
+	let loading = $state(true);
+	let error = $state('');
+	let activeTab = $state('overview');
 
 	// Setup form state (for main page setup)
-	let secret = '';
-	let saving = false;
-	let setupError = '';
-	let setupSuccess = '';
+	let secret = $state('');
+	let saving = $state(false);
+	let setupError = $state('');
+	let setupSuccess = $state('');
 
 	// Modal state for clear key confirmation
-	let showClearModal = false;
-	let clearConfirmText = '';
+	let showClearModal = $state(false);
+	let clearConfirmText = $state('');
 
 	// Customer portal link state
-	let portalLink = '';
-	let savedPortalLink = ''; // The saved/persisted value
-	let savingPortal = false;
-	let portalError = '';
-	let portalSuccess = '';
-	let editingPortal = false; // Whether we're in edit mode
+	let portalLink = $state('');
+	let savedPortalLink = $state(''); // The saved/persisted value
+	let savingPortal = $state(false);
+	let portalError = $state('');
+	let portalSuccess = $state('');
+	let editingPortal = $state(false); // Whether we're in edit mode
 
-	// Debug logging for data changes
-	$: {
+	// Debug logging for data changes using $effect
+	$effect(() => {
 		console.log('=== MAIN STRIPE DEBUG ===');
 		console.log('Summary data changed:', summary);
 		console.log('Summary enabled:', summary?.enabled);
@@ -48,7 +50,7 @@
 		console.log('Coupons array length:', summary?.coupons?.length);
 		console.log('Active tab:', activeTab);
 		console.log('========================');
-	}
+	});
 
 	// Tab configuration
 	const tabs = [
@@ -61,6 +63,9 @@
 		{ id: 'subscriptions', name: 'Subscriptions', icon: '🔄', component: Subscriptions },
 		{ id: 'setup', name: 'Setup', icon: '⚙️', component: Setup }
 	];
+
+	// Derived value for active tab configuration
+	const activeTabConfig = $derived(tabs.find(tab => tab.id === activeTab));
 
 	onMount(async () => {
 		await fetchSummary();
@@ -183,22 +188,31 @@
 			});
 			
 			if (res.ok) {
-				setupSuccess = 'Stripe key cleared successfully!';
-				console.log('🔄 Clear key successful, fetching fresh summary...');
+				// Show toast notification
+				showToast('Stripe key cleared successfully!', 'success');
 				
-				// Force reactivity by clearing summary first
-				summary = null;
-				await fetchSummary(); // Refresh the summary
+				console.log('🔄 Clear key successful, resetting dashboard state...');
 				
-				console.log('✅ Fresh summary loaded:', summary);
-				console.log('✅ Summary enabled status:', summary?.enabled);
-				console.log('✅ Should show setup form:', !summary?.enabled);
+				// CRITICAL: Set summary to disabled state to trigger line 334 condition
+				summary = { enabled: false };
+				
+				// Switch back to overview tab
+				activeTab = 'overview';
+				
+				// Clear any success messages
+				setupSuccess = '';
+				setupError = '';
+				
+				console.log('✅ Summary reset to disabled state:', summary);
+				console.log('✅ Active tab switched to overview:', activeTab);
 			} else {
 				const errorData = await res.json();
 				setupError = errorData.error || 'Failed to clear key';
+				showToast('Failed to clear Stripe key', 'error');
 			}
 		} catch (err) {
 			setupError = 'Failed to clear key';
+			showToast('Failed to clear Stripe key', 'error');
 			console.error(err);
 		} finally {
 			saving = false;
@@ -260,12 +274,9 @@
 			});
 			
 			if (res.ok) {
-				const data = await res.json();
 				savedPortalLink = '';
 				portalLink = '';
-				editingPortal = false;
-				portalSuccess = data.message || 'Customer portal link cleared successfully!';
-				portalError = '';
+				portalSuccess = 'Portal link cleared successfully!';
 			} else {
 				const errorData = await res.json();
 				portalError = errorData.error || 'Failed to clear portal link';
@@ -275,8 +286,6 @@
 			console.error(err);
 		}
 	}
-
-	$: activeTabConfig = tabs.find(tab => tab.id === activeTab);
 </script>
 
 {#if loading}
@@ -345,7 +354,8 @@
 									class="input" 
 									type="password" 
 									placeholder="sk_test_... or sk_live_..." 
-									bind:value={secret}
+									value={secret}
+									on:input={(e) => secret = (e.target as HTMLInputElement).value}
 									required
 								/>
 								<div class="input-help">
@@ -439,7 +449,6 @@
 					<div class="instructions-card">
 						<h3>🔗 Customer Portal Setup</h3>
 						<p>Configure your Stripe customer portal link for subscription management</p>
-						
 						{#if savedPortalLink && !editingPortal}
 							<!-- Display saved portal link -->
 							<div class="saved-portal">
@@ -472,7 +481,8 @@
 										class="input" 
 										type="url" 
 										placeholder="https://billing.stripe.com/p/login/..." 
-										bind:value={portalLink}
+										value={portalLink}
+										on:input={(e) => portalLink = (e.target as HTMLInputElement).value}
 									/>
 									<div class="input-help">
 										Get this URL from your Stripe Dashboard → Settings → Customer Portal
@@ -529,13 +539,13 @@
 					{#each tabs as tab}
 						<button 
 							class="tab-button {activeTab === tab.id ? 'active' : ''}"
-							class:disabled={!summary?.enabled && tab.id !== 'setup'}
+							class:disabled={!summary?.enabled && tab.id !== 'overview' && tab.id !== 'setup'}
 							on:click={() => switchTab(tab.id)}
-							disabled={!summary?.enabled && tab.id !== 'setup'}
+							disabled={!summary?.enabled && tab.id !== 'overview' && tab.id !== 'setup'}
 						>
 							<span class="tab-icon">{tab.icon}</span>
 							<span class="tab-name">{tab.name}</span>
-							{#if !summary?.enabled && tab.id !== 'setup'}
+							{#if !summary?.enabled && tab.id !== 'overview' && tab.id !== 'setup'}
 								<span class="tab-lock">🔒</span>
 							{/if}
 						</button>
@@ -568,7 +578,10 @@
 					<svelte:component this={activeTabConfig.component} data={summary as any} />
 				{:else if activeTab === 'setup' && activeTabConfig?.component}
 					<!-- @ts-ignore -->
-					<svelte:component this={activeTabConfig.component} data={summary as any} />
+					<svelte:component this={activeTabConfig.component} 
+						data={summary as any} 
+						onClearKey={showClearConfirmation}
+					/>
 
 
 
@@ -605,7 +618,8 @@
 						class="input" 
 						type="text" 
 						placeholder="sk_1337"
-						bind:value={clearConfirmText}
+						value={clearConfirmText}
+						on:input={(e) => clearConfirmText = (e.target as HTMLInputElement).value}
 						on:keydown={(e) => e.key === 'Enter' && clearConfirmText === 'sk_1337' && confirmClearKey()}
 					/>
 				</div>
