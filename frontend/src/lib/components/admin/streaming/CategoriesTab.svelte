@@ -1,18 +1,19 @@
 <script lang="ts">
 	import { toastStore } from '$lib/stores/toast';
 	
-	// Props using Svelte 5 $props rune
+	// Props using Svelte 5 $props rune with callback props
 	let { 
-    categories = [], 
-    tags = [], 
-    loading = false, 
-    newCategory = $bindable(), 
-    newCategoryColor = $bindable('#3B82F6') 
-} = $props();
-	
-	// Events
-	import { createEventDispatcher } from 'svelte';
-	const dispatch = createEventDispatcher();
+		categories = [], 
+		tags = [], 
+		loading = false, 
+		newCategory = $bindable(), 
+		newCategoryColor = $bindable('#3B82F6'),
+		// Callback props instead of events
+		onAddCategory,
+		onDeleteCategory,
+		onUpdateCategory,
+		onBatchTagChanges
+	} = $props();
 	
 	// Modal state using $state rune for reactivity
 	let showModal = $state(false);
@@ -49,11 +50,11 @@
 	
 	// Event handlers
 	function handleAddCategory() {
-		dispatch('addCategory');
+		onAddCategory?.();
 	}
 	
 	function handleDeleteCategory(category: any) {
-		dispatch('deleteCategory', category);
+		onDeleteCategory?.(category);
 	}
 	
 	function handleCategoryClick(category: any) {
@@ -99,7 +100,7 @@
 	}
 	
 	function saveCategoryChanges() {
-		dispatch('updateCategory', {
+		onUpdateCategory?.({
 			id: selectedCategory.id,
 			name: editCategoryName,
 			color: editCategoryColor,
@@ -165,7 +166,7 @@
 			}));
 			
 			// Dispatch the batch update event
-			dispatch('batchTagChanges', { changes });
+			onBatchTagChanges?.(changes);
 			
 			// Clear pending changes
 			pendingTagChanges = [];
