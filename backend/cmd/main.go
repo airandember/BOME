@@ -42,7 +42,7 @@ func SetupTagRoutes(router *gin.Engine, db interface{}) {
 
 		// Update tag
 		tags.PUT("/:id", func(c *gin.Context) {
-			tagID, err := strconv.Atoi(c.Param("id"))
+			_, err := strconv.Atoi(c.Param("id"))
 			if err != nil {
 				c.JSON(400, gin.H{"success": false, "error": "Invalid tag ID"})
 				return
@@ -60,7 +60,7 @@ func SetupTagRoutes(router *gin.Engine, db interface{}) {
 
 		// Delete tag
 		tags.DELETE("/:id", func(c *gin.Context) {
-			tagID, err := strconv.Atoi(c.Param("id"))
+			_, err := strconv.Atoi(c.Param("id"))
 			if err != nil {
 				c.JSON(400, gin.H{"success": false, "error": "Invalid tag ID"})
 				return
@@ -71,7 +71,7 @@ func SetupTagRoutes(router *gin.Engine, db interface{}) {
 
 		// Tag-Category Management
 		tags.PUT("/:id/categories", func(c *gin.Context) {
-			tagID, err := strconv.Atoi(c.Param("id"))
+			_, err := strconv.Atoi(c.Param("id"))
 			if err != nil {
 				c.JSON(400, gin.H{"success": false, "error": "Invalid tag ID"})
 				return
@@ -89,7 +89,7 @@ func SetupTagRoutes(router *gin.Engine, db interface{}) {
 
 		// Get tag categories
 		tags.GET("/:id/categories", func(c *gin.Context) {
-			tagID, err := strconv.Atoi(c.Param("id"))
+			_, err := strconv.Atoi(c.Param("id"))
 			if err != nil {
 				c.JSON(400, gin.H{"success": false, "error": "Invalid tag ID"})
 				return
@@ -110,13 +110,13 @@ func SetupTagRoutes(router *gin.Engine, db interface{}) {
 
 		// Get tag category by ID
 		tagCategories.GET("/:id", func(c *gin.Context) {
-			categoryID, err := strconv.Atoi(c.Param("id"))
+			_, err := strconv.Atoi(c.Param("id"))
 			if err != nil {
 				c.JSON(400, gin.H{"success": false, "error": "Invalid category ID"})
 				return
 			}
 			// TODO: Implement GetTagCategoryByID() in database layer
-			c.JSON(200, gin.H{"success": true, "result": map[string]interface{}{"id": categoryID}})
+			c.JSON(200, gin.H{"success": true, "result": map[string]interface{}{"id": 0}})
 		})
 
 		// Create new tag category
@@ -136,7 +136,7 @@ func SetupTagRoutes(router *gin.Engine, db interface{}) {
 
 		// Update tag category
 		tagCategories.PUT("/:id", func(c *gin.Context) {
-			categoryID, err := strconv.Atoi(c.Param("id"))
+			_, err := strconv.Atoi(c.Param("id"))
 			if err != nil {
 				c.JSON(400, gin.H{"success": false, "error": "Invalid category ID"})
 				return
@@ -156,7 +156,7 @@ func SetupTagRoutes(router *gin.Engine, db interface{}) {
 
 		// Delete tag category
 		tagCategories.DELETE("/:id", func(c *gin.Context) {
-			categoryID, err := strconv.Atoi(c.Param("id"))
+			_, err := strconv.Atoi(c.Param("id"))
 			if err != nil {
 				c.JSON(400, gin.H{"success": false, "error": "Invalid category ID"})
 				return
@@ -167,7 +167,7 @@ func SetupTagRoutes(router *gin.Engine, db interface{}) {
 
 		// Tag-Category Relationship Management
 		tagCategories.PUT("/:id/tags", func(c *gin.Context) {
-			categoryID, err := strconv.Atoi(c.Param("id"))
+			_, err := strconv.Atoi(c.Param("id"))
 			if err != nil {
 				c.JSON(400, gin.H{"success": false, "error": "Invalid category ID"})
 				return
@@ -185,7 +185,7 @@ func SetupTagRoutes(router *gin.Engine, db interface{}) {
 
 		// Get category tags
 		tagCategories.GET("/:id/tags", func(c *gin.Context) {
-			categoryID, err := strconv.Atoi(c.Param("id"))
+			_, err := strconv.Atoi(c.Param("id"))
 			if err != nil {
 				c.JSON(400, gin.H{"success": false, "error": "Invalid category ID"})
 				return
