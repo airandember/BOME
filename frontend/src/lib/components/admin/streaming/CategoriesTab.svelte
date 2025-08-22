@@ -27,18 +27,17 @@
 	let pendingTagChanges = $state<Array<{tagId: number, categoryId: number | null, action: 'add' | 'remove'}>>([]);
 	let hasUnsavedChanges = $state(false);
 	
-	// Use $derived for computed values - no more manual state management
-	// Fix derived values to work with actual data structure (tags.category_id)
+	// Use $derived for computed values - updated for array-based relationships
 	const affiliatedTags = $derived(() => {
 		if (!selectedCategory) return [];
-		// Use the actual data structure: tags with category_id matching selectedCategory.id
-		return tags.filter(tag => tag.category_id === selectedCategory.id);
+		// Use the new array structure: tags with category_ids containing selectedCategory.id
+		return tags.filter(tag => tag.category_ids && tag.category_ids.includes(selectedCategory.id));
 	});
 
 	const filteredTags = $derived(() => {
 		if (!selectedCategory) return [];
 		// Show tags that are NOT assigned to this category
-		return tags.filter(tag => tag.category_id !== selectedCategory.id);
+		return tags.filter(tag => !tag.category_ids || !tag.category_ids.includes(selectedCategory.id));
 	});
 	
 	const searchFilteredTags = $derived(() => {
@@ -236,7 +235,7 @@
 						<div class="category-color" style="background-color: {category.color}"></div>
 						<span class="category-name">{category.name}</span>
 						<span class="category-count">
-							{tags.filter(t => t.category_id === category.id).length} tags
+							{tags.filter(t => t.category_ids && t.category_ids.includes(category.id)).length} tags
 						</span>
 					</div>
 					<div class="category-description">

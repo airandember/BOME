@@ -113,6 +113,7 @@ func SetupRoutes(
 	analyticsService := services.NewSubscriptionAnalyticsService(db)
 	SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService, subscriptionPlanStripeService, subscriptionOffersStripeService)
 	SetupMasterVideoRoutes(admin, db, bunnyService)
+	SetupTagRoutes(router, db)
 
 	// Initialize remaining subscription services
 	subscriberService := services.NewSubscriberService(db)

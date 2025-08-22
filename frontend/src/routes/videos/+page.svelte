@@ -543,7 +543,16 @@
 						</header>
 
 						<!-- Navigation Tabs -->
-						<!--<div class="hub-tabs">
+						<div class="hub-tabs">
+								
+							
+							<button 
+								class="tab-button {activeTab === 'topics' ? 'active' : ''}" 
+								on:click={() => switchTab('topics')}
+							>
+								Topics
+							</button>
+						
 							<button
 								class="tab-button {activeTab === 'allVideos' ? 'active' : ''}"
 								on:click={() => switchTab('allVideos')}
@@ -559,16 +568,9 @@
 							<button 
 								class="tab-button {activeTab === 'collections' ? 'active' : ''}" 
 								on:click={() => switchTab('collections')}
-							>
-								Collections
+							>Collections
 							</button>
-							<button 
-								class="tab-button {activeTab === 'topics' ? 'active' : ''}" 
-								on:click={() => switchTab('topics')}
-							>
-								Topics
-							</button>
-						</div>-->
+						</div>
 
 						<!-- All Videos Section -->
 						{#if activeTab === 'allVideos'}

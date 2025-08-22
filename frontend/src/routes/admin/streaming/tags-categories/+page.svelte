@@ -38,25 +38,27 @@
 	async function loadData() {
 		loading = true;
 		try {
-			// Load only streaming-specific data
-			const [streamingTagsResponse, streamingCategoriesResponse] = await Promise.all([
-				masterVideoService.getSubsiteTags('streaming'),
-				masterVideoService.getSubsiteCategories('streaming')
+			// Use the new API endpoints
+			const [tagsResponse, categoriesResponse] = await Promise.all([
+				fetch('/api/v1/tags'),
+				fetch('/api/v1/tag-categories')
 			]);
 
 			// Parse responses
-			const streamingTagsData = await streamingTagsResponse.json();
-			const streamingCategoriesData = await streamingCategoriesResponse.json();
+			const tagsData = await tagsResponse.json();
+			const categoriesData = await categoriesResponse.json();
 
-			if (streamingTagsData.success) {
-				tags = streamingTagsData.result || [];				
+			if (tagsData.success) {
+				tags = tagsData.result || [];
+				console.log('✅ Loaded tags with new schema:', tags);
 			}
 
-			if (streamingCategoriesData.success) {
-				categories = streamingCategoriesData.result || [];
+			if (categoriesData.success) {
+				categories = categoriesData.result || [];
+				console.log('✅ Loaded categories with new schema:', categories);
 			}
 		} catch (err) {
-			toastStore.error('Failed to load streaming tag data');
+			toastStore.error('Failed to load tag data');
 			console.error('Error loading data:', err);
 		} finally {
 			loading = false;
@@ -162,8 +164,8 @@
 					
 					// Also remove category_id from tags that had this category
 					tags = tags.map(t => 
-						t.category_id === category.id 
-							? { ...t, category_id: null }
+						t.category_ids && t.category_ids.includes(category.id)
+							? { ...t, category_ids: t.category_ids.filter((id: number) => id !== category.id) }
 							: t
 					);
 					
@@ -177,22 +179,38 @@
 		}
 	}
 
-	// Fix the batchUpdateTagCategories function to use existing API methods
+	// Update the batchUpdateTagCategories function to use the new API
 	async function batchUpdateTagCategories(changes: Array<{tagId: number, categoryId: number | null, action: 'add' | 'remove'}>) {
 		try {
-			// Process each change individually using the existing assignSubsiteTagToCategory method
-			for (const change of changes) {
-				if (change.action === 'add' && change.categoryId) {
-					await assignTagToCategory(change.tagId, change.categoryId);
-				} else if (change.action === 'remove') {
-					await assignTagToCategory(change.tagId, null);
+			// Use the new batch update API endpoint
+			const response = await fetch('/api/v1/tag-categories/batch-update', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ changes })
+			});
+
+			if (response.ok) {
+				const data = await response.json();
+				if (data.success) {
+					toastStore.success(`Successfully processed ${changes.length} tag changes`);
+					
+					// Update local state to reflect changes
+					updateLocalStateAfterBatchChanges(changes);
+					return true;
+				} else {
+					toastStore.error(data.error || 'Failed to process tag changes');
+					return false;
 				}
+			} else {
+				const errorText = await response.text();
+				toastStore.error(`Failed to process tag changes (HTTP ${response.status})`);
+				console.error('HTTP error:', errorText);
+				return false;
 			}
-			
-			toastStore.success(`Successfully processed ${changes.length} tag changes`);
-			return true;
 		} catch (error) {
-			toastStore.error('Failed to process some tag changes');
+			toastStore.error('Failed to process tag changes - network error');
 			console.error('Error in batch update:', error);
 			return false;
 		}
@@ -213,18 +231,18 @@
 				
 				if (responseData.success) {
 					// Update local state immediately for better UX
-					if (categoryId === null || categoryId === undefined) {
+					if (categoryId === null) {
 						// Remove tag from category
 						tags = tags.map(t => 
 							t.id === tagId 
-								? { ...t, category_id: null }
+								? { ...t, category_ids: t.category_ids?.filter((id: number) => id !== tagId) || [] }
 								: t
 						);
 						
 						// Also update categories to remove tag from tag_ids array
 						categories = categories.map(c => {
 							if (c.tag_ids && c.tag_ids.includes(tagId)) {
-								return { ...c, tag_ids: c.tag_ids.filter((id: any) => id !== tagId) };
+								return { ...c, tag_ids: c.tag_ids.filter((id: number) => id !== tagId) };
 							}
 							return c;
 						});
@@ -234,7 +252,7 @@
 						// Add tag to category
 						tags = tags.map(t => 
 							t.id === tagId 
-								? { ...t, category_id: parseInt(categoryId) }
+								? { ...t, category_ids: [...(t.category_ids || []), parseInt(categoryId)] }
 								: t
 						);
 						
@@ -284,21 +302,64 @@
 		}
 	}
 
-	// Update local state after batch changes
+	// Update local state after batch changes - updated for array relationships
 	function updateLocalStateAfterBatchChanges(changes: Array<{tagId: number, categoryId: number | null, action: 'add' | 'remove'}>) {
 		changes.forEach(change => {
 			if (change.action === 'add' && change.categoryId) {
-				tags = tags.map(t => 
-					t.id === change.tagId 
-						? { ...t, category_id: change.categoryId }
-						: t
-				);
+				// Add category to tag's category_ids array
+				tags = tags.map(t => {
+					if (t.id === change.tagId) {
+						const currentCategoryIds = t.category_ids || [];
+						if (!currentCategoryIds.includes(change.categoryId!)) {
+							return { ...t, category_ids: [...currentCategoryIds, change.categoryId!] };
+						}
+					}
+					return t;
+				});
+				
+				// Add tag to category's tag_ids array
+				categories = categories.map(c => {
+					if (c.id === change.categoryId) {
+						const currentTagIds = c.tag_ids || [];
+						if (!currentTagIds.includes(change.tagId)) {
+							return { ...c, tag_ids: [...currentTagIds, change.tagId] };
+						}
+					}
+					return c;
+				});
 			} else if (change.action === 'remove') {
-				tags = tags.map(t => 
-					t.id === change.tagId 
-						? { ...t, category_id: null }
-						: t
-				);
+				if (change.categoryId) {
+					// Remove specific category from tag's category_ids array
+					tags = tags.map(t => {
+						if (t.id === change.tagId && t.category_ids) {
+							return { ...t, category_ids: t.category_ids.filter((id: number | null) => id !== change.categoryId) };
+						}
+						return t;
+					});
+					
+					// Remove tag from category's tag_ids array
+					categories = categories.map(c => {
+						if (c.id === change.categoryId && c.tag_ids) {
+							return { ...c, tag_ids: c.tag_ids.filter((id: number) => id !== change.tagId) };
+						}
+						return c;
+					});
+				} else {
+					// Remove tag from all categories
+					tags = tags.map(t => 
+						t.id === change.tagId 
+							? { ...t, category_ids: [] }
+							: t
+					);
+					
+					// Remove tag from all categories' tag_ids arrays
+					categories = categories.map(c => {
+						if (c.tag_ids && c.tag_ids.includes(change.tagId)) {
+							return { ...c, tag_ids: c.tag_ids.filter((id: number) => id !== change.tagId) };
+						}
+						return c;
+					});
+				}
 			}
 		});
 	}
@@ -483,7 +544,7 @@
 			}
 			
 			// Get tags for this category
-			const categoryTags = tags.filter(tag => tag.category_id === categoryId);
+			const categoryTags = tags.filter(tag => tag.category_ids && tag.category_ids.includes(categoryId));
 			if (categoryTags.length === 0) {
 				return [];
 			}

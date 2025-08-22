@@ -153,7 +153,7 @@
 								{/if}
 							</span>
 						</th>
-						<th class="exclusion-head">Category</th>
+						<th class="exclusion-head">Categories</th>
 						<th class="exclusion-head">Actions</th>
 					</tr>
 				</thead>
@@ -170,7 +170,7 @@
 										aria-label="Toggle tag active status"
 									/>
 									<span class="status-indicator" class:active={tag.active_tag}>
-										{tag.active_tag ? '🟢 Active' : '🔴 Inactive'}
+										{tag.active_tag ? '🟢' : '🔴'}
 									</span>
 								</label>
 							</td>
@@ -183,17 +183,19 @@
 								</span>
 							</td>
 							<td class="exclusion-status">
-								{#if categories.length > 0}
-									<select 
-										value={tag.category_id || ''} 
-										on:change={(e) => handleCategoryChange(e, tag.id)}
-										class="category-select"
-									>
-										<option value="">No Category</option>
-										{#each categories as category}
-											<option value={category.id}>{category.name}</option>
+								{#if tag.category_ids && tag.category_ids.length > 0}
+									<div class="tag-categories">
+										{#each tag.category_ids as categoryId}
+											{@const category = categories.find(c => c.id === categoryId)}
+											{#if category}
+												<span class="category-badge" style="background-color: {category.color}20; border: 1px solid {category.color}">
+													{category.name}
+												</span>
+											{/if}
 										{/each}
-									</select>
+									</div>
+								{:else}
+									<span class="no-categories">No categories</span>
 								{/if}
 							</td>
 							<td class="exclusion-actions">
@@ -410,6 +412,7 @@
 	.status-toggle {
 		display: flex;
 		align-items: center;
+		justify-content: center;
 		gap: 0.5rem;
 		cursor: pointer;
 	}
@@ -422,9 +425,12 @@
 	}
 	
 	.status-indicator {
+		display: flex;
+		align-items: end;
+		justify-content: center;
 		padding: 0.25rem 0.75rem;
 		border-radius: 12px;
-		font-size: 1.25rem;
+		font-size: 1.7rem;
 		font-weight: 500;
 		transition: all 0.2s ease;
 	}
