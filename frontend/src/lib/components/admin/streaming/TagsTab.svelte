@@ -1,42 +1,46 @@
 <script lang="ts">
 	import { toastStore } from '$lib/stores/toast';
 	
-	// Props
-	export let tags: any[] = [];
-	export let categories: any[] = [];
-	export let loading: boolean = false;
-	export let newTag: string = '';
+	// Props using Svelte 5 $props rune with callback props
+	let { 
+		tags = [], 
+		categories = [], 
+		loading = false, 
+		newTag = $bindable(''),
+		// Callback props instead of events
+		onAddTag,
+		onDeleteTag,
+		onCategoryChange,
+		onToggleStatus,
+		onAddToExclusions
+	} = $props();
 	
-	// Events
-	import { createEventDispatcher } from 'svelte';
-	const dispatch = createEventDispatcher();
+	// Local state using $state rune
+	let tagsSortField = $state<'status' | 'word' | 'frequency' | null>(null);
+	let tagsSortDirection = $state<'asc' | 'desc'>('asc');
 	
-	// Local state
-	let tagsSortField: 'status' | 'word' | 'frequency' | null = null;
-	let tagsSortDirection: 'asc' | 'desc' = 'asc';
-	
-	// Event handlers
+	// Event handlers - now call callback props directly
 	function handleAddTag() {
-		dispatch('addTag');
+		onAddTag?.();
 	}
 	
 	function handleDeleteTag(tag: any) {
-		dispatch('deleteTag', tag);
+		onDeleteTag?.(tag);
 	}
 	
 	function handleCategoryChange(event: Event, tagId: any) {
 		const target = event.target as HTMLSelectElement;
 		if (target) {
-			dispatch('categoryChange', { tagId, categoryId: target.value });
+			onCategoryChange?.({ tagId, categoryId: target.value });
 		}
 	}
 	
 	function handleToggleStatus(tag: any) {
-		dispatch('toggleStatus', tag);
+		onToggleStatus?.(tag);
 	}
 	
 	function handleAddToExclusions(tag: any) {
-		dispatch('addToExclusions', tag);
+		onAddToExclusions?.(tag);
 	}
 	
 	// Sorting function
@@ -48,7 +52,7 @@
 			tagsSortDirection = 'asc';
 		}
 		
-		// Apply sorting
+		// Apply sorting - this will automatically update the tags prop
 		tags = [...tags].sort((a, b) => {
 			let aVal: any, bVal: any;
 			

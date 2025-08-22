@@ -1,30 +1,32 @@
 <script lang="ts">
 	import { toastStore } from '$lib/stores/toast';
 	
-	// Props
-	export let articleExclusions: any[] = [];
-	export let newExclusion: string = '';
-	export let exclusionsLoading: boolean = false;
+	// Props using Svelte 5 $props rune with callback props
+	let { 
+		articleExclusions = [], 
+		newExclusion = $bindable(''), 
+		exclusionsLoading = false,
+		// Callback props instead of events
+		onAddExclusion,
+		onToggleExclusion,
+		onRemoveExclusion
+	} = $props();
 	
-	// Events
-	import { createEventDispatcher } from 'svelte';
-	const dispatch = createEventDispatcher();
+	// Local state using $state rune
+	let exclusionsSortField = $state<'word' | 'status' | null>(null);
+	let exclusionsSortDirection = $state<'asc' | 'desc'>('asc');
 	
-	// Local state
-	let exclusionsSortField: 'word' | 'status' | null = null;
-	let exclusionsSortDirection: 'asc' | 'desc' = 'asc';
-	
-	// Event handlers
+	// Event handlers - now call callback props directly
 	function handleAddExclusion() {
-		dispatch('addExclusion');
+		onAddExclusion?.();
 	}
 	
 	function handleToggleExclusion(exclusion: any) {
-		dispatch('toggleExclusion', exclusion);
+		onToggleExclusion?.(exclusion);
 	}
 	
 	function handleRemoveExclusion(exclusion: any) {
-		dispatch('removeExclusion', exclusion);
+		onRemoveExclusion?.(exclusion);
 	}
 	
 	// Sorting function

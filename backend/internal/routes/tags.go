@@ -18,7 +18,7 @@ func SetupTagRoutes(router *gin.Engine, db *database.DB) {
 	{
 		// Get all tag categories
 		tagCategories.GET("", func(c *gin.Context) {
-			categories, err := db.TagGetCategories()
+			categories, err := db.GetTagCategoriesBySubsite(1) // Hardcode streaming subsite for now
 			if err != nil {
 				log.Printf("❌ Failed to get tag categories: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -308,7 +308,7 @@ func SetupTagRoutes(router *gin.Engine, db *database.DB) {
 	{
 		// Get all tags
 		tags.GET("", func(c *gin.Context) {
-			tags, err := db.GetTags()
+			tags, err := db.GetTagsBySubsite(1) // Hardcode streaming subsite for now
 			if err != nil {
 				log.Printf("❌ Failed to get tags: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{

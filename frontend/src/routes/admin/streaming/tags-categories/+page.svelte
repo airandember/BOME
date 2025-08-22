@@ -51,6 +51,8 @@
 			if (tagsData.success) {
 				tags = tagsData.result || [];
 				console.log('✅ Loaded tags with new schema:', tags);
+			} else {
+				console.log('❌ Failed to load tags with new schema:', tagsData);
 			}
 
 			if (categoriesData.success) {
@@ -648,11 +650,11 @@
 			{categories}
 			{loading}
 			bind:newTag
-			on:addTag={addTag}
-			on:deleteTag={deleteTag}
-			on:categoryChange={({ detail }) => assignTagToCategory(detail.tagId, detail.categoryId)}
-			on:toggleStatus={({ detail }) => toggleTagActiveStatus(detail)}
-			on:addToExclusions={({ detail }) => addArticleExclusionFromTag(detail)}
+			onAddTag={addTag}
+			onDeleteTag={deleteTag}
+			onCategoryChange={({ tagId, categoryId }: { tagId: number; categoryId: number }) => assignTagToCategory(tagId, categoryId)}
+			onToggleStatus={toggleTagActiveStatus}
+			onAddToExclusions={addArticleExclusionFromTag}
 		/>
 	{/if}
 
@@ -664,10 +666,10 @@
 			{loading}
 			bind:newCategory
 			bind:newCategoryColor
-			on:addCategory={addCategory}
-			on:deleteCategory={deleteCategory}
-			on:updateCategory={({ detail }) => updateCategory(detail)}
-			on:batchTagChanges={({ detail }) => batchUpdateTagCategories(detail.changes)}
+			onAddCategory={addCategory}
+			onDeleteCategory={deleteCategory}
+			onUpdateCategory={updateCategory}
+			onBatchTagChanges={batchUpdateTagCategories}
 		/>
 	{/if}
 
@@ -677,9 +679,9 @@
 			{articleExclusions}
 			bind:newExclusion
 			{exclusionsLoading}
-			on:addExclusion={addArticleExclusion}
-			on:toggleExclusion={({ detail }) => toggleArticleExclusion(detail)}
-			on:removeExclusion={({ detail }) => removeArticleExclusion(detail)}
+			onAddExclusion={addArticleExclusion}
+			onToggleExclusion={toggleArticleExclusion}
+			onRemoveExclusion={removeArticleExclusion}
 		/>
 	{/if}
 </div>

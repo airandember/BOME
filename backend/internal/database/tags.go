@@ -11,14 +11,15 @@ import (
 
 // Tag represents a tag in the system with bidirectional category relationships
 type Tag struct {
-	ID          int       `json:"id"`
-	Word        string    `json:"word"`
-	Frequency   int       `json:"frequency"`
-	SubsiteID   *int      `json:"subsite_id"` // Can be null
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	ActiveTag   bool      `json:"active_tag"`
-	CategoryIDs []int     `json:"category_ids"` // Array field for many-to-many relationships
+	ID              int       `json:"id"`
+	Word            string    `json:"word"`
+	Frequency       int       `json:"frequency"`
+	SubsiteIDOrigin *int      `json:"subsite_id_origin"` // Which subsite created this tag (immutable)
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	ActiveTag       bool      `json:"active_tag"`
+	CategoryIDs     []int     `json:"category_ids"` // Array field for many-to-many relationships
+	SubsiteIDs      []int     `json:"subsite_ids"`  // Which subsites use this tag (mutable array)
 }
 
 // TagCategory represents a tag category with bidirectional tag relationships
@@ -36,13 +37,13 @@ type TagCategory struct {
 
 // ===== TAG CRUD OPERATIONS =====
 
-// GetTags retrieves all tags with their category relationships
+// GetTags retrieves all tags with their category relationships for streaming subsite
 func (db *DB) GetTags() ([]Tag, error) {
 	query := `
-		SELECT id, word, frequency, subsite_id, created_at, 
-		       updated_at, active_tag, COALESCE(category_ids, '{}')
+		SELECT id, word, frequency, subsite_id_origin,  created_at, 
+		       updated_at, active_tag, COALESCE(category_ids, '{}'), COALESCE(subsite_ids, '{}')
 		FROM tags
-		WHERE active_tag = true
+		WHERE subsite_id_origin = 1 OR 1 = ANY(COALESCE(subsite_ids, '{}'))
 		ORDER BY word ASC
 	`
 
@@ -55,57 +56,61 @@ func (db *DB) GetTags() ([]Tag, error) {
 	var tags []Tag
 	for rows.Next() {
 		var tag Tag
-		var subsiteID sql.NullInt64
+		var subsiteIDOrigin sql.NullInt64
 
 		err := rows.Scan(
 			&tag.ID,
 			&tag.Word,
 			&tag.Frequency,
-			&subsiteID,
+			&subsiteIDOrigin,
 			&tag.CreatedAt,
 			&tag.UpdatedAt,
 			&tag.ActiveTag,
 			pq.Array(&tag.CategoryIDs),
+			pq.Array(&tag.SubsiteIDs),
 		)
 		if err != nil {
 			log.Printf("❌ Error scanning tag row: %v", err)
 			continue
 		}
 
-		// Handle nullable subsite_id
-		if subsiteID.Valid {
-			id := int(subsiteID.Int64)
-			tag.SubsiteID = &id
+		// Handle nullable subsite_id_origin
+		if subsiteIDOrigin.Valid {
+			id := int(subsiteIDOrigin.Int64)
+			tag.SubsiteIDOrigin = &id
 		}
 
 		tags = append(tags, tag)
 	}
 
-	log.Printf("✅ Retrieved %d tags from database", len(tags))
+	log.Printf("✅ Retrieved %d tags for streaming subsite (ID: 1)", len(tags))
 	return tags, nil
 }
 
 // GetTagByID retrieves a specific tag by ID
 func (db *DB) GetTagByID(tagID int) (*Tag, error) {
 	query := `
-		SELECT id, word, frequency, subsite_id, created_at, 
-		       updated_at, active_tag, COALESCE(category_ids, '{}')
+		SELECT id, word, frequency, subsite_id_origin, created_at, updated_at, active_tag, 
+       COALESCE(category_ids, '{}'), COALESCE(subsite_ids, '{}')
 		FROM tags
 		WHERE id = $1
 	`
 
 	var tag Tag
-	var subsiteID sql.NullInt64
+	var subsiteIDOrigin sql.NullInt64
+	var subsiteIDs pq.Int64Array // Use pq.Int64Array instead
 
 	err := db.QueryRow(query, tagID).Scan(
 		&tag.ID,
 		&tag.Word,
 		&tag.Frequency,
-		&subsiteID,
+		&subsiteIDOrigin,
+		&subsiteIDs, // Scan into pq.Int64Array
 		&tag.CreatedAt,
 		&tag.UpdatedAt,
 		&tag.ActiveTag,
 		pq.Array(&tag.CategoryIDs),
+		pq.Array(&tag.SubsiteIDs),
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -114,10 +119,16 @@ func (db *DB) GetTagByID(tagID int) (*Tag, error) {
 		return nil, fmt.Errorf("failed to query tag: %v", err)
 	}
 
-	// Handle nullable subsite_id
-	if subsiteID.Valid {
-		id := int(subsiteID.Int64)
-		tag.SubsiteID = &id
+	// Handle nullable subsite_id_origin
+	if subsiteIDOrigin.Valid {
+		id := int(subsiteIDOrigin.Int64)
+		tag.SubsiteIDOrigin = &id
+	}
+
+	// Convert pq.Int64Array to []int
+	tag.SubsiteIDs = make([]int, len(subsiteIDs))
+	for i, v := range subsiteIDs {
+		tag.SubsiteIDs[i] = int(v)
 	}
 
 	return &tag, nil
@@ -125,12 +136,13 @@ func (db *DB) GetTagByID(tagID int) (*Tag, error) {
 
 // ===== TAG CATEGORY CRUD OPERATIONS =====
 
-// TagGetCategories retrieves all tag categories with their tag relationships
+// TagGetCategories retrieves all tag categories for streaming subsite
 func (db *DB) TagGetCategories() ([]TagCategory, error) {
 	query := `
 		SELECT id, name, description, color, created_at, 
 		       COALESCE(subsite_ids, '{}'), subsite_id, updated_at, COALESCE(tag_ids, '{}')
 		FROM tag_categories
+		WHERE subsite_id = 1 OR 1 = ANY(COALESCE(subsite_ids, '{}'))
 		ORDER BY name ASC
 	`
 
@@ -151,13 +163,13 @@ func (db *DB) TagGetCategories() ([]TagCategory, error) {
 			&category.Description,
 			&category.Color,
 			&category.CreatedAt,
-			pq.Array(&category.SubsiteIDs),
+			pq.Array(&category.SubsiteIDs), // Change from &subsiteIDs to pq.Array(&category.SubsiteIDs)
 			&subsiteID,
 			&category.UpdatedAt,
-			pq.Array(&category.TagIDs),
+			pq.Array(&category.TagIDs), // Change from &tagIDs to pq.Array(&category.TagIDs)
 		)
 		if err != nil {
-			log.Printf("❌ Error scanning tag category row: %v", err)
+			log.Printf("❌ TagGetCategories: Error scanning tag_categories row: %v", err)
 			continue
 		}
 
@@ -170,7 +182,7 @@ func (db *DB) TagGetCategories() ([]TagCategory, error) {
 		categories = append(categories, category)
 	}
 
-	log.Printf("✅ Retrieved %d tag categories from database", len(categories))
+	log.Printf("✅ Retrieved %d tag categories for streaming subsite (ID: 1)", len(categories))
 	return categories, nil
 }
 
@@ -444,7 +456,7 @@ func (db *DB) RemoveTagFromAllCategories(tagID int) error {
 // GetTagsByCategory retrieves all tags for a specific category
 func (db *DB) GetTagsByCategory(categoryID int) ([]Tag, error) {
 	query := `
-		SELECT id, word, frequency, subsite_id, created_at, 
+		SELECT id, word, frequency, subsite_id_origin, COALESCE(subsite_ids, '{}'), created_at, 
 		       updated_at, active_tag, COALESCE(category_ids, '{}')
 		FROM tags
 		WHERE $1 = ANY(category_ids) AND active_tag = true
@@ -460,27 +472,36 @@ func (db *DB) GetTagsByCategory(categoryID int) ([]Tag, error) {
 	var tags []Tag
 	for rows.Next() {
 		var tag Tag
-		var subsiteID sql.NullInt64
+		var subsiteIDOrigin sql.NullInt64
+		var subsiteIDs pq.Int64Array // Use pq.Int64Array instead
 
 		err := rows.Scan(
 			&tag.ID,
 			&tag.Word,
 			&tag.Frequency,
-			&subsiteID,
+			&subsiteIDOrigin,
+			&subsiteIDs, // Scan into pq.Int64Array
 			&tag.CreatedAt,
 			&tag.UpdatedAt,
 			&tag.ActiveTag,
 			pq.Array(&tag.CategoryIDs),
+			pq.Array(&tag.SubsiteIDs),
 		)
 		if err != nil {
-			log.Printf("❌ Error scanning tag row: %v", err)
+			log.Printf("❌  GetTagsByCategory: Error scanning tag row: %v", err)
 			continue
 		}
 
-		// Handle nullable subsite_id
-		if subsiteID.Valid {
-			id := int(subsiteID.Int64)
-			tag.SubsiteID = &id
+		// Handle nullable subsite_id_origin
+		if subsiteIDOrigin.Valid {
+			id := int(subsiteIDOrigin.Int64)
+			tag.SubsiteIDOrigin = &id
+		}
+
+		// Convert pq.Int64Array to []int
+		tag.SubsiteIDs = make([]int, len(subsiteIDs))
+		for i, v := range subsiteIDs {
+			tag.SubsiteIDs[i] = int(v)
 		}
 
 		tags = append(tags, tag)
@@ -516,13 +537,14 @@ func (db *DB) GetCategoriesForTag(tagID int) ([]TagCategory, error) {
 			&category.Description,
 			&category.Color,
 			&category.CreatedAt,
-			pq.Array(&category.SubsiteIDs),
+
 			&subsiteID,
 			&category.UpdatedAt,
 			pq.Array(&category.TagIDs),
+			pq.Array(&category.SubsiteIDs),
 		)
 		if err != nil {
-			log.Printf("❌ Error scanning category row: %v", err)
+			log.Printf("❌  GetCategoriesForTag: Error scanning category row: %v", err)
 			continue
 		}
 
@@ -542,36 +564,49 @@ func (db *DB) GetCategoriesForTag(tagID int) ([]TagCategory, error) {
 
 // These functions maintain compatibility with existing code while using the new array system
 
-// CreateTag creates a new tag (legacy compatibility)
+// CreateTag creates a new tag
 func (db *DB) CreateTag(word string, subsiteID *int) (*Tag, error) {
+	var subsiteIDs []int
+	if subsiteID != nil {
+		subsiteIDs = []int{*subsiteID}
+	}
+
 	query := `
-		INSERT INTO tags (word, frequency, category_id, subsite_id, active_tag, created_at, updated_at, category_ids)
-		VALUES ($1, 1, NULL, $2, true, NOW(), NOW(), '{}')
-		RETURNING id, word, frequency, category_id, subsite_id, created_at, updated_at, active_tag, COALESCE(category_ids, '{}')
+		INSERT INTO tags (word, frequency, subsite_id_origin, subsite_ids, active_tag, created_at, updated_at, category_ids)
+		VALUES ($1, 1, $2, $3, true, NOW(), NOW(), '{}')
+		RETURNING id, word, frequency, subsite_id_origin, COALESCE(subsite_ids, '{}'), created_at, updated_at, active_tag, COALESCE(category_ids, '{}')
 	`
 
 	var tag Tag
-	var categoryID, subsiteIDScan sql.NullInt64
+	var subsiteIDOriginScan sql.NullInt64
+	var subsiteIDsArray pq.Int64Array
 
-	err := db.QueryRow(query, word, subsiteID).Scan(
+	err := db.QueryRow(query, word, subsiteID, pq.Array(subsiteIDs)).Scan(
 		&tag.ID,
 		&tag.Word,
 		&tag.Frequency,
-		&categoryID,
-		&subsiteIDScan,
+		&subsiteIDOriginScan,
+		&subsiteIDsArray,
 		&tag.CreatedAt,
 		&tag.UpdatedAt,
 		&tag.ActiveTag,
 		pq.Array(&tag.CategoryIDs),
+		pq.Array(&tag.SubsiteIDs),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tag: %v", err)
 	}
 
-	// Handle nullable subsite_id
-	if subsiteIDScan.Valid {
-		id := int(subsiteIDScan.Int64)
-		tag.SubsiteID = &id
+	// Handle nullable subsite_id_origin
+	if subsiteIDOriginScan.Valid {
+		id := int(subsiteIDOriginScan.Int64)
+		tag.SubsiteIDOrigin = &id
+	}
+
+	// Convert array
+	tag.SubsiteIDs = make([]int, len(subsiteIDsArray))
+	for i, v := range subsiteIDsArray {
+		tag.SubsiteIDs[i] = int(v)
 	}
 
 	log.Printf("✅ Created tag %d: %s", tag.ID, tag.Word)
@@ -633,4 +668,122 @@ func (db *DB) DeleteTag(tagID int) error {
 // GetCategoryTags is an alias for GetTagsByCategory (legacy compatibility)
 func (db *DB) GetCategoryTags(categoryID int) ([]Tag, error) {
 	return db.GetTagsByCategory(categoryID)
+}
+
+// GetTagsBySubsite retrieves all tags for a specific subsite
+func (db *DB) GetTagsBySubsite(subsiteID int) ([]Tag, error) {
+	query := `
+		SELECT id, word, frequency, subsite_id_origin, created_at, 
+		       updated_at, active_tag, COALESCE(category_ids, '{}'), COALESCE(subsite_ids, '{}')
+		FROM tags
+		WHERE active_tag = true AND (subsite_id_origin = $1 OR $1 = ANY(COALESCE(subsite_ids, '{}')))
+		ORDER BY word ASC
+	`
+
+	rows, err := db.Query(query, subsiteID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tags for subsite %d: %v", subsiteID, err)
+	}
+	defer rows.Close()
+
+	var tags []Tag
+	for rows.Next() {
+		var tag Tag
+		var subsiteIDOrigin sql.NullInt64
+
+		err := rows.Scan(
+			&tag.ID,
+			&tag.Word,
+			&tag.Frequency,
+			&subsiteIDOrigin,
+			&tag.CreatedAt,
+			&tag.UpdatedAt,
+			&tag.ActiveTag,
+			pq.Array(&tag.CategoryIDs),
+			pq.Array(&tag.SubsiteIDs), // ADD THIS LINE
+		)
+		if err != nil {
+			log.Printf("❌  GetTagsBySubsite: Error scanning tag row: %v", err)
+			continue
+		}
+
+		// Handle nullable subsite_id_origin
+		if subsiteIDOrigin.Valid {
+			id := int(subsiteIDOrigin.Int64)
+			tag.SubsiteIDOrigin = &id
+		}
+
+		// Convert pq.Int64Array to []int
+		// tag.SubsiteIDs = make([]int, len(subsiteIDs))
+		// for i, v := range subsiteIDs {
+		// 	tag.SubsiteIDs[i] = int(v)
+		// }
+
+		tags = append(tags, tag)
+	}
+
+	log.Printf("✅ Retrieved %d tags for subsite %d", len(tags), subsiteID)
+	return tags, nil
+}
+
+// Fix GetTagCategoriesBySubsite function (lines 745-759)
+func (db *DB) GetTagCategoriesBySubsite(subsiteID int) ([]TagCategory, error) {
+	query := `
+		SELECT id, name, description, color, created_at, COALESCE(subsite_ids, '{}'), subsite_id, updated_at, COALESCE(tag_ids, '{}')
+		FROM tag_categories
+		WHERE subsite_id = $1 OR $1 = ANY(COALESCE(subsite_ids, '{}'))
+		ORDER BY name ASC
+	`
+
+	rows, err := db.Query(query, subsiteID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tag categories for subsite %d: %v", subsiteID, err)
+	}
+	defer rows.Close()
+
+	var categories []TagCategory
+	for rows.Next() {
+		var category TagCategory
+		var subsiteIDScan sql.NullInt64
+		var subsiteIDs pq.Int64Array // Add this
+		var tagIDs pq.Int64Array     // Add this
+
+		err := rows.Scan(
+			&category.ID,
+			&category.Name,
+			&category.Description,
+			&category.Color,
+			&category.CreatedAt,
+			&subsiteIDs, // Change from pq.Array(&category.SubsiteIDs)
+			&subsiteIDScan,
+			&category.UpdatedAt,
+			&tagIDs, // Change from pq.Array(&category.TagIDs)
+		)
+		if err != nil {
+			log.Printf("❌  GetTagCategoriesBySubsite: Error scanning tag_category table row: %v", err)
+			continue
+		}
+
+		// Convert pq.Int64Array to []int (ADD THIS)
+		category.SubsiteIDs = make([]int, len(subsiteIDs))
+		for i, v := range subsiteIDs {
+			category.SubsiteIDs[i] = int(v)
+		}
+
+		category.TagIDs = make([]int, len(tagIDs))
+		for i, v := range tagIDs {
+			category.TagIDs[i] = int(v)
+		}
+
+		// Handle nullable subsite_id
+		if subsiteIDScan.Valid {
+			id := int(subsiteIDScan.Int64)
+			category.SubsiteID = &id
+		}
+
+		categories = append(categories, category)
+	}
+
+	log.Printf("✅ Retrieved %d tag categories for subsite %d", len(categories), subsiteID)
+	return categories, nil
 }
