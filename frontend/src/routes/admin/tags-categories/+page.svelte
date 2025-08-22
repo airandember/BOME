@@ -4,8 +4,8 @@
 	import { createEventDispatcher } from 'svelte';
 
 	let activeTab = 'tags';
-	let tags = [];
-	let categories = [];
+	let tags: any[] = [];
+	let categories: any[] = [];
 	let loading = false;
 	let error = '';
 
@@ -32,14 +32,15 @@
 				masterVideoService.getTagAnalytics(),
 				masterVideoService.getTagCategories()
 			]);
-
-			if (tagsResponse.success) {
-				tags = tagsResponse.result?.tag_frequency || [];
+			if (tagsResponse.data) {
+				tags = tagsResponse.data.tag_frequency || [];
 			}
 
-			if (categoriesResponse.success) {
-				categories = categoriesResponse.result || [];
+			if (categoriesResponse.ok) {
+				const data = await categoriesResponse.json();
+				categories = data || [];
 			}
+			
 		} catch (err) {
 			error = 'Failed to load data';
 			console.error('Error loading data:', err);
@@ -62,7 +63,7 @@
 		}
 	}
 
-	async function deleteTag(tag) {
+	async function deleteTag(tag: { id: number; word: string }) {
 		if (confirm(`Are you sure you want to delete "${tag.word}"?`)) {
 			try {
 				await masterVideoService.deleteTag(tag.id);
@@ -90,7 +91,7 @@
 		}
 	}
 
-	async function deleteCategory(category) {
+	async function deleteCategory(category: { id: number; name: string }) {
 		if (confirm(`Are you sure you want to delete "${category.name}"?`)) {
 			try {
 				await masterVideoService.deleteTagCategory(category.id);
@@ -101,7 +102,7 @@
 		}
 	}
 
-	async function assignTagToCategory(tagId, categoryId) {
+	async function assignTagToCategory(tagId: number, categoryId: number) {
 		try {
 			await masterVideoService.assignTagToCategory(tagId, categoryId);
 			await loadData();
@@ -191,7 +192,7 @@
 								{#if categories.length > 0}
 									<select 
 										value={tag.category_id || ''} 
-										on:change={(e) => assignTagToCategory(tag.id, e.target.value)}
+										on:change={(e) => assignTagToCategory(tag.id, parseInt((e.target as HTMLSelectElement).value) || 0)}
 										class="category-select"
 									>
 										<option value="">No Category</option>

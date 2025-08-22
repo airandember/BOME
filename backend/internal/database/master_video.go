@@ -1261,6 +1261,46 @@ func (db *DB) DeleteSubsiteCategory(subsite string, categoryID int) error {
 	return nil
 }
 
+// RemoveTagFromCategory removes a tag from its category within a specific subsite
+func (db *DB) RemoveTagFromCategory(subsite string, tagID int) error {
+	log.Printf("🔗 Removing tag ID %d from category in subsite '%s'", tagID, subsite)
+
+	// Get subsite ID
+	var subsiteID int
+	err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = $1", subsite).Scan(&subsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to get subsite ID for '%s': %v", subsite, err)
+		return fmt.Errorf("failed to get subsite ID for '%s': %v", subsite, err)
+	}
+
+	// Verify tag belongs to this subsite
+	var tagSubsiteID int
+	err = db.QueryRow("SELECT subsite_id FROM tags WHERE id = $1", tagID).Scan(&tagSubsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to get tag subsite ID: %v", err)
+		return fmt.Errorf("failed to get tag subsite ID: %v", err)
+	}
+
+	if tagSubsiteID != subsiteID {
+		log.Printf("❌ Tag does not belong to subsite '%s'", subsite)
+		return fmt.Errorf("tag does not belong to subsite")
+	}
+
+	// Clear the tag's category_id
+	_, err = db.Exec(`
+		UPDATE tags 
+		SET category_id = NULL, updated_at = CURRENT_TIMESTAMP 
+		WHERE id = $1
+	`, tagID)
+	if err != nil {
+		log.Printf("❌ Failed to remove tag from category: %v", err)
+		return fmt.Errorf("failed to remove tag from category: %v", err)
+	}
+
+	log.Printf("✅ Tag ID %d successfully removed from category in subsite '%s'", tagID, subsite)
+	return nil
+}
+
 // AssignSubsiteTagToCategory assigns a tag to a category within a specific subsite
 func (db *DB) AssignSubsiteTagToCategory(subsite string, tagID, categoryID int) error {
 	log.Printf("🔗 Assigning tag ID %d to category ID %d in subsite '%s'", tagID, categoryID, subsite)
