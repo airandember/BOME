@@ -3,6 +3,9 @@
 	import { masterVideoService } from '$lib/master-video';
 	import { createEventDispatcher } from 'svelte';
 	import { toastStore } from '$lib/stores/toast';
+	import TagsTab from '$lib/components/admin/streaming/TagsTab.svelte';
+	import CategoriesTab from '$lib/components/admin/streaming/CategoriesTab.svelte';
+	import ExclusionsTab from '$lib/components/admin/streaming/ExclusionsTab.svelte';
 
 	let activeTab = 'tags';
 	let tags: any[] = [];
@@ -25,11 +28,7 @@
 	let newExclusion = '';
 	let exclusionsLoading = false;
 
-	// Sorting state
-	let tagsSortField: 'status' | 'word' | 'frequency' | null = null;
-	let tagsSortDirection: 'asc' | 'desc' = 'asc';
-	let exclusionsSortField: 'word' | 'status' | null = null;
-	let exclusionsSortDirection: 'asc' | 'desc' = 'asc';
+
 
 	onMount(() => {
 		loadData();
@@ -50,7 +49,7 @@
 			const streamingCategoriesData = await streamingCategoriesResponse.json();
 
 			if (streamingTagsData.success) {
-				tags = streamingTagsData.result || [];
+				tags = streamingTagsData.result || [];				
 			}
 
 			if (streamingCategoriesData.success) {
@@ -178,26 +177,131 @@
 		}
 	}
 
-	async function assignTagToCategory(tagId: any, categoryId: any) {
+	// Fix the batchUpdateTagCategories function to use existing API methods
+	async function batchUpdateTagCategories(changes: Array<{tagId: number, categoryId: number | null, action: 'add' | 'remove'}>) {
 		try {
-			const response = await masterVideoService.assignSubsiteTagToCategory('streaming', tagId, categoryId);
-			if (response.ok) {
-				// Update local state instead of reloading
-				tags = tags.map(t => 
-					t.id === tagId 
-						? { ...t, category_id: categoryId === '' ? null : parseInt(categoryId) }
-						: t
-				);
-				
-				toastStore.success('Tag assigned to category successfully');
-			} else {
-				toastStore.error('Failed to assign tag to category');
+			// Process each change individually using the existing assignSubsiteTagToCategory method
+			for (const change of changes) {
+				if (change.action === 'add' && change.categoryId) {
+					await assignTagToCategory(change.tagId, change.categoryId);
+				} else if (change.action === 'remove') {
+					await assignTagToCategory(change.tagId, null);
+				}
 			}
-		} catch (err) {
-			toastStore.error('Failed to assign tag to category');
+			
+			toastStore.success(`Successfully processed ${changes.length} tag changes`);
+			return true;
+		} catch (error) {
+			toastStore.error('Failed to process some tag changes');
+			console.error('Error in batch update:', error);
+			return false;
 		}
 	}
 
+	// Improve assignTagToCategory with better error handling for removals
+	async function assignTagToCategory(tagId: any, categoryId: any) {
+		try {
+			// Send null for removals instead of empty string
+			const apiCategoryId = categoryId === null || categoryId === undefined ? null : categoryId;
+			
+			console.log(`Assigning tag ${tagId} to category: ${apiCategoryId} (${categoryId === null ? 'REMOVAL' : 'ASSIGNMENT'})`);
+			
+			const response = await masterVideoService.assignSubsiteTagToCategory('streaming', tagId, apiCategoryId);
+			
+			if (response.ok) {
+				const responseData = await response.json();
+				
+				if (responseData.success) {
+					// Update local state immediately for better UX
+					if (categoryId === null || categoryId === undefined) {
+						// Remove tag from category
+						tags = tags.map(t => 
+							t.id === tagId 
+								? { ...t, category_id: null }
+								: t
+						);
+						
+						// Also update categories to remove tag from tag_ids array
+						categories = categories.map(c => {
+							if (c.tag_ids && c.tag_ids.includes(tagId)) {
+								return { ...c, tag_ids: c.tag_ids.filter((id: any) => id !== tagId) };
+							}
+							return c;
+						});
+						
+						toastStore.success('Tag removed from category successfully');
+					} else {
+						// Add tag to category
+						tags = tags.map(t => 
+							t.id === tagId 
+								? { ...t, category_id: parseInt(categoryId) }
+								: t
+						);
+						
+						// Also update categories to add tag to tag_ids array
+						categories = categories.map(c => {
+							if (c.id === categoryId) {
+								const currentTagIds = c.tag_ids || [];
+								if (!currentTagIds.includes(tagId)) {
+									return { ...c, tag_ids: [...currentTagIds, tagId] };
+								}
+							}
+							return c;
+						});
+						
+						toastStore.success('Tag assigned to category successfully');
+					}
+				} else {
+					// Backend returned success: false
+					const errorMessage = responseData.error || 'Unknown backend error';
+					console.error('Backend error:', responseData);
+					
+					if (categoryId === null) {
+						toastStore.error(`Failed to remove tag from category: ${errorMessage}`);
+					} else {
+						toastStore.error(`Failed to assign tag to category: ${errorMessage}`);
+					}
+				}
+			} else {
+				// HTTP error response
+				const errorText = await response.text();
+				console.error('HTTP error response:', response.status, errorText);
+				
+				if (categoryId === null) {
+					toastStore.error(`Failed to remove tag from category (HTTP ${response.status})`);
+				} else {
+					toastStore.error(`Failed to assign tag to category (HTTP ${response.status})`);
+				}
+			}
+		} catch (err) {
+			console.error('Network/other error in assignTagToCategory:', err);
+			
+			if (categoryId === null) {
+				toastStore.error('Failed to remove tag from category - network error');
+			} else {
+				toastStore.error('Failed to assign tag to category - network error');
+			}
+		}
+	}
+
+	// Update local state after batch changes
+	function updateLocalStateAfterBatchChanges(changes: Array<{tagId: number, categoryId: number | null, action: 'add' | 'remove'}>) {
+		changes.forEach(change => {
+			if (change.action === 'add' && change.categoryId) {
+				tags = tags.map(t => 
+					t.id === change.tagId 
+						? { ...t, category_id: change.categoryId }
+						: t
+				);
+			} else if (change.action === 'remove') {
+				tags = tags.map(t => 
+					t.id === change.tagId 
+						? { ...t, category_id: null }
+						: t
+				);
+			}
+		});
+	}
 
 
 	async function loadArticleExclusions() {
@@ -336,6 +440,30 @@
 		}
 	}
 
+	async function updateCategory(category: any) {
+		try {
+			// For now, update local state directly since we don't have an update API
+			// In a real implementation, you would call the backend API here
+			categories = categories.map(c => 
+				c.id === category.id 
+					? { ...c, name: category.name, color: category.color, description: category.description }
+					: c
+			);
+			
+			toastStore.success('Category updated successfully');
+			
+			// TODO: Implement backend API call when available
+			// const response = await masterVideoService.updateSubsiteCategory('streaming', category.id, {
+			// 	name: category.name,
+			// 	color: category.color,
+			// 	description: category.description
+			// });
+		} catch (err) {
+			toastStore.error('Failed to update category');
+			console.error('Error updating category:', err);
+		}
+	}
+
 
 	// Fix the event target issue in the template
 	async function handleCategoryChange(event: Event, tagId: any) {
@@ -345,89 +473,56 @@
 		}
 	}
 
-	// Sorting functions
-function sortTags(field: 'status' | 'word' | 'frequency') {
-	if (tagsSortField === field) {
-		tagsSortDirection = tagsSortDirection === 'asc' ? 'desc' : 'asc';
-	} else {
-		tagsSortField = field;
-		tagsSortDirection = 'asc';
+	// Add new function for querying videos by category
+	async function getVideosByCategory(categoryId: number) {
+		try {
+			// Get the category to find its tags
+			const category = categories.find(c => c.id === categoryId);
+			if (!category) {
+				return [];
+			}
+			
+			// Get tags for this category
+			const categoryTags = tags.filter(tag => tag.category_id === categoryId);
+			if (categoryTags.length === 0) {
+				return [];
+			}
+			
+			// For now, return empty array since we don't have getVideosByTags
+			// TODO: Implement when backend supports video queries by tags
+			console.log(`Category "${category.name}" has ${categoryTags.length} tags:`, categoryTags.map(t => t.word));
+			return [];
+			
+			// When backend supports it, use:
+			// const response = await masterVideoService.getVideosByTags('streaming', categoryTags.map(t => t.id));
+			// if (response.ok) {
+			// 	const data = await response.json();
+			// 	return data.result || [];
+			// }
+		} catch (error) {
+			console.error('Error getting videos by category:', error);
+			return [];
+		}
 	}
-	
-	// Apply sorting
-	tags = [...tags].sort((a, b) => {
-		let aVal: any, bVal: any;
-		
-		switch (field) {
-			case 'status':
-				aVal = a.active_tag ? 1 : 0;
-				bVal = b.active_tag ? 1 : 0;
-				break;
-			case 'word':
-				aVal = a.word.toLowerCase();
-				bVal = b.word.toLowerCase();
-				break;
-			case 'frequency':
-				aVal = a.frequency || 0;
-				bVal = b.frequency || 0;
-				break;
-			default:
-				return 0;
-		}
-		
-		if (tagsSortDirection === 'asc') {
-			return aVal > bVal ? 1 : -1;
-		} else {
-			return aVal < bVal ? 1 : -1;
-		}
-	});
-}
 
-function sortExclusions(field: 'word' | 'status') {
-	if (exclusionsSortField === field) {
-		exclusionsSortDirection = exclusionsSortDirection === 'asc' ? 'desc' : 'asc';
-	} else {
-		exclusionsSortField = field;
-		exclusionsSortDirection = 'asc';
+	// Add function to get category statistics
+	async function getCategoryStats(categoryId: number) {
+		try {
+			const videos = await getVideosByCategory(categoryId);
+			const category = categories.find(c => c.id === categoryId);
+			
+			return {
+				categoryId,
+				categoryName: category?.name || 'Unknown',
+				videoCount: videos.length,
+				tagCount: category?.tag_ids?.length || 0,
+				videos: videos.slice(0, 10) // Limit for performance
+			};
+		} catch (error) {
+			console.error('Error getting category stats:', error);
+			return null;
+		}
 	}
-	
-	// Apply sorting
-	articleExclusions = [...articleExclusions].sort((a, b) => {
-		let aVal: any, bVal: any;
-		
-		switch (field) {
-			case 'word':
-				// Alphanumeric sorting: numbers first, then letters
-				aVal = a.Word.toLowerCase();
-				bVal = b.Word.toLowerCase();
-				
-				// Check if both are numbers
-				const aNum = parseFloat(aVal);
-				const bNum = parseFloat(bVal);
-				if (!isNaN(aNum) && !isNaN(bNum)) {
-					return tagsSortDirection === 'asc' ? aNum - bNum : bNum - aNum;
-				}
-				// Check if only a is a number
-				if (!isNaN(aNum)) return -1;
-				// Check if only b is a number
-				if (!isNaN(bNum)) return 1;
-				// Both are strings, sort alphabetically
-				break;
-			case 'status':
-				aVal = a.Excluded ? 1 : 0;
-				bVal = b.Excluded ? 1 : 0;
-				break;
-			default:
-				return 0;
-		}
-		
-		if (exclusionsSortDirection === 'asc') {
-			return aVal > bVal ? 1 : -1;
-		} else {
-			return aVal < bVal ? 1 : -1;
-		}
-	});
-}
 
 
 	
@@ -487,413 +582,50 @@ function sortExclusions(field: 'word' | 'status') {
 
 	<!-- Tags Tab -->
 	{#if activeTab === 'tags'}
-		<div class="tab-content">
-			<div class="section-header">
-				<h2>Streaming Video Tags</h2>
-				<div class="add-tag-form">
-					<input 
-						type="text" 
-						bind:value={newTag} 
-						placeholder="Add new streaming tag..."
-						on:keydown={(e) => e.key === 'Enter' && addTag()}
-					/>
-					<button on:click={addTag} class="add-button">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<line x1="12" y1="5" x2="12" y2="19"></line>
-							<line x1="5" y1="12" x2="19" y2="12"></line>
-						</svg>
-						Add to Streaming
-					</button>
-				</div>
-			</div>
-
-			<div class="tags-info">
-				<p><strong>Tag Actions:</strong></p>
-				<ul>
-					<li><span class="info-icon">🟢/🔴</span> <strong>Checkbox:</strong> Toggle tag active status (controls if tag is used for new videos)</li>
-					<li><span class="info-icon">🚫</span> <strong>Exclude:</strong> Add word to exclusions and remove tag completely</li>
-					<li><span class="info-icon">🗑️</span> <strong>Delete:</strong> Remove tag from streaming subsite</li>
-				</ul>
-			</div>
-
-			{#if loading}
-				<div class="loading">Loading streaming tags...</div>
-			{:else if tags.length === 0}
-				<div class="empty-state">
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
-						<line x1="7" y1="7" x2="7.01" y2="7"></line>
-					</svg>
-					<p>No streaming-specific tags found</p>
-					<p>Add tags to get started</p>
-				</div>
-			{:else}
-			<div class="exclusions-table-container">
-				<table class="exclusions-table">
-					<thead>
-						<tr>
-							<th class="exclusion-head sortable" on:click={() => sortTags('status')}>
-								Status
-								<span class="sort-indicator">
-									{#if tagsSortField === 'status'}
-										{tagsSortDirection === 'asc' ? '↑' : '↓'}
-									{:else}
-										↕
-									{/if}
-								</span>
-							</th>
-							<th class="exclusion-head sortable" on:click={() => sortTags('word')}>
-								Tag Word
-								<span class="sort-indicator">
-									{#if tagsSortField === 'word'}
-										{tagsSortDirection === 'asc' ? '↑' : '↓'}
-									{:else}
-										↕
-									{/if}
-								</span>
-							</th>
-							<th class="exclusion-head sortable" on:click={() => sortTags('frequency')}>
-								Frequency
-								<span class="sort-indicator">
-									{#if tagsSortField === 'frequency'}
-										{tagsSortDirection === 'asc' ? '↑' : '↓'}
-									{:else}
-										↕
-									{/if}
-								</span>
-							</th>
-							<th class="exclusion-head">Category</th>
-							<th class="exclusion-head">Actions</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each tags as tag}
-							<tr class="exclusion-row">
-								<td class="exclusion-status">
-									<label class="status-toggle">
-										<input 
-											type="checkbox" 
-											checked={tag.active_tag} 
-											on:change={() => toggleTagActiveStatus(tag)}
-											class="status-checkbox"
-											aria-label="Toggle tag active status"
-										/>
-										<span class="status-indicator" class:active={tag.active_tag}>
-											{tag.active_tag ? '🟢 Active' : '🔴 Inactive'}
-										</span>
-									</label>
-								</td>
-								<td class="exclusion-word">
-									<span class="word-text">{tag.word}</span>
-								</td>
-								<td class="exclusion-status">
-									<span class="tag-frequency-display">
-										{tag.frequency || 0} uses
-									</span>
-								</td>
-								<td class="exclusion-status">
-									{#if categories.length > 0}
-										<select 
-											value={tag.category_id || ''} 
-											on:change={(e) => handleCategoryChange(e, tag.id)}
-											class="category-select"
-										>
-											<option value="">No Category</option>
-											{#each categories as category}
-												<option value={category.id}>{category.name}</option>
-											{/each}
-										</select>
-									{/if}
-								</td>
-								<td class="exclusion-actions">
-									<button 
-										on:click={() => addArticleExclusionFromTag(tag)} 
-										class="remove-button"
-										title="Add to exclusions and remove tag"
-									>
-									🚫
-									</button>
-									<button 
-										on:click={() => deleteTag(tag)} 
-										class="remove-button"
-										title="Delete tag"
-									>
-										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-											<polyline points="3,6 5,6 21,6"></polyline>
-											<path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"></path>
-										</svg>
-									</button>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-				<!--<div class="tags-grid">
-					{#each tags as tag}
-						<div class="tag-card">
-							<div class="tag-info">
-																<div class="tag-header">
-									<div class="checkbox-container">
-										<input 
-											type="checkbox" 
-											checked={tag.active_tag} 
-											on:change={() => toggleTagActiveStatus(tag)}
-											class="active-checkbox"
-											aria-label="Toggle tag active status"
-										/>
-										<span class="checkbox-label" title="Toggle tag active status - controls whether this tag is used for new videos">
-											{tag.active_tag ? '🟢' : '🔴'}
-										</span>
-									</div>
-									<span class="tag-word">{tag.word}</span>
-								</div>
-								<span class="tag-frequency">Used {tag.frequency || 0} times</span>
-								<span class="tag-source">Streaming</span>
-							</div>
-							<div class="tag-actions">
-								{#if categories.length > 0}
-									<select 
-										value={tag.category_id || ''} 
-										on:change={(e) => handleCategoryChange(e, tag.id)}
-										class="category-select"
-									>
-										<option value="">No Category</option>
-										{#each categories as category}
-											<option value={category.id}>{category.name}</option>
-										{/each}
-									</select>
-								{/if}
-								<button 
-									on:click={() => addArticleExclusionFromTag(tag)} 
-									class="exclusion-button"
-									title="Add to exclusions and remove tag"
-								>
-									<span class="button-icon">🚫</span>
-									<span class="button-text">Exclude</span>
-								</button>
-								<button on:click={() => deleteTag(tag)} class="delete-button">
-									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<polyline points="3,6 5,6 21,6"></polyline>
-										<path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"></path>
-									</svg>
-								</button>
-							</div>
-						</div>
-					{/each}
-				</div>-->
-			{/if}
-		</div>
+		<TagsTab 
+			{tags}
+			{categories}
+			{loading}
+			bind:newTag
+			on:addTag={addTag}
+			on:deleteTag={deleteTag}
+			on:categoryChange={({ detail }) => assignTagToCategory(detail.tagId, detail.categoryId)}
+			on:toggleStatus={({ detail }) => toggleTagActiveStatus(detail)}
+			on:addToExclusions={({ detail }) => addArticleExclusionFromTag(detail)}
+		/>
 	{/if}
 
 	<!-- Categories Tab -->
 	{#if activeTab === 'categories'}
-		<div class="tab-content">
-			<div class="section-header">
-				<h2>Streaming Tag Categories</h2>
-				<div class="add-category-form">
-					<input 
-						type="text" 
-						bind:value={newCategory} 
-						placeholder="Streaming category name..."
-						on:keydown={(e) => e.key === 'Enter' && addCategory()}
-					/>
-					<input 
-						type="color" 
-						bind:value={newCategoryColor}
-						class="color-picker"
-					/>
-					<button on:click={addCategory} class="add-button">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<line x1="12" y1="5" x2="12" y2="19"></line>
-							<line x1="5" y1="12" x2="19" y2="12"></line>
-						</svg>
-						Add to Streaming
-					</button>
-				</div>
-			</div>
-
-			{#if loading}
-				<div class="loading">Loading streaming categories...</div>
-			{:else if categories.length === 0}
-				<div class="empty-state">
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M3 3h18v18H3zM8 12h8M12 8v8"></path>
-					</svg>
-					<p>No streaming-specific categories found</p>
-					<p>Create categories or import from the global system</p>
-				</div>
-			{:else}
-				<div class="categories-grid">
-					{#each categories as category}
-						<div class="category-card" style="--category-color: {category.color}">
-							<div class="category-header">
-								<div class="category-color" style="background-color: {category.color}"></div>
-								<span class="category-name">{category.name}</span>
-								<span class="category-count">
-									{tags.filter(t => t.category_id === category.id).length} tags
-								</span>
-							</div>
-							<div class="category-description">
-								{category.description || 'Streaming-specific category'}
-							</div>
-							<div class="category-actions">
-								<button on:click={() => deleteCategory(category)} class="delete-button">
-									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<polyline points="3,6 5,6 21,6"></polyline>
-										<path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"></path>
-									</svg>
-								</button>
-							</div>
-						</div>
-					{/each}
-				</div>
-			{/if}
-		</div>
+		<CategoriesTab 
+			{categories}
+			{tags}
+			{loading}
+			bind:newCategory
+			bind:newCategoryColor
+			on:addCategory={addCategory}
+			on:deleteCategory={deleteCategory}
+			on:updateCategory={({ detail }) => updateCategory(detail)}
+			on:batchTagChanges={({ detail }) => batchUpdateTagCategories(detail.changes)}
+		/>
 	{/if}
 
 	<!-- Article Exclusions Tab -->
 	{#if activeTab === 'exclusions'}
-		<div class="tab-content">
-			<div class="section-header">
-				<h2>Article Exclusion List</h2>
-				<div class="add-exclusion-form">
-					<input 
-						type="text" 
-						bind:value={newExclusion} 
-						placeholder="Enter article URL or pattern to exclude..."
-						on:keydown={(e) => e.key === 'Enter' && addArticleExclusion()}
-					/>
-					<button on:click={addArticleExclusion} class="add-button">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<line x1="12" y1="5" x2="12" y2="19"></line>
-							<line x1="5" y1="12" x2="19" y2="12"></line>
-						</svg>
-						Add Exclusion
-					</button>
-				</div>
-			</div>
-
-			{#if exclusionsLoading}
-				<div class="loading">Loading article exclusions...</div>
-			{:else if articleExclusions.length === 0}
-				<div class="empty-state">
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M9 12l2 2 4-4"></path>
-						<path d="M21 12c-1 0-2-1-2-2s1-2 2-2 2 1 2 2-1 2-2 2z"></path>
-						<path d="M3 12c1 0 2-1 2-2s-1-2-2-2-2 1-2 2 1 2 2 2z"></path>
-					</svg>
-					<p>No article exclusions found</p>
-					<p>Add exclusions to prevent certain articles from being processed</p>
-				</div>
-			{:else}
-			<div class="exclusions-table-container">
-				<table class="exclusions-table">
-					<thead>
-						<tr>
-							<th class="exclusion-head sortable" on:click={() => sortExclusions('word')}>
-								Word/Pattern
-								<span class="sort-indicator">
-									{#if exclusionsSortField === 'word'}
-										{exclusionsSortDirection === 'asc' ? '↑' : '↓'}
-									{:else}
-										↕
-									{/if}
-								</span>
-							</th>
-							<th class="exclusion-head sortable" on:click={() => sortExclusions('status')}>
-								Status
-								<span class="sort-indicator">
-									{#if exclusionsSortField === 'status'}
-										{exclusionsSortDirection === 'asc' ? '↑' : '↓'}
-									{:else}
-										↕
-									{/if}
-								</span>
-							</th>
-							<th class="exclusion-head">Actions</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each articleExclusions as exclusion}
-							<tr class="exclusion-row">
-								<td class="exclusion-word">
-									<span class="word-text">{exclusion.Word}</span>
-								</td>
-								<td class="exclusion-status">
-									<label class="status-toggle">
-									<input 
-											type="checkbox" 
-											checked={exclusion.Excluded} 
-											on:change={() => toggleArticleExclusion(exclusion)}
-											class="status-checkbox"
-											aria-label="Toggle exclusion status"
-										/>
-										
-										<span class="status-indicator" class:active={exclusion.Excluded}>
-											{exclusion.Excluded ? '🚫 Excluded' : '✅ Included'}
-										</span>
-									</label>
-								</td>
-								<td class="exclusion-actions">
-									
-									<button 
-										on:click={() => removeArticleExclusion(exclusion)} 
-										class="remove-button"
-										title="Remove exclusion"
-									>
-										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-											<polyline points="3,6 5,6 21,6"></polyline>
-											<path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"></path>
-										</svg>
-									</button>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-				
-				<!--<div class="exclusions-grid">
-					{#each articleExclusions as exclusion}
-						<div class="exclusion-card">
-							<div class="exclusion-info">
-								<div class="exclusion-header">
-									<span class="exclusion-word">{exclusion.Word}</span>
-									<input 
-										type="checkbox" 
-										checked={exclusion.Excluded} 
-										on:change={() => toggleArticleExclusion(exclusion)}
-										class="exclusion-checkbox"
-										aria-label="Toggle exclusion status"
-									/>
-									
-								</div>
-								<span class="exclusion-type">
-									{exclusion.Excluded ? 'Excluded' : 'Included'}
-								</span>
-							</div>
-							<div class="exclusion-actions">
-								<button on:click={() => removeArticleExclusion(exclusion)} class="delete-button">
-									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<polyline points="3,6 5,6 21,6"></polyline>
-										<path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"></path>
-									</svg>
-								</button>
-							</div>
-						</div>
-					{/each}
-				</div>-->
-			{/if}
-		</div>
+		<ExclusionsTab 
+			{articleExclusions}
+			bind:newExclusion
+			{exclusionsLoading}
+			on:addExclusion={addArticleExclusion}
+			on:toggleExclusion={({ detail }) => toggleArticleExclusion(detail)}
+			on:removeExclusion={({ detail }) => removeArticleExclusion(detail)}
+		/>
 	{/if}
 </div>
 
 
 <style>
-	.sort-indicator {
-		cursor: pointer;
-	}
+
 
 
 	.streaming-tags-categories-page {
@@ -994,139 +726,7 @@ function sortExclusions(field: 'word' | 'status') {
 					-10px -10px 15px var(--bg-primary);
 	}
 
-	.tab-content {
-		background: var(--bg-glass);
-		border-radius: 12px;
-		padding: 2rem;
-		backdrop-filter: blur(80px);
-		border: 1px solid var(--border-color);
-	}
 
-	.section-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 2rem;
-		flex-wrap: wrap;
-		gap: 1rem;
-	}
-
-	.section-header h2 {
-		margin: 0;
-		font-size: 1.5rem;
-		color: var(--text-primary);
-	}
-
-	.add-tag-form,
-	.add-category-form {
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-		flex-wrap: wrap;
-	}
-
-	.add-tag-form input,
-	.add-category-form input[type="text"],
-	.add-exclusion-form input[type="text"] {
-		font-size: 1.1rem;
-		padding: 0.5rem 1rem;
-		border: 1px solid var(--border-color);
-		border-radius: 11px;
-		min-height: 65px;
-		color: var(--text-primary);
-		min-width: 200px;
-		border-radius: 11px;
-		background: var(--bg-primary);
-		box-shadow: inset 5px 5px 10px var(--bg-senary),
-            inset -5px -5px 10px var(--bg-secondary);
-	}
-
-	.color-picker {
-		width: 50px;
-		height: 40px;
-		border: none;
-		border-radius: 6px;
-		cursor: pointer;
-	}
-
-	.add-button {
-		background: var(--bg-glass-dark);
-		color: var(--text-secondary);
-		border: none;
-		padding: 0.5rem 1rem;
-		border-radius: 6px;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		transition: all 0.3s ease;
-		white-space: nowrap;
-		min-height: 65px;
-		box-shadow: 0 0 0  var(--bg-senary),
-            0 0 0 var(--bg-secondary);
-	}
-
-	.add-button:hover {
-		background: var(--bg-glass);
-		transform: translateY(-1px);
-		box-shadow: 5px 5px 10px  var(--bg-senary),
-            -5px -5px 10px var(--bg-secondary);
-	}
-
-	.add-button:active {
-		transform: translateY(1px);
-		border-radius: 11px;
-		background: var(--bg-glass-dark);
-		box-shadow: inset 5px 5px 10px var(--bg-senary),
-            inset -5px -5px 10px var(--bg-secondary);
-	}
-
-	.tags-info {
-		background: var(--bg-hover);
-		border: 1px solid var(--border-color);
-		border-radius: 8px;
-		padding: 1rem;
-		margin-bottom: 1.5rem;
-		font-size: 0.9rem;
-	}
-
-	.tags-info p {
-		margin: 0 0 0.75rem 0;
-		color: var(--text-primary);
-	}
-
-	.tags-info ul {
-		margin: 0;
-		padding-left: 1.5rem;
-		color: var(--text-secondary);
-	}
-
-	.tags-info li {
-		margin-bottom: 0.5rem;
-	}
-
-	.info-icon {
-		margin-right: 0.5rem;
-	}
-
-	.loading {
-		text-align: center;
-		padding: 2rem;
-		color: var(--text-secondary);
-	}
-
-	.empty-state {
-		text-align: center;
-		padding: 3rem;
-		color: var(--text-secondary);
-	}
-
-	.empty-state svg {
-		width: 64px;
-		height: 64px;
-		margin-bottom: 1rem;
-		opacity: 0.5;
-	}
 
 	.import-button {
 		background: var(--secondary-color);
@@ -1144,425 +744,9 @@ function sortExclusions(field: 'word' | 'status') {
 		transform: translateY(-1px);
 	}
 
-	.tags-grid,
-	.categories-grid {
-		display: grid;
-		gap: 1rem;
-		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-	}
 
-	.exclusions-grid {
-		display: grid;
-		gap: 1rem;
-		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-	}
 
-	.tag-card,
-	.category-card {
-		background: var(--bg-primary);
-		border: 1px solid var(--border-color);
-		border-radius: 8px;
-		padding: 1rem;
-		transition: all 0.3s ease;
-	}
 
-	.tag-card:hover,
-	.category-card:hover {
-		transform: translateY(-2px);
-		box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-	}
-
-	.tag-info {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		margin-bottom: 1rem;
-	}
-
-	.tag-header {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-	}
-
-	.checkbox-container {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.checkbox-label {
-		font-size: 0.8rem;
-		cursor: help;
-	}
-
-	.active-checkbox {
-		width: 18px;
-		height: 18px;
-		cursor: pointer;
-		accent-color: var(--primary-color);
-	}
-
-	.tag-word {
-		font-weight: 600;
-		color: var(--text-primary);
-		font-size: 1.1rem;
-	}
-
-	.tag-frequency {
-		font-size: 0.9rem;
-		color: var(--text-secondary);
-	}
-
-	.tag-source {
-		background: var(--primary-color);
-		color:  var(--text-secondary);
-		padding: 0.25rem 0.5rem;
-		border-radius: 12px;
-		font-size: 0.75rem;
-		font-weight: 500;
-		align-self: flex-start;
-	}
-
-	.tag-active-toggle {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		margin-top: 0.5rem;
-		cursor: pointer;
-	}
-
-	.toggle-switch {
-		position: relative;
-		width: 40px;
-		height: 20px;
-		background-color: var(--border-color);
-		border-radius: 10px;
-		cursor: pointer;
-		transition: background-color 0.3s ease;
-	}
-
-	.toggle-switch::after {
-		content: "";
-		position: absolute;
-		width: 16px;
-		height: 16px;
-		background-color: var(--text-secondary);
-		border-radius: 50%;
-		top: 2px;
-		left: 2px;
-		transition: transform 0.3s ease;
-	}
-
-	.toggle-switch.checked {
-		background-color: var(--primary-color);
-	}
-
-	.toggle-switch.checked::after {
-		transform: translateX(20px);
-	}
-
-	.tag-actions {
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-		flex-wrap: wrap;
-	}
-
-	.category-select {
-		padding: 0.25rem 0.5rem;
-		border: 1px solid var(--border-color);
-		border-radius: 4px;
-		background: var(--bg-primary);
-		color: var(--text-primary);
-		font-size: 0.9rem;
-		min-width: 120px;
-	}
-
-	.delete-button {
-		background: var(--error-bg);
-		color: var(--error-text);
-		border: none;
-		padding: 0.25rem;
-		border-radius: 4px;
-		cursor: pointer;
-		transition: all 0.3s ease;
-	}
-
-	.delete-button:hover {
-		background: var(--error-text);
-		color:  var(--text-secondary);
-	}
-
-	.exclusion-button {
-		background: var(--secondary-color);
-		color: var(--text-secondary);
-		border: none;
-		padding: 0.5rem 0.75rem;
-		border-radius: 4px;
-		cursor: pointer;
-		transition: all 0.3s ease;
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.exclusion-button:hover {
-		background: var(--primary-color);
-		color: var(--text-primary);
-	}
-
-	.button-icon {
-		font-size: 1rem;
-	}
-
-	.button-text {
-		font-size: 0.8rem;
-		font-weight: 500;
-	}
-
-	.category-header {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		margin-bottom: 1rem;
-	}
-
-	.category-color {
-		width: 16px;
-		height: 16px;
-		border-radius: 50%;
-		border: 2px solid var(--border-color);
-	}
-
-	.category-name {
-		font-weight: 600;
-		color: var(--text-primary);
-		flex: 1;
-	}
-
-	.category-count {
-		font-size: 0.9rem;
-		color: var(--text-secondary);
-	}
-
-	.category-description {
-		color: var(--text-secondary);
-		font-size: 0.9rem;
-		margin-bottom: 1rem;
-		font-style: italic;
-	}
-
-	.category-actions {
-		display: flex;
-		justify-content: flex-end;
-	}
-
-	.exclusion-card {
-	background: var(--bg-primary);
-	border: 1px solid var(--border-color);
-	border-radius: 8px;
-	padding: 1rem;
-	transition: all 0.3s ease;
-}
-
-.exclusion-card:hover {
-	transform: translateY(-2px);
-	box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-}
-
-.exclusion-info {
-	display: flex;
-	flex-direction: column;
-	gap: 0.5rem;
-	margin-bottom: 1rem;
-}
-
-.exclusion-header {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-}
-
-.exclusion-checkbox {
-	width: 18px;
-	height: 18px;
-	cursor: pointer;
-	accent-color: var(--primary-color);
-}
-
-.exclusion-word {
-	font-weight: 600;
-	color: var(--text-primary);
-	font-size: 1rem;
-}
-
-.exclusion-type {
-	background: var(--secondary-color);
-	color: var(--text-secondary);
-	padding: 0.25rem 0.5rem;
-	border-radius: 12px;
-	font-size: 0.75rem;
-	font-weight: 500;
-	align-self: flex-start;
-}
-
-.exclusion-actions {
-	display: flex;
-	justify-content: flex-end;
-}
-
-.add-exclusion-form {
-	display: flex;
-	gap: 0.5rem;
-	align-items: center;
-	flex-wrap: wrap;
-}
-
-.add-exclusion-form input {
-	padding: 0.5rem 1rem;
-	border: 1px solid var(--border-color);
-	border-radius: 6px;
-	background: var(--bg-primary);
-	color: var(--text-primary);
-	min-width: 300px;
-}
-
-	/* Enhanced Table Styles */
-.exclusions-table-container {
-	overflow-x: auto;
-	border-radius: 8px;
-	border: 1px solid var(--border-color);
-}
-
-.exclusions-table {
-	width: 100%;
-	border-collapse: collapse;
-	background: var(--bg-tertiary);
-}
-
-.exclusions-table th {
-	background: var(--bg-hover);
-	color: var(--text-primary);
-	font-weight: 600;
-	padding: 1rem;
-	text-align: left;
-	border-bottom: 2px solid var(--border-color);
-	font-size: 0.9rem;
-	text-transform: uppercase;
-	letter-spacing: 0.5px;
-}
-
-.exclusions-table td {
-	padding: 1rem;
-	border-bottom: 1px solid var(--border-color);
-	vertical-align: middle;
-}
-
-thead {
-	background-color: var(--bg-quinary);
-}
-
-.exclusion-head {
-	color: var(--text-inverse) !important;
-	font-weight: 600;
-}
-
-.exclusion-row {
-	border-bottom: 5px solid var(--bg-primary);
-	color: var(--text-tertiary);
-}
-
-.exclusion-row:hover {
-	background: var(--bg-hover);
-	transition: background-color 0.2s ease;
-}
-
-.exclusion-word .word-text {
-	font-weight: 600;
-	color: var(--text-primary);
-	font-family: 'Courier New', monospace;
-	background: rgba(59, 130, 246, 0.1);
-	padding: 0.25rem 0.5rem;
-	border-radius: 4px;
-	border: 1px solid rgba(59, 130, 246, 0.2);
-}
-
-.status-toggle {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	cursor: pointer;
-}
-
-.status-checkbox {
-	width: 18px;
-	height: 18px;
-	cursor: pointer;
-	accent-color: var(--primary-color);
-}
-
-.status-indicator {
-	padding: 0.25rem 0.75rem;
-	border-radius: 12px;
-	font-size: 1.25rem;
-	font-weight: 500;
-	transition: all 0.2s ease;
-}
-
-.status-indicator.active {
-	background: var(--error-bg);
-	color: var(--error-text);
-}
-
-.status-indicator:not(.active) {
-	background: var(--success-bg);
-	color: var(--success-text);
-}
-
-.remove-button {
-	background: var(--error-bg);
-	color: var(--text-secondary);
-	border: none;
-	padding: 0.5rem;
-	border-radius: 6px;
-	cursor: pointer;
-	transition: all 0.2s ease;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-}
-
-.remove-button:hover {
-	background: var(--error-text);
-	color: red;
-	transform: scale(1.05);
-}
-
-.remove-button svg {
-	width: 16px;
-	height: 16px;
-}
-/* Tag-specific table styles */
-.tag-frequency-display {
-	font-size: 0.9rem;
-	color: var(--text-secondary);
-	background: rgba(59, 130, 246, 0.1);
-	padding: 0.25rem 0.5rem;
-	border-radius: 4px;
-	border: 1px solid rgba(59, 130, 246, 0.2);
-	font-weight: 500;
-}
-
-.category-select {
-	padding: 0.25rem 0.5rem;
-	border: 1px solid var(--border-color);
-	border-radius: 4px;
-	background: var(--bg-primary);
-	color: var(--text-primary);
-	font-size: 0.9rem;
-	min-width: 120px;
-}
 
 	@media (max-width: 768px) {
 		.streaming-tags-categories-page {
@@ -1574,36 +758,9 @@ thead {
 			align-items: center;
 		}
 
-		.section-header {
-			flex-direction: column;
-			align-items: stretch;
-		}
-
-		.add-tag-form,
-		.add-category-form {
-			flex-direction: column;
-			align-items: stretch;
-		}
-
-		.tags-grid,
-		.categories-grid,
-		.global-items-grid {
-			grid-template-columns: 1fr;
-		}
-
 		.tab-navigation {
 			justify-content: center;
 		}
-
-		.exclusions-table th,
-	.exclusions-table td {
-		padding: 0.75rem 0.5rem;
-		font-size: 0.85rem;
-	}
-	
-	.exclusion-word .word-text {
-		font-size: 0.8rem;
-		padding: 0.2rem 0.4rem;
-	}
 	}
 </style>
+

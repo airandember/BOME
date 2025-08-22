@@ -19,12 +19,25 @@
 	--success: #00d4aa;
 	--warning: #ffa726;
 	--error: #ff6b6b;
+	--bg-red-100: #ffe3e3;
+	--bg-red-200: #ffc6c6;
+	--bg-red-300: #ffa8a8;
+	--bg-red-400: #ff8a8a;
+	--bg-red-500: #ff6b6b;
+	--bg-red-600: #ff4d4d;
+	--bg-red-700: #ff3030;
 	--bg-green-100: #dcfce7;
 	--bg-green-200: #d9f99d;
 	--bg-green-300: #bef264;
 	--bg-green-400: #a3e635;
 	--bg-green-500: #84cc16;
 	--bg-green-600: #65a30d;
+	--bg-green-700: #4b8507;
+	--bg-blue-100: #e3f2ff;
+	--bg-blue-200: #c6e4ff;
+	--bg-blue-300: #a8d6ff;
+	--bg-blue-400: #8ac8ff;
+	--bg-blue-500: #6cb9ff;
 	
 	
 	/* Neutral Colors */
@@ -57,9 +70,12 @@
 	--bg-quaternary: var(--gray-600);
 	--bg-quinary: var(--gray-700);
 	--bg-senary: var(--gray-400);
+	--bg-septenary: var(--gray-200);
 	--bg-dark: var(--gray-900);
 	--bg-glass: rgba(255, 255, 255, 0.1);
 	--bg-glass-dark: rgba(0, 0, 0, 0.1);
+	--bg-adding: var(--bg-green-300);
+	--bg-removing: var(--bg-red-300);
 	
 	/* Shadows */
 	--shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);

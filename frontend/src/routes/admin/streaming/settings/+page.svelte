@@ -153,7 +153,7 @@
 					</div>
 				</div>
 
-				<!-- Payment Settings -->
+				<!-- Payment Settings 
 				<div class="settings-section">
 					<h2>Payment Configuration</h2>
 					<div class="settings-grid">
@@ -177,7 +177,7 @@
 							</label>
 						</div>
 					</div>
-				</div>
+				</div>-->
 			</div>
 		{/if}
 	</div>

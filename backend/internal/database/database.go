@@ -21,6 +21,47 @@ type DB struct {
 	Redis  *Redis   // Add Redis client for caching and session management
 }
 
+func (db *DB) UpdateTagCategories(tagID int, categoryIDs []int) error {
+	// Start a transaction for atomicity
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	// First, clear the tag's current category_id
+	clearQuery := `
+		UPDATE tags 
+		SET category_id = NULL, updated_at = NOW()
+		WHERE id = $1
+	`
+	_, err = tx.Exec(clearQuery, tagID)
+	if err != nil {
+		return fmt.Errorf("failed to clear tag category_id: %v", err)
+	}
+
+	// If categoryIDs is provided and not empty, set the first one as the primary category_id
+	if len(categoryIDs) > 0 {
+		updateQuery := `
+			UPDATE tags 
+			SET category_id = $2, updated_at = NOW()
+			WHERE id = $1
+		`
+		_, err = tx.Exec(updateQuery, tagID, categoryIDs[0])
+		if err != nil {
+			return fmt.Errorf("failed to update tag category_id: %v", err)
+		}
+	}
+
+	// Commit the transaction
+	err = tx.Commit()
+	if err != nil {
+		return fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	return nil
+}
+
 // New creates a new database connection
 func New(cfg *config.Config) (*DB, error) {
 	// Build PostgreSQL connection string

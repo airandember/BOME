@@ -804,24 +804,37 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 		}
 
 		var req struct {
-			CategoryID int `json:"category_id"`
+			CategoryID *int `json:"category_id"` // Make nullable to handle removals
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(400, gin.H{"success": false, "error": err.Error()})
 			return
 		}
 
-		// Assign subsite-specific tag to category
-		err = db.AssignSubsiteTagToCategory(subsite, tagID, req.CategoryID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"error":   fmt.Sprintf("Failed to assign tag to category in %s subsite: %v", subsite, err),
-			})
-			return
+		// Handle removal (category_id is null) vs assignment
+		if req.CategoryID == nil {
+			// Remove tag from category
+			err = db.RemoveTagFromCategory(subsite, tagID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"error":   fmt.Sprintf("Failed to remove tag from category in %s subsite: %v", subsite, err),
+				})
+				return
+			}
+			c.JSON(200, gin.H{"success": true, "message": fmt.Sprintf("Tag removed from category successfully in %s subsite", subsite)})
+		} else {
+			// Assign tag to category
+			err = db.AssignSubsiteTagToCategory(subsite, tagID, *req.CategoryID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"error":   fmt.Sprintf("Failed to assign tag to category in %s subsite: %v", subsite, err),
+				})
+				return
+			}
+			c.JSON(200, gin.H{"success": true, "message": fmt.Sprintf("Tag assigned to category successfully in %s subsite", subsite)})
 		}
-
-		c.JSON(200, gin.H{"success": true, "message": fmt.Sprintf("Tag assigned to category successfully in %s subsite", subsite)})
 	})
 
 	// Toggle tag active status
