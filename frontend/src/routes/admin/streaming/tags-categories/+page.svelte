@@ -3,6 +3,7 @@
 	import { masterVideoService } from '$lib/master-video';
 	import { createEventDispatcher } from 'svelte';
 	import { toastStore } from '$lib/stores/toast';
+	import { apiClient } from '$lib/api/client';
 	import TagsTab from '$lib/components/admin/streaming/TagsTab.svelte';
 	import CategoriesTab from '$lib/components/admin/streaming/CategoriesTab.svelte';
 	import ExclusionsTab from '$lib/components/admin/streaming/ExclusionsTab.svelte';
@@ -38,32 +39,15 @@
 	async function loadData() {
 		loading = true;
 		try {
-			// Use the new API endpoints
+			// Use the API client with proper base URL routing
 			const [tagsResponse, categoriesResponse] = await Promise.all([
-				fetch('/api/v1/tags'),
-				fetch('/api/v1/tag-categories')
+				apiClient.get('/tags'),
+				apiClient.get('/tag-categories')
 			]);
 
-			// Check if responses are valid before parsing
-			let tagsData, categoriesData;
-			
-			try {
-				tagsData = await tagsResponse.json();
-			} catch (parseError) {
-				console.error('Failed to parse tags response as JSON:', parseError);
-				tagsData = { success: false, error: 'Invalid JSON response from tags API' };
-			}
-			
-			try {
-				categoriesData = await categoriesResponse.json();
-			} catch (parseError) {
-				console.error('Failed to parse categories response as JSON:', parseError);
-				categoriesData = { success: false, error: 'Invalid JSON response from categories API' };
-			}
-
-			// Use helper function to process responses
-			tags = handleApiResponse(tagsData, 'tags');
-			categories = handleApiResponse(categoriesData, 'categories');
+			// Process API client responses (they already handle JSON parsing)
+			tags = handleApiResponse(tagsResponse.data ? { success: true, result: tagsResponse.data } : { success: false, error: tagsResponse.error }, 'tags');
+			categories = handleApiResponse(categoriesResponse.data ? { success: true, result: categoriesResponse.data } : { success: false, error: categoriesResponse.error }, 'categories');
 			
 			// Additional debugging for successful loads
 			if (tags.length > 0) {
@@ -214,39 +198,25 @@
 		}
 	}
 
-	// Update the batchUpdateTagCategories function to use the new API
+	// Update the batchUpdateTagCategories function to use the API client
 	async function batchUpdateTagCategories(changes: Array<{tagId: number, categoryId: number | null, action: 'add' | 'remove'}>) {
 		try {
-			// Use the new batch update API endpoint
-			const response = await fetch('/api/v1/tag-categories/batch-update', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({ changes })
-			});
+			// Use the API client for batch update
+			const response = await apiClient.post('/tag-categories/batch-update', { changes });
 
-			if (response.ok) {
-				const data = await response.json();
-				if (data.success) {
-					toastStore.success(`Successfully processed ${changes.length} tag changes`);
-					
-					// Update local state to reflect changes
-					updateLocalStateAfterBatchChanges(changes);
-					
-					// Force reactivity by reassigning the arrays
-					tags = [...tags];
-					categories = [...categories];
-					
-					return true;
-				} else {
-					toastStore.error(data.error || 'Failed to process tag changes');
-					return false;
-				}
+			if (response.data) {
+				toastStore.success(`Successfully processed ${changes.length} tag changes`);
+				
+				// Update local state to reflect changes
+				updateLocalStateAfterBatchChanges(changes);
+				
+				// Force reactivity by reassigning the arrays
+				tags = [...tags];
+				categories = [...categories];
+				
+				return true;
 			} else {
-				const errorText = await response.text();
-				toastStore.error(`Failed to process tag changes (HTTP ${response.status})`);
-				console.error('HTTP error:', errorText);
+				toastStore.error(response.error || 'Failed to process tag changes');
 				return false;
 			}
 		} catch (error) {
