@@ -202,6 +202,11 @@
 					
 					// Update local state to reflect changes
 					updateLocalStateAfterBatchChanges(changes);
+					
+					// Force reactivity by reassigning the arrays
+					tags = [...tags];
+					categories = [...categories];
+					
 					return true;
 				} else {
 					toastStore.error(data.error || 'Failed to process tag changes');

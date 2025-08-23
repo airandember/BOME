@@ -690,6 +690,8 @@ func (db *DB) GetTagsBySubsite(subsiteID int) ([]Tag, error) {
 	for rows.Next() {
 		var tag Tag
 		var subsiteIDOrigin sql.NullInt64
+		var categoryIDs pq.Int64Array // ADD THIS
+		var subsiteIDs pq.Int64Array  // ADD THIS
 
 		err := rows.Scan(
 			&tag.ID,
@@ -699,8 +701,8 @@ func (db *DB) GetTagsBySubsite(subsiteID int) ([]Tag, error) {
 			&tag.CreatedAt,
 			&tag.UpdatedAt,
 			&tag.ActiveTag,
-			pq.Array(&tag.CategoryIDs),
-			pq.Array(&tag.SubsiteIDs), // ADD THIS LINE
+			&categoryIDs, // Scan into pq.Int64Array first
+			&subsiteIDs,  // Scan into pq.Int64Array first
 		)
 		if err != nil {
 			log.Printf("❌  GetTagsBySubsite: Error scanning tag row: %v", err)
@@ -713,11 +715,16 @@ func (db *DB) GetTagsBySubsite(subsiteID int) ([]Tag, error) {
 			tag.SubsiteIDOrigin = &id
 		}
 
-		// Convert pq.Int64Array to []int
-		// tag.SubsiteIDs = make([]int, len(subsiteIDs))
-		// for i, v := range subsiteIDs {
-		// 	tag.SubsiteIDs[i] = int(v)
-		// }
+		// Convert pq.Int64Array to []int (UNCOMMENT AND FIX THIS)
+		tag.CategoryIDs = make([]int, len(categoryIDs))
+		for i, v := range categoryIDs {
+			tag.CategoryIDs[i] = int(v)
+		}
+
+		tag.SubsiteIDs = make([]int, len(subsiteIDs))
+		for i, v := range subsiteIDs {
+			tag.SubsiteIDs[i] = int(v)
+		}
 
 		tags = append(tags, tag)
 	}

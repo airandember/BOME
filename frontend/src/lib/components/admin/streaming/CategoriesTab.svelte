@@ -17,7 +17,15 @@
 	
 	// Modal state using $state rune for reactivity
 	let showModal = $state(false);
-	let selectedCategory = $state<any>(null);
+	// Replace the current selectedCategory logic with this reactive approach
+	let selectedCategoryId = $state<number | null>(null);
+
+	// Make selectedCategory a derived value that always gets the latest category data
+	const selectedCategory = $derived(() => {
+		if (!selectedCategoryId) return null;
+		return categories.find(c => c.id === selectedCategoryId) || null;
+	});
+
 	let searchTerm = $state('');
 	let editingCategory = $state(false);
 	let editCategoryName = $state('');
@@ -30,16 +38,23 @@
 	
 	// Replace the complex tagLookup and affiliatedTags with this simple version:
 	const affiliatedTags = $derived(() => {
-		if (!selectedCategory?.tag_ids) return [];
+		const category = selectedCategory();
+		if (!category?.tag_ids) return [];
 		
-		// Simple filter - find tags where the tag.id is in the category's tag_ids array
-		return tags.filter(tag => selectedCategory.tag_ids.includes(tag.id));
+		console.log('🔍 Looking for tag IDs:', category.tag_ids);
+		console.log('🔍 Total tags available:', tags.length);
+		
+		const found = tags.filter(tag => category.tag_ids.includes(tag.id));
+		console.log('🔍 Found affiliated tags:', found.map(t => `${t.id}: ${t.word}`));
+		
+		return found;
 	});
 
 	const filteredTags = $derived(() => {
-		if (!selectedCategory) return [];
+		const category = selectedCategory();
+		if (!category) return [];
 		// Show tags that are NOT in the category's tag_ids
-		return tags.filter(tag => !selectedCategory.tag_ids || !selectedCategory.tag_ids.includes(tag.id));
+		return tags.filter(tag => !category.tag_ids || !category.tag_ids.includes(tag.id));
 	});
 	
 	const searchFilteredTags = $derived(() => {
@@ -59,7 +74,7 @@
 	}
 	
 	function handleCategoryClick(category: any) {
-		selectedCategory = category;
+		selectedCategoryId = category.id; // Store just the ID, not the object
 		searchTerm = '';
 		editCategoryName = category.name;
 		editCategoryColor = category.color;
@@ -81,7 +96,7 @@
 
 	function resetModal() {
 		showModal = false;
-		selectedCategory = null;
+		selectedCategoryId = null; // Reset the ID instead of the object
 		searchTerm = '';
 		editingCategory = false;
 		editCategoryName = '';
@@ -94,15 +109,17 @@
 	function toggleEditMode() {
 		editingCategory = !editingCategory;
 		if (editingCategory) {
-			editCategoryName = selectedCategory.name;
-			editCategoryColor = selectedCategory.color;
-			editCategoryDescription = selectedCategory.description || '';
+			const category = selectedCategory();
+			editCategoryName = category.name;
+			editCategoryColor = category.color;
+			editCategoryDescription = category.description || '';
 		}
 	}
 	
 	function saveCategoryChanges() {
+		const category = selectedCategory();
 		onUpdateCategory?.({
-			id: selectedCategory.id,
+			id: category.id,
 			name: editCategoryName,
 			color: editCategoryColor,
 			description: editCategoryDescription
@@ -111,10 +128,11 @@
 	}
 	
 	function handleTagSelect(tag: any) {
+		const category = selectedCategory();
 		// Add to pending changes instead of immediate dispatch
 		const change = {
 			tagId: tag.id,
-			categoryId: selectedCategory.id,
+			categoryId: category.id,
 			action: 'add' as const
 		};
 		
@@ -133,10 +151,11 @@
 	// Improve error handling for tag removal
 	async function removeTagFromCategory(tag: any) {
 		try {
-			// Add to pending changes instead of immediate dispatch
+			const category = selectedCategory();
+			// Add to pending changes for removal from THIS specific category
 			const change = {
 				tagId: tag.id,
-				categoryId: null,
+				categoryId: category.id,  // ✅ Remove from THIS category only
 				action: 'remove' as const
 			};
 			
@@ -149,7 +168,7 @@
 			}
 			
 			hasUnsavedChanges = true;
-			toastStore.success(`"${tag.word}" marked for removal`);
+			toastStore.success(`"${tag.word}" marked for removal from "${category.name}"`);
 		} catch (error) {
 			console.error('Error marking tag for removal:', error);
 			toastStore.error(`Failed to mark "${tag.word}" for removal`);
@@ -168,6 +187,15 @@
 			
 			// Dispatch the batch update event
 			onBatchTagChanges?.(changes);
+			
+			// Update selectedCategory to reflect the changes immediately
+			if (selectedCategory()) {
+				const category = selectedCategory();
+				const updatedCategory = categories.find(c => c.id === category.id);
+				if (updatedCategory) {
+					selectedCategoryId = updatedCategory.id; // Update the ID to trigger reactivity
+				}
+			}
 			
 			// Clear pending changes
 			pendingTagChanges = [];
@@ -266,7 +294,7 @@
 					{#if editingCategory}
 						Edit Category: "{editCategoryName}"
 					{:else}
-						Manage "{selectedCategory.name}" Category
+						Manage "{selectedCategory()?.name}" Category
 					{/if}
 				</h3>
 				<button class="close-button" on:click={closeModal}>
@@ -347,15 +375,15 @@
 						<div class="category-info">
 							<div class="info-row">
 								<span class="info-label">Name:</span>
-								<span class="info-value">{selectedCategory.name}</span>
+								<span class="info-value">{selectedCategory()?.name}</span>
 							</div>
 							<div class="info-row">
 								<span class="info-label">Color:</span>
-								<div class="color-display" style="background-color: {selectedCategory.color}"></div>
+								<div class="color-display" style="background-color: {selectedCategory()?.color}"></div>
 							</div>
 							<div class="info-row">
 								<span class="info-label">Description:</span>
-								<span class="info-value">{selectedCategory.description || 'No description'}</span>
+								<span class="info-value">{selectedCategory()?.description || 'No description'}</span>
 							</div>
 						</div>
 					{/if}
