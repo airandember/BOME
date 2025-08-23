@@ -51,6 +51,8 @@
 			if (tagsData.success) {
 				tags = tagsData.result || [];
 				console.log('✅ Loaded tags with new schema:', tags);
+				console.log('🔍 Sample tag structure:', tags[0]); // Show first tag structure
+				console.log('🔍 Tags with category_ids:', tags.filter(t => t.category_ids && t.category_ids.length > 0));
 			} else {
 				console.log('❌ Failed to load tags with new schema:', tagsData);
 			}
@@ -200,6 +202,11 @@
 					
 					// Update local state to reflect changes
 					updateLocalStateAfterBatchChanges(changes);
+					
+					// Force reactivity by reassigning the arrays
+					tags = [...tags];
+					categories = [...categories];
+					
 					return true;
 				} else {
 					toastStore.error(data.error || 'Failed to process tag changes');
