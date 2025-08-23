@@ -28,17 +28,18 @@
 	let pendingTagChanges = $state<Array<{tagId: number, categoryId: number | null, action: 'add' | 'remove'}>>([]);
 	let hasUnsavedChanges = $state(false);
 	
-	// Use $derived for computed values - updated for array-based relationships
+	// Replace the complex tagLookup and affiliatedTags with this simple version:
 	const affiliatedTags = $derived(() => {
-		if (!selectedCategory) return [];
-		// Use the new array structure: tags with category_ids containing selectedCategory.id
-		return tags.filter(tag => tag.category_ids && tag.category_ids.includes(selectedCategory.id));
+		if (!selectedCategory?.tag_ids) return [];
+		
+		// Simple filter - find tags where the tag.id is in the category's tag_ids array
+		return tags.filter(tag => selectedCategory.tag_ids.includes(tag.id));
 	});
 
 	const filteredTags = $derived(() => {
 		if (!selectedCategory) return [];
-		// Show tags that are NOT assigned to this category
-		return tags.filter(tag => !tag.category_ids || !tag.category_ids.includes(selectedCategory.id));
+		// Show tags that are NOT in the category's tag_ids
+		return tags.filter(tag => !selectedCategory.tag_ids || !selectedCategory.tag_ids.includes(tag.id));
 	});
 	
 	const searchFilteredTags = $derived(() => {
@@ -236,7 +237,7 @@
 						<div class="category-color" style="background-color: {category.color}"></div>
 						<span class="category-name">{category.name}</span>
 						<span class="category-count">
-							{tags.filter(t => t.category_ids && t.category_ids.includes(category.id)).length} tags
+							{category.tag_ids.length} tags
 						</span>
 					</div>
 					<div class="category-description">
