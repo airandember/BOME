@@ -1,30 +1,28 @@
 <script lang="ts">
-	import { createEventDispatcher, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
 	import { masterVideoService } from '$lib/master-video';
-	import { showToast } from '$lib/toast';
+	import { toastStore } from '$lib/stores/toast';
 
-	// Props
-	export let isOpen: boolean = false;
+	// Props using Svelte 5 $props rune with callback props
+	let { 
+		isOpen = $bindable(false),
+		onClose
+	} = $props();
 
-	// Events
-	const dispatch = createEventDispatcher<{
-		close: void;
-	}>();
-
-	// Local state
-	let tagAnalytics: any = null;
-	let isLoading = true;
-	let isTagging = false;
+	// Local state using $state rune
+	let tagAnalytics = $state<any>(null);
+	let isLoading = $state(true);
+	let isTagging = $state(false);
 
 	// Single progress tracking system
-	let isProcessing = false;
-	let currentCount = 0;
-	let totalCount = 0;
+	let isProcessing = $state(false);
+	let currentCount = $state(0);
+	let totalCount = $state(0);
 	
 	// Close modal
 	function closeModal() {
-		dispatch('close');
+		onClose?.();
 	}
 
 	// Load tag analytics
@@ -38,11 +36,11 @@
 				console.log('Tag analytics data:', tagAnalytics);
 			} else {
 				console.error('Tag analytics response failed:', response);
-				showToast('❌ Failed to load tag analytics', 'error');
+				toastStore.error('❌ REEEE Failed to load tag analytics');
 			}
 		} catch (error) {
 			console.error('Failed to load tag analytics:', error);
-			showToast('❌ Failed to load tag analytics', 'error');
+			toastStore.error('❌ RUH ROH! Failed to load tag analytics');
 		} finally {
 			isLoading = false;
 		}
@@ -52,17 +50,17 @@
 	async function tagUntaggedVideos() {
 		try {
 			isTagging = true;
-			showToast('🔄 Starting to tag untagged videos...', 'info');
+			toastStore.info('🔄 Starting to tag untagged videos...');
 			
 			// Get ALL untagged videos (use high limit to get everything)
 			const response = await masterVideoService.getUntaggedVideos(10000);
 			if (response.success && response.videos) {
 				const untaggedVideos = response.videos;
 				const totalVideos = untaggedVideos.length;
-				showToast(`📝 Found ${totalVideos} untagged videos to process`, 'info');
+				toastStore.info(`📝 Found ${totalVideos} untagged videos to process`);
 				
 				if (totalVideos === 0) {
-					showToast('✅ All videos already have tags!', 'success');
+					toastStore.success('✅ All videos already have tags!');
 					return;
 				}
 				
@@ -105,22 +103,22 @@
 					}
 					
 					isProcessing = false;
-					showToast('✅ All untagged videos processed successfully!', 'success');
+					toastStore.success('✅ All untagged videos processed successfully!');
 					
 				} catch (error) {
 					console.error('Batch tagging error:', error);
 					isProcessing = false;
-					showToast(`❌ Batch tagging failed: ${error}`, 'error');
+					toastStore.error(`❌ Batch tagging failed: ${error}`);
 				}
 				
 				// Final reload of analytics to show updated stats
 				await loadTagAnalytics();
 			} else {
-				showToast('❌ Failed to get untagged videos', 'error');
+				toastStore.error('❌ Failed to get untagged videos');
 			}
 		} catch (error) {
 			console.error('Failed to tag untagged videos:', error);
-			showToast('❌ Failed to tag untagged videos', 'error');
+			toastStore.error('❌ Failed to tag untagged videos');
 		} finally {
 			// Keep progress visible for a moment to show completion
 			setTimeout(() => {
@@ -136,20 +134,20 @@
 	async function tagAllVideos() {
 		try {
 			isTagging = true;
-			showToast('🔄 Starting to tag ALL videos (this will replace existing tags)...', 'warning');
+			toastStore.warning('🔄 Starting to tag ALL videos (this will replace existing tags)...');
 			
 			// First get the total count to know how many videos we're dealing with
 			const countResponse = await masterVideoService.getMasterVideos({ page: 1, limit: 1 });
 			if (!countResponse.success) {
-				showToast('❌ Failed to get video count', 'error');
+				toastStore.error('❌ Failed to get video count');
 				return;
 			}
 			
 			const totalVideos = countResponse.pagination.total;
-			showToast(`📝 Found ${totalVideos} total videos to process (replacing existing tags)`, 'info');
+			toastStore.info(`📝 Found ${totalVideos} total videos to process (replacing existing tags)`);
 			
 			if (totalVideos === 0) {
-				showToast('✅ No videos found to tag', 'success');
+				toastStore.success('✅ No videos found to tag');
 				return;
 			}
 			
@@ -199,19 +197,19 @@
 				}
 				
 				isProcessing = false;
-				showToast('✅ All videos re-tagged successfully! (existing tags replaced)', 'success');
+				toastStore.success('✅ All videos re-tagged successfully! (existing tags replaced)');
 				
 			} catch (error) {
 				console.error('Batch tagging error:', error);
 				isProcessing = false;
-				showToast(`❌ Batch tagging failed: ${error}`, 'error');
+				toastStore.error(`❌ Batch tagging failed: ${error}`);
 			}
 			
 			// Final reload of analytics to show updated stats
 			await loadTagAnalytics();
 		} catch (error) {
 			console.error('Failed to tag all videos', error);
-			showToast('❌ Failed to tag all videos', 'error');
+			toastStore.error('❌ Failed to tag all videos');
 		} finally {
 			// Keep progress visible for a moment to show completion
 			setTimeout(() => {
@@ -225,18 +223,20 @@
 
 
 
-	// Load analytics when modal opens
-	$: if (isOpen && !tagAnalytics) {
-		loadTagAnalytics();
-	}
+	// Load analytics when modal opens using Svelte 5 $effect
+	$effect(() => {
+		if (isOpen && !tagAnalytics) {
+			loadTagAnalytics();
+		}
+	});
 </script>
 
 {#if isOpen}
-	<div class="modal-backdrop" on:click={closeModal} transition:fade={{ duration: 200 }}>
-		<div class="modal-content modal-large" on:click|stopPropagation transition:fly={{ y: 20, duration: 200 }}>
+	<div class="modal-backdrop" onclick={closeModal} transition:fade={{ duration: 200 }} role="dialog" tabindex="-1">
+		<div class="modal-content modal-large" onclick={(e) => e.stopPropagation()} transition:fly={{ y: 20, duration: 200 }} role="document">
 			<div class="modal-header">
 				<h2>📊 Tag Analytics Dashboard</h2>
-				<button class="modal-close" on:click={closeModal}>×</button>
+				<button class="modal-close" onclick={closeModal}>×</button>
 			</div>
 			
 			<div class="modal-body">
@@ -328,6 +328,15 @@
 				{:else}
 					<div class="error-state">
 						<p class="text-center text-red-500">Failed to load analytics data</p>
+						<p class="text-center text-gray-400 text-sm mt-2">
+							Check console for detailed error information
+						</p>
+						<button 
+							class="btn bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors mt-4"
+							onclick={loadTagAnalytics}
+						>
+							🔄 Retry Loading Analytics
+						</button>
 					</div>
 				{/if}
 			</div>
@@ -364,14 +373,14 @@
 				</div>
 				
 				<div class="tagButtons">
-					<button class="btn bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors" on:click={tagUntaggedVideos} disabled={isTagging || isProcessing}>
+					<button class="btn bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors" onclick={tagUntaggedVideos} disabled={isTagging || isProcessing}>
 						{isTagging || isProcessing ? 'Tagging...' : 'Tag Untagged'}
 					</button>
-					<button class="btn bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors" on:click={tagAllVideos} disabled={isTagging || isProcessing}>
+					<button class="btn bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors" onclick={tagAllVideos} disabled={isTagging || isProcessing}>
 						{isTagging || isProcessing ? 'Tagging...' : 'Tag All'}
 					</button>
 				</div>
-				<button class="btn bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors" on:click={closeModal}>
+				<button class="btn bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors" onclick={closeModal}>
 					Close Dashboard
 				</button>
 			</div>

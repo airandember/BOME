@@ -1,4 +1,5 @@
 import { apiRequest } from '$lib/auth';
+import { apiClient } from '$lib/api/client';
 
 // Types for master video list
 export interface MasterVideo {
@@ -623,18 +624,17 @@ export class MasterVideoService {
 		error?: string;
 	}> {
 		try {
-			const response = await apiRequest('/admin/master-videos/tags/analytics');
-			const data = await response.json();
+			const response = await apiClient.get('/admin/master-videos/tags/analytics');
 			
-			if (data.success) {
+			if (response.data) {
 				return {
 					success: true,
-					data: data.data
+					data: response.data.data
 				};
 			} else {
 				return {
 					success: false,
-					error: data.message || 'Failed to get tag analytics'
+					error: response.error || 'Failed to get tag analytics'
 				};
 			}
 		} catch (error) {
