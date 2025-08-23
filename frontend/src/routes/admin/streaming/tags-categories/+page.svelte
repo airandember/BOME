@@ -44,28 +44,59 @@
 				fetch('/api/v1/tag-categories')
 			]);
 
-			// Parse responses
-			const tagsData = await tagsResponse.json();
-			const categoriesData = await categoriesResponse.json();
+			// Check if responses are valid before parsing
+			let tagsData, categoriesData;
+			
+			try {
+				tagsData = await tagsResponse.json();
+			} catch (parseError) {
+				console.error('Failed to parse tags response as JSON:', parseError);
+				tagsData = { success: false, error: 'Invalid JSON response from tags API' };
+			}
+			
+			try {
+				categoriesData = await categoriesResponse.json();
+			} catch (parseError) {
+				console.error('Failed to parse categories response as JSON:', parseError);
+				categoriesData = { success: false, error: 'Invalid JSON response from categories API' };
+			}
 
-			if (tagsData.success) {
-				tags = tagsData.result || [];
-				console.log('✅ Loaded tags with new schema:', tags);
-				console.log('🔍 Sample tag structure:', tags[0]); // Show first tag structure
+			// Use helper function to process responses
+			tags = handleApiResponse(tagsData, 'tags');
+			categories = handleApiResponse(categoriesData, 'categories');
+			
+			// Additional debugging for successful loads
+			if (tags.length > 0) {
+				console.log('🔍 Sample tag structure:', tags[0]);
 				console.log('🔍 Tags with category_ids:', tags.filter(t => t.category_ids && t.category_ids.length > 0));
-			} else {
-				console.log('❌ Failed to load tags with new schema:', tagsData);
 			}
-
-			if (categoriesData.success) {
-				categories = categoriesData.result || [];
-				console.log('✅ Loaded categories with new schema:', categories);
-			}
+			
 		} catch (err) {
-			toastStore.error('Failed to load tag data');
-			console.error('Error loading data:', err);
+			toastStore.error('Failed to load tag data - network error');
+			console.error('Network error loading data:', err);
+			// Set empty arrays as fallback
+			tags = [];
+			categories = [];
 		} finally {
 			loading = false;
+		}
+	}
+
+	// Helper function to handle API responses gracefully
+	function handleApiResponse(response: any, dataType: string) {
+		if (!response || typeof response !== 'object') {
+			console.log(`⚠️ Invalid ${dataType} response:`, response);
+			return [];
+		}
+		
+		if (response.success) {
+			const result = response.result || [];
+			console.log(`✅ Loaded ${result.length} ${dataType}`);
+			return result;
+		} else {
+			console.log(`❌ Failed to load ${dataType}:`, response.error || 'Unknown error');
+			toastStore.error(`Failed to load ${dataType}: ${response.error || 'Unknown error'}`);
+			return [];
 		}
 	}
 
