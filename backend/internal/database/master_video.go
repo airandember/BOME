@@ -716,7 +716,7 @@ func (db *DB) decrementTagFrequency(tags []string) error {
 		result, err := db.Exec(`
             UPDATE tags 
             SET frequency = GREATEST(frequency - 1, 0), updated_at = CURRENT_TIMESTAMP 
-            WHERE word = $1 AND subsite_id = $2
+            WHERE word = $1 AND (subsite_id_origin = $2 OR $2 = ANY(COALESCE(subsite_ids, '{}')))
         `, cleanTag, streamingSubsiteID)
 
 		if err != nil {
@@ -757,7 +757,7 @@ func (db *DB) updateTagFrequency(tags []string) error {
 
 		// Check if tag already exists in streaming subsite
 		var existingID int
-		err = db.QueryRow("SELECT id FROM tags WHERE word = $1 AND subsite_id = $2", cleanTag, streamingSubsiteID).Scan(&existingID)
+		err = db.QueryRow("SELECT id FROM tags WHERE word = $1 AND (subsite_id_origin = $2 OR $2 = ANY(COALESCE(subsite_ids, '{}')))", cleanTag, streamingSubsiteID).Scan(&existingID)
 
 		if err != nil && err != sql.ErrNoRows {
 			log.Printf("❌ Error checking existing tag '%s': %v", cleanTag, err)
@@ -768,8 +768,8 @@ func (db *DB) updateTagFrequency(tags []string) error {
 			// Tag doesn't exist, insert new one in streaming subsite
 			log.Printf("➕ Inserting new tag '%s' in streaming subsite", cleanTag)
 			_, err = db.Exec(`
-				INSERT INTO tags (word, frequency, subsite_id, active_tag) 
-				VALUES ($1, 1, $2, true)
+				INSERT INTO tags (word, frequency, subsite_id_origin, subsite_ids, active_tag, created_at, updated_at, category_ids) 
+				VALUES ($1, 1, $2, ARRAY[$2]::INTEGER[], true, NOW(), NOW(), '{}')
 			`, cleanTag, streamingSubsiteID)
 
 			if err != nil {
@@ -804,13 +804,13 @@ func (db *DB) updateTagFrequency(tags []string) error {
 func (db *DB) GetTagAnalytics() (map[string]interface{}, error) {
 	log.Printf("📊 Getting tag analytics...")
 
-	// Get tag frequency from streaming subsite
+	// Get tag frequency from streaming subsite (using new tags table structure)
 	rows, err := db.Query(`
-		SELECT t.word, t.frequency 
-		FROM tags t
-		JOIN subsites s ON t.subsite_id = s.id
-		WHERE s.subsite_name = 'streaming'
-		ORDER BY t.frequency DESC 
+		SELECT word, frequency 
+		FROM tags
+		WHERE active_tag = true 
+		  AND (subsite_id_origin = 1 OR 1 = ANY(COALESCE(subsite_ids, '{}')))
+		ORDER BY frequency DESC 
 		LIMIT 100
 	`)
 	if err != nil {
@@ -854,9 +854,9 @@ func (db *DB) GetTagAnalytics() (map[string]interface{}, error) {
 	var totalUniqueTags int
 	err = db.QueryRow(`
 		SELECT COUNT(*) 
-		FROM tags t
-		JOIN subsites s ON t.subsite_id = s.id
-		WHERE s.subsite_name = 'streaming'
+		FROM tags
+		WHERE active_tag = true 
+		  AND (subsite_id_origin = 1 OR 1 = ANY(COALESCE(subsite_ids, '{}')))
 	`).Scan(&totalUniqueTags)
 	if err != nil {
 		log.Printf("❌ Failed to get total unique tags count: %v", err)
@@ -867,9 +867,9 @@ func (db *DB) GetTagAnalytics() (map[string]interface{}, error) {
 	var activeTags, inactiveTags int
 	err = db.QueryRow(`
 		SELECT COUNT(*) 
-		FROM tags t
-		JOIN subsites s ON t.subsite_id = s.id
-		WHERE s.subsite_name = 'streaming' AND t.active_tag = true
+		FROM tags
+		WHERE active_tag = true 
+		  AND (subsite_id_origin = 1 OR 1 = ANY(COALESCE(subsite_ids, '{}')))
 	`).Scan(&activeTags)
 	if err != nil {
 		log.Printf("❌ Failed to get active tags count: %v", err)
@@ -878,9 +878,9 @@ func (db *DB) GetTagAnalytics() (map[string]interface{}, error) {
 
 	err = db.QueryRow(`
 		SELECT COUNT(*) 
-		FROM tags t
-		JOIN subsites s ON t.subsite_id = s.id
-		WHERE s.subsite_name = 'streaming' AND t.active_tag = false
+		FROM tags
+		WHERE active_tag = false 
+		  AND (subsite_id_origin = 1 OR 1 = ANY(COALESCE(subsite_ids, '{}')))
 	`).Scan(&inactiveTags)
 	if err != nil {
 		log.Printf("❌ Failed to get inactive tags count: %v", err)
@@ -980,10 +980,9 @@ func (db *DB) GetSubsiteTags(subsite string) ([]map[string]interface{}, error) {
 
 	// Get tags for this subsite
 	rows, err := db.Query(`
-		SELECT t.id, t.word, t.frequency, t.category_id, t.active_tag, tc.name as category_name, tc.color as category_color
+		SELECT t.id, t.word, t.frequency, t.active_tag
 		FROM tags t
-		LEFT JOIN tag_categories tc ON t.category_id = tc.id
-		WHERE t.subsite_id = $1
+		WHERE t.subsite_id_origin = $1 OR $1 = ANY(COALESCE(t.subsite_ids, '{}'))
 		ORDER BY t.frequency DESC, t.word ASC
 	`, subsiteID)
 	if err != nil {
@@ -997,12 +996,9 @@ func (db *DB) GetSubsiteTags(subsite string) ([]map[string]interface{}, error) {
 		var id int
 		var word string
 		var frequency int
-		var categoryID sql.NullInt64
 		var activeTag bool
-		var categoryName sql.NullString
-		var categoryColor sql.NullString
 
-		if err := rows.Scan(&id, &word, &frequency, &categoryID, &activeTag, &categoryName, &categoryColor); err != nil {
+		if err := rows.Scan(&id, &word, &frequency, &activeTag); err != nil {
 			log.Printf("❌ Failed to scan subsite tag row: %v", err)
 			return nil, fmt.Errorf("failed to scan subsite tag: %v", err)
 		}
@@ -1012,12 +1008,6 @@ func (db *DB) GetSubsiteTags(subsite string) ([]map[string]interface{}, error) {
 			"word":       word,
 			"frequency":  frequency,
 			"active_tag": activeTag,
-		}
-
-		if categoryID.Valid {
-			tag["category_id"] = categoryID.Int64
-			tag["category_name"] = categoryName.String
-			tag["category_color"] = categoryColor.String
 		}
 
 		tags = append(tags, tag)
@@ -1047,7 +1037,7 @@ func (db *DB) GetSubsiteCategories(subsite string) ([]map[string]interface{}, er
 	rows, err := db.Query(`
 		SELECT id, name, description, color, created_at, updated_at
 		FROM tag_categories
-		WHERE subsite_id = $1
+		WHERE subsite_id = $1 OR $1 = ANY(COALESCE(subsite_ids, '{}'))
 		ORDER BY name ASC
 	`, subsiteID)
 	if err != nil {
@@ -1103,7 +1093,7 @@ func (db *DB) AddSubsiteTag(subsite, word string) error {
 
 	// Check if tag already exists for this subsite
 	var existingID int
-	err = db.QueryRow("SELECT id FROM tags WHERE word = $1 AND subsite_id = $2", cleanWord, subsiteID).Scan(&existingID)
+	err = db.QueryRow("SELECT id FROM tags WHERE word = $1 AND (subsite_id_origin = $2 OR $2 = ANY(COALESCE(subsite_ids, '{}')))", cleanWord, subsiteID).Scan(&existingID)
 
 	if err != nil && err != sql.ErrNoRows {
 		log.Printf("❌ Error checking existing tag '%s' in subsite '%s': %v", cleanWord, subsite, err)
@@ -1114,8 +1104,8 @@ func (db *DB) AddSubsiteTag(subsite, word string) error {
 		// Tag doesn't exist, insert new one
 		log.Printf("➕ Inserting new tag '%s' in subsite '%s'", cleanWord, subsite)
 		_, err = db.Exec(`
-			INSERT INTO tags (word, frequency, subsite_id, active_tag) 
-			VALUES ($1, 1, $2, true)
+			INSERT INTO tags (word, frequency, subsite_id_origin, subsite_ids, active_tag, created_at, updated_at, category_ids) 
+			VALUES ($1, 1, $2, ARRAY[$2]::INTEGER[], true, NOW(), NOW(), '{}')
 		`, cleanWord, subsiteID)
 
 		if err != nil {
@@ -1159,7 +1149,7 @@ func (db *DB) DeleteSubsiteTag(subsite string, tagID int) error {
 	// Delete the tag (this will cascade to remove any category assignments)
 	result, err := db.Exec(`
 		DELETE FROM tags 
-		WHERE id = $1 AND subsite_id = $2
+		WHERE id = $1 AND (subsite_id_origin = $2 OR $2 = ANY(COALESCE(subsite_ids, '{}')))
 	`, tagID, subsiteID)
 	if err != nil {
 		log.Printf("❌ Failed to delete tag ID %d from subsite '%s': %v", tagID, subsite, err)
@@ -1274,14 +1264,14 @@ func (db *DB) RemoveTagFromCategory(subsite string, tagID int) error {
 	}
 
 	// Verify tag belongs to this subsite
-	var tagSubsiteID int
-	err = db.QueryRow("SELECT subsite_id FROM tags WHERE id = $1", tagID).Scan(&tagSubsiteID)
+	var tagSubsiteIDOrigin sql.NullInt64
+	err = db.QueryRow("SELECT subsite_id_origin FROM tags WHERE id = $1", tagID).Scan(&tagSubsiteIDOrigin)
 	if err != nil {
 		log.Printf("❌ Failed to get tag subsite ID: %v", err)
 		return fmt.Errorf("failed to get tag subsite ID: %v", err)
 	}
 
-	if tagSubsiteID != subsiteID {
+	if !tagSubsiteIDOrigin.Valid || int(tagSubsiteIDOrigin.Int64) != subsiteID {
 		log.Printf("❌ Tag does not belong to subsite '%s'", subsite)
 		return fmt.Errorf("tag does not belong to subsite")
 	}
@@ -1314,8 +1304,9 @@ func (db *DB) AssignSubsiteTagToCategory(subsite string, tagID, categoryID int) 
 	}
 
 	// Verify both tag and category belong to this subsite
-	var tagSubsiteID, categorySubsiteID int
-	err = db.QueryRow("SELECT subsite_id FROM tags WHERE id = $1", tagID).Scan(&tagSubsiteID)
+	var tagSubsiteIDOrigin sql.NullInt64
+	var categorySubsiteID int
+	err = db.QueryRow("SELECT subsite_id_origin FROM tags WHERE id = $1", tagID).Scan(&tagSubsiteIDOrigin)
 	if err != nil {
 		log.Printf("❌ Failed to get tag subsite ID: %v", err)
 		return fmt.Errorf("failed to get tag subsite ID: %v", err)
@@ -1327,7 +1318,7 @@ func (db *DB) AssignSubsiteTagToCategory(subsite string, tagID, categoryID int) 
 		return fmt.Errorf("failed to get category subsite ID: %v", err)
 	}
 
-	if tagSubsiteID != subsiteID || categorySubsiteID != subsiteID {
+	if !tagSubsiteIDOrigin.Valid || int(tagSubsiteIDOrigin.Int64) != subsiteID || categorySubsiteID != subsiteID {
 		log.Printf("❌ Tag or category does not belong to subsite '%s'", subsite)
 		return fmt.Errorf("tag or category does not belong to subsite")
 	}
@@ -1363,7 +1354,7 @@ func (db *DB) ToggleTagActiveStatus(subsite string, tagID int) error {
 	_, err = db.Exec(`
 		UPDATE tags 
 		SET active_tag = NOT active_tag, updated_at = CURRENT_TIMESTAMP 
-		WHERE id = $1 AND subsite_id = $2
+		WHERE id = $1 AND (subsite_id_origin = $2 OR $2 = ANY(COALESCE(subsite_ids, '{}')))
 	`, tagID, subsiteID)
 	if err != nil {
 		log.Printf("❌ Failed to toggle tag active status: %v", err)
@@ -1563,7 +1554,7 @@ func (db *DB) ResetAllTagFrequencies() error {
 		return fmt.Errorf("failed to get streaming subsite ID: %v", err)
 	}
 
-	_, err = db.Exec(`UPDATE tags SET frequency = 0, updated_at = CURRENT_TIMESTAMP WHERE subsite_id = $1`, streamingSubsiteID)
+	_, err = db.Exec(`UPDATE tags SET frequency = 0, updated_at = CURRENT_TIMESTAMP WHERE subsite_id_origin = $1 OR $1 = ANY(COALESCE(subsite_ids, '{}'))`, streamingSubsiteID)
 	if err != nil {
 		return fmt.Errorf("failed to reset tag frequencies: %v", err)
 	}

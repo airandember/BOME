@@ -1333,12 +1333,13 @@ CREATE INDEX IF NOT EXISTS idx_master_video_views ON master_video_list(views DES
 CREATE INDEX IF NOT EXISTS idx_master_video_collection ON master_video_list(collection_id);
 CREATE INDEX IF NOT EXISTS idx_master_video_tagged ON master_video_list(tagged);
 
--- Create video tags table for word analytics
+-- Create video tags table for word analytics (updated schema)
 CREATE TABLE IF NOT EXISTS video_tags (
     id SERIAL PRIMARY KEY,
     word VARCHAR(100) NOT NULL UNIQUE,
     frequency INTEGER DEFAULT 1,
     category_id INTEGER,
+    subsite_id INTEGER REFERENCES subsites(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

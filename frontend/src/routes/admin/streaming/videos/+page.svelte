@@ -574,8 +574,8 @@
 
 <!-- Tag Analytics Modal -->
 <TagAnalyticsModal
-	isOpen={showTagAnalytics}
-	on:close={closeTagAnalyticsModal}
+	bind:isOpen={showTagAnalytics}
+	onClose={closeTagAnalyticsModal}
 />
 
 <!-- Video Modals -->
