@@ -698,19 +698,37 @@ func (db *DB) ReplaceVideoTags(videoID int, tags []string) error {
 func (db *DB) decrementTagFrequency(tags []string) error {
 	log.Printf("🔄 Decrementing tag frequency for %d tags: %v", len(tags), tags)
 
+	// Get streaming subsite ID first
+	var streamingSubsiteID int
+	err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = 'streaming'").Scan(&streamingSubsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to get streaming subsite ID: %v", err)
+		return fmt.Errorf("failed to get streaming subsite ID: %v", err)
+	}
+
+	// Get excluded words for streaming subsite
+	excludedWords, err := db.GetExcludedWords(streamingSubsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to get excluded words: %v", err)
+		return fmt.Errorf("failed to get excluded words: %v", err)
+	}
+
+	var processedCount, excludedCount int
+
 	for _, tag := range tags {
 		cleanTag := strings.ToLower(strings.TrimSpace(tag))
 		if cleanTag == "" {
 			continue
 		}
 
-		// Get streaming subsite ID
-		var streamingSubsiteID int
-		err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = 'streaming'").Scan(&streamingSubsiteID)
-		if err != nil {
-			log.Printf("❌ Failed to get streaming subsite ID: %v", err)
+		// Check if tag is in exclusion list
+		if excludedWords[cleanTag] {
+			log.Printf("🚫 Skipping excluded tag during decrement: '%s'", cleanTag)
+			excludedCount++
 			continue
 		}
+
+		processedCount++
 
 		// Decrement frequency for existing tag
 		result, err := db.Exec(`
@@ -730,12 +748,31 @@ func (db *DB) decrementTagFrequency(tags []string) error {
 		}
 	}
 
+	log.Printf("🎉 Tag frequency decrement completed: %d processed, %d excluded, %d total input tags", processedCount, excludedCount, len(tags))
 	return nil
 }
 
 // updateTagFrequency updates the frequency count for tags
 func (db *DB) updateTagFrequency(tags []string) error {
 	log.Printf("🔄 Updating tag frequency for %d tags: %v", len(tags), tags)
+
+	// Get streaming subsite ID first
+	var streamingSubsiteID int
+	err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = 'streaming'").Scan(&streamingSubsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to get streaming subsite ID: %v", err)
+		return fmt.Errorf("failed to get streaming subsite ID: %v", err)
+	}
+
+	// Get excluded words for streaming subsite
+	excludedWords, err := db.GetExcludedWords(streamingSubsiteID)
+	if err != nil {
+		log.Printf("❌ Failed to get excluded words: %v", err)
+		return fmt.Errorf("failed to get excluded words: %v", err)
+	}
+	log.Printf("📋 Loaded %d excluded words for filtering", len(excludedWords))
+
+	var processedCount, excludedCount int
 
 	for _, tag := range tags {
 		// Clean the tag
@@ -745,15 +782,15 @@ func (db *DB) updateTagFrequency(tags []string) error {
 			continue
 		}
 
-		log.Printf("📊 Processing tag: '%s' -> '%s'", tag, cleanTag)
-
-		// Get streaming subsite ID
-		var streamingSubsiteID int
-		err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = 'streaming'").Scan(&streamingSubsiteID)
-		if err != nil {
-			log.Printf("❌ Failed to get streaming subsite ID: %v", err)
-			return fmt.Errorf("failed to get streaming subsite ID: %v", err)
+		// Check if tag is in exclusion list
+		if excludedWords[cleanTag] {
+			log.Printf("🚫 Skipping excluded tag: '%s' -> '%s'", tag, cleanTag)
+			excludedCount++
+			continue
 		}
+
+		log.Printf("📊 Processing tag: '%s' -> '%s'", tag, cleanTag)
+		processedCount++
 
 		// Check if tag already exists in streaming subsite
 		var existingID int
@@ -796,7 +833,7 @@ func (db *DB) updateTagFrequency(tags []string) error {
 		}
 	}
 
-	log.Printf("🎉 Tag frequency update completed for %d tags in streaming subsite", len(tags))
+	log.Printf("🎉 Tag frequency update completed: %d processed, %d excluded, %d total input tags", processedCount, excludedCount, len(tags))
 	return nil
 }
 
