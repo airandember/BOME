@@ -45,9 +45,14 @@
 				apiClient.get('/tag-categories')
 			]);
 
+			// Debug what we're getting from the API client
+			console.log('🔍 Raw tagsResponse:', tagsResponse);
+			console.log('🔍 Raw categoriesResponse:', categoriesResponse);
+			
 			// Process API client responses (they already handle JSON parsing)
-			tags = handleApiResponse(tagsResponse.data ? { success: true, result: tagsResponse.data } : { success: false, error: tagsResponse.error }, 'tags');
-			categories = handleApiResponse(categoriesResponse.data ? { success: true, result: categoriesResponse.data } : { success: false, error: categoriesResponse.error }, 'categories');
+			// The API client returns { data: {...} } where data contains the backend response
+			tags = handleApiResponse(tagsResponse.data || { success: false, error: tagsResponse.error }, 'tags');
+			categories = handleApiResponse(categoriesResponse.data || { success: false, error: categoriesResponse.error }, 'categories');
 			
 			// Additional debugging for successful loads
 			if (tags.length > 0) {
