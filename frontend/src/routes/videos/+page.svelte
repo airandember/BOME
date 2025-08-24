@@ -27,7 +27,7 @@
 	let loadingMore = false;
 	let authChecking = true;
 	let initialDataLoaded = false;
-	let activeTab: 'latest' | 'collections' | 'topics' | 'allVideos' = 'allVideos';
+	let activeTab: 'latest' | 'collections' | 'categories' | 'allVideos' = 'allVideos';
 	let scrollThreshold = 800; // pixels from bottom to trigger auto-load (accounts for footer height)
 	let searchTimeout: NodeJS.Timeout | null = null;
 	let isSearching = false;
@@ -35,7 +35,7 @@
 	// Set active tab from URL parameter
 	$: {
 		const tabParam = $page.url.searchParams.get('tab');
-		if (tabParam && ['latest', 'collections', 'topics', 'allVideos'].includes(tabParam)) {
+		if (tabParam && ['latest', 'collections', 'categories', 'allVideos'].includes(tabParam)) {
 			activeTab = tabParam as typeof activeTab;
 		}
 	}
@@ -505,7 +505,7 @@
 				}
 			}
 		} else {
-			// Clear search when going to collections or topics
+			// Clear search when going to collections or categories
 			if (searchQuery) {
 				searchQuery = '';
 				clearSearch();
@@ -547,10 +547,10 @@
 								
 							
 							<button 
-								class="tab-button {activeTab === 'topics' ? 'active' : ''}" 
-								on:click={() => switchTab('topics')}
+								class="tab-button {activeTab === 'categories' ? 'active' : ''}" 
+								on:click={() => switchTab('categories')}
 							>
-								Topics
+								Categories
 							</button>
 						
 							<button
@@ -733,18 +733,18 @@
 							</section>
 						{/if}
 
-						<!-- Topics Section -->
-						{#if activeTab === 'topics'}
-							<section class="topics">
-								<h2>Browse by Topic</h2>
-								<div class="topics-grid">
+						<!-- Categories Section -->
+						{#if activeTab === 'categories'}
+							<section class="categories">
+								<h2>Browse by Category</h2>
+								<div class="categories-grid">
 									{#each categories as category (category.id)}
-										<div class="topic-card">
+										<div class="category-card">
 											<h3>{category.name}</h3>
 											<p>{category.videoCount} videos</p>
 											<p class="description">{category.description}</p>
-											<button class="btn-primary" on:click={() => goto(`/videos/topics/${category.name}`)}>
-												Explore Topic
+											<button class="btn-primary" on:click={() => goto(`/videos/categories/${category.name}`)}>
+												Explore Category
 											</button>
 										</div>
 									{/each}
@@ -861,11 +861,11 @@
 		}
 	}
 
-	.all-videos, .latest-videos, .collections, .topics {
+	.all-videos, .latest-videos, .collections, .categories {
 		margin-bottom: 2rem;
 	}
 
-	.all-videos h2, .latest-videos h2, .collections h2, .topics h2 {
+	.all-videos h2, .latest-videos h2, .collections h2, .categories h2 {
 		font-size: 1.8rem;
 		color: var(--color-text);
 		margin-bottom: 1.5rem;
@@ -929,7 +929,7 @@
 		width: 100%;
 	}
 
-	.collections-grid, .topics-grid {
+	.collections-grid, .categories-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 		gap: 1.5rem;
@@ -937,7 +937,7 @@
 		width: 100%;
 	}
 
-	.collection-card, .topic-card {
+	.collection-card, .category-card {
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
 		border-radius: 12px;
@@ -946,23 +946,23 @@
 		transition: transform 0.2s, box-shadow 0.2s;
 	}
 
-	.collection-card:hover, .topic-card:hover {
+	.collection-card:hover, .category-card:hover {
 		transform: translateY(-4px);
 		box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
 	}
 
-	.collection-card h3, .topic-card h3 {
+	.collection-card h3, .category-card h3 {
 		font-size: 1.2rem;
 		color: var(--color-text);
 		margin-bottom: 0.5rem;
 	}
 
-	.collection-card p, .topic-card p {
+	.collection-card p, .category-card p {
 		color: var(--color-text-secondary);
 		margin-bottom: 1rem;
 	}
 
-	.topic-card .description {
+	.category-card .description {
 		font-size: 0.9rem;
 		line-height: 1.4;
 	}
@@ -1193,7 +1193,7 @@
 			gap: 1rem;
 		}
 
-		.collections-grid {
+		.collections-grid, .categories-grid {
 			grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
 			gap: 1.5rem;
 		}

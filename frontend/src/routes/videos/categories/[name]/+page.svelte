@@ -17,19 +17,19 @@
 	let loadingMore = false;
 
 	onMount(async () => {
-		const topicName = $page.params.name;
-		if (!topicName) return;
+		const categoryName = $page.params.name;
+		if (!categoryName) return;
 
 		try {
 			// Load category details
 			const categoriesResponse = await videoService.getCategories();
-			category = categoriesResponse.categories.find((c: VideoCategory) => c.name === topicName) || null;
+			category = categoriesResponse.categories.find((c: VideoCategory) => c.name === categoryName) || null;
 			
-			// Load videos for this topic
+			// Load videos for this category
 			await loadVideos();
 		} catch (err: any) {
-			console.error('Error loading topic:', err);
-			error = err.message || 'Failed to load topic';
+			console.error('Error loading category:', err);
+			error = err.message || 'Failed to load category';
 			toastStore.error(error);
 		} finally {
 			loading = false;
@@ -70,7 +70,7 @@
 </script>
 
 <svelte:head>
-	<title>{category?.name || 'Topic'} Videos - Book of Mormon Evidences</title>
+	<title>{category?.name || 'Category'} Videos - Book of Mormon Evidences</title>
 	<meta name="description" content="Browse {category?.name} videos about Book of Mormon evidences" />
 </svelte:head>
 
@@ -81,18 +81,18 @@
 		{#if loading}
 			<div class="loading-container">
 				<LoadingSpinner size="large" />
-				<p>Loading topic videos...</p>
+				<p>Loading category videos...</p>
 			</div>
 		{:else if error}
 			<div class="error-message">
 				<p>{error}</p>
 			</div>
 		{:else}
-			<div class="topic-page">
+			<div class="category-page">
 				<div class="container">
-					<header class="topic-header">
+					<header class="category-header">
 						<div class="header-content">
-							<a href="/videos" class="back-link" aria-label="Back to topics">
+							<a href="/videos" class="back-link" aria-label="Back to categories">
 								<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 									<path d="M19 12H5"/>
 									<path d="M12 19l-7-7 7-7"/>
@@ -101,9 +101,9 @@
 							<h1>{category?.name}</h1>
 						</div>
 						{#if category?.description}
-							<p class="topic-description">{category.description}</p>
+							<p class="category-description">{category.description}</p>
 						{/if}
-						<div class="topic-stats">
+						<div class="category-stats">
 							<span>{category?.videoCount} videos</span>
 						</div>
 					</header>
@@ -116,7 +116,7 @@
 
 					{#if videos.length === 0}
 						<div class="empty-state">
-							<p>No videos found in this topic</p>
+							<p>No videos found in this category</p>
 						</div>
 					{:else if hasMore}
 						<div class="load-more">
@@ -138,11 +138,11 @@
 		margin-top: 50px;
 	}
 
-	.topic-page {
+	.category-page {
 		padding: 2rem 0;
 	}
 
-	.topic-header {
+	.category-header {
 		text-align: center;
 		margin-bottom: 2rem;
 	}
@@ -178,7 +178,7 @@
 		margin: 0;
 	}
 
-	.topic-description {
+	.category-description {
 		max-width: 800px;
 		margin: 0 auto 1rem;
 		color: var(--color-text-muted);
@@ -186,7 +186,7 @@
 		line-height: 1.6;
 	}
 
-	.topic-stats {
+	.category-stats {
 		display: flex;
 		justify-content: center;
 		gap: 1rem;
@@ -226,4 +226,4 @@
 			grid-template-columns: 1fr;
 		}
 	}
-</style> 
+</style>
