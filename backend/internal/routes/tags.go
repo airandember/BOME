@@ -214,6 +214,40 @@ func SetupTagRoutes(router *gin.Engine, db *database.DB) {
 			c.JSON(200, gin.H{"success": true, "result": tags})
 		})
 
+		// Get videos for a category
+		tagCategories.GET("/:id/videos", func(c *gin.Context) {
+			categoryID, err := strconv.Atoi(c.Param("id"))
+			if err != nil {
+				c.JSON(400, gin.H{"success": false, "error": "Invalid category ID"})
+				return
+			}
+
+			page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+
+			videos, totalCount, err := db.GetVideosByTagCategory(categoryID, page, limit)
+			if err != nil {
+				log.Printf("❌ Failed to get videos for category %d: %v", categoryID, err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"error":   fmt.Sprintf("Failed to get category videos: %v", err),
+				})
+				return
+			}
+
+			log.Printf("✅ Retrieved %d videos for category %d (page %d)", len(videos), categoryID, page)
+			c.JSON(200, gin.H{
+				"success": true,
+				"result":  videos,
+				"pagination": gin.H{
+					"page":        page,
+					"limit":       limit,
+					"total":       totalCount,
+					"total_pages": (totalCount + limit - 1) / limit,
+				},
+			})
+		})
+
 		// Batch update tag-category relationships (for modal save)
 		tagCategories.POST("/batch-update", func(c *gin.Context) {
 			var req struct {

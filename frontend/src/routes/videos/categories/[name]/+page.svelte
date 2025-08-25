@@ -17,15 +17,33 @@
 	let loadingMore = false;
 
 	onMount(async () => {
-		const categoryName = $page.params.name;
-		if (!categoryName) return;
+		const categoryParam = $page.params.name;
+		if (!categoryParam) return;
 
 		try {
-			// Load category details
-			const categoriesResponse = await videoService.getCategories();
-			category = categoriesResponse.categories.find((c: VideoCategory) => c.name === categoryName) || null;
+			// Check if the param is a number (category ID) or a name
+			const isNumeric = /^\d+$/.test(categoryParam);
 			
-			// Load videos for this category
+			if (isNumeric) {
+				// It's a category ID, load directly
+				const categoryId = parseInt(categoryParam);
+				
+				// Load category details from tag categories
+				const categoriesResponse = await videoService.getTagCategories();
+				category = categoriesResponse.categories.find(c => c.id === categoryId) || null;
+			} else {
+				// It's a category name, find by name (fallback for old URLs)
+				const categoriesResponse = await videoService.getTagCategories();
+				category = categoriesResponse.categories.find(c => c.name === categoryParam) || null;
+			}
+			
+			if (!category) {
+				error = 'Category not found';
+				loading = false;
+				return;
+			}
+
+			// Load videos for this category using tag-based filtering
 			await loadVideos();
 		} catch (err: any) {
 			console.error('Error loading category:', err);
@@ -37,6 +55,8 @@
 	});
 
 	async function loadVideos(reset = false) {
+		if (!category) return;
+		
 		if (reset) {
 			currentPage = 1;
 			videos = [];
@@ -44,7 +64,7 @@
 
 		try {
 			loadingMore = true;
-			const response = await videoService.getVideos(currentPage, 20, $page.params.name);
+			const response = await videoService.getVideosByTagCategory(category.id, currentPage, 20);
 			
 			if (reset) {
 				videos = response.videos;
@@ -52,7 +72,7 @@
 				videos = [...videos, ...response.videos];
 			}
 			
-			hasMore = response.videos.length === 20;
+			hasMore = response.pagination.hasMore;
 			currentPage++;
 		} catch (err: any) {
 			console.error('Error loading more videos:', err);
