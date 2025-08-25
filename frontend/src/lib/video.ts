@@ -45,7 +45,11 @@ export interface VideoCategory {
 	id: number;
 	name: string;
 	description: string;
+	color: string;
+	createdAt: string;
+	updatedAt: string;
 	videoCount: number;
+	tagIds: number[];
 }
 
 export interface VideoComment {
@@ -508,6 +512,116 @@ export const videoService = {
 			if (error instanceof Error) {
 				error.message = `Failed to fetch collection videos: ${error.message}`;
 			}
+			throw error;
+		}
+	},
+
+	// Get tag categories from the streaming admin system
+	getTagCategories: async (): Promise<{ categories: VideoCategory[] }> => {
+		try {
+			const response = await apiRequestWithRetry('/tag-categories');
+			
+			if (!response.ok) {
+				const data = await response.json().catch(() => ({}));
+				throw parseApiError(response, data);
+			}
+			
+			const data = await response.json();
+			
+			console.log('🔍 Raw API response for tag categories:', data);
+			
+			// Transform the tag categories to match VideoCategory interface
+			const categories: VideoCategory[] = (data.result || []).map((category: any) => {
+				console.log('🔄 Transforming category:', category);
+				const transformed = {
+					id: category.id,
+					name: category.name,
+					description: category.description || '',
+					color: category.color || '#3B82F6',
+					createdAt: category.created_at || '',
+					updatedAt: category.updated_at || '',
+					videoCount: category.tag_ids?.length || 0, // Approximate count based on tags
+					tagIds: category.tag_ids || []
+				};
+				console.log('✅ Transformed category:', transformed);
+				return transformed;
+			});
+			
+			console.log('📦 Final categories array:', categories);
+			return { categories };
+		} catch (error) {
+			console.error('Error fetching tag categories:', error);
+			throw error;
+		}
+	},
+
+	// Get videos by category tags - now uses direct backend endpoint with tag IDs
+	getVideosByTagCategory: async (categoryId: number, page = 1, limit = 20): Promise<VideosResponse> => {
+		try {
+			// Use the new direct endpoint that queries videos by tag IDs
+			const response = await apiRequestWithRetry(`/tag-categories/${categoryId}/videos?page=${page}&limit=${limit}`);
+			
+			if (!response.ok) {
+				const data = await response.json().catch(() => ({}));
+				throw parseApiError(response, data);
+			}
+			
+			const data = await response.json();
+			
+			console.log(`🔍 Raw API response for category ${categoryId} videos:`, data);
+			
+			if (!data.success) {
+				console.error(`❌ API error for category ${categoryId}:`, data.error);
+				throw new Error(data.error || 'Failed to fetch videos by category');
+			}
+			
+			// Transform the backend pagination to match our frontend interface
+			const backendPagination = data.pagination || {};
+			
+			// Transform backend MasterVideo format to frontend Video format
+			const transformedVideos = (data.result || []).map((backendVideo: any) => ({
+				id: backendVideo.ID || backendVideo.id,
+				title: backendVideo.Title || backendVideo.title,
+				description: backendVideo.Description || backendVideo.description,
+				thumbnailUrl: backendVideo.ThumbnailURL || backendVideo.thumbnail_url || backendVideo.thumbnailUrl,
+				playbackUrl: backendVideo.PlaybackURL || backendVideo.playback_url || backendVideo.playbackUrl,
+				videoUrl: backendVideo.VideoURL || backendVideo.video_url || backendVideo.videoUrl,
+				duration: backendVideo.Duration || backendVideo.duration || 0,
+				viewCount: backendVideo.Views || backendVideo.views || 0,
+				likeCount: backendVideo.Likes || backendVideo.likes || 0,
+				category: backendVideo.Category || backendVideo.category || '',
+				tags: backendVideo.Tags || backendVideo.tags || [],
+				status: backendVideo.Status || backendVideo.status || '',
+				createdAt: backendVideo.CreatedAt || backendVideo.created_at || '',
+				updatedAt: backendVideo.UpdatedAt || backendVideo.updated_at || '',
+				bunnyVideoId: backendVideo.BunnyVideoID || backendVideo.bunny_video_id,
+				encodeProgress: backendVideo.EncodeProgress || backendVideo.encode_progress,
+				iframeSrc: backendVideo.IframeSrc || backendVideo.iframe_src
+			}));
+
+			const result = {
+				videos: transformedVideos,
+				pagination: {
+					currentPage: backendPagination.page || page,
+					itemsPerPage: backendPagination.limit || limit,
+					totalItems: backendPagination.total || 0,
+					hasMore: (backendPagination.page || page) < (backendPagination.total_pages || 0)
+				}
+			};
+			
+			console.log(`📦 Transformed response for category ${categoryId}:`, {
+				videoCount: result.videos.length,
+				pagination: result.pagination,
+				firstVideo: result.videos[0] ? {
+					id: result.videos[0].id,
+					title: result.videos[0].title,
+					thumbnailUrl: result.videos[0].thumbnailUrl
+				} : null
+			});
+			
+			return result;
+		} catch (error) {
+			console.error('Error fetching videos by tag category:', error);
 			throw error;
 		}
 	}

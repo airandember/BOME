@@ -7,6 +7,8 @@ import (
 	"log"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // MasterVideo represents a video in the master list
@@ -17,6 +19,7 @@ type MasterVideo struct {
 	Description          string
 	Category             string
 	Tags                 []string
+	TagIDs               []int `json:"tag_ids"`
 	Tagged               bool
 	Duration             int
 	FileSize             int64
@@ -632,62 +635,65 @@ func (db *DB) GetMasterVideoSearchCount(query string) (int, error) {
 	return count, err
 }
 
-// UpdateVideoTags updates the tags for a video and sets tagged to true
+// UpdateVideoTags updates the tags for a video using tag IDs and sets tagged to true
 func (db *DB) UpdateVideoTags(videoID int, tags []string) error {
-	tagsJSON, err := json.Marshal(tags)
+	// Convert tag words to tag IDs
+	tagIDs, err := db.convertTagWordsToIDs(tags)
 	if err != nil {
-		return fmt.Errorf("failed to marshal tags: %v", err)
+		return fmt.Errorf("failed to convert tag words to IDs: %v", err)
 	}
 
+	// Update video with tag IDs array
 	_, err = db.Exec(`
 		UPDATE master_video_list 
-		SET tags = $1, tagged = true, updated_at = CURRENT_TIMESTAMP 
+		SET tag_ids = $1, tagged = true, updated_at = CURRENT_TIMESTAMP 
 		WHERE id = $2
-	`, tagsJSON, videoID)
+	`, pq.Array(tagIDs), videoID)
 
 	if err != nil {
-		return fmt.Errorf("failed to update video tags: %v", err)
+		return fmt.Errorf("failed to update video tag IDs: %v", err)
 	}
 
-	// Update tag frequency in video_tags table
+	// Update tag frequency in tags table
 	return db.updateTagFrequency(tags)
 }
 
-// ReplaceVideoTags completely replaces tags for a video (used for "Tag All" functionality)
+// ReplaceVideoTags completely replaces tags for a video using tag IDs (used for "Tag All" functionality)
 func (db *DB) ReplaceVideoTags(videoID int, tags []string) error {
-	tagsJSON, err := json.Marshal(tags)
+	// Convert tag words to tag IDs
+	tagIDs, err := db.convertTagWordsToIDs(tags)
 	if err != nil {
-		return fmt.Errorf("failed to marshal tags: %v", err)
+		return fmt.Errorf("failed to convert tag words to IDs: %v", err)
 	}
 
-	// First, get the old tags to decrement their frequency
-	var oldTagsStr string
-	err = db.QueryRow(`SELECT tags FROM master_video_list WHERE id = $1`, videoID).Scan(&oldTagsStr)
+	// First, get the old tag IDs to decrement their frequency
+	var oldTagIDs pq.Int64Array
+	err = db.QueryRow(`SELECT COALESCE(tag_ids, '{}') FROM master_video_list WHERE id = $1`, videoID).Scan(&oldTagIDs)
 	if err != nil {
-		return fmt.Errorf("failed to get old tags: %v", err)
+		return fmt.Errorf("failed to get old tag IDs: %v", err)
 	}
 
-	// Parse old tags and decrement their frequency
-	if oldTagsStr != "" {
-		var oldTags []string
-		if err := json.Unmarshal([]byte(oldTagsStr), &oldTags); err == nil {
+	// Convert old tag IDs to words and decrement their frequency
+	if len(oldTagIDs) > 0 {
+		oldTagWords, err := db.convertTagIDsToWords(oldTagIDs)
+		if err == nil && len(oldTagWords) > 0 {
 			// Decrement frequency for old tags
-			if err := db.decrementTagFrequency(oldTags); err != nil {
+			if err := db.decrementTagFrequency(oldTagWords); err != nil {
 				log.Printf("⚠️ Warning: Failed to decrement old tag frequencies: %v", err)
 				// Continue with the update even if decrement fails
 			}
 		}
 	}
 
-	// Update the video with new tags
+	// Update the video with new tag IDs
 	_, err = db.Exec(`
         UPDATE master_video_list 
-        SET tags = $1, tagged = true, updated_at = CURRENT_TIMESTAMP 
+        SET tag_ids = $1, tagged = true, updated_at = CURRENT_TIMESTAMP 
         WHERE id = $2
-    `, tagsJSON, videoID)
+    `, pq.Array(tagIDs), videoID)
 
 	if err != nil {
-		return fmt.Errorf("failed to update video tags: %v", err)
+		return fmt.Errorf("failed to update video tag IDs: %v", err)
 	}
 
 	// Update tag frequency for new tags
@@ -1598,4 +1604,167 @@ func (db *DB) ResetAllTagFrequencies() error {
 
 	log.Printf("✅ Reset all tag frequencies for streaming subsite")
 	return nil
+}
+
+// convertTagWordsToIDs converts tag words to their corresponding tag IDs
+func (db *DB) convertTagWordsToIDs(tagWords []string) ([]int, error) {
+	if len(tagWords) == 0 {
+		return []int{}, nil
+	}
+
+	// Get streaming subsite ID
+	var streamingSubsiteID int
+	err := db.QueryRow("SELECT id FROM subsites WHERE subsite_name = 'streaming'").Scan(&streamingSubsiteID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get streaming subsite ID: %v", err)
+	}
+
+	tagIDs := make([]int, 0, len(tagWords))
+
+	for _, word := range tagWords {
+		var tagID int
+		err := db.QueryRow(`
+			SELECT id FROM tags 
+			WHERE word = $1 AND (subsite_id_origin = $2 OR $2 = ANY(COALESCE(subsite_ids, '{}')))
+		`, word, streamingSubsiteID).Scan(&tagID)
+
+		if err == sql.ErrNoRows {
+			// Tag doesn't exist, create it
+			newTag, err := db.CreateTag(word, &streamingSubsiteID)
+			if err != nil {
+				log.Printf("⚠️ Warning: Failed to create tag '%s': %v", word, err)
+				continue
+			}
+			tagIDs = append(tagIDs, newTag.ID)
+			log.Printf("✅ Created new tag '%s' with ID %d", word, newTag.ID)
+		} else if err != nil {
+			log.Printf("⚠️ Warning: Failed to get tag ID for '%s': %v", word, err)
+			continue
+		} else {
+			tagIDs = append(tagIDs, tagID)
+		}
+	}
+
+	return tagIDs, nil
+}
+
+// convertTagIDsToWords converts tag IDs to their corresponding tag words
+func (db *DB) convertTagIDsToWords(tagIDs pq.Int64Array) ([]string, error) {
+	if len(tagIDs) == 0 {
+		return []string{}, nil
+	}
+
+	// Convert pq.Int64Array to []int for the query
+	intTagIDs := make([]int, len(tagIDs))
+	for i, id := range tagIDs {
+		intTagIDs[i] = int(id)
+	}
+
+	query := `SELECT word FROM tags WHERE id = ANY($1)`
+	rows, err := db.Query(query, pq.Array(intTagIDs))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tag words: %v", err)
+	}
+	defer rows.Close()
+
+	var tagWords []string
+	for rows.Next() {
+		var word string
+		if err := rows.Scan(&word); err != nil {
+			log.Printf("⚠️ Warning: Failed to scan tag word: %v", err)
+			continue
+		}
+		tagWords = append(tagWords, word)
+	}
+
+	return tagWords, nil
+}
+
+// GetVideosByTagCategory gets videos that have tags associated with a specific category
+func (db *DB) GetVideosByTagCategory(categoryID int, page, limit int) ([]MasterVideo, int, error) {
+	// First, get all tag IDs for this category
+	var tagIDs pq.Int64Array
+	err := db.QueryRow(`
+		SELECT COALESCE(tag_ids, '{}') FROM tag_categories 
+		WHERE id = $1
+	`, categoryID).Scan(&tagIDs)
+
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get tag IDs for category %d: %v", categoryID, err)
+	}
+
+	if len(tagIDs) == 0 {
+		// No tags in this category, return empty result
+		return []MasterVideo{}, 0, nil
+	}
+
+	// Convert to []int for the query
+	intTagIDs := make([]int, len(tagIDs))
+	for i, id := range tagIDs {
+		intTagIDs[i] = int(id)
+	}
+
+	// Calculate offset for pagination
+	offset := (page - 1) * limit
+
+	// Query videos that have any of these tag IDs
+	query := `
+		SELECT id, title, description, video_url, thumbnail_url, duration, 
+		       created_at, updated_at, tagged, COALESCE(tag_ids, '{}')
+		FROM master_video_list 
+		WHERE tag_ids && $1::INTEGER[]
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := db.Query(query, pq.Array(intTagIDs), limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to query videos by tag category: %v", err)
+	}
+	defer rows.Close()
+
+	var videos []MasterVideo
+	for rows.Next() {
+		var video MasterVideo
+		var tagIDsArray pq.Int64Array
+
+		err := rows.Scan(
+			&video.ID,
+			&video.Title,
+			&video.Description,
+			&video.VideoURL,
+			&video.ThumbnailURL,
+			&video.Duration,
+			&video.CreatedAt,
+			&video.UpdatedAt,
+			&video.Tagged,
+			&tagIDsArray,
+		)
+		if err != nil {
+			log.Printf("⚠️ Warning: Failed to scan video row: %v", err)
+			continue
+		}
+
+		// Convert tag IDs to integers
+		video.TagIDs = make([]int, len(tagIDsArray))
+		for i, id := range tagIDsArray {
+			video.TagIDs[i] = int(id)
+		}
+
+		videos = append(videos, video)
+	}
+
+	// Get total count for pagination
+	countQuery := `
+		SELECT COUNT(*) FROM master_video_list 
+		WHERE tag_ids && $1::INTEGER[]
+	`
+	var totalCount int
+	err = db.QueryRow(countQuery, pq.Array(intTagIDs)).Scan(&totalCount)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to count videos by tag category: %v", err)
+	}
+
+	log.Printf("✅ Retrieved %d videos for category %d (page %d, total: %d)", len(videos), categoryID, page, totalCount)
+	return videos, totalCount, nil
 }

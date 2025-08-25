@@ -198,12 +198,29 @@ export class VideoOptimizationService {
       
     } catch (error) {
       this.performanceMetrics.preloadFailures++;
-      console.warn(`❌ Video metadata preload failed: ${error}`);
       
-      // Don't re-add to queue if it's a rate limit error (already handled above)
-      if (error instanceof Error && !error.message.includes('Rate limited')) {
-        // For other errors, we might want to retry later
-        console.log(`🔄 Will retry ${videoId} later`);
+      // Handle different types of errors differently
+      if (error instanceof Error) {
+        if (error.message.includes('404') || error.message.includes('not found')) {
+          // Don't retry 404 errors - video doesn't exist in Bunny.net
+          console.warn(`⚠️ Video ${videoId} not found in Bunny.net (404) - skipping future preloads`);
+          // Mark as permanently failed to avoid future attempts
+          this.cache.set(videoId, {
+            data: null,
+            timestamp: Date.now(),
+            accessCount: 0,
+            error: '404_NOT_FOUND'
+          });
+        } else if (error.message.includes('Rate limited')) {
+          // Rate limit errors are already handled above
+          console.warn(`🚦 Rate limited for video ${videoId}`);
+        } else {
+          // For other errors, we might want to retry later
+          console.warn(`❌ Video metadata preload failed for ${videoId}: ${error.message}`);
+          console.log(`🔄 Will retry ${videoId} later`);
+        }
+      } else {
+        console.warn(`❌ Unknown error preloading video ${videoId}:`, error);
       }
     }
   }
@@ -239,6 +256,13 @@ export class VideoOptimizationService {
   // Throttled queue addition
   private addToPreloadQueue(videoId: string): void {
     if (this.preloadQueue.has(videoId)) return;
+    
+    // Don't add if it previously failed with 404
+    const cached = this.cache.get(videoId);
+    if (cached && cached.error === '404_NOT_FOUND') {
+      console.log(`⚠️ Skipping ${videoId} - previously failed with 404`);
+      return;
+    }
     
     this.preloadQueue.add(videoId);
     console.log(`📝 Added ${videoId} to preload queue (${this.preloadQueue.size} total)`);

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+	import { replaceState } from '$app/navigation';
 	import { videoService, type Video, type VideoCategory, type VideosResponse, type BunnyCollection } from '$lib/video';
 	import VideoCard from '$lib/components/VideoCard.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
@@ -12,33 +13,33 @@
 	import { auth, isAdmin } from '$lib/auth';
 	import { goto } from '$app/navigation';
 
-	let videos: Video[] = [];
-	let latestVideos: Video[] = [];
-	let searchResults: Video[] = [];
-	let allSearchResults: Video[] = []; // Store all search results for client-side filtering
-	let collections: BunnyCollection[] = [];
-	let categories: VideoCategory[] = [];
-	let loading = false;
-	let error = '';
-	let searchQuery = '';
-	let selectedCategory = '';
-	let currentPage = 1;
-	let hasMore = true;
-	let loadingMore = false;
-	let authChecking = true;
-	let initialDataLoaded = false;
-	let activeTab: 'latest' | 'collections' | 'topics' | 'allVideos' = 'allVideos';
+	let videos = $state<Video[]>([]);
+	let latestVideos = $state<Video[]>([]);
+	let searchResults = $state<Video[]>([]);
+	let allSearchResults = $state<Video[]>([]); // Store all search results for client-side filtering
+	let collections = $state<BunnyCollection[]>([]);
+	let categories = $state<VideoCategory[]>([]);
+	let loading = $state(false);
+	let error = $state('');
+	let searchQuery = $state('');
+	let selectedCategory = $state('');
+	let currentPage = $state(1);
+	let hasMore = $state(true);
+	let loadingMore = $state(false);
+	let authChecking = $state(true);
+	let initialDataLoaded = $state(false);
+	let activeTab = $state<'latest' | 'collections' | 'categories' | 'allVideos'>('categories');
 	let scrollThreshold = 800; // pixels from bottom to trigger auto-load (accounts for footer height)
 	let searchTimeout: NodeJS.Timeout | null = null;
-	let isSearching = false;
+	let isSearching = $state(false);
 
-	// Set active tab from URL parameter
-	$: {
+	// Set active tab from URL parameter using Svelte 5 $effect
+	$effect(() => {
 		const tabParam = $page.url.searchParams.get('tab');
-		if (tabParam && ['latest', 'collections', 'topics', 'allVideos'].includes(tabParam)) {
+		if (tabParam && ['latest', 'collections', 'categories', 'allVideos'].includes(tabParam)) {
 			activeTab = tabParam as typeof activeTab;
 		}
-	}
+	});
 
 	// Client-side search filtering function
 	function clientSideFilter(videoList: Video[], query: string): Video[] {
@@ -59,8 +60,8 @@
 		});
 	}
 
-	// Reactive statement to handle real-time search with client-side filtering
-	$: {
+	// Handle real-time search with client-side filtering using Svelte 5 $effect
+	$effect(() => {
 		if (searchTimeout) {
 			clearTimeout(searchTimeout);
 		}
@@ -72,21 +73,21 @@
 				clearSearch();
 			}
 		}, 300); // 300ms debounce
-	}
+	});
 
 	// Get the current video list based on tab and search state with client-side filtering
-	$: currentVideos = searchQuery.length > 0 ? 
+	let currentVideos = $derived(searchQuery.length > 0 ? 
 		clientSideFilter(allSearchResults, searchQuery) : 
-		(activeTab === 'latest' ? latestVideos : videos);
+		(activeTab === 'latest' ? latestVideos : videos));
 
-	// Update searchResults when allSearchResults or searchQuery changes
-	$: {
+	// Update searchResults when allSearchResults or searchQuery changes using Svelte 5 $effect
+	$effect(() => {
 		if (searchQuery.length > 0) {
 			searchResults = clientSideFilter(allSearchResults, searchQuery);
 		} else {
 			searchResults = [];
 		}
-	}
+	});
 
 	onMount(() => {
 		// Initialize data asynchronously
@@ -176,7 +177,7 @@
 			loading = true;
 			error = '';
 
-			// Load collections
+			// Load collections (keep for backward compatibility)
 			try {
 				const collectionsResponse = await videoService.getCollections();
 				collections = collectionsResponse.items || [];
@@ -185,12 +186,19 @@
 				collections = [];
 			}
 
-			// Load categories
+			// Load tag categories from streaming admin system (no fallback to mock data)
 			try {
-				const categoriesResponse = await videoService.getCategories();
+				console.log('🔍 Loading tag categories from /api/v1/tag-categories');
+				const categoriesResponse = await videoService.getTagCategories();
 				categories = categoriesResponse.categories || [];
+				console.log('🗃️ Raw categoriesResponse:', categoriesResponse);
+				console.log('✅ Loaded tag categories:', categories);
+				console.log('📊 Categories count:', categories.length);
+				if (categories.length > 0) {
+					console.log('🔍 First category structure:', categories[0]);
+				}
 			} catch (err) {
-				console.warn('Failed to load categories:', err);
+				console.error('❌ Failed to load tag categories:', err);
 				categories = [];
 			}
 
@@ -487,10 +495,10 @@
 	function switchTab(tab: typeof activeTab) {
 		activeTab = tab;
 		
-		// Update URL to reflect the active tab
-		const url = new URL(window.location.href);
+		// Update URL to reflect the active tab using SvelteKit navigation
+		const url = new URL($page.url);
 		url.searchParams.set('tab', tab);
-		window.history.replaceState({}, '', url.toString());
+		replaceState(url.toString(), {});
 		
 		if (tab === 'latest' || tab === 'allVideos') {
 			// Don't clear search when switching between video tabs
@@ -505,13 +513,127 @@
 				}
 			}
 		} else {
-			// Clear search when going to collections or topics
+			// Clear search when going to collections or categories
 			if (searchQuery) {
 				searchQuery = '';
 				clearSearch();
 			}
 		}
 	}
+
+	// Category section state for lazy loading - using Svelte 5 reactive approach
+	let categoryVideoStates = $state(new Map());
+	
+	function getCategoryVideoState(categoryId: number) {
+		if (!categoryVideoStates.has(categoryId)) {
+			categoryVideoStates.set(categoryId, {
+				loading: false,
+				data: null,
+				error: null,
+				promise: null
+			});
+		}
+		return categoryVideoStates.get(categoryId);
+	}
+	
+	async function loadCategoryVideos(category: VideoCategory) {
+		const state = getCategoryVideoState(category.id);
+		
+		// Return cached result if available
+		if (state.data) {
+			console.log(`🔄 Returning cached result for category: ${category.name}`);
+			return state.data;
+		}
+
+		// Return existing promise if already loading
+		if (state.promise) {
+			console.log(`🔄 Returning existing promise for category: ${category.name}`);
+			return state.promise;
+		}
+
+		console.log(`🎬 Loading videos for category: ${category.name} (ID: ${category.id})`);
+		console.log(`🔍 Full category object:`, category);
+		console.log(`🏷️ Category has ${category.tagIds?.length || 0} tag IDs:`, category.tagIds);
+		console.log(`🏷️ Raw tag_ids (if exists):`, (category as any).tag_ids);
+		
+		// Set loading state
+		state.loading = true;
+		state.error = null;
+		
+		// Create and cache the loading promise
+		const loadingPromise = videoService.getVideosByTagCategory(category.id, 1, 10)
+			.then(response => {
+				console.log(`✅ Loaded ${response.videos?.length || 0} videos for category: ${category.name}`);
+				console.log(`📊 Response structure:`, { 
+					hasVideos: !!response.videos, 
+					videoCount: response.videos?.length,
+					hasPagination: !!response.pagination 
+				});
+				
+				// Log the actual videos retrieved
+				if (response.videos && response.videos.length > 0) {
+					console.log(`🎬 Videos for category "${category.name}":`, response.videos.map(video => ({
+						id: video.id,
+						title: video.title,
+						description: video.description?.substring(0, 100) + '...',
+						thumbnailUrl: video.thumbnailUrl,
+						duration: video.duration,
+						tags: video.tags
+					})));
+				} else {
+					console.log(`❌ No videos found for category "${category.name}"`);
+				}
+				
+				// Log pagination details
+				if (response.pagination) {
+					console.log(`📄 Pagination for "${category.name}":`, response.pagination);
+				}
+				
+				// Update state
+				state.loading = false;
+				state.data = response;
+				state.promise = null;
+				
+				// Force reactivity by creating new Map reference
+				categoryVideoStates = new Map(categoryVideoStates);
+				
+				return response;
+			})
+			.catch(error => {
+				console.error(`❌ Failed to load videos for category: ${category.name}`, error);
+				
+				// Update error state
+				state.loading = false;
+				state.error = error;
+				state.promise = null;
+				
+				// Force reactivity by creating new Map reference
+				categoryVideoStates = new Map(categoryVideoStates);
+				
+				throw error;
+			});
+
+		// Cache the loading promise
+		state.promise = loadingPromise;
+		
+		// Force reactivity by creating new Map reference
+		categoryVideoStates = new Map(categoryVideoStates);
+		
+		return loadingPromise;
+	}
+	
+	// Auto-trigger loading for categories when they become available
+	$effect(() => {
+		if (categories.length > 0) {
+			categories.forEach(category => {
+				const state = getCategoryVideoState(category.id);
+				// Only trigger loading if we haven't started yet
+				if (!state.data && !state.loading && !state.error && !state.promise) {
+					loadCategoryVideos(category);
+				}
+			});
+		}
+	});
 </script>
 
 <svelte:head>
@@ -547,27 +669,27 @@
 								
 							
 							<button 
-								class="tab-button {activeTab === 'topics' ? 'active' : ''}" 
-								on:click={() => switchTab('topics')}
+								class="tab-button {activeTab === 'categories' ? 'active' : ''}" 
+								onclick={() => switchTab('categories')}
 							>
-								Topics
+								Categories
 							</button>
 						
 							<button
 								class="tab-button {activeTab === 'allVideos' ? 'active' : ''}"
-								on:click={() => switchTab('allVideos')}
+								onclick={() => switchTab('allVideos')}
 							>
 								All Videos
 							</button>
 							<button 
 								class="tab-button {activeTab === 'latest' ? 'active' : ''}" 
-								on:click={() => switchTab('latest')}
+								onclick={() => switchTab('latest')}
 							>
 								Latest Videos
 							</button>
 							<button 
 								class="tab-button {activeTab === 'collections' ? 'active' : ''}" 
-								on:click={() => switchTab('collections')}
+								onclick={() => switchTab('collections')}
 							>Collections
 							</button>
 						</div>
@@ -585,11 +707,11 @@
 											bind:value={searchQuery}
 										/>
 										{#if searchQuery}
-											<button class="btn-clear" on:click={handleClearSearch} title="Clear search">
+											<button class="btn-clear" onclick={handleClearSearch} title="Clear search">
 												✕
 											</button>
 										{/if}
-										<button class="btn-primary" on:click={handleSearch}>
+										<button class="btn-primary" onclick={handleSearch}>
 											🔍 Search
 										</button>
 									</div>
@@ -613,7 +735,7 @@
 									<div class="no-results">
 										<p>No videos found{searchQuery ? ` for "${searchQuery}"` : ''}.</p>
 										{#if searchQuery}
-											<button class="btn-secondary" on:click={handleClearSearch}>
+											<button class="btn-secondary" onclick={handleClearSearch}>
 												Clear Search
 											</button>
 										{/if}
@@ -627,7 +749,7 @@
 
 									{#if hasMore && !isSearching}
 										<div class="load-more">
-											<button class="btn-secondary" on:click={loadMore} disabled={loadingMore}>
+											<button class="btn-secondary" onclick={loadMore} disabled={loadingMore}>
 												{loadingMore ? 'Loading...' : 'Load More (or keep scrolling)'}
 											</button>
 										</div>
@@ -649,11 +771,11 @@
 											bind:value={searchQuery}
 										/>
 										{#if searchQuery}
-											<button class="btn-clear" on:click={handleClearSearch} title="Clear search">
+											<button class="btn-clear" onclick={handleClearSearch} title="Clear search">
 												✕
 											</button>
 										{/if}
-										<button class="btn-primary" on:click={handleSearch}>
+										<button class="btn-primary" onclick={handleSearch}>
 											🔍 Search
 										</button>
 									</div>
@@ -677,7 +799,7 @@
 									<div class="no-results">
 										<p>No videos found{searchQuery ? ` for "${searchQuery}"` : ''}.</p>
 										{#if searchQuery}
-											<button class="btn-secondary" on:click={handleClearSearch}>
+											<button class="btn-secondary" onclick={handleClearSearch}>
 												Clear Search
 											</button>
 										{/if}
@@ -691,7 +813,7 @@
 
 									{#if hasMore && !isSearching}
 										<div class="load-more">
-											<button class="btn-secondary" on:click={loadMore} disabled={loadingMore}>
+											<button class="btn-secondary" onclick={loadMore} disabled={loadingMore}>
 												{loadingMore ? 'Loading...' : 'Load More (or keep scrolling)'}
 											</button>
 										</div>
@@ -709,7 +831,7 @@
 										<a 
 											href="/videos/collections/{collection.guid}" 
 											class="collection-card"
-											on:click|preventDefault={() => goto(`/videos/collections/${collection.guid}`)}
+											onclick={(e) => { e.preventDefault(); goto(`/videos/collections/${collection.guid}`); }}
 										>
 											<div class="collection-image">
 												<img 
@@ -733,19 +855,98 @@
 							</section>
 						{/if}
 
-						<!-- Topics Section -->
-						{#if activeTab === 'topics'}
-							<section class="topics">
-								<h2>Browse by Topic</h2>
-								<div class="topics-grid">
+						<!-- Categories Section -->
+						{#if activeTab === 'categories'}
+							<section class="categories">
+								<h2>Browse by Category</h2>
+								<!--<div class="debug-info">
+									<p><strong>Debug Info:</strong></p>
+									<p>Categories loaded: {categories.length}</p>
+									<p>Active tab: {activeTab}</p>
+									<p>Categories array: {JSON.stringify(categories.map(c => ({id: c.id, name: c.name, tagIds: c.tagIds})), null, 2)}</p>
+								</div>-->
+								<div class="categories-container">
 									{#each categories as category (category.id)}
-										<div class="topic-card">
-											<h3>{category.name}</h3>
-											<p>{category.videoCount} videos</p>
-											<p class="description">{category.description}</p>
-											<button class="btn-primary" on:click={() => goto(`/videos/topics/${category.name}`)}>
-												Explore Topic
-											</button>
+										{@const categoryState = getCategoryVideoState(category.id)}
+										<div class="category-section debug-category" data-category-id={category.id}>
+											<div class="category-header">
+												<h3>{category.name}</h3>
+												<p class="category-description">{category.description}</p>
+												<div class="category-stats">
+													<span class="tag-count">{(category.tagIds?.length || (category as any).tag_ids?.length || 0)} tags</span>
+													<span class="video-count">
+														{#if categoryState.data}
+															{categoryState.data.videos?.length || 0} videos loaded
+														{:else if categoryState.loading}
+															Loading videos...
+														{:else}
+															Click to load videos
+														{/if}
+													</span>
+												</div>
+											</div>
+											
+											{#if !categoryState.data && !categoryState.loading && !categoryState.error}
+												<!-- Initial state - trigger loading -->
+												<div class="category-loading">
+													<LoadingSpinner size="small" />
+													<p>Loading videos for {category.name}...</p>
+												</div>
+											{:else if categoryState.loading}
+												<div class="category-loading">
+													<LoadingSpinner size="small" />
+													<p>Loading videos for {category.name}...</p>
+												</div>
+											{:else if categoryState.error}
+												<div class="category-error">
+													<p>Failed to load videos for {category.name}.</p>
+													<p class="error-details">{categoryState.error.message || 'Unknown error'}</p>
+													<button onclick={() => {
+														// Reset state and retry
+														categoryState.loading = false;
+														categoryState.data = null;
+														categoryState.error = null;
+														categoryState.promise = null;
+														categoryVideoStates = new Map(categoryVideoStates);
+														loadCategoryVideos(category);
+													}}>
+														Retry
+													</button>
+												</div>
+											{:else if categoryState.data}
+												{#if categoryState.data.videos && categoryState.data.videos.length > 0}
+													<div class="category-videos-carousel">
+														{#each categoryState.data.videos as video (video.id)}
+															<VideoCard {video} />
+														{/each}
+														
+														<!-- See More Card -->
+														<div class="see-more-card" 
+															onclick={() => goto(`/videos/categories/${category.id}`)} 
+															onkeydown={(e) => e.key === 'Enter' && goto(`/videos/categories/${category.id}`)} 
+															role="button" 
+															tabindex="0">
+															<div class="see-more-content">
+																<div class="see-more-icon">→</div>
+																<h4>See More</h4>
+																<p>View all videos in {category.name}</p>
+																<span class="total-count">
+																	{categoryState.data.pagination?.total || categoryState.data.videos.length} total videos
+																</span>
+															</div>
+														</div>
+													</div>
+												{:else}
+													<div class="no-videos-message">
+														<p>No videos found for this category yet.</p>
+														<p class="debug-info">
+															Category has {(category.tagIds?.length || (category as any).tag_ids?.length || 0)} tags: 
+															{(category.tagIds?.slice(0, 5) || (category as any).tag_ids?.slice(0, 5) || []).join(', ') || 'none'}
+															{((category.tagIds?.length || (category as any).tag_ids?.length || 0) > 5) ? '...' : ''}
+														</p>
+													</div>
+												{/if}
+											{/if}
 										</div>
 									{/each}
 								</div>
@@ -797,38 +998,7 @@
 		}
 	}
 
-	.auth-notice {
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		padding: 1rem;
-		margin-top: 1rem;
-		max-width: 600px;
-		margin-left: auto;
-		margin-right: auto;
 
-		p {
-			margin: 0;
-			font-size: 0.9rem;
-			color: var(--color-text-secondary);
-		}
-
-		.link-button {
-			background: none;
-			border: none;
-			color: var(--color-primary);
-			cursor: pointer;
-			text-decoration: underline;
-			font-size: inherit;
-			padding: 0;
-			margin: 0;
-			display: inline;
-		}
-
-		.link-button:hover {
-			color: var(--color-primary-hover);
-		}
-	}
 
 	.hub-tabs {
 		display: flex;
@@ -861,11 +1031,11 @@
 		}
 	}
 
-	.all-videos, .latest-videos, .collections, .topics {
+	.all-videos, .latest-videos, .collections, .categories {
 		margin-bottom: 2rem;
 	}
 
-	.all-videos h2, .latest-videos h2, .collections h2, .topics h2 {
+	.all-videos h2, .latest-videos h2, .collections h2, .categories h2 {
 		font-size: 1.8rem;
 		color: var(--color-text);
 		margin-bottom: 1.5rem;
@@ -929,7 +1099,7 @@
 		width: 100%;
 	}
 
-	.collections-grid, .topics-grid {
+	.collections-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 		gap: 1.5rem;
@@ -937,35 +1107,147 @@
 		width: 100%;
 	}
 
-	.collection-card, .topic-card {
+	.categories-container {
+		display: flex;
+		flex-direction: column;
+		gap: 3rem;
+		margin-bottom: 2rem;
+	}
+
+	.category-section {
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
-		border-radius: 12px;
-		padding: 1.5rem;
-		text-align: center;
-		transition: transform 0.2s, box-shadow 0.2s;
+		border-radius: 16px;
+		padding: 2rem;
+		transition: all 0.3s ease;
 	}
 
-	.collection-card:hover, .topic-card:hover {
-		transform: translateY(-4px);
+	.category-section:hover {
 		box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+		border-color: var(--color-primary);
 	}
 
-	.collection-card h3, .topic-card h3 {
-		font-size: 1.2rem;
+	.category-header {
+		margin-bottom: 1.5rem;
+		text-align: center;
+	}
+
+	.category-header h3 {
+		font-size: 1.8rem;
 		color: var(--color-text);
+		margin-bottom: 0.5rem;
+		font-weight: 600;
+	}
+
+	.category-description {
+		color: var(--color-text-secondary);
+		font-size: 1rem;
+		margin: 0;
+		line-height: 1.5;
+	}
+
+	.category-videos-carousel {
+		display: flex;
+		gap: 1.5rem;
+		overflow-x: auto;
+		padding: 1rem 0;
+		scroll-behavior: smooth;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	.category-videos-carousel::-webkit-scrollbar {
+		height: 8px;
+	}
+
+	.category-videos-carousel::-webkit-scrollbar-track {
+		background: var(--color-surface);
+		border-radius: 4px;
+	}
+
+	.category-videos-carousel::-webkit-scrollbar-thumb {
+		background: var(--color-border);
+		border-radius: 4px;
+	}
+
+	.category-videos-carousel::-webkit-scrollbar-thumb:hover {
+		background: var(--color-primary);
+	}
+
+	.see-more-card {
+		min-width: 320px;
+		height: 240px;
+		background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
+		border-radius: 12px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		transition: all 0.3s ease;
+		color: white;
+		text-align: center;
+		flex-shrink: 0;
+	}
+
+	.see-more-card:hover {
+		transform: translateY(-4px);
+		box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+	}
+
+	.see-more-content h4 {
+		font-size: 1.4rem;
+		margin: 0.5rem 0;
+		font-weight: 600;
+	}
+
+	.see-more-content p {
+		margin: 0;
+		opacity: 0.9;
+		font-size: 0.9rem;
+	}
+
+	.see-more-icon {
+		font-size: 2rem;
+		font-weight: bold;
 		margin-bottom: 0.5rem;
 	}
 
-	.collection-card p, .topic-card p {
+	.category-loading {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 1rem;
+		padding: 2rem;
 		color: var(--color-text-secondary);
-		margin-bottom: 1rem;
 	}
 
-	.topic-card .description {
-		font-size: 0.9rem;
-		line-height: 1.4;
+	.category-loading p {
+		margin: 0;
 	}
+
+	.no-videos-message {
+		text-align: center;
+		padding: 2rem;
+		color: var(--color-text-secondary);
+		font-style: italic;
+	}
+
+	.no-videos-message p {
+		margin: 0;
+	}
+
+	.category-error {
+		text-align: center;
+		padding: 2rem;
+		color: var(--color-error, #ef4444);
+		background: rgba(239, 68, 68, 0.1);
+		border-radius: 8px;
+	}
+
+	.category-error p {
+		margin: 0;
+	}
+
+
 
 	.load-more {
 		display: flex;
@@ -1227,4 +1509,206 @@
 			max-width: 200px;
 		}
 	}
+
+	/* Category Section Styles */
+	.categories {
+		margin-bottom: 3rem;
+	}
+
+	.categories h2 {
+		font-size: 2rem;
+		color: var(--color-text);
+		margin-bottom: 2rem;
+		text-align: center;
+	}
+
+	.categories-container {
+		display: flex;
+		flex-direction: column;
+		gap: 3rem;
+	}
+
+	.category-section {
+		background: var(--color-surface);
+		border-radius: 12px;
+		padding: 2rem;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+		border: 1px solid var(--color-border);
+	}
+
+	.category-header {
+		margin-bottom: 2rem;
+		text-align: center;
+	}
+
+	.category-header h3 {
+		font-size: 1.8rem;
+		color: var(--color-primary);
+		margin: 0 0 0.5rem 0;
+		font-weight: 600;
+	}
+
+	.category-description {
+		color: var(--color-text-secondary);
+		font-size: 1rem;
+		line-height: 1.5;
+		margin: 0 0 1rem 0;
+	}
+
+	.category-stats {
+		display: flex;
+		justify-content: center;
+		gap: 1rem;
+		font-size: 0.9rem;
+	}
+
+	.tag-count, .video-count {
+		background: var(--color-primary-light);
+		color: var(--color-primary);
+		padding: 0.25rem 0.75rem;
+		border-radius: 12px;
+		font-weight: 500;
+	}
+
+	.category-loading {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 1rem;
+		padding: 2rem;
+		color: var(--color-text-secondary);
+	}
+
+	.category-videos-carousel {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+		gap: 1.5rem;
+		margin-top: 1rem;
+	}
+
+	.see-more-card {
+		background: linear-gradient(135deg, var(--color-primary-light), var(--color-primary));
+		border-radius: 12px;
+		padding: 2rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		transition: all 0.3s ease;
+		min-height: 200px;
+		border: 2px dashed var(--color-primary);
+		color: var(--color-primary);
+	}
+
+	.see-more-card:hover {
+		transform: translateY(-4px);
+		box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+		background: var(--color-primary);
+		color: white;
+	}
+
+	.see-more-content {
+		text-align: center;
+	}
+
+	.see-more-icon {
+		font-size: 2rem;
+		margin-bottom: 1rem;
+		font-weight: bold;
+	}
+
+	.see-more-content h4 {
+		font-size: 1.2rem;
+		margin: 0 0 0.5rem 0;
+		font-weight: 600;
+	}
+
+	.see-more-content p {
+		margin: 0 0 0.5rem 0;
+		opacity: 0.8;
+	}
+
+	.total-count {
+		font-size: 0.8rem;
+		opacity: 0.7;
+		font-weight: 500;
+	}
+
+	.no-videos-message {
+		text-align: center;
+		padding: 3rem 2rem;
+		color: var(--color-text-secondary);
+	}
+
+	.debug-info {
+		font-size: 0.8rem;
+		margin-top: 1rem;
+		opacity: 0.7;
+		font-family: monospace;
+	}
+
+	.category-error {
+		text-align: center;
+		padding: 2rem;
+		background: var(--color-error-light);
+		border-radius: 8px;
+		color: var(--color-error);
+	}
+
+	.error-details {
+		font-size: 0.9rem;
+		margin: 0.5rem 0 1rem 0;
+		opacity: 0.8;
+	}
+
+	.category-error button {
+		background: var(--color-error);
+		color: white;
+		border: none;
+		padding: 0.5rem 1rem;
+		border-radius: 6px;
+		cursor: pointer;
+		font-weight: 500;
+		transition: background 0.2s ease;
+	}
+
+	.category-error button:hover {
+		background: var(--color-error-dark);
+	}
+
+	/* Debug styles */
+	.debug-info {
+		background: #f0f0f0;
+		border: 2px solid #007acc;
+		padding: 1rem;
+		margin: 1rem 0;
+		border-radius: 8px;
+		font-family: monospace;
+		font-size: 0.9rem;
+		color: #333;
+	}
+
+	.debug-category {
+		border-radius: 31px;
+background: linear-gradient(145deg, #cacaca, #f0f0f0);
+box-shadow:  11px 11px 18px #676767,
+             -11px -11px 18px #ffffff;
+		margin: 0.5rem 0;
+	}
+
+	@media (max-width: 768px) {
+		.category-videos-carousel {
+			grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+			gap: 1rem;
+		}
+
+		.category-section {
+			padding: 1.5rem;
+		}
+
+		.category-header h3 {
+			font-size: 1.5rem;
+		}
+	}
 </style> 
+
