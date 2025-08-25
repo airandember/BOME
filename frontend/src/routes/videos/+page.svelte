@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+	import { replaceState } from '$app/navigation';
 	import { videoService, type Video, type VideoCategory, type VideosResponse, type BunnyCollection } from '$lib/video';
 	import VideoCard from '$lib/components/VideoCard.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
@@ -494,10 +495,10 @@
 	function switchTab(tab: typeof activeTab) {
 		activeTab = tab;
 		
-		// Update URL to reflect the active tab
-		const url = new URL(window.location.href);
+		// Update URL to reflect the active tab using SvelteKit navigation
+		const url = new URL($page.url);
 		url.searchParams.set('tab', tab);
-		window.history.replaceState({}, '', url.toString());
+		replaceState(url.toString(), {});
 		
 		if (tab === 'latest' || tab === 'allVideos') {
 			// Don't clear search when switching between video tabs
@@ -858,12 +859,12 @@
 						{#if activeTab === 'categories'}
 							<section class="categories">
 								<h2>Browse by Category</h2>
-								<div class="debug-info">
+								<!--<div class="debug-info">
 									<p><strong>Debug Info:</strong></p>
 									<p>Categories loaded: {categories.length}</p>
 									<p>Active tab: {activeTab}</p>
 									<p>Categories array: {JSON.stringify(categories.map(c => ({id: c.id, name: c.name, tagIds: c.tagIds})), null, 2)}</p>
-								</div>
+								</div>-->
 								<div class="categories-container">
 									{#each categories as category (category.id)}
 										{@const categoryState = getCategoryVideoState(category.id)}
@@ -1688,7 +1689,10 @@
 	}
 
 	.debug-category {
-		border: 2px dashed #ff6b6b;
+		border-radius: 31px;
+background: linear-gradient(145deg, #cacaca, #f0f0f0);
+box-shadow:  11px 11px 18px #676767,
+             -11px -11px 18px #ffffff;
 		margin: 0.5rem 0;
 	}
 

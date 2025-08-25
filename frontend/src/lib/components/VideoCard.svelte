@@ -77,7 +77,7 @@
 	role="button"
 	tabindex="0"
 	aria-label="Play video: {video.title}"
-	use:optimizeVideo={video.bunnyVideoId || video.id.toString()}
+	{...(video.bunnyVideoId ? { 'use:optimizeVideo': video.bunnyVideoId } : {})}
 >
 	<div class="thumbnail-container">
 		<LazyImage
