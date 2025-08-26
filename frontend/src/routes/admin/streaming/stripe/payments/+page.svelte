@@ -2,14 +2,14 @@
 	import { onMount } from 'svelte';
 	import { apiRequest } from '$lib/auth';
 
-	let summary: any = null;
-	let loading = true;
-	let error = '';
-	let statusFilter = 'all';
-	let showPaymentModal = false;
-	let selectedPayment: any = null;
+	let summary = $state<any>(null);
+	let loading = $state(true);
+	let error = $state('');
+	let statusFilter = $state('all');
+	let showPaymentModal = $state(false);
+	let selectedPayment = $state<any>(null);
 
-	export let data: any = null;
+	const { data = null } = $props<{ data?: any }>();
 
 	onMount(async () => {
 		if (data) {
@@ -119,12 +119,12 @@
 		}
 	}
 
-	$: allPayments = summary?.payment_intents || [];
-	$: payments = statusFilter === 'all' ? allPayments : allPayments.filter((payment: any) => payment.Status === statusFilter);
-	$: paymentsCount = summary?.payment_intents_count || 0;
-	$: succeededPayments = allPayments.filter((payment: any) => payment.Status === 'succeeded');
-	$: processingPayments = allPayments.filter((payment: any) => payment.Status === 'processing');
-	$: totalRevenue = succeededPayments.reduce((sum: number, payment: any) => sum + payment.Amount, 0);
+	const allPayments = $derived(summary?.payment_intents || []);
+	const payments = $derived(statusFilter === 'all' ? allPayments : allPayments.filter((payment: any) => payment.Status === statusFilter));
+	const paymentsCount = $derived(summary?.payment_intents_count || 0);
+	const succeededPayments = $derived(allPayments.filter((payment: any) => payment.Status === 'succeeded'));
+	const processingPayments = $derived(allPayments.filter((payment: any) => payment.Status === 'processing'));
+	const totalRevenue = $derived(succeededPayments.reduce((sum: number, payment: any) => sum + payment.Amount, 0));
 
 	// Payment modal functions
 	function viewPayment(payment: any) {
@@ -168,7 +168,7 @@
 	<div class="error-state">
 		<h3>Error Loading Payments</h3>
 		<p>{error}</p>
-		<button class="btn btn-primary" on:click={fetchSummary}>Retry</button>
+		<button class="btn btn-primary" onclick={fetchSummary}>Retry</button>
 	</div>
 {:else}
 	<div class="payments-container">
@@ -197,7 +197,7 @@
 			</div>
 			
 			<div class="header-actions">
-				<button class="btn btn-secondary" on:click={fetchSummary}>
+				<button class="btn btn-secondary" onclick={fetchSummary}>
 					🔄 Refresh
 				</button>
 				<!-- <button class="btn btn-primary">
@@ -268,21 +268,21 @@
 									</td>
 									<td class="payment-actions">
 										<div class="action-buttons">
-											<button class="btn btn-sm btn-outline" title="View Payment" on:click={() => viewPayment(payment)}>
+											<button class="btn btn-sm btn-outline" title="View Payment" onclick={() => viewPayment(payment)}>
 												👁️ View
 											</button>
 											{#if payment.Status === 'succeeded'}
-												<button class="btn btn-sm btn-outline" title="Refund Payment" on:click={() => refundPayment(payment)}>
+												<button class="btn btn-sm btn-outline" title="Refund Payment" onclick={() => refundPayment(payment)}>
 													↩️ Refund
 												</button>
 											{/if}
 											{#if payment.Status === 'requires_capture'}
-												<button class="btn btn-sm btn-primary" title="Capture Payment" on:click={() => capturePayment(payment)}>
+												<button class="btn btn-sm btn-primary" title="Capture Payment" onclick={() => capturePayment(payment)}>
 													🎯 Capture
 												</button>
 											{/if}
 											{#if payment.Status !== 'succeeded' && payment.Status !== 'canceled'}
-												<button class="btn btn-sm btn-secondary" title="Cancel Payment" on:click={() => cancelPayment(payment)}>
+												<button class="btn btn-sm btn-secondary" title="Cancel Payment" onclick={() => cancelPayment(payment)}>
 													❌ Cancel
 												</button>
 											{/if}
@@ -349,11 +349,11 @@
 
 <!-- Payment View Modal -->
 {#if showPaymentModal && selectedPayment}
-	<div class="modal-overlay" on:click={handleModalClick} on:keydown={(e) => e.key === 'Escape' && closePaymentModal()} role="dialog" aria-modal="true" tabindex="-1">
+	<div class="modal-overlay" onclick={handleModalClick} onkeydown={(e) => e.key === 'Escape' && closePaymentModal()} role="dialog" aria-modal="true" tabindex="-1">
 		<div class="modal-content" role="document">
 			<div class="modal-header">
 				<h3>💳 Payment Details</h3>
-				<button class="modal-close" on:click={closePaymentModal}>&times;</button>
+				<button class="modal-close" onclick={closePaymentModal}>&times;</button>
 			</div>
 			
 			<div class="modal-body">
@@ -420,21 +420,21 @@
 			</div>
 			
 			<div class="modal-footer">
-				<button class="btn btn-secondary" on:click={closePaymentModal}>
+				<button class="btn btn-secondary" onclick={closePaymentModal}>
 					Close
 				</button>
 				{#if selectedPayment.Status === 'succeeded'}
-					<button class="btn btn-outline" on:click={() => refundPayment(selectedPayment)}>
+					<button class="btn btn-outline" onclick={() => refundPayment(selectedPayment)}>
 						↩️ Refund
 					</button>
 				{/if}
 				{#if selectedPayment.Status === 'requires_capture'}
-					<button class="btn btn-primary" on:click={() => capturePayment(selectedPayment)}>
+					<button class="btn btn-primary" onclick={() => capturePayment(selectedPayment)}>
 						🎯 Capture
 					</button>
 				{/if}
 				{#if selectedPayment.Status !== 'succeeded' && selectedPayment.Status !== 'canceled'}
-					<button class="btn btn-secondary" on:click={() => cancelPayment(selectedPayment)}>
+					<button class="btn btn-secondary" onclick={() => cancelPayment(selectedPayment)}>
 						❌ Cancel
 					</button>
 				{/if}

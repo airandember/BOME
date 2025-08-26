@@ -17,6 +17,7 @@ interface CachedVideoData {
   data: any;
   timestamp: number;
   accessCount: number;
+  error?: string;
 }
 
 interface PerformanceMetrics {

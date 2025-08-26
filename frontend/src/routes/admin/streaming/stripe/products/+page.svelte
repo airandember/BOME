@@ -2,11 +2,11 @@
 	import { onMount } from 'svelte';
 	import { apiRequest } from '$lib/auth';
 
-	let summary: any = null;
-	let loading = true;
-	let error = '';
+	let summary = $state<any>(null);
+	let loading = $state(true);
+	let error = $state('');
 
-	export let data: any = null;
+	const { data = null } = $props<{ data?: any }>();
 
 	onMount(async () => {
 		if (data) {
@@ -64,7 +64,7 @@
 	<div class="error-state">
 		<h3>Error Loading Products</h3>
 		<p>{error}</p>
-		<button class="btn btn-primary" on:click={fetchSummary}>Retry</button>
+		<button class="btn btn-primary" onclick={fetchSummary}>Retry</button>
 	</div>
 {:else if summary}
 	<div class="products-container">

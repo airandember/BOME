@@ -2,14 +2,14 @@
 	import { onMount } from 'svelte';
 	import { apiRequest } from '$lib/auth';
 
-	let summary: any = null;
-	let loading = true;
-	let error = '';
-	let statusFilter = 'all';
-	let showSubscriptionModal = false;
-	let selectedSubscription: any = null;
+	let summary = $state<any>(null);
+	let loading = $state(true);
+	let error = $state('');
+	let statusFilter = $state('all');
+	let showSubscriptionModal = $state(false);
+	let selectedSubscription = $state<any>(null);
 
-	export let data: any = null;
+	const { data = null } = $props<{ data?: any }>();
 
 	onMount(async () => {
 		if (data) {
@@ -162,13 +162,13 @@
 		}
 	}
 
-	$: allSubscriptions = summary?.subscriptions || [];
-	$: subscriptions = statusFilter === 'all' ? allSubscriptions : allSubscriptions.filter((sub: any) => sub.Status === statusFilter);
-	$: subscriptionsCount = summary?.subscriptions_count || 0;
-	$: activeSubscriptions = allSubscriptions.filter((sub: any) => sub.Status === 'active');
-	$: trialingSubscriptions = allSubscriptions.filter((sub: any) => sub.Status === 'trialing');
-	$: pastDueSubscriptions = allSubscriptions.filter((sub: any) => sub.Status === 'past_due');
-	$: canceledSubscriptions = allSubscriptions.filter((sub: any) => sub.Status === 'canceled' || sub.Status === 'cancelled');
+	const allSubscriptions = $derived(summary?.subscriptions || []);
+	const subscriptions = $derived(statusFilter === 'all' ? allSubscriptions : allSubscriptions.filter((sub: any) => sub.Status === statusFilter));
+	const subscriptionsCount = $derived(summary?.subscriptions_count || 0);
+	const activeSubscriptions = $derived(allSubscriptions.filter((sub: any) => sub.Status === 'active'));
+	const trialingSubscriptions = $derived(allSubscriptions.filter((sub: any) => sub.Status === 'trialing'));
+	const pastDueSubscriptions = $derived(allSubscriptions.filter((sub: any) => sub.Status === 'past_due'));
+	const canceledSubscriptions = $derived(allSubscriptions.filter((sub: any) => sub.Status === 'canceled' || sub.Status === 'cancelled'));
 
 	// Subscription modal functions
 	function viewSubscription(subscription: any) {
@@ -217,7 +217,7 @@
 	<div class="error-state">
 		<h3>Error Loading Subscriptions</h3>
 		<p>{error}</p>
-		<button class="btn btn-primary" on:click={fetchSummary}>Retry</button>
+		<button class="btn btn-primary" onclick={fetchSummary}>Retry</button>
 	</div>
 {:else}
 	<div class="subscriptions-container">
@@ -246,7 +246,7 @@
 			</div>
 			
 			<div class="header-actions">
-				<button class="btn btn-secondary" on:click={fetchSummary}>
+				<button class="btn btn-secondary" onclick={fetchSummary}>
 					🔄 Refresh
 				</button>
 				<!-- <button class="btn btn-primary">
@@ -319,21 +319,21 @@
 									</td>
 									<td class="subscription-actions">
 										<div class="action-buttons">
-											<button class="btn btn-sm btn-outline" title="View Subscription" on:click={() => viewSubscription(subscription)}>
+											<button class="btn btn-sm btn-outline" title="View Subscription" onclick={() => viewSubscription(subscription)}>
 												👁️ View
 											</button>
 											{#if subscription.Status === 'active' && !subscription.CancelAtPeriodEnd}
-												<button class="btn btn-sm btn-secondary" title="Cancel Subscription" on:click={() => cancelSubscription(subscription)}>
+												<button class="btn btn-sm btn-secondary" title="Cancel Subscription" onclick={() => cancelSubscription(subscription)}>
 													❌ Cancel
 												</button>
 											{/if}
 											{#if subscription.Status === 'active'}
-												<button class="btn btn-sm btn-outline" title="Update Subscription" on:click={() => updateSubscription(subscription)}>
+												<button class="btn btn-sm btn-outline" title="Update Subscription" onclick={() => updateSubscription(subscription)}>
 													✏️ Update
 												</button>
 											{/if}
 											{#if subscription.Status === 'canceled' || subscription.Status === 'cancelled'}
-												<button class="btn btn-sm btn-primary" title="Reactivate Subscription" on:click={() => reactivateSubscription(subscription)}>
+												<button class="btn btn-sm btn-primary" title="Reactivate Subscription" onclick={() => reactivateSubscription(subscription)}>
 													🔄 Reactivate
 												</button>
 											{/if}
@@ -451,11 +451,11 @@
 
 <!-- Subscription View Modal -->
 {#if showSubscriptionModal && selectedSubscription}
-	<div class="modal-overlay" on:click={handleModalClick} on:keydown={(e) => e.key === 'Escape' && closeSubscriptionModal()} role="dialog" aria-modal="true" tabindex="-1">
+	<div class="modal-overlay" onclick={handleModalClick} onkeydown={(e) => e.key === 'Escape' && closeSubscriptionModal()} role="dialog" aria-modal="true" tabindex="-1">
 		<div class="modal-content" role="document">
 			<div class="modal-header">
 				<h3>🔄 Subscription Details</h3>
-				<button class="modal-close" on:click={closeSubscriptionModal}>&times;</button>
+				<button class="modal-close" onclick={closeSubscriptionModal}>&times;</button>
 			</div>
 			
 			<div class="modal-body">
@@ -522,21 +522,21 @@
 			</div>
 			
 			<div class="modal-footer">
-				<button class="btn btn-secondary" on:click={closeSubscriptionModal}>
+				<button class="btn btn-secondary" onclick={closeSubscriptionModal}>
 					Close
 				</button>
 				{#if selectedSubscription.Status === 'active' && !selectedSubscription.CancelAtPeriodEnd}
-					<button class="btn btn-secondary" on:click={() => cancelSubscription(selectedSubscription)}>
+					<button class="btn btn-secondary" onclick={() => cancelSubscription(selectedSubscription)}>
 						❌ Cancel
 					</button>
 				{/if}
 				{#if selectedSubscription.Status === 'active'}
-					<button class="btn btn-outline" on:click={() => updateSubscription(selectedSubscription)}>
+					<button class="btn btn-outline" onclick={() => updateSubscription(selectedSubscription)}>
 						✏️ Update
 					</button>
 				{/if}
 				{#if selectedSubscription.Status === 'canceled' || selectedSubscription.Status === 'cancelled'}
-					<button class="btn btn-primary" on:click={() => reactivateSubscription(selectedSubscription)}>
+					<button class="btn btn-primary" onclick={() => reactivateSubscription(selectedSubscription)}>
 						🔄 Reactivate
 					</button>
 				{/if}

@@ -96,67 +96,158 @@ func SetupRoutes(
 	v1 := router.Group("/api/v1")
 	fmt.Printf("Created v1 route group with base path: %s\n", v1.BasePath())
 
-	// Admin routes
+	// Admin routes - only setup if database is available
 	admin := v1.Group("/admin")
-	SetupAdminRoutes(admin, db)
+	if db != nil {
+		SetupAdminRoutes(admin, db)
 
-	// Create plan history service for analytics
-	planHistoryService := services.NewPlanHistoryService(db)
-	SetupAnalyticsRoutes(admin, db, planHistoryService)
+		// Create plan history service for analytics
+		planHistoryService := services.NewPlanHistoryService(db)
+		SetupAnalyticsRoutes(admin, db, planHistoryService)
 
-	// Initialize subscription services
-	subscriptionPlanService := services.NewSubscriptionPlanService(db)
-	subscriptionPlanStripeService := services.NewSubscriptionPlanStripeService(db, stripeService)     // Add Stripe-integrated service
-	subscriptionOffersStripeService := services.NewSubscriptionOffersStripeService(db, stripeService) // Add Stripe-integrated offers service
+		// Initialize subscription services
+		subscriptionPlanService := services.NewSubscriptionPlanService(db)
+		subscriptionPlanStripeService := services.NewSubscriptionPlanStripeService(db, stripeService)     // Add Stripe-integrated service
+		subscriptionOffersStripeService := services.NewSubscriptionOffersStripeService(db, stripeService) // Add Stripe-integrated offers service
 
-	// Create admin cache service
-	analyticsService := services.NewSubscriptionAnalyticsService(db)
-	SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService, subscriptionPlanStripeService, subscriptionOffersStripeService)
-	SetupMasterVideoRoutes(admin, db, bunnyService)
+		// Create admin cache service
+		analyticsService := services.NewSubscriptionAnalyticsService(db)
+		SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService, subscriptionPlanStripeService, subscriptionOffersStripeService)
+		SetupMasterVideoRoutes(admin, db, bunnyService)
 
-	// Setup tag routes
-	SetupTagRoutes(router, db)
+		// Setup tag routes
+		SetupTagRoutes(router, db)
 
-	// Initialize remaining subscription services
-	subscriberService := services.NewSubscriberService(db)
-	subscriptionOffersService := services.NewSubscriptionOffersService(db)
-	subscriberHistoryService := services.NewSubscriberHistoryService(db)
+		// Initialize remaining subscription services
+		subscriberService := services.NewSubscriberService(db)
+		subscriptionOffersService := services.NewSubscriptionOffersService(db)
+		subscriberHistoryService := services.NewSubscriberHistoryService(db)
 
-	// Setup subscription-related routes under admin group
-	fmt.Printf("Setting up subscription plan routes...\n")
-	SetupSubscriptionPlanRoutes(admin, db, subscriptionPlanService)
-	fmt.Printf("Setting up subscription plan Stripe integration routes...\n")
-	// Note: Stripe routes are now set up within SetupAdminStreamingRoutes
-	fmt.Printf("Setting up subscription offers routes...\n")
-	SetupSubscriptionOfferRoutes(router, db, subscriptionOffersService)
-	fmt.Printf("Setting up subscriber routes...\n")
-	SetupSubscriberRoutes(admin, db, subscriberService)
-	fmt.Printf("Setting up subscriber history routes...\n")
-	SetupSubscriberHistoryRoutes(admin, db, subscriberHistoryService)
-	SetupSubscriptionRoutes(router, db, stripeService, analyticsService)
+		// Setup subscription-related routes under admin group
+		fmt.Printf("Setting up subscription plan routes...\n")
+		SetupSubscriptionPlanRoutes(admin, db, subscriptionPlanService)
+		fmt.Printf("Setting up subscription plan Stripe integration routes...\n")
+		// Note: Stripe routes are now set up within SetupAdminStreamingRoutes
+		fmt.Printf("Setting up subscription offers routes...\n")
+		SetupSubscriptionOfferRoutes(router, db, subscriptionOffersService)
+		fmt.Printf("Setting up subscriber routes...\n")
+		SetupSubscriberRoutes(admin, db, subscriberService)
+		fmt.Printf("Setting up subscriber history routes...\n")
+		SetupSubscriberHistoryRoutes(admin, db, subscriberHistoryService)
+		SetupSubscriptionRoutes(router, db, stripeService, analyticsService)
 
-	// Public subscription plan routes using existing functions
-	publicPlans := v1.Group("/subscription-plans")
-	{
-		// Get all subscription data (plans + offers) - MUST come before /:id
-		publicPlans.GET("/all", func(c *gin.Context) {
-			getAllSubscriptionData(c, subscriptionPlanService, subscriptionOffersService)
+		fmt.Printf("Database-dependent admin routes setup complete\n")
+		fmt.Printf("Subscription services setup complete\n")
+	} else {
+		// Setup fallback admin routes that return service unavailable
+		admin.GET("/health", func(c *gin.Context) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status": "degraded",
+				"error":  "Database unavailable",
+			})
 		})
 
-		// Get active subscription plans
-		publicPlans.GET("/active", func(c *gin.Context) {
-			getActiveSubscriptionPlans(c, subscriptionPlanService)
+		// Streaming dashboard fallback
+		admin.GET("/streaming/dashboard", func(c *gin.Context) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": "Database unavailable - streaming dashboard temporarily offline",
+			})
 		})
 
-		// Get promoted subscription plans
-		publicPlans.GET("/promoted", func(c *gin.Context) {
-			getPromotedSubscriptionPlans(c, subscriptionPlanService)
+		// Stripe routes fallback
+		streaming := admin.Group("/streaming")
+		stripe := streaming.Group("/stripe")
+		{
+			stripe.GET("/summary", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Database unavailable - Stripe integration temporarily offline",
+				})
+			})
+			stripe.POST("/secret", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Database unavailable - cannot save Stripe configuration",
+				})
+			})
+			stripe.GET("/portal-link", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Database unavailable - portal link temporarily unavailable",
+				})
+			})
+			stripe.POST("/portal-link", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Database unavailable - cannot save portal link",
+				})
+			})
+			stripe.DELETE("/portal-link", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Database unavailable - cannot clear portal link",
+				})
+			})
+		}
+
+		// Subscribers fallback
+		admin.GET("/subscribers/", func(c *gin.Context) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": "Database unavailable - subscriber data temporarily offline",
+			})
 		})
 
-		// Get subscription plan by ID (public) - MUST come last
-		publicPlans.GET("/:id", func(c *gin.Context) {
-			getSubscriptionPlanPublic(c, subscriptionPlanService)
-		})
+		fmt.Printf("Database unavailable - admin routes setup with fallbacks\n")
+		fmt.Printf("Skipping subscription services (database unavailable)\n")
+	}
+
+	// Public subscription plan routes - only if database is available
+	if db != nil {
+		subscriptionPlanService := services.NewSubscriptionPlanService(db)
+		subscriptionOffersService := services.NewSubscriptionOffersService(db)
+
+		publicPlans := v1.Group("/subscription-plans")
+		{
+			// Get all subscription data (plans + offers) - MUST come before /:id
+			publicPlans.GET("/all", func(c *gin.Context) {
+				getAllSubscriptionData(c, subscriptionPlanService, subscriptionOffersService)
+			})
+
+			// Get active subscription plans
+			publicPlans.GET("/active", func(c *gin.Context) {
+				getActiveSubscriptionPlans(c, subscriptionPlanService)
+			})
+
+			// Get promoted subscription plans
+			publicPlans.GET("/promoted", func(c *gin.Context) {
+				getPromotedSubscriptionPlans(c, subscriptionPlanService)
+			})
+
+			// Get subscription plan by ID (public) - MUST come last
+			publicPlans.GET("/:id", func(c *gin.Context) {
+				getSubscriptionPlanPublic(c, subscriptionPlanService)
+			})
+		}
+	} else {
+		// Provide fallback responses when database is unavailable
+		publicPlans := v1.Group("/subscription-plans")
+		{
+			publicPlans.GET("/all", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Service temporarily unavailable",
+				})
+			})
+			publicPlans.GET("/active", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Service temporarily unavailable",
+				})
+			})
+			publicPlans.GET("/promoted", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Service temporarily unavailable",
+				})
+			})
+			publicPlans.GET("/:id", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Service temporarily unavailable",
+				})
+			})
+		}
 	}
 
 	fmt.Printf("Admin routes setup complete\n")
@@ -167,7 +258,14 @@ func SetupRoutes(
 	SetupArticlesRoutes(v1)
 	SetupRolesRoutes(v1)
 	SetupStandardizedRolesRoutes(v1)
-	SetupYouTubeRoutes(v1, db)
+
+	// Only setup YouTube routes if database is available
+	if db != nil {
+		SetupYouTubeRoutes(v1, db)
+		fmt.Printf("YouTube routes setup complete\n")
+	} else {
+		fmt.Printf("Skipping YouTube routes (database unavailable)\n")
+	}
 	fmt.Printf("Mock data routes setup complete\n")
 
 	// Real authentication routes

@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -118,12 +119,52 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 		})
 
 		streaming.GET("/stripe/summary", func(c *gin.Context) {
+			// Add detailed request logging for debugging
+			requestID := c.GetHeader("X-Request-ID")
+			debugMode := c.GetHeader("X-Debug-Mode")
+
+			// Get query parameters for section-specific requests
+			section := c.Query("section") // e.g., "customers", "subscriptions", "products"
+			limitStr := c.Query("limit")  // e.g., "100"
+
+			limit := 100 // default limit
+			if limitStr != "" {
+				if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+					limit = parsedLimit
+				}
+			}
+
+			if requestID != "" {
+				fmt.Printf("🔍 [%s] Stripe summary request received - section: %s, limit: %d\n", requestID, section, limit)
+			}
+			if debugMode == "true" {
+				fmt.Printf("🐛 Debug mode enabled for Stripe summary request\n")
+				fmt.Printf("📊 Request headers: %+v\n", c.Request.Header)
+				fmt.Printf("🔑 Stripe service enabled: %v\n", stripeService.IsEnabled())
+				fmt.Printf("🎯 Section filter: %s, Limit: %d\n", section, limit)
+			}
+
 			// never return stored secret; only return runtime capability summary
-			summary, err := stripeService.GetAccountSummary()
+			fmt.Printf("📡 Calling stripeService.GetAccountSummary(section=%s, limit=%d)...\n", section, limit)
+			summary, err := stripeService.GetAccountSummaryWithOptions(section, limit)
 			if err != nil {
+				fmt.Printf("❌ Stripe GetAccountSummary failed: %v\n", err)
+				if requestID != "" {
+					fmt.Printf("🔍 [%s] Request failed with error: %v\n", requestID, err)
+				}
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
+
+			fmt.Printf("✅ Stripe GetAccountSummary succeeded\n")
+			if requestID != "" {
+				fmt.Printf("🔍 [%s] Request completed successfully\n", requestID)
+			}
+			if debugMode == "true" {
+				enabled := summary != nil && summary["enabled"] != nil
+				fmt.Printf("📄 Summary data: enabled=%v\n", enabled)
+			}
+
 			c.JSON(http.StatusOK, gin.H{"summary": summary})
 		})
 

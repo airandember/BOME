@@ -7,23 +7,23 @@
 	import { showToast } from '$lib/toast';
 
 	// State variables
-	let loading = true;
-	let error = '';
+	let loading = $state(true);
+	let error = $state('');
 	
 	// Data arrays for different sync states
-	let stripeOnlyCustomers: any[] = [];
-	let syncedCustomers: any[] = [];
-	let localOnlyUsers: any[] = [];
+	let stripeOnlyCustomers = $state<any[]>([]);
+	let syncedCustomers = $state<any[]>([]);
+	let localOnlyUsers = $state<any[]>([]);
 	
 	// Sync state
-	let syncingCustomers = new Set<string>();
-	let bulkCreatingUsers = false;
+	let syncingCustomers = $state(new Set<string>());
+	let bulkCreatingUsers = $state(false);
 	
 	// Stats
-	let totalCount = 0;
-	let syncedCount = 0;
-	let localOnlyCount = 0;
-	let stripeOnlyCount = 0;
+	let totalCount = $state(0);
+	let syncedCount = $state(0);
+	let localOnlyCount = $state(0);
+	let stripeOnlyCount = $state(0);
 
 	onMount(() => {
 		// Load initial data
@@ -483,7 +483,7 @@
 		</div>
 		
 		<div class="header-actions">
-			<button class="btn btn-secondary" on:click={refreshData}>
+			<button class="btn btn-secondary" onclick={refreshData}>
 				🔄 Refresh Data
 			</button>
 		</div>
@@ -501,7 +501,7 @@
 		<div class="error-container">
 			<h3>Error Loading Data</h3>
 			<p>{error}</p>
-			<button class="btn btn-primary" on:click={refreshData}>Retry</button>
+			<button class="btn btn-primary" onclick={refreshData}>Retry</button>
 		</div>
 	{:else if localOnlyUsers.length === 0 && stripeOnlyCustomers.length === 0 && syncedCustomers.length === 0}
 		<div class="empty-state">

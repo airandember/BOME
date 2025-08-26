@@ -2,27 +2,26 @@
 	import { onMount } from 'svelte';
 	import { apiRequest } from '$lib/auth';
 
-	let secret = '';
-	let saving = false;
-	let error = '';
-	let success = '';
-	let summary: any = null;
-	let loading = true;
+	let secret = $state('');
+	let saving = $state(false);
+	let error = $state('');
+	let success = $state('');
+	let summary = $state<any>(null);
+	let loading = $state(true);
 
 	// Modal state for clear key confirmation
-	let showClearModal = false;
-	let clearConfirmText = '';
+	let showClearModal = $state(false);
+	let clearConfirmText = $state('');
 
 	// Customer portal link state
-	let portalLink = '';
-	let savedPortalLink = ''; // The saved/persisted value
-	let savingPortal = false;
-	let portalError = '';
-	let portalSuccess = '';
-	let editingPortal = false; // Whether we're in edit mode
+	let portalLink = $state('');
+	let savedPortalLink = $state(''); // The saved/persisted value
+	let savingPortal = $state(false);
+	let portalError = $state('');
+	let portalSuccess = $state('');
+	let editingPortal = $state(false); // Whether we're in edit mode
 
-	export let data: any = null;
-	export let onClearKey: () => void;
+	const { data = null, onClearKey } = $props<{ data?: any; onClearKey: () => void }>();
 
 	onMount(async () => {
 		if (data) {
@@ -320,14 +319,14 @@
 					</div>
 
 					<div class="connected-actions">
-						<button class="btn btn-outline" on:click={() => { summary = { enabled: false }; }}>
+						<button class="btn btn-outline" onclick={() => { summary = { enabled: false }; }}>
 							🔑 Update Key
 						</button>
-						<button class="btn btn-secondary" on:click={fetchSummary}>
+						<button class="btn btn-secondary" onclick={fetchSummary}>
 							🔄 Refresh Connection
 						</button>
 						<!-- Use the parent's function -->
-						<button class="btn btn-danger" on:click={onClearKey}>
+						<button class="btn btn-danger" onclick={onClearKey}>
 							🗑️ Clear Key
 						</button>
 					</div>
@@ -350,17 +349,17 @@
 								</div>
 							</div>
 							<div class="saved-portal-actions">
-								<button class="btn btn-outline" on:click={startEditingPortal}>
+								<button class="btn btn-outline" onclick={startEditingPortal}>
 									✏️ Update Link
 								</button>
-								<button class="btn btn-secondary" on:click={clearPortalLink}>
+								<button class="btn btn-secondary" onclick={clearPortalLink}>
 									🗑️ Clear Link
 								</button>
 							</div>
 						</div>
 					{:else}
 						<!-- Edit/Add form -->
-						<form on:submit|preventDefault={savePortalLink} class="portal-form">
+						<form onsubmit={(e) => { e.preventDefault(); savePortalLink(); }} class="portal-form">
 							<div class="input-group">
 								<label for="portal-link" class="input-label">
 									Customer Portal URL
@@ -389,7 +388,7 @@
 									<button 
 										type="button" 
 										class="btn btn-secondary" 
-										on:click={cancelEditingPortal}
+										onclick={cancelEditingPortal}
 									>
 										Cancel
 									</button>
