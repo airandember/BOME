@@ -3,11 +3,11 @@
 	import { apiRequest } from '$lib/auth';
 	import CustomerSyncPanel from '../components/CustomerSyncPanel.svelte';
 
-	let summary: any = null;
-	let loading = true;
-	let error = '';
+	let summary = $state<any>(null);
+	let loading = $state(true);
+	let error = $state('');
 
-	export let data: any = null;
+	const { data = null } = $props<{ data?: any }>();
 
 	onMount(async () => {
 		if (data) {
@@ -87,7 +87,7 @@
 	<div class="error-state">
 		<h3>Error Loading Overview</h3>
 		<p>{error}</p>
-		<button class="btn btn-primary" on:click={refreshData}>Retry</button>
+		<button class="btn btn-primary" onclick={refreshData}>Retry</button>
 	</div>
 {:else if summary}
 	<div class="overview-container">
@@ -165,7 +165,7 @@
 			<div class="environment-indicator {summary.environment === 'live' ? 'live' : 'test'}">
 				{summary.environment === 'live' ? '🔴 LIVE' : '🟡 TEST'} Environment
 			</div>
-			<button class="btn btn-secondary" on:click={refreshData}>
+			<button class="btn btn-secondary" onclick={refreshData}>
 				🔄 Refresh Data
 			</button>
 		</div>

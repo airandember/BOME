@@ -579,18 +579,20 @@ function scheduleTokenRefresh(tokens: AuthTokens) {
 	}
 }
 
-// API helper function
-export async function apiRequest(endpoint: string, options: RequestInit = {}): Promise<Response> {
+// API helper function with progress tracking
+export async function apiRequest(endpoint: string, options: RequestInit & { onProgress?: () => void } = {}): Promise<Response> {
 	const url = `${API_BASE_URL}${endpoint}`;
 	// console.log('Auth: Making API request to:', url);
 	// console.log('Auth: API_BASE_URL:', API_BASE_URL);
 	
+	const { onProgress, ...fetchOptions } = options;
+	
 	const config: RequestInit = {
 		headers: {
 			'Content-Type': 'application/json',
-			...options.headers,
+			...fetchOptions.headers,
 		},
-		...options,
+		...fetchOptions,
 	};
 	
 	// Add auth header if we have tokens
@@ -607,6 +609,36 @@ export async function apiRequest(endpoint: string, options: RequestInit = {}): P
 	try {
 		const response = await fetch(url, config);
 		// console.log('Auth: Response received:', { status: response.status, ok: response.ok, statusText: response.statusText });
+		
+		// If we have a progress callback and the response has a body, track progress
+		if (onProgress && response.body) {
+			const reader = response.body.getReader();
+			const stream = new ReadableStream({
+				start(controller) {
+					function pump(): Promise<void> {
+						return reader.read().then(({ done, value }) => {
+							if (done) {
+								controller.close();
+								return;
+							}
+							
+							// Call progress callback on each chunk
+							onProgress();
+							controller.enqueue(value);
+							return pump();
+						});
+					}
+					return pump();
+				}
+			});
+			
+			// Return a new response with the tracked stream
+			return new Response(stream, {
+				status: response.status,
+				statusText: response.statusText,
+				headers: response.headers
+			});
+		}
 		
 		// Handle 401 - token expired
 		if (response.status === 401 && tokens && !endpoint.includes('/auth/')) {

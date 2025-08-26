@@ -138,8 +138,17 @@
 				await deriveQuickStatsFromSubscribers();
 			}
 		} catch (e) {
-			// Fallback entirely to subscribers
-			try { await deriveQuickStatsFromSubscribers(); } catch {}
+			// Fallback entirely to subscribers (this will gracefully handle Stripe not being configured)
+			console.warn('Dashboard API unavailable, falling back to subscriber stats:', e);
+			try { 
+				await deriveQuickStatsFromSubscribers(); 
+			} catch (subscriberError) {
+				// If subscriber loading also fails, set defaults
+				console.warn('Subscriber stats also unavailable (normal if Stripe not configured):', subscriberError);
+				quickActiveSubscriptions = 0;
+				quickMonthlyRevenue = 0;
+				quickChurnRate = 0;
+			}
 		}
 	}
 
@@ -155,8 +164,9 @@
 	}
 
 	async function deriveQuickStatsFromSubscribers() {
-		const resp = await StreamingSubscriberService.getSubscribers({ limit: 1000 });
-		const subs: Subscriber[] = resp.subscribers || [];
+		try {
+			const resp = await StreamingSubscriberService.getSubscribers({ limit: 1000 });
+			const subs: Subscriber[] = resp.subscribers || [];
 		const now = new Date();
 		const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
@@ -176,6 +186,13 @@
 		const previousActiveBase = quickActiveSubscriptions + canceledThisPeriod;
 		const churn = previousActiveBase > 0 ? (canceledThisPeriod / previousActiveBase) * 100 : 0;
 		quickChurnRate = Math.round(churn * 10) / 10;
+		} catch (error) {
+			// Gracefully handle errors when Stripe isn't configured or database is unavailable
+			console.warn('Unable to load subscriber stats (this is normal if Stripe is not configured):', error);
+			quickActiveSubscriptions = 0;
+			quickMonthlyRevenue = 0;
+			quickChurnRate = 0;
+		}
 	}
 
 	function formatCurrency(amount: number): string {

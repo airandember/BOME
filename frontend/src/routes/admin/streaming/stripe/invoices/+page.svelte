@@ -2,14 +2,14 @@
 	import { onMount } from 'svelte';
 	import { apiRequest } from '$lib/auth';
 
-	let summary: any = null;
-	let loading = true;
-	let error = '';
-	let statusFilter = 'all';
-	let showInvoiceModal = false;
-	let selectedInvoice: any = null;
+	let summary = $state<any>(null);
+	let loading = $state(true);
+	let error = $state('');
+	let statusFilter = $state('all');
+	let showInvoiceModal = $state(false);
+	let selectedInvoice = $state<any>(null);
 
-	export let data: any = null;
+	const { data = null } = $props<{ data?: any }>();
 
 	onMount(async () => {
 		if (data) {
@@ -109,12 +109,12 @@
 		}
 	}
 
-	$: allInvoices = summary?.invoices || [];
-	$: invoices = statusFilter === 'all' ? allInvoices : allInvoices.filter((inv: any) => inv.Status === statusFilter);
-	$: invoicesCount = summary?.invoices_count || 0;
-	$: paidInvoices = allInvoices.filter((inv: any) => inv.Status === 'paid');
-	$: openInvoices = allInvoices.filter((inv: any) => inv.Status === 'open');
-	$: totalRevenue = paidInvoices.reduce((sum: number, inv: any) => sum + inv.Amount, 0);
+	const allInvoices = $derived(summary?.invoices || []);
+	const invoices = $derived(statusFilter === 'all' ? allInvoices : allInvoices.filter((inv: any) => inv.Status === statusFilter));
+	const invoicesCount = $derived(summary?.invoices_count || 0);
+	const paidInvoices = $derived(allInvoices.filter((inv: any) => inv.Status === 'paid'));
+	const openInvoices = $derived(allInvoices.filter((inv: any) => inv.Status === 'open'));
+	const totalRevenue = $derived(paidInvoices.reduce((sum: number, inv: any) => sum + inv.Amount, 0));
 
 	// Invoice modal functions
 	function viewInvoice(invoice: any) {
@@ -153,7 +153,7 @@
 	<div class="error-state">
 		<h3>Error Loading Invoices</h3>
 		<p>{error}</p>
-		<button class="btn btn-primary" on:click={fetchSummary}>Retry</button>
+		<button class="btn btn-primary" onclick={fetchSummary}>Retry</button>
 	</div>
 {:else}
 	<div class="invoices-container">
@@ -182,7 +182,7 @@
 			</div>
 			
 			<div class="header-actions">
-				<button class="btn btn-secondary" on:click={fetchSummary}>
+				<button class="btn btn-secondary" onclick={fetchSummary}>
 					🔄 Refresh
 				</button>
 				<!-- <button class="btn btn-primary">
@@ -250,14 +250,14 @@
 									</td>
 									<td class="invoice-actions">
 										<div class="action-buttons">
-											<button class="btn btn-sm btn-outline" title="View Invoice" on:click={() => viewInvoice(invoice)}>
+											<button class="btn btn-sm btn-outline" title="View Invoice" onclick={() => viewInvoice(invoice)}>
 												👁️ View
 											</button>
-											<button class="btn btn-sm btn-outline" title="Download PDF" on:click={() => downloadInvoice(invoice)}>
+											<button class="btn btn-sm btn-outline" title="Download PDF" onclick={() => downloadInvoice(invoice)}>
 												📥 Download
 											</button>
 											{#if invoice.Status === 'open'}
-												<button class="btn btn-sm btn-primary" title="Send Reminder" on:click={() => sendInvoiceReminder(invoice)}>
+												<button class="btn btn-sm btn-primary" title="Send Reminder" onclick={() => sendInvoiceReminder(invoice)}>
 													📧 Send
 												</button>
 											{/if}
@@ -324,11 +324,11 @@
 
 <!-- Invoice View Modal -->
 {#if showInvoiceModal && selectedInvoice}
-	<div class="modal-overlay" on:click={handleModalClick} on:keydown={(e) => e.key === 'Escape' && closeInvoiceModal()} role="dialog" aria-modal="true" tabindex="-1">
+	<div class="modal-overlay" onclick={handleModalClick} onkeydown={(e) => e.key === 'Escape' && closeInvoiceModal()} role="dialog" aria-modal="true" tabindex="-1">
 		<div class="modal-content" role="document">
 			<div class="modal-header">
 				<h3>📄 Invoice Details</h3>
-				<button class="modal-close" on:click={closeInvoiceModal}>&times;</button>
+				<button class="modal-close" onclick={closeInvoiceModal}>&times;</button>
 			</div>
 			
 			<div class="modal-body">
@@ -395,14 +395,14 @@
 			</div>
 			
 			<div class="modal-footer">
-				<button class="btn btn-secondary" on:click={closeInvoiceModal}>
+				<button class="btn btn-secondary" onclick={closeInvoiceModal}>
 					Close
 				</button>
-				<button class="btn btn-outline" on:click={() => downloadInvoice(selectedInvoice)}>
+				<button class="btn btn-outline" onclick={() => downloadInvoice(selectedInvoice)}>
 					📥 Download PDF
 				</button>
 				{#if selectedInvoice.Status === 'open'}
-					<button class="btn btn-primary" on:click={() => sendInvoiceReminder(selectedInvoice)}>
+					<button class="btn btn-primary" onclick={() => sendInvoiceReminder(selectedInvoice)}>
 						📧 Send Reminder
 					</button>
 				{/if}

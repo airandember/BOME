@@ -1,11 +1,11 @@
 <script lang="ts">
-	export let data: any;
+	const { data } = $props<{ data: any }>();
 
-	$: coupons = data?.coupons || [];
-	$: couponsCount = data?.coupons_count || 0;
+	const coupons = $derived(data?.coupons || []);
+	const couponsCount = $derived(data?.coupons_count || 0);
 
 	// Debug logging
-	$: {
+	$effect(() => {
 		console.log('=== COUPONS DEBUG ===');
 		console.log('Data received:', data);
 		console.log('Coupons array:', coupons);
@@ -16,7 +16,7 @@
 		console.log('Coupons key type:', data?.coupons ? typeof data.coupons : 'N/A');
 		console.log('Coupons is array:', Array.isArray(data?.coupons));
 		console.log('====================');
-	}
+	});
 
 	function formatCurrency(amount: number, currency: string = 'usd') {
 		return new Intl.NumberFormat('en-US', {
@@ -82,7 +82,7 @@
 		</div>
 		
 		<div class="header-actions">
-			<button class="btn btn-secondary" on:click={() => window.location.reload()}>
+			<button class="btn btn-secondary" onclick={() => window.location.reload()}>
 				🔄 Refresh Page
 			</button>
 			<button class="btn btn-primary">
