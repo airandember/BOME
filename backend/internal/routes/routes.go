@@ -118,6 +118,15 @@ func SetupRoutes(
 		// Setup tag routes
 		SetupTagRoutes(router, db)
 
+		// Setup advertisement routes - COMMENTED OUT until frontend ad system is ready
+		// fmt.Printf("Setting up advertisement routes...\n")
+		// fmt.Printf("Creating AdvertisementService...\n")
+		// adService := services.NewAdvertisementService(db)
+		// fmt.Printf("AdvertisementService created successfully\n")
+		// fmt.Printf("Calling SetupAdvertisementRoutes...\n")
+		// SetupAdvertisementRoutes(v1, adService)
+		// fmt.Printf("Advertisement routes setup complete\n")
+
 		// Initialize remaining subscription services
 		subscriberService := services.NewSubscriberService(db)
 		subscriptionOffersService := services.NewSubscriptionOffersService(db)
