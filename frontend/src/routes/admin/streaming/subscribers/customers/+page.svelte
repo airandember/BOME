@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { apiRequest } from '$lib/auth';
-	import CustomerSyncPanel from '../components/CustomerSyncPanel.svelte';
+	import CustomerSyncPanel from './components/CustomerSyncPanel.svelte';
 	import SimpleTable from './SimpleTable.svelte';
 	import { StreamingSubscriberService } from '$lib/services/streaming-subscribers';
 	import { showToast } from '$lib/toast';
@@ -30,6 +30,10 @@
 		summary?: any, 
 		stripeData?: any 
 	}>();
+
+	// Local state variables that were missing
+	let summary = $state<any>(null);
+	let customers = $state<any[]>([]);
 
 	onMount(async () => {
 		if (parentSummary && stripeData) {

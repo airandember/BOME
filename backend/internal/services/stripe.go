@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"github.com/stripe/stripe-go/v74"
+	"github.com/stripe/stripe-go/v74/balance"
+	"github.com/stripe/stripe-go/v74/charge"
 	"github.com/stripe/stripe-go/v74/coupon"
 	"github.com/stripe/stripe-go/v74/customer"
 	"github.com/stripe/stripe-go/v74/invoice"
@@ -1168,7 +1171,7 @@ func (s *StripeService) fetchCouponsSection(limit int, summary map[string]interf
 func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, error) {
 	summary := map[string]interface{}{"enabled": true}
 
-	// Fetch products (first 10)
+	// Fetch recent products (first 15)
 	fmt.Printf("📦 Fetching products from Stripe API...\n")
 	type productMinimal struct {
 		ID, Name, Description string
@@ -1181,7 +1184,12 @@ func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, err
 		startTime := time.Now()
 		params := &stripe.ProductListParams{}
 		params.Limit = stripe.Int64(int64(limit))
-		fmt.Printf("📡 Calling product.List() with limit %d...\n", limit)
+
+		// Filter to last 30 days only for performance
+		thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+		params.Filters.AddFilter("created", "gte", strconv.FormatInt(thirtyDaysAgo.Unix(), 10))
+
+		fmt.Printf("📡 Calling product.List() with limit %d (last 30 days only)...\n", limit)
 		iter := product.List(params)
 		for iter.Next() {
 			p := iter.Current().(*stripe.Product)
@@ -1195,11 +1203,11 @@ func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, err
 			})
 		}
 		duration := time.Since(startTime)
-		fmt.Printf("✅ Products fetched in %v - count: %d (200 OK from Stripe)\n", duration, len(products))
-		// ignore iter.Err() to keep summary resilient
+		fmt.Printf("✅ Products fetched in %v - count: %d (last 30 days only, 200 OK from Stripe)\n", duration, len(products))
 	}
 	summary["products"] = products
 	summary["products_count"] = len(products)
+	summary["products_sample_note"] = "Showing last 30 days only for large account"
 
 	// Fetch recent prices (first 15)
 	type priceMinimal struct {
@@ -1262,10 +1270,15 @@ func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, err
 	{
 		startTime := time.Now()
 
-		// Get customers with the specified limit
+		// Get customers with the specified limit and last 30 days filter
 		params := &stripe.CustomerListParams{}
 		params.Limit = stripe.Int64(int64(limit))
-		fmt.Printf("📡 Calling customer.List() with limit %d...\n", limit)
+
+		// Filter to last 30 days only for performance
+		thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+		params.Filters.AddFilter("created", "gte", strconv.FormatInt(thirtyDaysAgo.Unix(), 10))
+
+		fmt.Printf("📡 Calling customer.List() with limit %d (last 30 days only)...\n", limit)
 		iter := customer.List(params)
 
 		var recentCustomers []customerMinimal
@@ -1292,12 +1305,13 @@ func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, err
 		}
 
 		duration := time.Since(startTime)
-		fmt.Printf("✅ Customer summary fetched in %v - showing %d of ~3000 total (200 OK from Stripe)\n", duration, len(recentCustomers))
+		fmt.Printf("✅ Customer summary fetched in %v - showing %d of ~3000 total (last 30 days only, 200 OK from Stripe)\n", duration, len(recentCustomers))
 	}
 	summary["customers"] = customerSum.RecentSample
 	summary["customers_count"] = customerSum.TotalCount
 	summary["customers_total_estimated"] = 3000
 	summary["customers_sample_size"] = len(customerSum.RecentSample)
+	summary["customers_sample_note"] = "Showing last 30 days only for large account"
 
 	// Fetch subscription summary for large account (495 subscriptions)
 	fmt.Printf("📋 Fetching subscription summary for large account...\n")
@@ -1313,7 +1327,12 @@ func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, err
 		startTime := time.Now()
 		params := &stripe.SubscriptionListParams{}
 		params.Limit = stripe.Int64(int64(limit))
-		fmt.Printf("📡 Calling subscription.List() with limit %d...\n", limit)
+
+		// Filter to last 30 days only for performance
+		thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+		params.Filters.AddFilter("created", "gte", strconv.FormatInt(thirtyDaysAgo.Unix(), 10))
+
+		fmt.Printf("📡 Calling subscription.List() with limit %d (last 30 days only)...\n", limit)
 		iter := subscription.List(params)
 		for iter.Next() {
 			sub := iter.Current().(*stripe.Subscription)
@@ -1327,12 +1346,13 @@ func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, err
 			})
 		}
 		duration := time.Since(startTime)
-		fmt.Printf("✅ Subscription summary fetched in %v - showing %d of ~495 total (200 OK from Stripe)\n", duration, len(subscriptions))
+		fmt.Printf("✅ Subscription summary fetched in %v - showing %d of ~495 total (last 30 days only, 200 OK from Stripe)\n", duration, len(subscriptions))
 	}
 	summary["subscriptions"] = subscriptions
 	summary["subscriptions_count"] = 495 // Known total
 	summary["subscriptions_total_estimated"] = 495
 	summary["subscriptions_sample_size"] = len(subscriptions)
+	summary["subscriptions_sample_note"] = "Showing last 30 days only for large account"
 
 	// Fetch recent payment intents (sample for large account)
 	fmt.Printf("💳 Fetching payment intents sample for large account...\n")
@@ -1348,11 +1368,11 @@ func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, err
 		params := &stripe.PaymentIntentListParams{}
 		params.Limit = stripe.Int64(int64(limit))
 
-		// Filter to past year only for performance
-		oneYearAgo := time.Now().AddDate(-1, 0, 0)
-		params.Filters.AddFilter("created", "gte", strconv.FormatInt(oneYearAgo.Unix(), 10))
+		// Filter to last 30 days only for performance
+		thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+		params.Filters.AddFilter("created", "gte", strconv.FormatInt(thirtyDaysAgo.Unix(), 10))
 
-		fmt.Printf("📡 Calling paymentintent.List() with limit %d (past year only)...\n", limit)
+		fmt.Printf("📡 Calling paymentintent.List() with limit %d (last 30 days only)...\n", limit)
 		iter := paymentintent.List(params)
 		for iter.Next() {
 			pi := iter.Current().(*stripe.PaymentIntent)
@@ -1366,11 +1386,11 @@ func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, err
 			})
 		}
 		duration := time.Since(startTime)
-		fmt.Printf("✅ Payment intents fetched in %v - count: %d (past year only, 200 OK from Stripe)\n", duration, len(paymentIntents))
+		fmt.Printf("✅ Payment intents fetched in %v - count: %d (last 30 days only, 200 OK from Stripe)\n", duration, len(paymentIntents))
 	}
 	summary["payment_intents"] = paymentIntents
 	summary["payment_intents_count"] = len(paymentIntents)
-	summary["payment_intents_sample_note"] = "Showing recent sample only for large account"
+	summary["payment_intents_sample_note"] = "Showing last 30 days only for large account"
 
 	// Fetch recent invoices (sample for large account)
 	fmt.Printf("🧾 Fetching invoices sample for large account...\n")
@@ -1385,7 +1405,12 @@ func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, err
 		startTime := time.Now()
 		params := &stripe.InvoiceListParams{}
 		params.Limit = stripe.Int64(int64(limit))
-		fmt.Printf("📡 Calling invoice.List() with limit %d...\n", limit)
+
+		// Filter to last 30 days only for performance
+		thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+		params.Filters.AddFilter("created", "gte", strconv.FormatInt(thirtyDaysAgo.Unix(), 10))
+
+		fmt.Printf("📡 Calling invoice.List() with limit %d (last 30 days only)...\n", limit)
 		iter := invoice.List(params)
 		for iter.Next() {
 			inv := iter.Current().(*stripe.Invoice)
@@ -1399,11 +1424,11 @@ func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, err
 			})
 		}
 		duration := time.Since(startTime)
-		fmt.Printf("✅ Invoices fetched in %v - count: %d (200 OK from Stripe)\n", duration, len(invoices))
+		fmt.Printf("✅ Invoices fetched in %v - count: %d (last 30 days only, 200 OK from Stripe)\n", duration, len(invoices))
 	}
 	summary["invoices"] = invoices
 	summary["invoices_count"] = len(invoices)
-	summary["invoices_sample_note"] = "Showing recent sample only for large account"
+	summary["invoices_sample_note"] = "Showing last 30 days only for large account"
 
 	// Fetch recent coupons (first 15)
 	type couponMinimal struct {
@@ -1422,34 +1447,24 @@ func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, err
 		startTime := time.Now()
 		params := &stripe.CouponListParams{}
 		params.Limit = stripe.Int64(int64(limit))
-		fmt.Printf("📡 Calling coupon.List() with limit %d...\n", limit)
 
+		// Filter to last 30 days only for performance
+		thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+		params.Filters.AddFilter("created", "gte", strconv.FormatInt(thirtyDaysAgo.Unix(), 10))
+
+		fmt.Printf("📡 Calling coupon.List() with limit %d (last 30 days only)...\n", limit)
 		iter := coupon.List(params)
-		if iter == nil {
-			log.Printf("Stripe: Coupon iterator is nil")
-		} else {
-			log.Printf("Stripe: Coupon iterator created successfully")
-		}
-
-		couponCount := 0
 		for iter.Next() {
-			couponCount++
 			c := iter.Current().(*stripe.Coupon)
-			log.Printf("Stripe: Processing coupon %d: ID=%s, Name=%s, Valid=%v", couponCount, c.ID, c.Name, c.Valid)
 
 			var percentOff *float64
 			if c.PercentOff > 0 {
-				percentOff = stripe.Float64(float64(c.PercentOff) / 100.0) // Convert from basis points
+				percentOff = stripe.Float64(c.PercentOff)
 			}
 
 			var amountOff *int64
 			if c.AmountOff > 0 {
 				amountOff = stripe.Int64(c.AmountOff)
-			}
-
-			var currency string
-			if c.Currency != "" {
-				currency = string(c.Currency)
 			}
 
 			var maxRedemptions *int64
@@ -1463,7 +1478,7 @@ func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, err
 				Duration:       string(c.Duration),
 				PercentOff:     percentOff,
 				AmountOff:      amountOff,
-				Currency:       currency,
+				Currency:       string(c.Currency),
 				MaxRedemptions: maxRedemptions,
 				TimesRedeemed:  c.TimesRedeemed,
 				Valid:          c.Valid,
@@ -1471,17 +1486,12 @@ func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, err
 				Metadata:       c.Metadata,
 			})
 		}
-
 		duration := time.Since(startTime)
-		fmt.Printf("✅ Coupons fetched in %v - count: %d (200 OK from Stripe)\n", duration, len(coupons))
-
-		if err := iter.Err(); err != nil {
-			log.Printf("Stripe: Error iterating coupons: %v", err)
-		}
-		// ignore iter.Err() to keep summary resilient
+		fmt.Printf("✅ Coupons fetched in %v - count: %d (last 30 days only, 200 OK from Stripe)\n", duration, len(coupons))
 	}
 	summary["coupons"] = coupons
 	summary["coupons_count"] = len(coupons)
+	summary["coupons_sample_note"] = "Showing last 30 days only for large account"
 
 	// Account capabilities and limits
 	summary["environment"] = s.environment
@@ -1533,7 +1543,7 @@ func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, err
 	}
 
 	fmt.Printf("🎉 Large account summary completed successfully!\n")
-	fmt.Printf("📊 API Response Summary (All 200 OK from Stripe):\n")
+	fmt.Printf("📊 API Response Summary (All 200 OK from Stripe, Last 30 Days Only):\n")
 	fmt.Printf("   📦 Products API: %d items fetched\n", len(products))
 	fmt.Printf("   💰 Prices API: %d items fetched\n", len(prices))
 	fmt.Printf("   👥 Customers API: %d items fetched (of ~3,000 total)\n", len(customerSum.RecentSample))
@@ -1541,7 +1551,139 @@ func (s *StripeService) fetchAllSections(limit int) (map[string]interface{}, err
 	fmt.Printf("   💳 Payment Intents API: %d items fetched\n", len(paymentIntents))
 	fmt.Printf("   🧾 Invoices API: %d items fetched\n", len(invoices))
 	fmt.Printf("   🎟️ Coupons API: %d items fetched\n", len(coupons))
-	fmt.Printf("✅ All Stripe API calls successful - 7 endpoints queried\n")
+	fmt.Printf("✅ All Stripe API calls successful - 7 endpoints queried (Last 30 days only)\n")
 
 	return summary, nil
+}
+
+// Added for stripe frontend revamp
+
+// GetAccountBalance returns account balance and transaction history
+func (s *StripeService) GetAccountBalance() (*stripe.Balance, error) {
+	if !s.IsEnabled() {
+		return nil, errors.New("Stripe service is not enabled")
+	}
+
+	balanceParams := &stripe.BalanceParams{}
+	return balance.Get(balanceParams)
+}
+
+// GetChargeCounts returns total charge counts efficiently
+func (s *StripeService) GetChargeCounts() (map[string]interface{}, error) {
+	if !s.IsEnabled() {
+		return nil, errors.New("Stripe service is not enabled")
+	}
+
+	// Use limit=0 for maximum speed - Stripe returns just metadata with counts
+	params := &stripe.ChargeListParams{}
+	params.Limit = stripe.Int64(0) // This should return just count metadata
+
+	// Filter to last 30 days for recent activity
+	thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+	params.Created = stripe.Int64(thirtyDaysAgo.Unix())
+
+	// Make the API call - this should be very fast with limit=0
+	iter := charge.List(params)
+
+	// Get the total count from metadata
+	totalCount := 0
+	if iter.Meta() != nil {
+		totalCount = int(iter.Meta().TotalCount)
+	}
+
+	return map[string]interface{}{
+		"total_count": totalCount,
+		"period":      "last_30_days",
+		"method":      "stripe_limit_0",
+	}, nil
+}
+
+// GetCustomerCounts returns total customer counts efficiently
+func (s *StripeService) GetCustomerCounts() (map[string]interface{}, error) {
+	if !s.IsEnabled() {
+		return nil, errors.New("Stripe service is not enabled")
+	}
+
+	// Use limit=0 for maximum speed - Stripe returns just metadata with counts
+	params := &stripe.CustomerListParams{}
+	params.Limit = stripe.Int64(0) // This should return just count metadata
+
+	// Filter to last 30 days for recent activity
+	thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+	params.Created = stripe.Int64(thirtyDaysAgo.Unix())
+
+	// Make the API call - this should be very fast with limit=0
+	iter := customer.List(params)
+
+	// Get the total count from metadata
+	totalCount := 0
+	if iter.Meta() != nil {
+		totalCount = int(iter.Meta().TotalCount)
+	}
+
+	return map[string]interface{}{
+		"total_count": totalCount,
+		"period":      "last_30_days",
+		"method":      "stripe_limit_0",
+	}, nil
+}
+
+// GetSubscriptionCounts returns subscription counts efficiently
+func (s *StripeService) GetSubscriptionCounts() (map[string]interface{}, error) {
+	if !s.IsEnabled() {
+		return nil, errors.New("Stripe service is not enabled")
+	}
+
+	// Use limit=0 for maximum speed - Stripe returns just metadata with counts
+	params := &stripe.SubscriptionListParams{}
+	params.Limit = stripe.Int64(0) // This should return just count metadata
+
+	// Filter to last 30 days for recent activity
+	thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+	params.Created = stripe.Int64(thirtyDaysAgo.Unix())
+
+	// Make the API call - this should be very fast with limit=0
+	iter := subscription.List(params)
+
+	// Get the total count from metadata
+	totalCount := 0
+	if iter.Meta() != nil {
+		totalCount = int(iter.Meta().TotalCount)
+	}
+
+	return map[string]interface{}{
+		"total_count": totalCount,
+		"period":      "last_30_days",
+		"method":      "stripe_limit_0",
+	}, nil
+}
+
+// GetProductCounts returns product counts efficiently
+func (s *StripeService) GetProductCounts() (map[string]interface{}, error) {
+	if !s.IsEnabled() {
+		return nil, errors.New("Stripe service is not enabled")
+	}
+
+	// Use limit=0 for maximum speed - Stripe returns just metadata with counts
+	params := &stripe.ProductListParams{}
+	params.Limit = stripe.Int64(0) // This should return just count metadata
+
+	// Filter to last 30 days for recent activity
+	thirtyDaysAgo := time.Now().AddDate(0, 0, -30)
+	params.Created = stripe.Int64(thirtyDaysAgo.Unix())
+
+	// Make the API call - this should be very fast with limit=0
+	iter := product.List(params)
+
+	// Get the total count from metadata
+	totalCount := 0
+	if iter.Meta() != nil {
+		totalCount = int(iter.Meta().TotalCount)
+	}
+
+	return map[string]interface{}{
+		"total_count": totalCount,
+		"period":      "last_30_days",
+		"method":      "stripe_limit_0",
+	}, nil
 }

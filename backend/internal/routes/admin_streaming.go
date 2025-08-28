@@ -331,6 +331,9 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 		// Setup Stripe customer sync routes
 		customerSyncService := services.NewStripeCustomerSyncService(stripeService, db)
 		SetupStripeCustomerSyncRoutes(streaming.Group("/stripe"), customerSyncService)
+
+		// Setup Stripe analytics routes
+		RegisterStripeAnalyticsRoutes(streaming, stripeService)
 	}
 }
 
