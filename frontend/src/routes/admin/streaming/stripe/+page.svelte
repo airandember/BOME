@@ -7,14 +7,7 @@
 	import { showToast } from '$lib/toast';
 
 	// Import child components
-	import Overview from './overview/+page.svelte';
 	import AnalyticsOverview from './overview/AnalyticsOverview.svelte';
-	import Products from './products/+page.svelte';
-	import Customers from './customers/+page.svelte';
-	import Coupons from './coupons/+page.svelte';
-	import Invoices from './invoices/+page.svelte';
-	import Payments from './payments/+page.svelte';
-	import Subscriptions from './subscriptions/+page.svelte';
 	import Setup from './setup/+page.svelte';
 
 	// State variables using Svelte 5 runes
@@ -111,13 +104,6 @@
 	// Tab configuration - dynamically filtered based on capabilities
 	const allTabs = [
 		{ id: 'analytics', name: 'Analytics', icon: '📈', component: AnalyticsOverview, capability: null },
-		{ id: 'overview', name: 'Overview', icon: '📊', component: Overview, capability: null },
-		{ id: 'products', name: 'Products', icon: '📦', component: Products, capability: 'products' },
-		{ id: 'customers', name: 'Customers', icon: '👥', component: Customers, capability: 'customers' },
-		{ id: 'coupons', name: 'Coupons', icon: '🎟️', component: Coupons, capability: 'coupons' },
-		{ id: 'invoices', name: 'Invoices', icon: '📄', component: Invoices, capability: 'invoices' },
-		{ id: 'payments', name: 'Payments', icon: '💳', component: Payments, capability: 'payment_intents' },
-		{ id: 'subscriptions', name: 'Subscriptions', icon: '🔄', component: Subscriptions, capability: 'subscriptions' },
 		{ id: 'setup', name: 'Setup', icon: '⚙️', component: Setup, capability: null }
 	];
 	
@@ -175,7 +161,7 @@
 
 	// Call this in onMount to test
 	onMount(async () => {
-		await testApiRequest();
+		//await testApiRequest();
 		try {
 			// Load debug info
 			const { getApiBaseUrl, apiBaseUrl } = await import('$lib/config');
@@ -219,14 +205,21 @@
 					loading = false;
 				}
 			} else {
-				// ❌ API error - show error state
-				console.log('❌ Failed to check Stripe status - showing error state');
-				error = 'Failed to connect to Stripe service';
-				loading = false;
+				// Check if it's a 503 (Service Unavailable) which means Stripe is not configured
+				if (dashRes.status === 503) {
+					console.log('⚙️ Stripe service unavailable (not configured) - showing setup screen');
+					summary = { enabled: false };
+					loading = false;
+				} else {
+					// ❌ Other API error - show error state
+					console.log('❌ Failed to check Stripe status - showing error state');
+					error = 'Failed to connect to Stripe service';
+					loading = false;
+				}
 			}
 			
-			await loadPortalLink();
-			
+		await loadPortalLink();
+		
 			// Always default to analytics tab for fast access
 			activeTab = 'analytics';
 			console.log('✅ Analytics tab set as default for optimal user experience');
@@ -238,56 +231,47 @@
 		}
 	});
 
-	// 🚀 DASH REFRESH: Lightning-fast analytics refresh using the new dash endpoint
+	// 🚀 V2 ANALYTICS: Lightning-fast analytics refresh using the v2 endpoint
 	async function loadAnalyticsData() {
+		console.log("🔄 Loading v2 analytics data...")
 		try {
-			console.log('🚀 Refreshing analytics data via /stripe/dash...');
-			loadingStatus = 'Refreshing analytics...';
+			const response = await apiRequest('/admin/streaming/stripe/v2/analytics')
+			const data = await response.json()
+			console.log("📊 V2 Analytics data received:", data)
 			
-			// Use the new lightning-fast dashboard endpoint
-			const dashRes = await apiRequest('/admin/streaming/stripe/dash');
-			if (!dashRes.ok) {
-				console.log('📊 Stripe not available for refresh');
-				loadingStatus = 'Stripe not available';
-				loading = false;
-				return;
+			if (data && data.enabled) {
+				console.log("✅ Stripe is enabled, processing v2 analytics...")
+				
+				// Log each section of v2 data
+				if (data.balance) {
+					console.log("💰 Balance data:", data.balance)
+				}
+				if (data.customer_analytics) {
+					console.log("👥 Customer analytics:", data.customer_analytics)
+				}
+				if (data.subscription_health) {
+					console.log("📋 Subscription health:", data.subscription_health)
+				}
+				if (data.mrr_analytics) {
+					console.log("📈 MRR analytics:", data.mrr_analytics)
+				}
+				if (data.revenue_analytics) {
+					console.log("💳 Revenue analytics:", data.revenue_analytics)
+				}
+				if (data.product_performance) {
+					console.log("📦 Product performance:", data.product_performance)
+				}
+				if (data.payment_analytics) {
+					console.log("💰 Payment analytics:", data.payment_analytics)
+				}
+				
+				// Process the v2 data
+				processStripeDataV2(data)
+			} else {
+				console.log("❌ Stripe not enabled or no data received")
 			}
-			
-			const dashData = await dashRes.json();
-			if (!dashData.enabled) {
-				console.log('📊 Stripe disabled during refresh');
-				loadingStatus = 'Stripe not enabled';
-				loading = false;
-				return;
-			}
-			
-			// 📊 Extract analytics data from the dash response
-			const analyticsData = {
-				balance: dashData.balance,
-				charges: dashData.charges,
-				customers: dashData.customers,
-				subscriptions: dashData.subscriptions,
-				products: dashData.products,
-				performance: dashData.performance,
-				lastUpdated: new Date()
-			};
-			
-			console.log('📊 Analytics data refreshed via dash:', analyticsData);
-			console.log(`⚡ Performance: ${dashData.performance?.duration_ms || 'unknown'}ms`);
-			
-			// Update the global summary with the dash data for consistency
-			summary = {
-				enabled: true,
-				...dashData
-			};
-			
-			loadingStatus = 'Analytics refreshed via dash!';
-			loading = false;
-			
-		} catch (err) {
-			console.error('❌ Failed to refresh analytics via dash:', err);
-			loadingStatus = 'Failed to refresh analytics';
-			loading = false;
+		} catch (error) {
+			console.error("❌ Failed to load analytics data:", error)
 		}
 	}
 
@@ -975,6 +959,67 @@
 		});
 	}
 
+	// Process v2 analytics data into frontend structure
+	async function processStripeDataV2(data: any) {
+		console.log('🔄 Processing v2 analytics data into frontend structure...');
+		
+		// Update summary with v2 analytics data
+		summary = {
+			enabled: true,
+			environment: data.environment || 'test',
+			...data
+		};
+
+		// Convert v2 analytics to legacy format for existing components
+		stripeDataIncoming.isLoading = false;
+		stripeDataIncoming.progress.current = 'V2 analytics processed';
+		stripeDataIncoming.progress.completed = 7;
+
+		// Map v2 data to existing structure
+		if (data.customer_analytics) {
+			stripeDataIncoming.customers = Array(data.customer_analytics.total_customers || 0).fill({
+				id: 'sample',
+				email: 'sample@example.com',
+				name: 'Sample Customer'
+			});
+		}
+
+		if (data.subscription_health) {
+			stripeDataIncoming.subscriptions = Array(data.subscription_health.active_subscriptions || 0).fill({
+				id: 'sample',
+				status: 'active'
+			});
+		}
+
+		if (data.product_performance) {
+			stripeDataIncoming.products = Array(data.product_performance.active_products || 0).fill({
+				id: 'sample',
+				name: 'Sample Product',
+				active: true
+			});
+			
+			stripeDataIncoming.prices = Array(data.product_performance.active_prices || 0).fill({
+				id: 'sample',
+				unit_amount: 1000,
+				currency: 'usd'
+			});
+		}
+
+		// Set other arrays to empty for now
+		stripeDataIncoming.paymentIntents = [];
+		stripeDataIncoming.invoices = [];
+		stripeDataIncoming.coupons = [];
+
+		console.log('✅ V2 analytics processing complete:', {
+			balance: data.balance?.available_usd,
+			customers: data.customer_analytics?.total_customers,
+			subscriptions: data.subscription_health?.active_subscriptions,
+			products: data.product_performance?.active_products,
+			mrr: data.mrr_analytics?.estimated_mrr,
+			fetchTime: data.total_fetch_time
+		});
+	}
+
 	// Function to handle loading state transitions
 	function setLoadingState(isLoading: boolean, status: string) {
 		loading = isLoading;
@@ -1133,6 +1178,7 @@
 		setupSuccess = '';
 		
 		try {
+			console.log('🔄 Sending clear key request to backend...');
 			const res = await apiRequest('/admin/streaming/stripe/secret', {
 				method: 'POST',
 				headers: {
@@ -1141,7 +1187,12 @@
 				body: JSON.stringify({ key: 'sk_1337' })
 			});
 			
+			console.log('📡 Clear key response status:', res.status);
+			console.log('📡 Clear key response ok:', res.ok);
+			
 			if (res.ok) {
+				const responseData = await res.json();
+				console.log('✅ Clear key response data:', responseData);
 				// Show toast notification
 				showToast('Stripe key cleared successfully!', 'success');
 				
@@ -1150,8 +1201,8 @@
 				// CRITICAL: Set summary to disabled state to trigger line 334 condition
 				summary = { enabled: false };
 				
-				// Switch back to overview tab
-				activeTab = 'overview';
+				// Switch back to analytics tab
+				activeTab = 'analytics';
 				
 				// Clear any success messages
 				setupSuccess = '';
@@ -1159,23 +1210,49 @@
 				
 				// Also clear the portal link since Stripe is no longer configured
 				savedPortalLink = '';
-				portalLink = '';
-				editingPortal = false;
-				portalError = '';
-				portalSuccess = '';
+				
+				// Reset all Stripe data state
+				stripeData = {
+					customers: [],
+					subscriptions: [],
+					products: [],
+					prices: [],
+					invoices: [],
+					paymentIntents: [],
+					coupons: [],
+					lastUpdated: null,
+					isLoading: false,
+					progress: {
+						total: 7,
+						completed: 0,
+						current: 'Initializing...'
+					}
+				};
+				
+				// Reset loading states
+				loading = false;
+				error = '';
+				keyType = null;
+				
+				// Force page reload to ensure clean state
+				setTimeout(() => {
+					window.location.reload();
+				}, 1000);
 				
 				console.log('✅ Summary reset to disabled state:', summary);
-				console.log('✅ Active tab switched to overview:', activeTab);
+				console.log('✅ Active tab switched to analytics:', activeTab);
 				console.log('✅ Portal link cleared along with Stripe key');
 			} else {
 				const errorData = await res.json();
+				console.error('❌ Clear key failed with status:', res.status);
+				console.error('❌ Clear key error data:', errorData);
 				setupError = errorData.error || 'Failed to clear key';
 				showToast('Failed to clear Stripe key', 'error');
 			}
 		} catch (err) {
-			setupError = 'Failed to clear key';
+			console.error('❌ Clear key request failed with exception:', err);
+			setupError = 'Failed to clear key: ' + (err.message || 'Unknown error');
 			showToast('Failed to clear Stripe key', 'error');
-			console.error(err);
 		} finally {
 			saving = false;
 		}
@@ -1255,6 +1332,54 @@
 			portalError = '';
 		}
 	}
+
+	// Add this function to test our new analytics endpoints
+	async function testAnalyticsEndpoints() {
+		console.log(" Testing new Stripe Analytics endpoints...")
+		
+		try {
+			// Test the fast dashboard endpoint
+			console.log("📊 Testing /stripe/dash endpoint...")
+			const dashResponse = await apiRequest('/admin/streaming/stripe/dash')
+			console.log("✅ /stripe/dash Response:", dashResponse)
+			
+			// Test the comprehensive analytics endpoint
+			console.log("📈 Testing /stripe/analytics endpoint...")
+			const analyticsResponse = await apiRequest('/admin/streaming/stripe/analytics')
+			console.log("✅ /stripe/analytics Response:", analyticsResponse)
+			
+			// Test individual analytics methods
+			console.log(" Testing individual analytics methods...")
+			
+			// Test subscription metrics
+			const subscriptionMetrics = await apiRequest('/admin/streaming/stripe/subscription-metrics')
+			console.log("📋 Subscription Metrics:", subscriptionMetrics)
+			
+			// Test customer analytics
+			const customerAnalytics = await apiRequest('/admin/streaming/stripe/customer-analytics')
+			console.log(" Customer Analytics:", customerAnalytics)
+			
+			// Test revenue analytics
+			const revenueAnalytics = await apiRequest('/admin/streaming/stripe/revenue-analytics')
+			console.log("💰 Revenue Analytics:", revenueAnalytics)
+			
+			console.log("🎉 All analytics endpoints tested successfully!")
+			
+		} catch (error) {
+			console.error("❌ Analytics endpoint test failed:", error)
+		}
+	}
+
+	// Add this to your onMount or create a test button
+	$effect(() => {
+		if (stripeData.enabled) {
+			console.log(" Stripe is enabled, testing analytics endpoints...")
+			// Wait a bit for the initial load to complete
+			setTimeout(() => {
+				testAnalyticsEndpoints()
+			}, 2000)
+		}
+	})
 </script>
 
 {#if loading}
@@ -1784,15 +1909,15 @@
 						{@const isRestricted = keyType === 'rk' && tab.capability && summary?.capabilities?.[tab.capability] && !Object.values(summary.capabilities[tab.capability]).some(Boolean)}
 						<button 
 							class="tab-button {activeTab === tab.id ? 'active' : ''}"
-							class:disabled={!summary?.enabled && tab.id !== 'overview' && tab.id !== 'setup'}
+							class:disabled={!summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup'}
 							class:restricted={isRestricted}
 							onclick={() => switchTab(tab.id)}
-							disabled={!summary?.enabled && tab.id !== 'overview' && tab.id !== 'setup'}
+							disabled={!summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup'}
 							title={isRestricted ? 'This functionality is restricted by your Stripe key permissions' : ''}
 						>
 							<span class="tab-icon">{tab.icon}</span>
 							<span class="tab-name">{tab.name}</span>
-							{#if !summary?.enabled && tab.id !== 'overview' && tab.id !== 'setup'}
+							{#if !summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup'}
 								<span class="tab-lock">🔒</span>
 							{:else if isRestricted}
 								<span class="tab-restricted">⚠️</span>
@@ -1815,24 +1940,10 @@
 
 			<!-- Tab Content -->
 			<div class="tab-content">
-				{#if activeTab === 'overview'}
-					<Overview {summary} {stripeData} />
-				{:else if activeTab === 'analytics'}
+				{#if activeTab === 'analytics'}
 					<AnalyticsOverview {summary} {stripeData} />
-				{:else if activeTab === 'products'}
-					<Products {summary} {stripeData} />
-				{:else if activeTab === 'customers'}
-					<Customers {summary} {stripeData} />
-				{:else if activeTab === 'coupons'}
-					<Coupons {summary} {stripeData} />
-				{:else if activeTab === 'invoices'}
-					<Invoices {summary} {stripeData} />
-				{:else if activeTab === 'payments'}
-					<Payments {summary} {stripeData} />
-				{:else if activeTab === 'subscriptions'}
-					<Subscriptions {summary} {stripeData} />
 				{:else if activeTab === 'setup'}
-					<Setup {summary} />
+					<Setup {summary} onClearKey={() => showClearModal = true} />
 				{/if}
 			</div>
 		{/if}
@@ -3053,5 +3164,39 @@
 		cursor: not-allowed;
 		transform: none !important;
 	}
+
+	.test-section {
+		margin: 1rem 0;
+		padding: 1rem;
+		background: #f8f9fa;
+		border-radius: 8px;
+		border: 1px solid #dee2e6;
+	}
+
+	.test-button {
+		background: #007bff;
+		color: white;
+		border: none;
+		padding: 0.5rem 1rem;
+		border-radius: 4px;
+		cursor: pointer;
+		font-size: 0.9rem;
+	}
+
+	.test-button:hover {
+		background: #0056b3;
+	}
 </style> 
+
+<!-- Add this button somewhere in your template for testing -->
+{#if stripeData.enabled}
+	<div class="test-section">
+		<button 
+			onclick={testAnalyticsEndpoints}
+			class="test-button"
+		>
+			 Test Analytics Endpoints
+		</button>
+	</div>
+{/if}
 

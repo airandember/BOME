@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -23,6 +23,8 @@ func RegisterStripeAnalyticsRoutes(router *gin.RouterGroup, stripeService *servi
 		stripe.GET("/customers", func(c *gin.Context) { getCustomerCounts(c, stripeService) })
 		stripe.GET("/subscriptions", func(c *gin.Context) { getSubscriptionCounts(c, stripeService) })
 		stripe.GET("/products", func(c *gin.Context) { getProductCounts(c, stripeService) })
+		stripe.GET("/analytics", func(c *gin.Context) { getComprehensiveAnalytics(c, stripeService) })
+		stripe.GET("/v2/analytics", func(c *gin.Context) { getV2Analytics(c, stripeService) })
 	}
 }
 
@@ -99,109 +101,55 @@ func getDashboardData(c *gin.Context, stripeService *services.StripeService) {
 		return
 	}
 
-	// Fetch all analytics data in parallel for maximum speed
-	type result struct {
-		name string
-		data interface{}
-		err  error
+	// Use the comprehensive analytics instead of basic counts
+	analytics, err := stripeService.GetComprehensiveAnalytics()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get comprehensive analytics: " + err.Error()})
+		return
 	}
 
-	results := make(chan result, 5)
-
-	// Launch all analytics calls in parallel
-	go func() {
-		fmt.Printf("🔄 Starting balance fetch...\n")
-		if balance, err := stripeService.GetAccountBalance(); err == nil {
-			fmt.Printf("✅ Balance fetch completed\n")
-			results <- result{"balance", balance, nil}
-		} else {
-			fmt.Printf("❌ Balance fetch failed: %v\n", err)
-			results <- result{"balance", nil, err}
-		}
-	}()
-
-	go func() {
-		fmt.Printf("🔄 Starting charges fetch...\n")
-		if charges, err := stripeService.GetChargeCounts(); err == nil {
-			fmt.Printf("✅ Charges fetch completed\n")
-			results <- result{"charges", charges, nil}
-		} else {
-			fmt.Printf("❌ Charges fetch failed: %v\n", err)
-			results <- result{"charges", nil, err}
-		}
-	}()
-
-	go func() {
-		fmt.Printf("🔄 Starting customers fetch...\n")
-		if customers, err := stripeService.GetCustomerCounts(); err == nil {
-			fmt.Printf("✅ Customers fetch completed\n")
-			results <- result{"customers", customers, nil}
-		} else {
-			fmt.Printf("❌ Customers fetch failed: %v\n", err)
-			results <- result{"customers", nil, err}
-		}
-	}()
-
-	go func() {
-		fmt.Printf("🔄 Starting subscriptions fetch...\n")
-		if subscriptions, err := stripeService.GetSubscriptionCounts(); err == nil {
-			fmt.Printf("✅ Subscriptions fetch completed\n")
-			results <- result{"subscriptions", subscriptions, nil}
-		} else {
-			fmt.Printf("❌ Subscriptions fetch failed: %v\n", err)
-			results <- result{"subscriptions", nil, err}
-		}
-	}()
-
-	go func() {
-		fmt.Printf("🔄 Starting products fetch...\n")
-		if products, err := stripeService.GetProductCounts(); err == nil {
-			fmt.Printf("✅ Products fetch completed\n")
-			results <- result{"products", products, nil}
-		} else {
-			fmt.Printf("❌ Products fetch failed: %v\n", err)
-			results <- result{"products", nil, err}
-		}
-	}()
-
-	// Collect all results
-	dashboardData := gin.H{
-		"enabled":   true,
-		"timestamp": time.Now().Unix(),
-		"performance": gin.H{
-			"start_time": startTime.Unix(),
-		},
-	}
-
-	// Wait for all results (with timeout)
-	timeout := time.After(5 * time.Second)
-	received := 0
-
-	for received < 5 {
-		select {
-		case result := <-results:
-			received++
-			if result.err == nil {
-				dashboardData[result.name] = result.data
-			} else {
-				dashboardData[result.name] = gin.H{"error": result.err.Error()}
-			}
-		case <-timeout:
-			// Timeout reached, return partial data
-			dashboardData["timeout_warning"] = "Some data may be incomplete due to timeout"
-			fmt.Printf("⚠️ Timeout reached after %v - only %d/%d endpoints completed\n", time.Since(startTime), received, 5)
-			goto timeout_exit
-		}
-	}
-
-timeout_exit:
+	// Add the enabled flag that frontend expects
+	analytics["enabled"] = true
 
 	duration := time.Since(startTime)
-	dashboardData["performance"].(gin.H)["duration_ms"] = duration.Milliseconds()
-	dashboardData["performance"].(gin.H)["end_time"] = time.Now().Unix()
+	log.Printf("🚀 /stripe/dash completed in %v - comprehensive analytics", duration)
 
-	// Log performance metrics
-	fmt.Printf("🚀 /stripe/dash completed in %v - %d endpoints processed\n", duration, received)
+	c.JSON(http.StatusOK, analytics)
+}
 
-	c.JSON(http.StatusOK, dashboardData)
+// getComprehensiveAnalytics returns comprehensive analytics data
+func getComprehensiveAnalytics(c *gin.Context, stripeService *services.StripeService) {
+	analytics, err := stripeService.GetComprehensiveAnalytics()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get comprehensive analytics: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, analytics)
+}
+
+// getV2Analytics returns analytics using Stripe API v2 principles
+func getV2Analytics(c *gin.Context, stripeService *services.StripeService) {
+	startTime := time.Now()
+
+	if !stripeService.IsEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "Stripe service is not enabled",
+			"enabled": false,
+		})
+		return
+	}
+
+	// Use the new v2 analytics method
+	analytics, err := stripeService.GetStripeAnalyticsV2()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get v2 analytics: " + err.Error()})
+		return
+	}
+
+	analytics["enabled"] = true
+
+	duration := time.Since(startTime)
+	log.Printf("🚀 /stripe/v2/analytics completed in %v - API v2 approach", duration)
+
+	c.JSON(http.StatusOK, analytics)
 }

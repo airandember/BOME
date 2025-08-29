@@ -1,7 +1,9 @@
 package routes
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -53,14 +55,17 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 
 		// Stripe configuration (write-only secret) and summary
 		streaming.POST("/stripe/secret", func(c *gin.Context) {
+			log.Printf("🔑 Stripe secret endpoint called")
 			var req struct {
 				Key  string `json:"key" binding:"required"`
 				Type string `json:"type"` // optional: "sk" or "rk" or "pk"; we only accept secret keys for backend
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
+				log.Printf("❌ Failed to bind JSON: %v", err)
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
 				return
 			}
+			log.Printf("🔑 Received key request: %s", req.Key[:8]+"...")
 
 			// Only allow server secret keys (sk_ or rk_)
 			if !(len(req.Key) > 3 && (req.Key[:3] == "sk_" || req.Key[:3] == "rk_")) {
@@ -81,20 +86,24 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 
 			// Check for special "clear" key
 			if req.Key == "sk_1337" {
+				log.Printf("🧹 Processing clear key request (sk_1337)")
 				// Store empty encrypted value to clear the key
 				encrypted, err := crypto.EncryptString("")
 				if err != nil {
+					log.Printf("❌ Failed to encrypt empty key: %v", err)
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt empty key"})
 					return
 				}
 
 				if err := db.SetSecureSetting("stripe_secret_key", encrypted); err != nil {
+					log.Printf("❌ Failed to store empty key in database: %v", err)
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear key"})
 					return
 				}
 
 				// Update runtime Stripe service to disable it
 				stripeService.UpdateSecretKey("")
+				log.Printf("✅ Stripe key cleared successfully - service disabled")
 
 				c.JSON(http.StatusOK, gin.H{"message": "Stripe secret cleared"})
 				return
@@ -115,7 +124,30 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 			// Update runtime Stripe service to enable immediate use
 			stripeService.UpdateSecretKey(req.Key)
 
-			c.JSON(http.StatusOK, gin.H{"message": "Stripe secret updated"})
+			log.Printf("✅ Stripe key updated successfully - service enabled")
+			log.Printf("🚀 Triggering automatic initial sync for 1.5 years of historical data...")
+
+			// Automatically trigger initial sync when key is first entered
+			// This runs in background so the API response is immediate
+			go func() {
+				// Get the sync service from the initialized services
+				// Note: We need to access the syncService that was created in this function
+				// For now, we'll create a new instance - in production you might want to pass it as a parameter
+				syncService := services.NewStripeSyncService(db, stripeService)
+
+				ctx := context.Background()
+				err := syncService.InitialDataSync(ctx)
+				if err != nil {
+					log.Printf("❌ Automatic initial sync failed: %v", err)
+				} else {
+					log.Printf("✅ Automatic initial sync completed successfully")
+				}
+			}()
+
+			c.JSON(http.StatusOK, gin.H{
+				"message":     "Stripe secret updated",
+				"sync_status": "Initial sync started automatically - this will populate 1.5 years of historical data",
+			})
 		})
 
 		streaming.GET("/stripe/summary", func(c *gin.Context) {
@@ -334,6 +366,22 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 
 		// Setup Stripe analytics routes
 		RegisterStripeAnalyticsRoutes(streaming, stripeService)
+
+		// Initialize Stripe sync and cron services
+		syncService := services.NewStripeSyncService(db, stripeService)
+		cronService := services.NewStripeCronService(syncService)
+
+		// Setup Stripe sync management routes
+		RegisterStripeSyncRoutes(streaming, syncService, cronService)
+
+		// Setup Stripe webhook routes
+		RegisterStripeWebhookRoutes(streaming, stripeService, syncService)
+
+		// Setup Stripe testing and monitoring routes
+		RegisterStripeTestRoutes(streaming, stripeService, syncService, cronService)
+
+		// Start the cron service for scheduled syncs
+		go cronService.StartCronJobs()
 	}
 }
 

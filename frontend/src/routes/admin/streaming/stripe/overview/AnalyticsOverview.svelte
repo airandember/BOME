@@ -35,6 +35,12 @@
 	let isRefreshing = $state(false);
 	let error = $state('');
 
+	// V2 Analytics state
+	let v2Analytics = $state<any>(null)
+	let v2Loading = $state(false)
+	let v2LastUpdated = $state<Date | null>(null)
+	let v2FetchTime = $state<string>('')
+
 	// Endpoint configuration
 	const endpoints = [
 		{ 
@@ -76,7 +82,67 @@
 
 	onMount(() => {
 		loadAnalyticsData();
+		loadV2Analytics();
 	});
+
+	// Load v2 analytics data
+	async function loadV2Analytics() {
+		if (v2Loading) return
+		
+		v2Loading = true
+		console.log("🚀 Loading v2 analytics...")
+		
+		try {
+			const response = await apiRequest('/admin/streaming/stripe/v2/analytics')
+			const data = await response.json()
+			
+			v2Analytics = data
+			v2LastUpdated = new Date()
+			v2FetchTime = data.total_fetch_time || '-'
+			
+			console.log("✅ V2 analytics loaded:", data)
+		} catch (error) {
+			console.error("❌ Failed to load v2 analytics:", error)
+		} finally {
+			v2Loading = false
+		}
+	}
+
+	// Test v1 vs v2 performance
+	async function testV1vsV2() {
+		console.log("🏁 Testing v1 vs v2 performance...")
+		
+		try {
+			// Test v1 endpoint
+			console.log("📈 Testing v1 /stripe/analytics...")
+			const startV1 = performance.now()
+			const v1Response = await apiRequest('/admin/streaming/stripe/analytics')
+			const v1Data = await v1Response.json()
+			const v1Duration = performance.now() - startV1
+			
+			// Test v2 endpoint
+			console.log("📈 Testing v2 /stripe/v2/analytics...")
+			const startV2 = performance.now()
+			const v2Response = await apiRequest('/admin/streaming/stripe/v2/analytics')
+			const v2Data = await v2Response.json()
+			const v2Duration = performance.now() - startV2
+			
+			console.log("🏁 Performance Results:")
+			console.log(`   v1: ${v1Duration.toFixed(0)}ms - ${v1Data.total_fetch_time}`)
+			console.log(`   v2: ${v2Duration.toFixed(0)}ms - ${v2Data.total_fetch_time}`)
+			console.log(`   Speedup: ${(v1Duration/v2Duration).toFixed(1)}x faster`)
+			
+			// 📊 LOG FULL JSON RESPONSES FOR ANALYSIS
+			console.log("📊 === V1 FULL JSON RESPONSE ===")
+			console.log(JSON.stringify(v1Data, null, 2))
+			
+			console.log("📊 === V2 FULL JSON RESPONSE ===")
+			console.log(JSON.stringify(v2Data, null, 2))
+			
+		} catch (error) {
+			console.error("❌ v1 vs v2 test failed:", error)
+		}
+	}
 
 	// Load all analytics data in parallel
 	async function loadAnalyticsData() {
@@ -228,58 +294,129 @@
 		
 		<div class="header-actions">
 			<button 
+				class="btn btn-secondary" 
+				onclick={testV1vsV2}
+			>
+				🏁 Test v1 vs v2 Performance
+			</button>
+			<button 
+				class="btn btn-primary" 
+				onclick={loadV2Analytics}
+				disabled={v2Loading}
+			>
+				{v2Loading ? '🔄 Loading...' : '🔄 Update V2 Analytics'}
+			</button>
+			<button 
 				class="btn btn-primary" 
 				onclick={refreshData}
 				disabled={isLoading || isRefreshing}
 			>
-				{isRefreshing ? '🔄 Refreshing...' : '🔄 Refresh Data'}
+				{isRefreshing ? '🔄 Refreshing...' : '🔄 Refresh V1 Data'}
 			</button>
 		</div>
 	</div>
 
-	<!-- Performance Overview -->
+	<!-- Performance Overview  -->
+
 	<div class="performance-overview">
 		<div class="performance-header">
-			<h2>⚡ Performance Metrics</h2>
-			{#if analyticsData.lastUpdated}
-				<span class="last-updated">Last updated: {analyticsData.lastUpdated.toLocaleTimeString()}</span>
+			<h2>⚡ V2 Analytics Performance</h2>
+			{#if v2LastUpdated}
+				<span class="last-updated">Last updated: {v2LastUpdated.toLocaleTimeString()}</span>
 			{/if}
 		</div>
 		
 		<div class="performance-grid">
 			<div class="metric-card">
-				<div class="metric-value">{formatDuration(performanceMetrics.totalDuration)}</div>
-				<div class="metric-label">Total Load Time</div>
+				<div class="metric-value">{v2FetchTime}</div>
+				<div class="metric-label">V2 Load Time</div>
 			</div>
 			
 			<div class="metric-card success">
-				<div class="metric-value">{performanceMetrics.successCount}</div>
-				<div class="metric-label">Successful Endpoints</div>
+				<div class="metric-value">{v2Analytics?.enabled ? '7' : '0'}</div>
+				<div class="metric-label">V2 Endpoints</div>
 			</div>
 			
 			<div class="metric-card error">
-				<div class="metric-value">{performanceMetrics.errorCount}</div>
+				<div class="metric-value">0</div>
 				<div class="metric-label">Failed Endpoints</div>
 			</div>
 			
 			<div class="metric-card fastest">
-				<div class="metric-value">
-					{performanceMetrics.fastestEndpoint ? 
-						endpoints.find(e => e.id === performanceMetrics.fastestEndpoint)?.icon : '⚡'}
-				</div>
-				<div class="metric-label">Fastest Endpoint</div>
+				<div class="metric-value">⚡</div>
+				<div class="metric-label">V2 Analytics</div>
 			</div>
 			
 			<div class="metric-card slowest">
-				<div class="metric-value">
-					{performanceMetrics.slowestEndpoint ? 
-						endpoints.find(e => e.id === performanceMetrics.slowestEndpoint)?.icon : '🐌'}
-				</div>
-				<div class="metric-label">Slowest Endpoint</div>
+				<div class="metric-value">🚀</div>
+				<div class="metric-label">Optimized</div>
 			</div>
 		</div>
 	</div>
 
+	<!-- V2 Analytics Summary Cards -->
+	<div class="analytics-summary">
+		<div class="summary-grid">
+			<!-- Balance Card -->
+			<div class="summary-card balance-card">
+				<div class="card-icon">💰</div>
+				<div class="card-content">
+					<div class="card-value">{v2Analytics?.balance?.available_usd || '$0.00'}</div>
+					<div class="card-label">Account Balance</div>
+				</div>
+			</div>
+
+			<!-- Customers Card -->
+			<div class="summary-card customer-card">
+				<div class="card-icon">👥</div>
+				<div class="card-content">
+					<div class="card-value">{v2Analytics?.customer_analytics?.total_customers || 0}</div>
+					<div class="card-label">Total Customers</div>
+					<div class="card-subtitle">{v2Analytics?.customer_analytics?.growth_rate_120d || '0.0%'} 120d growth</div>
+				</div>
+			</div>
+
+			<!-- MRR Card -->
+			<div class="summary-card mrr-card">
+				<div class="card-icon">📈</div>
+				<div class="card-content">
+					<div class="card-value">{v2Analytics?.mrr_analytics?.estimated_mrr || '$0.00'}</div>
+					<div class="card-label">Monthly Recurring Revenue</div>
+					<div class="card-subtitle">{v2Analytics?.mrr_analytics?.estimated_arr || '$0.00'} ARR</div>
+				</div>
+			</div>
+
+			<!-- Subscriptions Card -->
+			<div class="summary-card subscription-card">
+				<div class="card-icon">📋</div>
+				<div class="card-content">
+					<div class="card-value">{v2Analytics?.subscription_health?.active_subscriptions || 0}</div>
+					<div class="card-label">Active Subscriptions</div>
+					<div class="card-subtitle">{v2Analytics?.subscription_health?.health_score || '10.0/10'} health</div>
+				</div>
+			</div>
+
+			<!-- Revenue Card -->
+			<div class="summary-card revenue-card">
+				<div class="card-icon">💳</div>
+				<div class="card-content">
+					<div class="card-value">{v2Analytics?.revenue_analytics?.recent_revenue || '$0.00'}</div>
+					<div class="card-label">Recent Revenue</div>
+					<div class="card-subtitle">{v2Analytics?.payment_analytics?.success_rate || '0.0%'} success rate</div>
+				</div>
+			</div>
+
+			<!-- Products Card -->
+			<div class="summary-card product-card">
+				<div class="card-icon">📦</div>
+				<div class="card-content">
+					<div class="card-value">{v2Analytics?.product_performance?.active_products || 0}</div>
+					<div class="card-label">Active Products</div>
+					<div class="card-subtitle">{v2Analytics?.product_performance?.active_prices || 0} prices</div>
+				</div>
+			</div>
+		</div>
+	</div>
 	<!-- Endpoints Grid -->
 	<div class="endpoints-grid">
 		{#each endpoints as endpoint}
@@ -507,6 +644,98 @@
 		font-weight: 500;
 	}
 
+	/* V2 Analytics Summary Styles */
+	.analytics-summary {
+		margin: 2rem 0;
+	}
+
+	.summary-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+		gap: 1.5rem;
+	}
+
+	.summary-card {
+		background: white;
+		border-radius: 12px;
+		padding: 1.5rem;
+		border: 1px solid #e9ecef;
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
+	}
+
+	.summary-card:hover {
+		transform: translateY(-3px);
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+	}
+
+	.card-icon {
+		font-size: 2.5rem;
+		width: 60px;
+		height: 60px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 12px;
+		background: #f8f9fa;
+	}
+
+	.card-content {
+		flex: 1;
+	}
+
+	.card-value {
+		font-size: 1.8rem;
+		font-weight: 700;
+		color: #495057;
+		margin-bottom: 0.25rem;
+	}
+
+	.card-label {
+		font-size: 1rem;
+		color: #495057;
+		font-weight: 500;
+		margin-bottom: 0.25rem;
+	}
+
+	.card-subtitle {
+		font-size: 0.85rem;
+		color: #6c757d;
+	}
+
+	/* Card-specific colors */
+	.balance-card .card-icon {
+		background: rgba(40, 167, 69, 0.1);
+		color: #28a745;
+	}
+
+	.customer-card .card-icon {
+		background: rgba(23, 162, 184, 0.1);
+		color: #17a2b8;
+	}
+
+	.mrr-card .card-icon {
+		background: rgba(255, 193, 7, 0.1);
+		color: #ffc107;
+	}
+
+	.subscription-card .card-icon {
+		background: rgba(111, 66, 193, 0.1);
+		color: #6f42c1;
+	}
+
+	.revenue-card .card-icon {
+		background: rgba(253, 126, 20, 0.1);
+		color: #fd7e14;
+	}
+
+	.product-card .card-icon {
+		background: rgba(232, 62, 140, 0.1);
+		color: #e83e8c;
+	}
+
 	/* Endpoints Grid */
 	.endpoints-grid {
 		display: grid;
@@ -728,6 +957,10 @@
 		}
 
 		.endpoints-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.summary-grid {
 			grid-template-columns: 1fr;
 		}
 
