@@ -28,29 +28,30 @@
 			summary = data;
 			loading = false;
 		} else {
-			await fetchSummary();
+			//await fetchSummary();
+			loading = false;
 		}
 		await loadPortalLink();
 	});
 
-	async function fetchSummary() {
-		try {
-			loading = true;
-			error = '';
-			const res = await apiRequest('/admin/streaming/stripe/summary');
-			if (res.ok) {
-				const data = await res.json();
-				summary = data.summary;
-			} else {
-				error = 'Failed to load summary';
-			}
-		} catch (err) {
-			error = 'Failed to load summary';
-			console.error(err);
-		} finally {
-			loading = false;
-		}
-	}
+	//async function fetchSummary() {
+		//try {
+		//	loading = true;
+		//	error = '';
+		//	const res = await apiRequest('/admin/streaming/stripe/summary');
+		//	if (res.ok) {
+		//		const data = await res.json();
+		//		summary = data.summary;
+		//	} else {
+		//		error = 'Failed to load summary';
+		//	}
+		//} catch (err) {
+		//	error = 'Failed to load summary';
+		//	console.error(err);
+		//} finally {
+		//	loading = false;
+		//}
+	//}
 
 	async function saveSecret() {
 		if (!secret.trim()) return;
@@ -68,7 +69,7 @@
 			if (res.ok) {
 				success = 'Stripe key saved successfully!';
 				secret = '';
-				await fetchSummary(); // Refresh the summary
+				//await fetchSummary(); // Refresh the summary
 			} else {
 				const errorData = await res.json();
 				error = errorData.error || 'Failed to save key';
@@ -297,13 +298,13 @@
 						<div class="connected-info">
 							<h2>Stripe Connected Successfully</h2>
 							<p>Your Stripe account is connected and ready to process payments</p>
-							<div class="environment-badge {summary.environment === 'live' ? 'live' : 'test'}">
+							<!--<div class="environment-badge {summary.environment === 'live' ? 'live' : 'test'}">
 								{summary.environment === 'live' ? '🔴 LIVE MODE' : '🟡 TEST MODE'}
-							</div>
+							</div>-->
 						</div>
 					</div>
 
-					<div class="connected-stats">
+					<!--<div class="connected-stats">
 						<div class="stat">
 							<span class="stat-value">{summary.products_count || 0}</span>
 							<span class="stat-label">Products</span>
@@ -316,16 +317,16 @@
 							<span class="stat-value">{summary.subscriptions_count || 0}</span>
 							<span class="stat-label">Subscriptions</span>
 						</div>
-					</div>
+					</div>-->
 
 					<div class="connected-actions">
 						<button class="btn btn-outline" onclick={() => { summary = { enabled: false }; }}>
 							🔑 Update Key
 						</button>
-						<button class="btn btn-secondary" onclick={fetchSummary}>
+						<!--<button class="btn btn-secondary" onclick={fetchSummary}>
 							🔄 Refresh Connection
 						</button>
-						<!-- Use the parent's function -->
+						 Use the parent's function -->
 						<button class="btn btn-danger" onclick={onClearKey}>
 							🗑️ Clear Key
 						</button>

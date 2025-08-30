@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import type { Advertisement, AdPlacement, AdServeResponse } from '$lib/types/advertising';
+	import { apiBaseUrl } from '$lib/config';
 	
 	export let placementId: number | undefined = undefined;
 	export let placement: string | null = null;
@@ -14,7 +15,7 @@
 	let error: string | null = null;
 	let adElement: HTMLElement;
 	let impressionTracked = false;
-	let viewTimer: number;
+	let viewTimer: NodeJS.Timeout;
 	let isVisible = false;
 	
 	// Mapping of placement names to IDs for backward compatibility
@@ -55,7 +56,7 @@
 	
 	async function loadAd() {
 		try {
-			const response = await fetch(`/api/v1/ads/serve/${actualPlacementId}`, {
+			const response = await fetch(`${apiBaseUrl}/ads/serve/${actualPlacementId}`, {
 				method: 'GET',
 				headers: {
 					'Content-Type': 'application/json',
@@ -145,8 +146,8 @@
 		
 		// Mock tracking data
 		trackingData = {
-			impression_url: `/api/v1/ads/impression/${ad.id}`,
-			click_url: `/api/v1/ads/click/${ad.id}`,
+			impression_url: `${apiBaseUrl}/ads/impression/${ad.id}`,
+			click_url: `${apiBaseUrl}/ads/click/${ad.id}`,
 			view_tracking: true
 		};
 	}
@@ -183,7 +184,7 @@
 		impressionTracked = true;
 		
 		try {
-			await fetch(`/api/v1/ads/impression/${ad.id}`, {
+			await fetch(`${apiBaseUrl}/ads/impression/${ad.id}`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'
@@ -204,7 +205,7 @@
 		if (!ad) return;
 		
 		try {
-			await fetch(`/api/v1/ads/impression/${ad.id}`, {
+			await fetch(`${apiBaseUrl}/ads/impression/${ad.id}`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'
@@ -224,7 +225,7 @@
 		
 		// Track click
 		try {
-			await fetch(`/api/v1/ads/click/${ad.id}`, {
+			await fetch(`${apiBaseUrl}/ads/click/${ad.id}`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'
@@ -416,6 +417,7 @@
 		line-height: 1.4;
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
+		line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 	}

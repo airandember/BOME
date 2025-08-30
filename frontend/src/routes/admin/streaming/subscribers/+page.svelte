@@ -12,192 +12,198 @@
 	import SendOfferModal from './SendOfferModal.svelte';
 	import type { SubscriptionOffer } from '$lib/services/subscription-offers';
 	import { SubscriptionOfferService } from '$lib/services/subscription-offers';
+	import { apiRequest } from '$lib/auth';
+	import StripeCustomers from './customers/+page.svelte';
 
 	// State
-	let activeTab: 'subscribers' | 'non-subscribers' = 'subscribers';
-	let loading = false;
+	let activeTab: 'subscribers' | 'non-subscribers' | 'stripe-subs' = $state('subscribers');
+	let loading = $state(false);
 	
 	// All data arrays (source of truth)
-	let allSubscribers: Subscriber[] = [];
-	let allNonSubscribers: NonSubscriber[] = [];
+	let allSubscribers = $state<Subscriber[]>([]);
+	let allNonSubscribers = $state<NonSubscriber[]>([]);
 	
 	// Display arrays (what gets shown in tables)
-	let displayedSubscribers: Subscriber[] = [];
-	let displayedNonSubscribers: NonSubscriber[] = [];
+	let displayedSubscribers = $state<Subscriber[]>([]);
+	let displayedNonSubscribers = $state<NonSubscriber[]>([]);
 	
-	let subscriberCount = 0;
-	let nonSubscriberCount = 0;
-	let animationDirection: 'left' | 'right' = 'right';
-	let isAnimating = false;
-	let isTransitioning = false;
+	let subscriberCount = $state(0);
+	let nonSubscriberCount = $state(0);
+	let animationDirection: 'left' | 'right' = $state('right');
+	let isAnimating = $state(false);
+	let isTransitioning = $state(false);
 
 	// Roles data for normalized names
-	let roles: any[] = [];
-	let rolesLoading = true;
+	let roles: any[] = $state([]);
+	let rolesLoading = $state(true);
 
 	// Subscription plans for edit modal
-	let subscriptionPlans: any[] = [];
+	let subscriptionPlans: any[] = $state([]);
 
 	// Edit modal state
-	let showEditModal = false;
-	let selectedSubscriber: Subscriber | null = null;
+	let showEditModal = $state(false);
+	let selectedSubscriber: Subscriber | null = $state(null);
 
 	// Pagination
-	let currentPage = 1;
-	let itemsPerPage = 50;
-	let totalPages = 1;
+	let currentPage = $state(1);
+	let itemsPerPage = $state(50);
+	let totalPages = $state(1);
 
 	// Separate filters for each tab
-	let subscriberSearchTerm = '';
-	let subscriberEmailVerifiedFilter: boolean | undefined = undefined;
-	let subscriberRoleFilter = '';
-	let subscriberPlanFilter = '';
-	let subscriberLastLoginFilter = '';
-	let subscriberCreatedDateFilter = '';
+	let subscriberSearchTerm = $state('');
+	let subscriberEmailVerifiedFilter: boolean | undefined = $state(undefined);
+	let subscriberRoleFilter = $state('');
+	let subscriberPlanFilter = $state('');
+	let subscriberLastLoginFilter = $state('');
+	let subscriberCreatedDateFilter = $state('');
 
-	let nonSubscriberSearchTerm = '';
-	let nonSubscriberEmailVerifiedFilter: boolean | undefined = undefined;
-	let nonSubscriberRoleFilter = '';
-	let nonSubscriberLastLoginFilter = '';
-	let nonSubscriberCreatedDateFilter = '';
-	let nonSubscriberHasSubbedFilter: boolean | undefined = undefined;
+	let nonSubscriberSearchTerm = $state('');
+	let nonSubscriberEmailVerifiedFilter: boolean | undefined = $state(undefined);
+	let nonSubscriberRoleFilter = $state('');
+	let nonSubscriberLastLoginFilter = $state('');
+	let nonSubscriberCreatedDateFilter = $state('');
+	let nonSubscriberHasSubbedFilter: boolean | undefined = $state(undefined);
 
 	// Selection state
-	let selectedSubscribers: Set<number> = new Set();
-	let selectedNonSubscribers: Set<number> = new Set();
-	let selectAllSubscribers = false;
-	let selectAllNonSubscribers = false;
+	let selectedSubscribers: Set<number> = $state(new Set());
+	let selectedNonSubscribers: Set<number> = $state(new Set());
+	let selectAllSubscribers = $state(false);
+	let selectAllNonSubscribers = $state(false);
 
 	// Simplified computed properties
-	$: currentSelectedItems = activeTab === 'subscribers' ? selectedSubscribers : selectedNonSubscribers;
-	$: currentSelectAll = activeTab === 'subscribers' ? selectAllSubscribers : selectAllNonSubscribers;
-	$: currentDisplayedItems = activeTab === 'subscribers' ? displayedSubscribers : displayedNonSubscribers;
-	$: currentDisplayedCount = activeTab === 'subscribers' ? displayedSubscribers.length : displayedNonSubscribers.length;
-	$: currentSelectedCount = activeTab === 'subscribers' ? selectedSubscribers.size : selectedNonSubscribers.size;
+	let currentSelectedItems = $derived(activeTab === 'subscribers' ? selectedSubscribers : selectedNonSubscribers);
+	let currentSelectAll = $derived(activeTab === 'subscribers' ? selectAllSubscribers : selectAllNonSubscribers);
+	let currentDisplayedItems = $derived(activeTab === 'subscribers' ? displayedSubscribers : displayedNonSubscribers);
+	let currentDisplayedCount = $derived(activeTab === 'subscribers' ? displayedSubscribers.length : displayedNonSubscribers.length);
+	let currentSelectedCount = $derived(activeTab === 'subscribers' ? selectedSubscribers.size : selectedNonSubscribers.size);
 
 	// Reactive paginated data - updates automatically when display arrays or currentPage changes
-	$: paginatedSubscribers = (() => {
+	let paginatedSubscribers = $state<Subscriber[]>([]);
+	let paginatedNonSubscribers = $state<NonSubscriber[]>([]);
+
+	// Update paginated data when dependencies change
+	$effect(() => {
 		const startIndex = (currentPage - 1) * itemsPerPage;
 		const endIndex = startIndex + itemsPerPage;
-		return displayedSubscribers.slice(startIndex, endIndex);
-	})();
-
-	$: paginatedNonSubscribers = (() => {
-		const startIndex = (currentPage - 1) * itemsPerPage;
-		const endIndex = startIndex + itemsPerPage;
-		return displayedNonSubscribers.slice(startIndex, endIndex);
-	})();
-
-	// Load roles data
-	async function fetchRoles() {
-		try {
-			rolesLoading = true;
-			
-			// Get the auth token from the auth store
-			const token = $auth.token;
-			if (!token) {
-				console.error('No auth token found');
-				return;
-			}
-			
-					const response = await apiRequest('/admin/rolesAndDepartments');
-			
-			if (response.ok) {
-				const data = await response.json();
-				roles = data.data?.roles || [];
-				console.log('FETCHED roles from API:', roles);
-			} else {
-				console.error('Failed to fetch roles:', response.status, response.statusText);
-			}
-		} catch (error) {
-			console.error('Error fetching roles:', error);
-		} finally {
-			rolesLoading = false;
-		}
-	}
-
-	// Load subscription plans for edit modal
-	async function fetchSubscriptionPlans() {
-		try {
-			const response = await fetch('/api/v1/admin/subscription-plans/', {
-				headers: {
-					'Authorization': `Bearer ${$auth.token}`,
-					'Content-Type': 'application/json'
-				}
-			});
-			
-			if (response.ok) {
-				const data = await response.json();
-				subscriptionPlans = data || [];
-			}
-		} catch (error) {
-			console.error('Error fetching subscription plans:', error);
-		}
-	}
-
-	// Load data on mount
-	onMount(async () => {
-		await fetchRoles();
-		await fetchSubscriptionPlans();
-		await loadInitialData();
+		paginatedSubscribers = displayedSubscribers.slice(startIndex, endIndex);
 	});
 
-	// Load all data once
-	async function loadInitialData() {
-		loading = true;
-		try {
-			console.log('Loading initial data for both tabs...');
-			
-			// Load all subscribers
-			const subscribersResponse = await StreamingSubscriberService.getSubscribers({
-				limit: 1000, // Get all subscribers
-				offset: 0
-			});
-			allSubscribers = subscribersResponse.subscribers || [];
-			subscriberCount = allSubscribers.length;
-			
-			console.log('Loaded subscribers with roles:', allSubscribers.map(s => ({ id: s.id, role: s.role, email: s.email })));
-			
-			// Load all non-subscribers
-			const nonSubscribersResponse = await StreamingSubscriberService.getNonSubscribers({
-				limit: 1000, // Get all non-subscribers
-				offset: 0
-			});
-			allNonSubscribers = nonSubscribersResponse.non_subscribers || [];
-			nonSubscriberCount = allNonSubscribers.length;
-			
-			console.log('Loaded non-subscribers with roles:', allNonSubscribers.map(ns => ({ id: ns.id, role: ns.role, email: ns.email })));
-			
-			// Initialize display arrays with all data (no filters applied initially)
-			displayedSubscribers = [...allSubscribers];
-			displayedNonSubscribers = [...allNonSubscribers];
-			
-			// Apply initial filtering (roles should be loaded by now)
-			applyFilters();
-			
-			console.log('Initial data loaded:', {
-				subscribers: allSubscribers.length,
-				nonSubscribers: allNonSubscribers.length,
-				displayedSubscribers: displayedSubscribers.length,
-				displayedNonSubscribers: displayedNonSubscribers.length,
-				rolesLoaded: roles.length
-			});
-		} catch (error) {
-			console.error('Error loading initial data:', error);
-			showToast('Failed to load data', 'error');
-			
-			// Set empty state
-			allSubscribers = [];
-			allNonSubscribers = [];
-			displayedSubscribers = [];
-			displayedNonSubscribers = [];
-			subscriberCount = 0;
-			nonSubscriberCount = 0;
-		} finally {
-			loading = false;
-		}
-	}
+	$effect(() => {
+		const startIndex = (currentPage - 1) * itemsPerPage;
+		const endIndex = startIndex + itemsPerPage;
+		paginatedNonSubscribers = displayedNonSubscribers.slice(startIndex, endIndex);
+	});
 
+// Load roles data
+async function fetchRoles() {
+	try {
+		rolesLoading = true;
+		
+		// Get the auth token from the auth store
+		const token = $auth.token;
+		if (!token) {
+			console.error('No auth token found');
+			return;
+		}
+		
+				const response = await apiRequest('/admin/rolesAndDepartments');
+		
+		if (response.ok) {
+			const data = await response.json();
+			roles = data.data?.roles || [];
+			console.log('FETCHED roles from API:', roles);
+		} else {
+			console.error('Failed to fetch roles:', response.status, response.statusText);
+		}
+	} catch (error) {
+		console.error('Error fetching roles:', error);
+	} finally {
+		rolesLoading = false;
+	}
+}
+
+// Load subscription plans for edit modal
+async function fetchSubscriptionPlans() {
+	try {
+		const response = await fetch('/api/v1/admin/subscription-plans/', {
+			headers: {
+				'Authorization': `Bearer ${$auth.token}`,
+				'Content-Type': 'application/json'
+			}
+		});
+		
+		if (response.ok) {
+			const data = await response.json();
+			subscriptionPlans = data || [];
+		}
+	} catch (error) {
+		console.error('Error fetching subscription plans:', error);
+	}
+}
+
+// Load data on mount
+onMount(async () => {
+	await fetchRoles();
+	await fetchSubscriptionPlans();
+	await loadInitialData();
+});
+
+// Load all data once
+async function loadInitialData() {
+	loading = true;
+	try {
+		console.log('Loading initial data for both tabs...');
+		
+		// Load all subscribers
+		const subscribersResponse = await StreamingSubscriberService.getSubscribers({
+			limit: 1000, // Get all subscribers
+			offset: 0
+		});
+		allSubscribers = subscribersResponse.subscribers || [];
+		subscriberCount = allSubscribers.length;
+		
+		console.log('Loaded subscribers with roles:', allSubscribers.map(s => ({ id: s.id, role: s.role, email: s.email })));
+		
+		// Load all non-subscribers
+		const nonSubscribersResponse = await StreamingSubscriberService.getNonSubscribers({
+			limit: 1000, // Get all non-subscribers
+			offset: 0
+		});
+		allNonSubscribers = nonSubscribersResponse.non_subscribers || [];
+		nonSubscriberCount = allNonSubscribers.length;
+		
+		console.log('Loaded non-subscribers with roles:', allNonSubscribers.map(ns => ({ id: ns.id, role: ns.role, email: ns.email })));
+		
+		// Initialize display arrays with all data (no filters applied initially)
+		displayedSubscribers = [...allSubscribers];
+		displayedNonSubscribers = [...allNonSubscribers];
+		
+		// Apply initial filtering (roles should be loaded by now)
+		applyFilters();
+		
+		console.log('Initial data loaded:', {
+			subscribers: allSubscribers.length,
+			nonSubscribers: allNonSubscribers.length,
+			displayedSubscribers: displayedSubscribers.length,
+			displayedNonSubscribers: displayedNonSubscribers.length,
+			rolesLoaded: roles.length
+		});
+	} catch (error) {
+		console.error('Error loading initial data:', error);
+		showToast('Failed to load data', 'error');
+		
+		// Set empty state
+		allSubscribers = [];
+		allNonSubscribers = [];
+		displayedSubscribers = [];
+		displayedNonSubscribers = [];
+		subscriberCount = 0;
+		nonSubscriberCount = 0;
+	} finally {
+		loading = false;
+	}
+}
+	
 	// Apply filters to the loaded data - optimized for real-time performance
 	function applyFilters() {
 		const currentFilters = getCurrentFilters();
@@ -586,25 +592,31 @@
 		}
 	}
 
-	// Reactive statement to apply filters when any filter changes
-	$: {
-		if (allSubscribers.length > 0 || allNonSubscribers.length > 0) {
+	// Watch filter variables for changes - only apply filters when filters actually change
+	$effect(() => {
+		if (allSubscribers.length > 0 && (
+			subscriberSearchTerm || 
+			subscriberEmailVerifiedFilter || 
+			subscriberRoleFilter || 
+			subscriberPlanFilter || 
+			subscriberLastLoginFilter || 
+			subscriberCreatedDateFilter
+		)) {
 			applyFilters();
 		}
-	}
+	});
 
-	// Watch filter variables for changes - simplified for better performance
-	$: if (allSubscribers.length > 0) {
-		subscriberSearchTerm, subscriberEmailVerifiedFilter, subscriberRoleFilter, 
-		subscriberPlanFilter, subscriberLastLoginFilter, subscriberCreatedDateFilter;
-		applyFilters();
-	}
-
-	$: if (allNonSubscribers.length > 0) {
-		nonSubscriberSearchTerm, nonSubscriberEmailVerifiedFilter, nonSubscriberRoleFilter, 
-		nonSubscriberLastLoginFilter, nonSubscriberCreatedDateFilter;
-		applyFilters();
-	}
+	$effect(() => {
+		if (allNonSubscribers.length > 0 && (
+			nonSubscriberSearchTerm || 
+			nonSubscriberEmailVerifiedFilter || 
+			nonSubscriberRoleFilter || 
+			nonSubscriberLastLoginFilter || 
+			nonSubscriberCreatedDateFilter
+		)) {
+			applyFilters();
+		}
+	});
 
 	// Keep only the direct callback function
 	function handleSelectItemDirect(event: CustomEvent<{ itemId: number; checked: boolean }>) {
@@ -776,37 +788,36 @@
 		}, 600);
 	}
 
-	// Simple tab change for the new tab system
-	function changeTab(tab: 'subscribers' | 'non-subscribers') {
+
+	// Update the changeTab function to handle the new tab
+	function changeTab(tab: 'subscribers' | 'non-subscribers' | 'stripe-subs') {
 		if (tab === activeTab) return;
 		
 		// Clear selections when switching tabs
-		clearSelection();
+		selectedSubscribers.clear();
+		selectedNonSubscribers.clear();
+		selectAllSubscribers = false;
+		selectAllNonSubscribers = false;
 		
-		// Determine animation direction
+		// Reset pagination when switching tabs
+		currentPage = 1;
+		
+		// Set animation direction based on tab order
 		if (activeTab === 'subscribers' && tab === 'non-subscribers') {
 			animationDirection = 'right';
 		} else if (activeTab === 'non-subscribers' && tab === 'subscribers') {
 			animationDirection = 'left';
+		} else if (tab === 'stripe-subs') {
+			// New tab - determine direction based on current tab
+			animationDirection = activeTab === 'subscribers' ? 'right' : 'left';
 		}
 		
 		activeTab = tab;
-		currentPage = 1;
-		isTransitioning = true;
-		isAnimating = true;
 		
-		// Apply filters immediately
-		applyFilters();
-		
-		// End transition after brief period
-		setTimeout(() => {
-			isTransitioning = false;
-		}, 300);
-		
-		// End animation after content loads
-		setTimeout(() => {
-			isAnimating = false;
-		}, 600);
+		// Load data for the new tab if it's the Stripe tab
+		if (tab === 'stripe-subs') {
+			loadStripeData();
+		}
 	}
 
 	// Handle search
@@ -1052,6 +1063,87 @@
 			showToast('Failed to update subscriber', 'error');
 		}
 	}
+
+	// Add new state variables for Stripe customers tab
+	let stripeOnlyCustomers = $state<any[]>([]);
+	let syncedCustomers = $state<any[]>([]);
+	let localOnlyUsers = $state<any[]>([]);
+	let syncingCustomers = $state(new Set<string>());
+	let bulkCreatingUsers = $state(false);
+
+	// Add stats for Stripe tab
+	let totalCount = $state(0);
+	let syncedCount = $state(0);
+	let localOnlyCount = $state(0);
+	let stripeOnlyCount = $state(0);
+
+	// Add function to load Stripe data
+	async function loadStripeData() {
+		// For now, use mock data - this will be replaced with real data later
+		stripeOnlyCustomers = [
+			{
+				id: 'stripe_1',
+				source: 'stripe',
+				name: 'John Doe',
+				email: 'john@example.com',
+				localId: null,
+				role: null,
+				planName: null,
+				stripePriceId: null,
+				stripeId: 'cus_123456',
+				stripeCreatedAt: '2024-01-01T00:00:00Z',
+				stripeMetadata: {},
+				createdAt: '2024-01-01T00:00:00Z',
+				stripeCustomerId: null,
+				syncStatus: 'stripe_only'
+			}
+		];
+		
+		syncedCustomers = [
+			{
+				id: 'hybrid_1',
+				source: 'hybrid',
+				name: 'Jane Smith',
+				email: 'jane@example.com',
+				localId: 1,
+				role: 'user',
+				planName: 'Basic Plan',
+				stripePriceId: 'price_123',
+				stripeId: 'cus_789012',
+				stripeCreatedAt: '2024-01-01T00:00:00Z',
+				stripeMetadata: {},
+				createdAt: '2024-01-01T00:00:00Z',
+				stripeCustomerId: 'cus_789012',
+				syncStatus: 'synced'
+			}
+		];
+		
+		localOnlyUsers = [
+			{
+				id: 'local_1',
+				source: 'local',
+				name: 'Bob Johnson',
+				email: 'bob@example.com',
+				localId: 2,
+				role: 'user',
+				planName: 'Premium Plan',
+				stripePriceId: 'price_456',
+				stripeId: null,
+				stripeCreatedAt: null,
+				stripeMetadata: null,
+				createdAt: '2024-01-01T00:00:00Z',
+				stripeCustomerId: null,
+				syncStatus: 'local_only'
+			}
+		];
+		
+		// Calculate stats
+		totalCount = stripeOnlyCustomers.length + localOnlyUsers.length;
+		syncedCount = syncedCustomers.length;
+		localOnlyCount = localOnlyUsers.length;
+		stripeOnlyCount = stripeOnlyCustomers.length;
+	}
+
 </script>
 
 <svelte:head>
@@ -1071,7 +1163,7 @@
 		<button 
 			class="tab-button" 
 			class:active={activeTab === 'subscribers'}
-			on:click={() => changeTab('subscribers')}
+			onclick={() => changeTab('subscribers')}
 		>
 			<span class="tab-icon">👥</span>
 			Subscribers ({displayedSubscribers.length})
@@ -1079,10 +1171,18 @@
 		<button 
 			class="tab-button" 
 			class:active={activeTab === 'non-subscribers'}
-			on:click={() => changeTab('non-subscribers')}
+			onclick={() => changeTab('non-subscribers')}
 		>
 			<span class="tab-icon">👤</span>
 			Non-Subscribers ({displayedNonSubscribers.length})
+		</button>
+		<button 
+			class="tab-button" 
+			class:active={activeTab === 'stripe-subs'}
+			onclick={() => changeTab('stripe-subs')}
+		>
+			<span class="tab-icon">🔗</span>
+			Stripe Subs ({stripeOnlyCount + syncedCount})
 		</button>
 	</div>
 
@@ -1114,19 +1214,19 @@
 					<div class="selection-actions">
 						<span class="selected-count">{currentSelectedCount} selected</span>
 						<div class="selected-buttons-container">
-							<button class="selection-button btn btn-primary" on:click={handleSendOffer}>
+							<button class="selection-button btn btn-primary" onclick={handleSendOffer}>
 								📧 Send Offer
 							</button>
-							<button class="selection-button btn btn-warning" on:click={handleBulkSuspend}>
+							<button class="selection-button btn btn-warning" onclick={handleBulkSuspend}>
 								⏸️ Suspend
 							</button>
-							<button class="selection-button btn btn-success" on:click={handleBulkActivate}>
+							<button class="selection-button btn btn-success" onclick={handleBulkActivate}>
 								▶️ Activate
 							</button>
-							<button class="selection-button btn btn-info" on:click={handleBulkChangePlan}>
+							<button class="selection-button btn btn-info" onclick={handleBulkChangePlan}>
 								📊 Change Plan
 							</button>
-							<button class="selection-button btn btn-secondary" on:click={clearSelection}>
+							<button class="selection-button btn btn-secondary" onclick={clearSelection}>
 								Clear Selection
 							</button>
 						</div>
@@ -1135,7 +1235,7 @@
 
 				<!-- Export button -->
 				<div class="export-section">
-					<button class="btn btn-outline" on:click={handleExport}>
+					<button class="btn btn-outline" onclick={handleExport}>
 						📥 Export Subscribers
 					</button>
 				</div>
@@ -1166,7 +1266,7 @@
 					/>
 				{/if}
 			</div>
-		{:else}
+		{:else if activeTab === 'non-subscribers'}
 			<!-- Non-Subscribers Tab -->
 			<div class="non-subscribers-section">
 				<!-- Filters -->
@@ -1193,10 +1293,10 @@
 						<span class="selected-count">{selectedNonSubscribers.size} selected</span>
 						<div class="selected-buttons-container">
 
-							<button class="selection-button btn btn-primary" on:click={handleSendOffer}>
+							<button class="selection-button btn btn-primary" onclick={handleSendOffer}>
 								📧 Send Offer
 							</button>
-							<button class="selection-button btn btn-secondary " on:click={clearSelection}>
+							<button class="selection-button btn btn-secondary " onclick={clearSelection}>
 								Clear Selection
 							</button>
 						</div>
@@ -1205,7 +1305,7 @@
 
 				<!-- Export button -->
 				<div class="export-section">
-					<button class="btn btn-outline" on:click={handleExport}>
+					<button class="btn btn-outline" onclick={handleExport}>
 						📥 Export Non-Subscribers
 					</button>
 				</div>
@@ -1237,6 +1337,15 @@
 					/>
 				{/if}
 			</div>
+		{:else if activeTab === 'stripe-subs'}
+			<!-- Stripe Subscribers Tab -->
+			<div class="stripe-subs-section">
+				<!-- Pass the required props to the customers component -->
+				<StripeCustomers 
+					summary={null} 
+					stripeData={null} 
+				/>
+			</div>
 		{/if}
 	</div>
 </div>
@@ -1263,10 +1372,33 @@
 {/if}
 
 <style>
+	/* CSS Variables for child components */
+	:global(:root) {
+		--space-xs: 0.25rem;
+		--space-sm: 0.5rem;
+		--space-md: 1rem;
+		--space-lg: 1.5rem;
+		--space-xl: 2rem;
+		--radius-sm: 0.25rem;
+		--radius-md: 0.375rem;
+		--radius-lg: 0.5rem;
+		--text: #111827;
+		--text-muted: #6b7280;
+		--primary: #2563eb;
+		--primary-hover: #1d4ed8;
+		--surface: #ffffff;
+		--bg-secondary: #f9fafb;
+		--bg-hover: #f3f4f6;
+		--border: #e5e7eb;
+		--error: #dc2626;
+		--success: #059669;
+		--warning: #d97706;
+		--font-mono: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+	}
+
 	.subscribers-page {
 		max-width: 100%;
 		margin: 0 auto;
-	
 		padding: 0 0;
 	}
 
@@ -1337,7 +1469,8 @@
 	}
 
 	.subscribers-section,
-	.non-subscribers-section {
+	.non-subscribers-section,
+	.stripe-subs-section {
 		padding: 1.5rem;
 	}
 
@@ -1347,7 +1480,6 @@
 	}
 
 	/* Selection Controls */
-
 	.selection-actions {
 		display: flex;
 		flex-direction: row;
@@ -1360,56 +1492,7 @@
 	}
 
 	.selection-button {
-		height: 50px
-	}
-
-	.selection-controls {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 1rem 1.5rem;
-		background: #f9fafb;
-		border: 1px solid #e5e7eb;
-		border-radius: 0.5rem;
-		margin-bottom: 1rem;
-	}
-
-	.selection-left {
-		display: flex;
-		align-items: center;
-	}
-
-	.selection-right {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-	}
-
-	.select-all-checkbox {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		cursor: pointer;
-		font-weight: 500;
-		color: #374151;
-	}
-
-	.select-all-checkbox input[type="checkbox"] {
-		width: 1.25rem;
-		height: 1.25rem;
-		border: 2px solid #d1d5db;
-		border-radius: 0.25rem;
-		background: white;
-		cursor: pointer;
-	}
-
-	.select-all-checkbox input[type="checkbox"]:checked {
-		background: #2563eb;
-		border-color: #2563eb;
-	}
-
-	.checkbox-label {
-		font-size: 0.875rem;
+		height: 50px;
 	}
 
 	.selected-count {
@@ -1448,6 +1531,112 @@
 	}
 
 	.btn-secondary:hover {
+		background: #e5e7eb;
+	}
+
+	.btn-outline {
+		background: transparent;
+		color: #2563eb;
+		border: 1px solid #2563eb;
+	}
+
+	.btn-outline:hover {
+		background: #2563eb;
+		color: white;
+	}
+
+	.btn-warning {
+		background: #d97706;
+		color: white;
+	}
+
+	.btn-warning:hover {
+		background: #b45309;
+	}
+
+	.btn-success {
+		background: #059669;
+		color: white;
+	}
+
+	.btn-success:hover {
+		background: #047857;
+	}
+
+	.btn-info {
+		background: #0891b2;
+		color: white;
+	}
+
+	.btn-info:hover {
+		background: #0e7490;
+	}
+
+	.btn-sm {
+		padding: 0.375rem 0.75rem;
+		font-size: 0.75rem;
+	}
+
+	.btn-ghost {
+		background: transparent;
+		color: #6b7280;
+		border: 1px solid transparent;
+	}
+
+	.btn-ghost:hover {
+		background: #f3f4f6;
+		color: #374151;
+	}
+
+	.btn-error {
+		background: #dc2626;
+		color: white;
+	}
+
+	.btn-error:hover {
+		background: #b91c1c;
+	}
+
+	.btn-danger {
+		background: #dc2626;
+		color: white;
+	}
+
+	.btn-danger:hover {
+		background: #b91c1c;
+	}
+
+	.btn-small {
+		padding: 0.25rem 0.5rem;
+		font-size: 0.75rem;
+	}
+
+	.btn-lg {
+		padding: 0.75rem 1.5rem;
+		font-size: 1.125rem;
+	}
+
+	.btn-full {
+		width: 100%;
+		justify-content: center;
+	}
+
+	.btn-bottom {
+		margin-top: auto;
+	}
+
+	.btn-disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.btn-tag {
+		background: #f3f4f6;
+		color: #374151;
+		border: 1px solid #d1d5db;
+	}
+
+	.btn-tag:hover {
 		background: #e5e7eb;
 	}
 

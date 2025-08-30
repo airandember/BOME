@@ -582,8 +582,11 @@ function scheduleTokenRefresh(tokens: AuthTokens) {
 // API helper function with progress tracking
 export async function apiRequest(endpoint: string, options: RequestInit & { onProgress?: () => void } = {}): Promise<Response> {
 	const url = `${API_BASE_URL}${endpoint}`;
-	// console.log('Auth: Making API request to:', url);
-	// console.log('Auth: API_BASE_URL:', API_BASE_URL);
+	console.log('🔍 apiRequest debug:', {
+		endpoint,
+		API_BASE_URL,
+		finalUrl: url
+	});
 	
 	const { onProgress, ...fetchOptions } = options;
 	
@@ -653,7 +656,7 @@ export async function apiRequest(endpoint: string, options: RequestInit & { onPr
 				return fetch(url, config);
 			} else {
 				// Refresh failed, redirect to login
-				await auth.logout();
+				await goto('/login');
 				throw new Error('Authentication required');
 			}
 		}

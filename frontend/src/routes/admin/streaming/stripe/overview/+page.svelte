@@ -7,18 +7,26 @@
 	let loading = $state(true);
 	let error = $state('');
 
-	const { data = null } = $props<{ data?: any }>();
+	// Accept both summary and stripeData from parent
+	const { summary: parentSummary = null, stripeData = null } = $props<{ 
+		summary?: any, 
+		stripeData?: any 
+	}>();
 
 	onMount(async () => {
-		if (data) {
-			summary = data;
+		if (parentSummary && stripeData) {
+			// Use data passed from parent - this is the normal flow
+			summary = parentSummary;
 			loading = false;
+			console.log('✅ Overview: Using pre-loaded data from parent');
 		} else {
-			// Only fetch if no data is passed (standalone mode)
+			// Fallback for standalone mode (shouldn't happen in normal flow)
+			console.warn('⚠️ Overview: No data passed from parent, falling back to API call');
 			await fetchSummary();
 		}
 	});
 
+	// This function should rarely be called now
 	async function fetchSummary() {
 		try {
 			loading = true;
@@ -38,8 +46,12 @@
 		}
 	}
 
+	// Refresh now updates parent data instead of making API calls
 	async function refreshData() {
-		await fetchSummary();
+		// This should trigger a refresh in the parent component
+		// which will then pass new data down
+		console.log('🔄 Overview: Requesting refresh from parent');
+		// You might want to emit an event to the parent here
 	}
 
 	// Currency formatting utility

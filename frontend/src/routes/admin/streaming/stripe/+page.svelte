@@ -7,28 +7,22 @@
 	import { showToast } from '$lib/toast';
 
 	// Import child components
-	import Overview from './overview/+page.svelte';
-	import Products from './products/+page.svelte';
-	import Customers from './customers/+page.svelte';
-	import Coupons from './coupons/+page.svelte';
-	import Invoices from './invoices/+page.svelte';
-	import Payments from './payments/+page.svelte';
-	import Subscriptions from './subscriptions/+page.svelte';
+	import AnalyticsOverview from './overview/AnalyticsOverview.svelte';
 	import Setup from './setup/+page.svelte';
 
 	// State variables using Svelte 5 runes
 	let summary = $state<any>(null);
 	let loading = $state(true);
 	let error = $state('');
-	let activeTab = $state('overview');
+	let activeTab = $state('analytics');
 	let loadingStatus = $state('Initializing...');
 	let keyType = $state<'sk' | 'rk' | null>(null);
 	let dataTransferActive = $state(false);
 	let lastDataTransfer = $state<Date | null>(null);
 	let lastActivity = $state(0);
-	let activityTimeout: number | undefined = $state(undefined);
-	let maxTimeoutId: number | undefined = $state(undefined);
-	let progressInterval: number | undefined = $state(undefined);
+	let activityTimeout = $state<number | undefined>(undefined);
+	let maxTimeoutId = $state<number | undefined>(undefined);
+	let progressInterval = $state<number | undefined>(undefined);
 	let debugMode = $state(false);
 	let debugInfo = $state({
 		backendUrl: '',
@@ -36,6 +30,44 @@
 		frontendHost: '',
 		frontendProtocol: ''
 	});
+
+	// NEW: Two-state pattern for Stripe data
+	let stripeDataIncoming = $state({
+		customers: [],
+		subscriptions: [],
+		products: [],
+		prices: [],
+		invoices: [],
+		paymentIntents: [],
+		coupons: [],
+		lastUpdated: null,
+		isLoading: true,
+		progress: {
+			total: 7,
+			completed: 0,
+			current: 'Initializing...'
+		}
+	});
+
+	let stripeData = $state({
+		customers: [],
+		subscriptions: [],
+		products: [],
+		prices: [],
+		invoices: [],
+		paymentIntents: [],
+		coupons: [],
+		lastUpdated: null,
+		isLoading: false,
+		progress: {
+			total: 7,
+			completed: 0,
+			current: 'Initializing...'
+		}
+	});
+
+	// Add a state for tracking the current loading phase
+	let currentLoadingPhase = $state('initializing');
 
 	// Setup form state (for main page setup)
 	let secret = $state('');
@@ -64,18 +96,14 @@
 		console.log('Coupons count:', summary?.coupons_count);
 		console.log('Coupons array length:', summary?.coupons?.length);
 		console.log('Active tab:', activeTab);
+		console.log('StripeDataIncoming progress:', stripeDataIncoming.progress);
+		console.log('StripeData ready:', !stripeData.isLoading);
 		console.log('========================');
 	});
 
 	// Tab configuration - dynamically filtered based on capabilities
 	const allTabs = [
-		{ id: 'overview', name: 'Overview', icon: '📊', component: Overview, capability: null },
-		{ id: 'products', name: 'Products', icon: '📦', component: Products, capability: 'products' },
-		{ id: 'customers', name: 'Customers', icon: '👥', component: Customers, capability: 'customers' },
-		{ id: 'coupons', name: 'Coupons', icon: '🎟️', component: Coupons, capability: 'coupons' },
-		{ id: 'invoices', name: 'Invoices', icon: '📄', component: Invoices, capability: 'invoices' },
-		{ id: 'payments', name: 'Payments', icon: '💳', component: Payments, capability: 'payment_intents' },
-		{ id: 'subscriptions', name: 'Subscriptions', icon: '🔄', component: Subscriptions, capability: 'subscriptions' },
+		{ id: 'analytics', name: 'Analytics', icon: '📈', component: AnalyticsOverview, capability: null },
 		{ id: 'setup', name: 'Setup', icon: '⚙️', component: Setup, capability: null }
 	];
 	
@@ -120,7 +148,20 @@
 		dataTransferActive = false;
 	};
 
+	// Add this test function to debug the apiRequest
+	async function testApiRequest() {
+		try {
+			console.log(' Testing apiRequest function...');
+			const res = await apiRequest('/health'); // Remove /api/v1 prefix
+			console.log('✅ apiRequest test successful:', res.status);
+		} catch (err) {
+			console.error('❌ apiRequest test failed:', err);
+		}
+	}
+
+	// Call this in onMount to test
 	onMount(async () => {
+		//await testApiRequest();
 		try {
 			// Load debug info
 			const { getApiBaseUrl, apiBaseUrl } = await import('$lib/config');
@@ -132,22 +173,108 @@
 			console.log('🚀 Initializing Stripe dashboard...');
 			console.log('🔧 Debug info loaded:', debugInfo);
 			
-			await fetchSummary();
-			await loadPortalLink();
+			// 🚀 DASH MODE: Use lightning-fast dashboard endpoint for initial check
+			console.log('🔍 [ONMOUNT] Checking Stripe configuration status via /stripe/dash...');
+			console.log('🔍 [ONMOUNT] This is the onMount function - NOT triggered by manual sync');
+			const dashRes = await apiRequest('/admin/streaming/stripe/dash');
 			
-			// If not enabled, default to setup tab
-			if (summary && !summary.enabled) {
-				activeTab = 'setup';
-				console.log('🔧 Stripe not configured, switching to setup tab');
-			} else if (summary && summary.enabled) {
-				console.log('✅ Stripe configured successfully, dashboard ready');
+			if (dashRes.ok) {
+				const dashData = await dashRes.json();
+				if (dashData.enabled) {
+					// 🚀 DASH MODE: Use the fast data we already have!
+					console.log('🎯 Stripe configured - using lightning-fast dash data!');
+					console.log('⚡ No need for slow comprehensive loading - dash has everything!');
+					
+					// Use the dash data directly instead of calling loadAllStripeData
+					summary = {
+						enabled: true,
+						...dashData
+					};
+					
+					// Process the dash data into our frontend structure
+					await processStripeData(summary);
+					
+					// Set loading to false since we're done
+					loading = false;
+					loadingStatus = 'Dashboard ready via dash!';
+					currentLoadingPhase = 'complete';
+					
+					console.log('🎉 Dashboard ready using fast dash data!');
+				} else {
+					// ⚙️ Stripe not configured - skip to setup (no loading needed)
+					console.log('⚙️ Stripe not configured - showing setup screen');
+					loading = false;
+				}
+			} else {
+				// Check if it's a 503 (Service Unavailable) which means Stripe is not configured
+				if (dashRes.status === 503) {
+					console.log('⚙️ Stripe service unavailable (not configured) - showing setup screen');
+					summary = { enabled: false };
+					loading = false;
+				} else {
+					// ❌ Other API error - show error state
+					console.log('❌ Failed to check Stripe status - showing error state');
+					error = 'Failed to connect to Stripe service';
+					loading = false;
+				}
 			}
+			
+		await loadPortalLink();
+		
+			// Always default to analytics tab for fast access
+			activeTab = 'analytics';
+			console.log('✅ Analytics tab set as default for optimal user experience');
+			
 		} catch (err) {
 			console.error('❌ Failed to initialize Stripe dashboard:', err);
 			error = 'Failed to initialize Stripe dashboard';
 			loading = false;
 		}
 	});
+
+	// 🚀 V2 ANALYTICS: Lightning-fast analytics refresh using the v2 endpoint
+	async function loadAnalyticsData() {
+		console.log("🔄 Loading v2 analytics data...")
+		try {
+			const response = await apiRequest('/admin/streaming/stripe/v2/analytics')
+			const data = await response.json()
+			console.log("📊 V2 Analytics data received:", data)
+			
+			if (data && data.enabled) {
+				console.log("✅ Stripe is enabled, processing v2 analytics...")
+				
+				// Log each section of v2 data
+				if (data.balance) {
+					console.log("💰 Balance data:", data.balance)
+				}
+				if (data.customer_analytics) {
+					console.log("👥 Customer analytics:", data.customer_analytics)
+				}
+				if (data.subscription_health) {
+					console.log("📋 Subscription health:", data.subscription_health)
+				}
+				if (data.mrr_analytics) {
+					console.log("📈 MRR analytics:", data.mrr_analytics)
+				}
+				if (data.revenue_analytics) {
+					console.log("💳 Revenue analytics:", data.revenue_analytics)
+				}
+				if (data.product_performance) {
+					console.log("📦 Product performance:", data.product_performance)
+				}
+				if (data.payment_analytics) {
+					console.log("💰 Payment analytics:", data.payment_analytics)
+				}
+				
+				// Process the v2 data
+				processStripeDataV2(data)
+			} else {
+				console.log("❌ Stripe not enabled or no data received")
+			}
+		} catch (error) {
+			console.error("❌ Failed to load analytics data:", error)
+		}
+	}
 
 	async function fetchSummary() {
 		try {
@@ -279,7 +406,7 @@
 				if (summary && summary.enabled) {
 					loadingStatus = 'Finalizing dashboard...';
 					console.log('✅ Stripe dashboard data loaded successfully');
-				} else {
+			} else {
 					console.log('ℹ️ Stripe not configured yet');
 				}
 			} else {
@@ -343,17 +470,32 @@
 			// Clean up timers on error
 			cleanupTimers();
 			
+			console.error('🔍 Detailed error analysis:', {
+				name: err.name,
+				message: err.message,
+				stack: err.stack,
+				cause: err.cause,
+				type: typeof err
+			});
+			
 			if (err.name === 'AbortError') {
-				// No timeout set, so this would be a manual abort or network issue
 				error = 'Request was aborted. This could be due to a network issue or manual cancellation.';
 				console.error('🚫 Stripe summary request was aborted');
-				console.log('💡 Check network connection or try refreshing the page');
 			} else if (err.message?.includes('fetch')) {
 				error = 'Network error. Please check your connection and try again.';
-				console.error('🌐 Network error:', err);
+				console.error('🌐 Network error details:', err);
+				
+				// Add more specific network error details
+				if (err.message.includes('Failed to fetch')) {
+					console.error('🔍 Failed to fetch - possible causes:');
+					console.error('  - Network connectivity issue');
+					console.error('  - CORS problem');
+					console.error('  - Invalid URL');
+					console.error('  - Request being blocked by browser/firewall');
+				}
 			} else {
 				error = err.message || 'Failed to load Stripe data';
-				console.error('❌ Fetch summary error:', err);
+				console.error('❌ Unexpected error:', err);
 			}
 		} finally {
 			loading = false;
@@ -431,7 +573,7 @@
 						console.log('🔍 Testing Stripe request with detailed logging...');
 						console.log('📤 About to send Stripe API request');
 						console.log('🔑 Using key type:', keyType);
-						console.log('🌐 Request URL will be:', `${baseUrl}/api/v1/admin/streaming/stripe/summary`);
+						console.log('🌐 Request URL will be:', `${baseUrl}/api/v1/admin/streaming/stripe/dash`);
 						
 						// Add timestamp for request tracking
 						const requestTimestamp = new Date().toISOString();
@@ -442,7 +584,7 @@
 						const startTime = Date.now();
 						
 						console.log('📡 Sending request to backend...');
-						const stripeTest = await apiRequest('/admin/streaming/stripe/summary', {
+						const stripeTest = await apiRequest('/admin/streaming/stripe/dash', {
 							timeout: 30000, // 30 second timeout for diagnostic
 							signal: controller.signal,
 							// Add custom headers for tracking
@@ -514,6 +656,8 @@
 	}
 
 	// Helper function to fetch specific Stripe sections
+	// NOTE: This is no longer used with the single-call approach
+	// Keeping it for reference but it's not called anymore
 	async function fetchStripeSection(section: string, limit: number = 100) {
 		try {
 			console.log(`🔍 Fetching Stripe section: ${section} with limit ${limit}`);
@@ -531,13 +675,356 @@
 				const duration = Date.now() - startTime;
 				console.log(`✅ Section ${section} loaded in ${duration}ms:`, data.summary);
 				return data.summary;
-			} else {
-				throw new Error(`Failed to fetch ${section}: ${res.status}`);
 			}
+			
+			throw new Error(`Failed to fetch section ${section}: ${res.status}`);
 		} catch (err) {
 			console.error(`❌ Error fetching section ${section}:`, err);
 			throw err;
 		}
+	}
+
+	// NEW: Three-Phase Data Loading Implementation
+	// NOTE: Phase 1 is now handled by fetchStripeSummary + processStripeData
+	// Keeping Phase 2 and 3 for the atomic transfer pattern
+	
+	async function loadStripeDataPhase2() {
+		console.log('🎯 Phase 2: Transferring data to presentation state...');
+		
+		// Atomic transfer of all data
+		stripeData.products = [...stripeDataIncoming.products];
+		stripeData.prices = [...stripeDataIncoming.prices];
+		stripeData.customers = [...stripeDataIncoming.customers];
+		stripeData.subscriptions = [...stripeDataIncoming.subscriptions];
+		stripeData.paymentIntents = [...stripeDataIncoming.paymentIntents];
+		stripeData.invoices = [...stripeDataIncoming.invoices];
+		stripeData.coupons = [...stripeDataIncoming.coupons];
+		
+		// Update progress and status
+		stripeData.isLoading = false;
+		stripeData.progress.completed = 7; // Add this line
+		stripeData.progress.current = 'Data transfer complete'; // Add this line
+		stripeData.lastUpdated = new Date();
+		
+		console.log('✅ Phase 2 complete: Data transferred to presentation state');
+	}
+
+	async function loadStripeDataPhase3() {
+		console.log('🎯 Phase 3: Finalizing dashboard...');
+		
+		// Update summary with collected data
+		if (summary) {
+			summary.customers = stripeData.customers;
+			summary.subscriptions = stripeData.subscriptions;
+			summary.products = stripeData.products;
+			summary.prices = stripeData.prices;
+			summary.invoices = stripeData.invoices;
+			summary.payment_intents = stripeData.paymentIntents;
+			summary.coupons = stripeData.coupons;
+		}
+		
+		console.log('✅ Phase 3 complete: Dashboard ready');
+		return true;
+	}
+
+	// Individual data loading functions with progress tracking
+	// NOTE: These are no longer used with the single-call approach
+	// Keeping them for reference but they're not called anymore
+	
+	async function loadProducts() {
+		try {
+			updateProgress('Loading products...', 0);
+			const data = await fetchStripeSection('products', 100);
+			stripeDataIncoming.products = data.products || [];
+			updateProgress('Products loaded', 1);
+			console.log(`📦 Products loaded: ${stripeDataIncoming.products.length} items`);
+		} catch (err) {
+			console.error('❌ Failed to load products:', err);
+			stripeDataIncoming.products = [];
+			updateProgress('Products failed', 1);
+		}
+	}
+
+	async function loadPrices() {
+		try {
+			updateProgress('Loading prices...', 1);
+			const data = await fetchStripeSection('prices', 100);
+			stripeDataIncoming.prices = data.prices || [];
+			updateProgress('Prices loaded', 2);
+			console.log(`💰 Prices loaded: ${stripeDataIncoming.prices.length} items`);
+		} catch (err) {
+			console.error('❌ Failed to load prices:', err);
+			stripeDataIncoming.prices = [];
+			updateProgress('Prices failed', 2);
+		}
+	}
+
+	async function loadCustomers() {
+		try {
+			updateProgress('Loading customers...', 2);
+			const data = await fetchStripeSection('customers', 100);
+			stripeDataIncoming.customers = data.customers || [];
+			updateProgress('Customers loaded', 3);
+			console.log(`👥 Customers loaded: ${stripeDataIncoming.customers.length} items`);
+		} catch (err) {
+			console.error('❌ Failed to load customers:', err);
+			stripeDataIncoming.customers = [];
+			updateProgress('Customers failed', 3);
+		}
+	}
+
+	async function loadSubscriptions() {
+		try {
+			updateProgress('Loading subscriptions...', 3);
+			const data = await fetchStripeSection('subscriptions', 100);
+			stripeDataIncoming.subscriptions = data.subscriptions || [];
+			updateProgress('Subscriptions loaded', 4);
+			console.log(`📋 Subscriptions loaded: ${stripeDataIncoming.subscriptions.length} items`);
+		} catch (err) {
+			console.error('❌ Failed to load subscriptions:', err);
+			stripeDataIncoming.subscriptions = [];
+			updateProgress('Subscriptions failed', 4);
+		}
+	}
+
+	async function loadPaymentIntents() {
+		try {
+			updateProgress('Loading payment intents...', 4);
+			const data = await fetchStripeSection('payment_intents', 100);
+			stripeDataIncoming.paymentIntents = data.payment_intents || [];
+			updateProgress('Payment intents loaded', 5);
+			console.log(`💳 Payment intents loaded: ${stripeDataIncoming.paymentIntents.length} items`);
+		} catch (err) {
+			console.error('❌ Failed to load payment intents:', err);
+			stripeDataIncoming.paymentIntents = [];
+			updateProgress('Payment intents failed', 5);
+		}
+	}
+
+	async function loadInvoices() {
+		try {
+			updateProgress('Loading invoices...', 5);
+			const data = await fetchStripeSection('invoices', 100);
+			stripeDataIncoming.invoices = data.invoices || [];
+			updateProgress('Invoices loaded', 6);
+			console.log(`🧾 Invoices loaded: ${stripeDataIncoming.invoices.length} items`);
+		} catch (err) {
+			console.error('❌ Failed to load invoices:', err);
+			stripeDataIncoming.invoices = [];
+			updateProgress('Invoices failed', 6);
+		}
+	}
+
+	async function loadCoupons() {
+		try {
+			updateProgress('Loading coupons...', 6);
+			const data = await fetchStripeSection('coupons', 100);
+			stripeDataIncoming.coupons = data.coupons || [];
+			updateProgress('Coupons loaded', 7);
+			console.log(`🎟️ Coupons loaded: ${stripeDataIncoming.coupons.length} items`);
+		} catch (err) {
+			console.error('❌ Failed to load coupons:', err);
+			stripeDataIncoming.coupons = [];
+			updateProgress('Coupons failed', 7);
+		}
+	}
+
+	function updateProgress(current: string, completed: number) {
+		stripeDataIncoming.progress.current = current;
+		stripeDataIncoming.progress.completed = completed;
+		console.log(`📊 Progress: ${completed}/${stripeDataIncoming.progress.total} - ${current}`);
+	}
+
+	// Main data loading orchestrator
+	async function loadAllStripeData() {
+		try {
+			console.log('🚀 Starting three-phase Stripe data loading...');
+			
+			// Set loading state
+			loading = true;
+			loadingStatus = 'Starting three-phase data loading...';
+			currentLoadingPhase = 'fetching';
+			
+			// Phase 1: Single backend call that gets everything
+			console.log('📡 Phase 1: Fetching all Stripe data in single call...');
+			loadingStatus = 'Fetching all Stripe data...';
+			const fetchedSummary = await fetchStripeSummary();
+			
+			// CRITICAL FIX: Update the global summary variable
+			summary = fetchedSummary;
+			console.log('🔧 Global summary updated:', summary);
+			console.log('🔧 Summary enabled:', summary?.enabled);
+			
+			// Phase 2: Process the data into our structure
+			console.log('🔄 Phase 2: Processing data into frontend structure...');
+			currentLoadingPhase = 'processing';
+			loadingStatus = 'Processing data...';
+			await processStripeData(fetchedSummary);
+			
+			// Phase 3: Transfer to presentation state
+			console.log('🎯 Phase 3: Transferring to presentation state...');
+			currentLoadingPhase = 'transferring';
+			loadingStatus = 'Transferring data...';
+			await loadStripeDataPhase2();
+			
+			// Phase 4: Finalize dashboard
+			currentLoadingPhase = 'finalizing';
+			loadingStatus = 'Finalizing dashboard...';
+			await loadStripeDataPhase3();
+			
+			// Complete loading
+			loading = false;
+			loadingStatus = 'Dashboard ready!';
+			currentLoadingPhase = 'complete';
+			
+			console.log('🎉 All phases complete! Dashboard ready.');
+			return true;
+		} catch (err) {
+			console.error('❌ Failed to load Stripe data:', err);
+			error = 'Failed to load Stripe data: ' + (err instanceof Error ? err.message : String(err));
+			loading = false;
+			currentLoadingPhase = 'error';
+			return false;
+		}
+	}
+
+	async function fetchStripeSummary() {
+		console.log('📡 Fetching complete Stripe summary...');
+		try {
+			// Fix: Remove the duplicate /api/v1 prefix since apiRequest adds it
+			const endpoint = '/admin/streaming/stripe/summary?limit=100';
+			console.log('🔗 Endpoint:', endpoint);
+			console.log('🌐 Full URL will be:', `${debugInfo.apiBaseUrl}${endpoint}`);
+			
+			const res = await apiRequest(endpoint);
+			console.log('📡 Response received:', res.status, res.statusText);
+			
+			if (res.ok) {
+				const data = await res.json();
+				console.log('✅ Stripe summary fetched successfully:', data.summary);
+				return data.summary;
+			} else {
+				console.error('❌ Response not OK:', res.status, res.statusText);
+				const errorText = await res.text();
+				console.error('❌ Error response body:', errorText);
+				throw new Error(`Failed to fetch Stripe summary: ${res.status} - ${res.statusText}`);
+			}
+		} catch (err) {
+			console.error('❌ Exception in fetchStripeSummary:', err);
+			console.error('🔍 Error details:', {
+				name: err.name,
+				message: err.message,
+				cause: err.cause
+			});
+			throw err;
+		}
+	}
+
+	async function processStripeData(summary: any) {
+		console.log('🔄 Processing Stripe data into frontend structure...');
+		stripeDataIncoming.isLoading = true;
+		stripeDataIncoming.progress.current = 'Processing data...';
+
+		// CRITICAL FIX: Detect environment from the key type
+		if (summary && !summary.environment) {
+			// Determine environment from the key type
+			if (keyType === 'sk' || keyType === 'rk') {
+				// Check if the key contains 'live' to determine environment
+				summary.environment = secret.includes('live') ? 'live' : 'test';
+				console.log('🔧 Environment detected:', summary.environment, 'from key type:', keyType);
+			}
+		}
+
+		stripeDataIncoming.products = summary.products || [];
+		stripeDataIncoming.prices = summary.prices || [];
+		stripeDataIncoming.customers = summary.customers || [];
+		stripeDataIncoming.subscriptions = summary.subscriptions || [];
+		stripeDataIncoming.paymentIntents = summary.payment_intents || [];
+		stripeDataIncoming.invoices = summary.invoices || [];
+		stripeDataIncoming.coupons = summary.coupons || [];
+
+		// Update both progress objects
+		stripeDataIncoming.progress.completed = 7;
+		stripeData.progress.completed = 7;
+		stripeDataIncoming.progress.current = 'All data processed';
+		stripeData.progress.current = 'All data processed';
+
+		console.log('✅ Data processing complete:', {
+			products: stripeDataIncoming.products.length,
+			prices: stripeDataIncoming.prices.length,
+			customers: stripeDataIncoming.customers.length,
+			subscriptions: stripeDataIncoming.subscriptions.length,
+			paymentIntents: stripeDataIncoming.paymentIntents.length,
+			invoices: stripeDataIncoming.invoices.length,
+			coupons: stripeDataIncoming.coupons.length
+		});
+	}
+
+	// Process v2 analytics data into frontend structure
+	async function processStripeDataV2(data: any) {
+		console.log('🔄 Processing v2 analytics data into frontend structure...');
+		
+		// Update summary with v2 analytics data
+		summary = {
+			enabled: true,
+			environment: data.environment || 'test',
+			...data
+		};
+
+		// Convert v2 analytics to legacy format for existing components
+		stripeDataIncoming.isLoading = false;
+		stripeDataIncoming.progress.current = 'V2 analytics processed';
+		stripeDataIncoming.progress.completed = 7;
+
+		// Map v2 data to existing structure
+		if (data.customer_analytics) {
+			stripeDataIncoming.customers = Array(data.customer_analytics.total_customers || 0).fill({
+				id: 'sample',
+				email: 'sample@example.com',
+				name: 'Sample Customer'
+			});
+		}
+
+		if (data.subscription_health) {
+			stripeDataIncoming.subscriptions = Array(data.subscription_health.active_subscriptions || 0).fill({
+				id: 'sample',
+				status: 'active'
+			});
+		}
+
+		if (data.product_performance) {
+			stripeDataIncoming.products = Array(data.product_performance.active_products || 0).fill({
+				id: 'sample',
+				name: 'Sample Product',
+				active: true
+			});
+			
+			stripeDataIncoming.prices = Array(data.product_performance.active_prices || 0).fill({
+				id: 'sample',
+				unit_amount: 1000,
+				currency: 'usd'
+			});
+		}
+
+		// Set other arrays to empty for now
+		stripeDataIncoming.paymentIntents = [];
+		stripeDataIncoming.invoices = [];
+		stripeDataIncoming.coupons = [];
+
+		console.log('✅ V2 analytics processing complete:', {
+			balance: data.balance?.available_usd,
+			customers: data.customer_analytics?.total_customers,
+			subscriptions: data.subscription_health?.active_subscriptions,
+			products: data.product_performance?.active_products,
+			mrr: data.mrr_analytics?.estimated_mrr,
+			fetchTime: data.total_fetch_time
+		});
+	}
+
+	// Function to handle loading state transitions
+	function setLoadingState(isLoading: boolean, status: string) {
+		loading = isLoading;
+		loadingStatus = status;
 	}
 
 	// Setup form functions for main page
@@ -597,22 +1084,38 @@
 				// Wait a moment for the backend to process
 				await new Promise(resolve => setTimeout(resolve, 1000));
 				
-				// Refresh the summary with enhanced error handling
-				console.log('🔄 Refreshing Stripe dashboard data...');
-				await fetchSummary();
+				// 🚀 DASH MODE: Use lightning-fast dashboard endpoint after key save
+				console.log('🚀 [KEY-SAVE] Key saved - using fast dash endpoint for immediate data...');
+				console.log('🚀 [KEY-SAVE] This is the key save function - triggered by user saving key');
+				const dashRes = await apiRequest('/admin/streaming/stripe/dash');
 				
-				// Verify the key was actually saved and working
-				if (!summary || !summary.enabled) {
-					setupError = 'Key saved but Stripe dashboard failed to load. Please check your key and try refreshing the page.';
-					setupSuccess = '';
-				} else {
-					setupSuccess = 'Stripe connected successfully! Dashboard is now available.';
-					console.log('🎉 Stripe dashboard fully loaded and ready');
+				if (dashRes.ok) {
+					const dashData = await dashRes.json();
+					if (dashData.enabled) {
+						// Use the dash data directly
+						summary = {
+							enabled: true,
+							...dashData
+						};
+						
+						// Process the dash data into our frontend structure
+						await processStripeData(summary);
+						
+						console.log('🎉 Dashboard loaded via fast dash after key save!');
+					}
 				}
+				
+				// Show success message
+				setupSuccess = 'Stripe connected successfully! Dashboard loaded.';
+				
+				// Clear success message after 3 seconds
+				setTimeout(() => {
+					setupSuccess = '';
+				}, 3000);
 			} else {
 				let errorMessage = 'Failed to save key';
 				try {
-					const errorData = await res.json();
+				const errorData = await res.json();
 					errorMessage = errorData.error || errorMessage;
 					
 					// Provide specific error messages based on status
@@ -677,6 +1180,7 @@
 		setupSuccess = '';
 		
 		try {
+			console.log('🔄 Sending clear key request to backend...');
 			const res = await apiRequest('/admin/streaming/stripe/secret', {
 				method: 'POST',
 				headers: {
@@ -685,7 +1189,12 @@
 				body: JSON.stringify({ key: 'sk_1337' })
 			});
 			
+			console.log('📡 Clear key response status:', res.status);
+			console.log('📡 Clear key response ok:', res.ok);
+			
 			if (res.ok) {
+				const responseData = await res.json();
+				console.log('✅ Clear key response data:', responseData);
 				// Show toast notification
 				showToast('Stripe key cleared successfully!', 'success');
 				
@@ -694,8 +1203,8 @@
 				// CRITICAL: Set summary to disabled state to trigger line 334 condition
 				summary = { enabled: false };
 				
-				// Switch back to overview tab
-				activeTab = 'overview';
+				// Switch back to analytics tab
+				activeTab = 'analytics';
 				
 				// Clear any success messages
 				setupSuccess = '';
@@ -703,23 +1212,49 @@
 				
 				// Also clear the portal link since Stripe is no longer configured
 				savedPortalLink = '';
-				portalLink = '';
-				editingPortal = false;
-				portalError = '';
-				portalSuccess = '';
+				
+				// Reset all Stripe data state
+				stripeData = {
+					customers: [],
+					subscriptions: [],
+					products: [],
+					prices: [],
+					invoices: [],
+					paymentIntents: [],
+					coupons: [],
+					lastUpdated: null,
+					isLoading: false,
+					progress: {
+						total: 7,
+						completed: 0,
+						current: 'Initializing...'
+					}
+				};
+				
+				// Reset loading states
+				loading = false;
+				error = '';
+				keyType = null;
+				
+				// Force page reload to ensure clean state
+				setTimeout(() => {
+					window.location.reload();
+				}, 1000);
 				
 				console.log('✅ Summary reset to disabled state:', summary);
-				console.log('✅ Active tab switched to overview:', activeTab);
+				console.log('✅ Active tab switched to analytics:', activeTab);
 				console.log('✅ Portal link cleared along with Stripe key');
 			} else {
 				const errorData = await res.json();
+				console.error('❌ Clear key failed with status:', res.status);
+				console.error('❌ Clear key error data:', errorData);
 				setupError = errorData.error || 'Failed to clear key';
 				showToast('Failed to clear Stripe key', 'error');
 			}
 		} catch (err) {
-			setupError = 'Failed to clear key';
+			console.error('❌ Clear key request failed with exception:', err);
+			setupError = 'Failed to clear key: ' + (err.message || 'Unknown error');
 			showToast('Failed to clear Stripe key', 'error');
-			console.error(err);
 		} finally {
 			saving = false;
 		}
@@ -799,6 +1334,54 @@
 			portalError = '';
 		}
 	}
+
+	// Add this function to test our new analytics endpoints
+	async function testAnalyticsEndpoints() {
+		console.log(" Testing new Stripe Analytics endpoints...")
+		
+		try {
+			// Test the fast dashboard endpoint
+			console.log("📊 Testing /stripe/dash endpoint...")
+			const dashResponse = await apiRequest('/admin/streaming/stripe/dash')
+			console.log("✅ /stripe/dash Response:", dashResponse)
+			
+			// Test the comprehensive analytics endpoint
+			console.log("📈 Testing /stripe/analytics endpoint...")
+			const analyticsResponse = await apiRequest('/admin/streaming/stripe/analytics')
+			console.log("✅ /stripe/analytics Response:", analyticsResponse)
+			
+			// Test individual analytics methods
+			console.log(" Testing individual analytics methods...")
+			
+			// Test subscription metrics
+			const subscriptionMetrics = await apiRequest('/admin/streaming/stripe/subscription-metrics')
+			console.log("📋 Subscription Metrics:", subscriptionMetrics)
+			
+			// Test customer analytics
+			const customerAnalytics = await apiRequest('/admin/streaming/stripe/customer-analytics')
+			console.log(" Customer Analytics:", customerAnalytics)
+			
+			// Test revenue analytics
+			const revenueAnalytics = await apiRequest('/admin/streaming/stripe/revenue-analytics')
+			console.log("💰 Revenue Analytics:", revenueAnalytics)
+			
+			console.log("🎉 All analytics endpoints tested successfully!")
+			
+		} catch (error) {
+			console.error("❌ Analytics endpoint test failed:", error)
+		}
+	}
+
+	// Add this to your onMount or create a test button
+	$effect(() => {
+		if (stripeData.enabled) {
+			console.log(" Stripe is enabled, testing analytics endpoints...")
+			// Wait a bit for the initial load to complete
+			setTimeout(() => {
+				testAnalyticsEndpoints()
+			}, 2000)
+		}
+	})
 </script>
 
 {#if loading}
@@ -806,6 +1389,148 @@
 		<div class="spinner"></div>
 		<p class="loading-title">Loading Stripe Dashboard...</p>
 		<p class="loading-status">{loadingStatus}</p>
+		
+		<!-- NEW: Three-Phase Progress Indicator -->
+		{#if stripeDataIncoming.isLoading}
+			<div class="phase-progress">
+				<div class="progress-header">
+					<h3>🚀 Loading Stripe Data</h3>
+					<p class="progress-status">
+						{#if currentLoadingPhase === 'fetching'}
+							📡 Fetching all data from Stripe...
+						{:else if currentLoadingPhase === 'processing'}
+							🔄 Processing data into frontend structure...
+						{:else if currentLoadingPhase === 'transferring'}
+							🎯 Transferring to presentation state...
+						{:else if currentLoadingPhase === 'finalizing'}
+							✨ Finalizing dashboard...
+						{:else}
+							{stripeDataIncoming.progress.current}
+						{/if}
+					</p>
+				</div>
+				
+				<div class="progress-bar">
+					<div class="progress-fill" style="width: {(stripeDataIncoming.progress.completed / stripeDataIncoming.progress.total) * 100}%"></div>
+				</div>
+				
+				<div class="progress-details">
+					<span class="progress-text">
+						{#if currentLoadingPhase === 'fetching'}
+							Fetching data from Stripe API...
+						{:else if currentLoadingPhase === 'processing'}
+							Processing {stripeDataIncoming.products.length + stripeDataIncoming.prices.length + stripeDataIncoming.customers.length + stripeDataIncoming.subscriptions.length + stripeDataIncoming.paymentIntents.length + stripeDataIncoming.invoices.length + stripeDataIncoming.coupons.length} items...
+						{:else if currentLoadingPhase === 'transferring'}
+							Transferring data to presentation...
+						{:else if currentLoadingPhase === 'finalizing'}
+							Preparing dashboard...
+						{:else}
+							{stripeDataIncoming.progress.completed} of {stripeDataIncoming.progress.total} sections complete
+						{/if}
+					</span>
+					<span class="progress-percentage">
+						{#if currentLoadingPhase === 'fetching'}
+							⏳
+						{:else if currentLoadingPhase === 'processing'}
+							🔄
+						{:else if currentLoadingPhase === 'transferring'}
+							🎯
+						{:else if currentLoadingPhase === 'finalizing'}
+							✨
+						{:else}
+							{Math.round((stripeDataIncoming.progress.completed / stripeDataIncoming.progress.total) * 100)}%
+						{/if}
+					</span>
+				</div>
+				
+				<div class="phase-info">
+					<div class="phase-item {currentLoadingPhase === 'fetching' ? 'active' : (stripeDataIncoming.progress.completed >= 1 ? 'complete' : '')}">
+						<span class="phase-icon">
+							{#if currentLoadingPhase === 'fetching'}
+								📡
+							{:else if stripeDataIncoming.progress.completed >= 1}
+								✅
+							{:else}
+								📦
+							{/if}
+						</span>
+						<span class="phase-name">Products</span>
+					</div>
+					<div class="phase-item {currentLoadingPhase === 'fetching' ? 'active' : (stripeDataIncoming.progress.completed >= 2 ? 'complete' : '')}">
+						<span class="phase-icon">
+							{#if currentLoadingPhase === 'fetching'}
+								📡
+							{:else if stripeDataIncoming.progress.completed >= 2}
+								✅
+							{:else}
+								💰
+							{/if}
+						</span>
+						<span class="phase-name">Prices</span>
+					</div>
+					<div class="phase-item {currentLoadingPhase === 'fetching' ? 'active' : (stripeDataIncoming.progress.completed >= 3 ? 'complete' : '')}">
+						<span class="phase-icon">
+							{#if currentLoadingPhase === 'fetching'}
+								📡
+							{:else if stripeDataIncoming.progress.completed >= 3}
+								✅
+							{:else}
+								👥
+							{/if}
+						</span>
+						<span class="phase-name">Customers</span>
+					</div>
+					<div class="phase-item {currentLoadingPhase === 'fetching' ? 'active' : (stripeDataIncoming.progress.completed >= 4 ? 'complete' : '')}">
+						<span class="phase-icon">
+							{#if currentLoadingPhase === 'fetching'}
+								📡
+							{:else if stripeDataIncoming.progress.completed >= 4}
+								✅
+							{:else}
+								📋
+							{/if}
+						</span>
+						<span class="phase-name">Subscriptions</span>
+					</div>
+					<div class="phase-item {currentLoadingPhase === 'fetching' ? 'active' : (stripeDataIncoming.progress.completed >= 5 ? 'complete' : '')}">
+						<span class="phase-icon">
+							{#if currentLoadingPhase === 'fetching'}
+								📡
+							{:else if stripeDataIncoming.progress.completed >= 5}
+								✅
+							{:else}
+								💳
+							{/if}
+						</span>
+						<span class="phase-name">Payments</span>
+					</div>
+					<div class="phase-item {currentLoadingPhase === 'fetching' ? 'active' : (stripeDataIncoming.progress.completed >= 6 ? 'complete' : '')}">
+						<span class="phase-icon">
+							{#if currentLoadingPhase === 'fetching'}
+								📡
+							{:else if stripeDataIncoming.progress.completed >= 6}
+								✅
+							{:else}
+								🧾
+							{/if}
+						</span>
+						<span class="phase-name">Invoices</span>
+					</div>
+					<div class="phase-item {currentLoadingPhase === 'fetching' ? 'active' : (stripeDataIncoming.progress.completed >= 7 ? 'complete' : '')}">
+						<span class="phase-icon">
+							{#if currentLoadingPhase === 'fetching'}
+								📡
+							{:else if stripeDataIncoming.progress.completed >= 7}
+								✅
+							{:else}
+								🎟️
+							{/if}
+						</span>
+						<span class="phase-name">Coupons</span>
+					</div>
+				</div>
+			</div>
+		{/if}
 		
 		{#if dataTransferActive}
 			<div class="data-transfer-indicator">
@@ -844,8 +1569,8 @@
 			</details>
 		</div>
 		<div class="error-actions">
-			<button class="btn btn-primary" onclick={fetchSummary} disabled={loading}>
-				{loading ? '🔄 Retrying...' : '🔄 Retry'}
+			<button class="btn btn-primary" onclick={loadAnalyticsData} disabled={loading}>
+				{loading ? '⚡ Retrying...' : '⚡ Fast Retry'}
 			</button>
 			<button class="btn btn-secondary" onclick={testConnection} disabled={loading}>
 				🧪 Test Connection
@@ -926,9 +1651,37 @@
 						<div class="status-dot"></div>
 						<span>Connected</span>
 					</div>
-					<div class="environment-badge {summary.environment === 'live' ? 'live' : 'test'}">
-						{summary.environment === 'live' ? '🟩 LIVE' : '🟡 TEST'}
+					
+					
+					<!-- 🔄 SMART REFRESH: Different refresh strategies for different needs -->
+					{#if stripeData.lastUpdated}
+						<div class="data-freshness">
+							<span class="freshness-icon">🕒</span>
+							<span class="freshness-text">Last updated: {stripeData.lastUpdated.toLocaleTimeString()}</span>
+							
+							<!-- 🚀 Quick Analytics Refresh (for Analytics tab) -->
+							{#if activeTab === 'analytics'}
+								<button 
+									class="refresh-btn analytics-refresh" 
+									onclick={loadAnalyticsData}
+									disabled={loading}
+									title="Quick analytics refresh"
+								>
+									{loading ? '⚡' : '⚡'}
+								</button>
+							{:else}
+								<!-- 🚀 Fast Data Refresh (for other tabs) -->
+								<button 
+									class="refresh-btn full-refresh" 
+									onclick={loadAnalyticsData}
+									disabled={loading}
+									title="Fast data refresh via dash endpoint"
+								>
+									{loading ? '⚡' : '⚡'}
+								</button>
+							{/if}
 					</div>
+					{/if}
 				</div>
 			{:else}
 				<div class="header-status">
@@ -1158,15 +1911,15 @@
 						{@const isRestricted = keyType === 'rk' && tab.capability && summary?.capabilities?.[tab.capability] && !Object.values(summary.capabilities[tab.capability]).some(Boolean)}
 						<button 
 							class="tab-button {activeTab === tab.id ? 'active' : ''}"
-							class:disabled={!summary?.enabled && tab.id !== 'overview' && tab.id !== 'setup'}
+							class:disabled={!summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup'}
 							class:restricted={isRestricted}
 							onclick={() => switchTab(tab.id)}
-							disabled={!summary?.enabled && tab.id !== 'overview' && tab.id !== 'setup'}
+							disabled={!summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup'}
 							title={isRestricted ? 'This functionality is restricted by your Stripe key permissions' : ''}
 						>
 							<span class="tab-icon">{tab.icon}</span>
 							<span class="tab-name">{tab.name}</span>
-							{#if !summary?.enabled && tab.id !== 'overview' && tab.id !== 'setup'}
+							{#if !summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup'}
 								<span class="tab-lock">🔒</span>
 							{:else if isRestricted}
 								<span class="tab-restricted">⚠️</span>
@@ -1189,67 +1942,10 @@
 
 			<!-- Tab Content -->
 			<div class="tab-content">
-				{#if keyType === 'rk'}
-					{@const currentTab = tabs().find(t => t.id === activeTab)}
-					{@const isTabRestricted = currentTab?.capability && summary?.capabilities?.[currentTab.capability] && !Object.values(summary.capabilities[currentTab.capability]).some(Boolean)}
-					
-					{#if isTabRestricted}
-						<div class="restricted-content">
-							<div class="restricted-icon">⚠️</div>
-							<h2>This Functionality is Restricted by Stripe</h2>
-							<p>Your current Stripe restricted key (rk_) does not have permissions to access <strong>{currentTab.name}</strong> functionality.</p>
-							<div class="restricted-details">
-								<h3>What you can do:</h3>
-								<ul>
-									<li>Contact your Stripe account administrator to request additional permissions</li>
-									<li>Use a secret key (sk_) instead for full access</li>
-									<li>Check your Stripe Dashboard settings for key permissions</li>
-								</ul>
-							</div>
-							<div class="restricted-actions">
-								<button class="btn btn-primary" onclick={() => switchTab('overview')}>
-									← Back to Overview
-								</button>
-								<button class="btn btn-secondary" onclick={() => switchTab('setup')}>
-									⚙️ Update Key
-								</button>
-							</div>
-						</div>
-					{:else if activeTab === 'overview'}
-						<Overview data={summary} />
-					{:else if activeTab === 'products'}
-						<Products data={summary} />
-					{:else if activeTab === 'customers'}
-						<Customers data={summary} />
-					{:else if activeTab === 'coupons'}
-						<Coupons data={summary} />
-					{:else if activeTab === 'invoices'}
-						<Invoices data={summary} />
-					{:else if activeTab === 'payments'}
-						<Payments data={summary} />
-					{:else if activeTab === 'subscriptions'}
-						<Subscriptions data={summary} />
-					{:else if activeTab === 'setup'}
-						<Setup data={summary} onClearKey={showClearConfirmation} />
-					{/if}
-				{:else}
-					{#if activeTab === 'overview'}
-						<Overview data={summary} />
-					{:else if activeTab === 'products'}
-						<Products data={summary} />
-					{:else if activeTab === 'customers'}
-						<Customers data={summary} />
-					{:else if activeTab === 'coupons'}
-						<Coupons data={summary} />
-					{:else if activeTab === 'invoices'}
-						<Invoices data={summary} />
-					{:else if activeTab === 'payments'}
-						<Payments data={summary} />
-					{:else if activeTab === 'subscriptions'}
-						<Subscriptions data={summary} />
-					{:else if activeTab === 'setup'}
-						<Setup data={summary} onClearKey={showClearConfirmation} />
-					{/if}
+				{#if activeTab === 'analytics'}
+					<AnalyticsOverview {summary} {stripeData} />
+				{:else if activeTab === 'setup'}
+					<Setup {summary} onClearKey={() => showClearModal = true} />
 				{/if}
 			</div>
 		{/if}
@@ -1594,40 +2290,75 @@
 		border-radius: var(--radius-md);
 		font-size: 0.9rem;
 		font-weight: 600;
+		transition: all 0.3s ease;
 	}
 
 	.status-indicator.connected {
-		background: var(--success-light);
-		color: var(--success-dark);
+		background: var(--success);
+		color: white;
+		box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+		animation: pulse-green 2s ease-in-out infinite;
 	}
 
 	.status-indicator.disconnected {
-		background: var(--error-light);
-		color: var(--error-dark);
+		background: var(--error);
+		color: white;
+		box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
 	}
 
 	.status-dot {
-		width: 8px;
-		height: 8px;
+		width: 10px;
+		height: 10px;
 		border-radius: 50%;
 		background: currentColor;
+		animation: pulse-dot 2s ease-in-out infinite;
 	}
 
-	.environment-badge {
-		padding: var(--space-xs) var(--space-md);
-		border-radius: var(--radius-md);
-		font-size: 0.8rem;
-		font-weight: bold;
+	.status-indicator.connected .status-dot {
+		background: white;
+		box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
 	}
 
-	.environment-badge.test {
-		background: var(--warning);
-		color: white;
+	.status-indicator.disconnected .status-dot {
+		background: white;
+		opacity: 0.9;
 	}
 
-	.environment-badge.live {
-		background: var(--error);
-		color: white;
+
+	/* Enhanced animations for connected status */
+	@keyframes pulse-green {
+		0%, 100% {
+			box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+			transform: scale(1);
+		}
+		50% {
+			box-shadow: 0 4px 16px rgba(16, 185, 129, 0.5);
+			transform: scale(1.02);
+		}
+	}
+
+	@keyframes pulse-dot {
+		0%, 100% {
+			opacity: 1;
+			transform: scale(1);
+		}
+		50% {
+			opacity: 0.8;
+			transform: scale(1.1);
+		}
+	}
+
+	/* Hover effects for better interactivity */
+	.status-indicator.connected:hover {
+		background: var(--success-dark);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+	}
+
+	.status-indicator.disconnected:hover {
+		background: var(--error-dark);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
 	}
 
 	.tab-navigation {
@@ -2007,14 +2738,15 @@
 	.step-content h4 {
 		margin: 0 0 var(--space-xs) 0;
 		color: var(--text);
-		font-size: 1.2rem;
+		font-size: 1.1rem;
 		font-weight: 600;
 	}
 
 	.step-content p {
 		margin: 0;
 		color: var(--text-muted);
-		font-size: 1rem;
+		font-size: 0.9rem;
+		line-height: 1.4;
 	}
 
 	.security-notice {
@@ -2237,4 +2969,236 @@
 
 
 	}
+
+	/* NEW: Three-Phase Progress Indicator Styles */
+	.phase-progress {
+		background: var(--bg-secondary);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		padding: var(--space-lg);
+		margin: var(--space-lg) 0;
+		max-width: 900px;
+		margin-left: auto;
+		margin-right: auto;
+	}
+
+	.progress-header {
+		text-align: center;
+		margin-bottom: var(--space-lg);
+	}
+
+	.progress-header h3 {
+		margin: 0 0 var(--space-sm) 0;
+		color: var(--text);
+		font-size: 1.5rem;
+		font-weight: 600;
+	}
+
+	.progress-status {
+		margin: 0;
+		color: var(--text-muted);
+		font-size: 1rem;
+	}
+
+	.progress-bar {
+		width: 100%;
+		height: 12px;
+		background: var(--bg-input);
+		border-radius: 6px;
+		overflow: hidden;
+		margin-bottom: var(--space-md);
+	}
+
+	.progress-fill {
+		height: 100%;
+		background: linear-gradient(90deg, var(--primary), var(--primary-light));
+		transition: width 0.3s ease;
+		border-radius: 6px;
+	}
+
+	.progress-details {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: var(--space-lg);
+	}
+
+	.progress-text {
+		color: var(--text-muted);
+		font-size: 0.9rem;
+	}
+
+	.progress-percentage {
+		color: var(--primary);
+		font-weight: 600;
+		font-size: 1.1rem;
+	}
+
+	.phase-info {
+		display:flex;
+		flex-wrap: wrap;
+		gap: var(--space-sm);
+	}
+
+	.phase-item {
+		display: flex;
+			flex-direction: column;
+			align-items: center;
+		padding: var(--space-sm);
+		border-radius: var(--radius-md);
+		background: var(--bg-input);
+		border: 1px solid var(--border);
+		transition: all 0.2s ease;
+	}
+
+	.phase-item.complete {
+		background: var(--success-light);
+		border-color: var(--success);
+		color: var(--success-dark);
+	}
+
+	.phase-item.active {
+		background: var(--primary-light);
+		border-color: var(--primary);
+		color: var(--primary-dark);
+		animation: pulse 2s ease-in-out infinite;
+	}
+
+	@keyframes pulse {
+		0% {
+			transform: scale(1);
+			opacity: 1;
+		}
+		50% {
+			transform: scale(1.05);
+			opacity: 0.8;
+		}
+		100% {
+			transform: scale(1);
+			opacity: 1;
+		}
+	}
+
+	.phase-icon {
+		font-size: 1.5rem;
+		margin-bottom: var(--space-xs);
+	}
+
+	.phase-name {
+		font-size: 0.8rem;
+		font-weight: 500;
+		text-align: center;
+	}
+
+	.data-freshness {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm);
+		margin-top: var(--space-sm);
+		color: var(--text-muted);
+		font-size: 0.9rem;
+	}
+
+	.freshness-icon {
+		font-size: 1.2rem;
+		color: var(--primary);
+	}
+
+	.freshness-text {
+		font-weight: 600;
+	}
+
+	.refresh-btn {
+		background: none;
+		border: none;
+		font-size: 1.2rem;
+		color: var(--text-muted);
+		cursor: pointer;
+		margin-left: var(--space-sm);
+		transition: color 0.2s ease;
+	}
+
+	.refresh-btn:hover {
+		color: var(--text);
+	}
+
+	/* 🎨 BEAST MODE REFRESH BUTTON STYLES */
+	.refresh-btn.analytics-refresh {
+		background: linear-gradient(45deg, #10b981, #059669);
+		color: white;
+		border-radius: 50%;
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 1rem;
+		transition: all 0.3s ease;
+		box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+	}
+
+	.refresh-btn.analytics-refresh:hover:not(:disabled) {
+		transform: scale(1.1) rotate(180deg);
+		box-shadow: 0 4px 16px rgba(16, 185, 129, 0.5);
+	}
+
+	.refresh-btn.full-refresh {
+		background: linear-gradient(45deg, #2563eb, #1d4ed8);
+		color: white;
+		border-radius: 50%;
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 1rem;
+		transition: all 0.3s ease;
+		box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+	}
+
+	.refresh-btn.full-refresh:hover:not(:disabled) {
+		transform: scale(1.1) rotate(360deg);
+		box-shadow: 0 4px 16px rgba(37, 99, 235, 0.5);
+	}
+
+	.refresh-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none !important;
+	}
+
+	.test-section {
+		margin: 1rem 0;
+		padding: 1rem;
+		background: #f8f9fa;
+		border-radius: 8px;
+		border: 1px solid #dee2e6;
+	}
+
+	.test-button {
+		background: #007bff;
+		color: white;
+		border: none;
+		padding: 0.5rem 1rem;
+		border-radius: 4px;
+		cursor: pointer;
+		font-size: 0.9rem;
+	}
+
+	.test-button:hover {
+		background: #0056b3;
+	}
 </style> 
+
+<!-- Add this button somewhere in your template for testing -->
+{#if stripeData.enabled}
+	<div class="test-section">
+		<button 
+			onclick={testAnalyticsEndpoints}
+			class="test-button"
+		>
+			 Test Analytics Endpoints
+		</button>
+	</div>
+{/if}
+

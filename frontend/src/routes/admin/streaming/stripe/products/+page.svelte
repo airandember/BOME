@@ -1,40 +1,30 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { apiRequest } from '$lib/auth';
 
 	let summary = $state<any>(null);
+	let products = $state<any[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 
-	const { data = null } = $props<{ data?: any }>();
+	// Accept data from parent - NO API calls needed!
+	const { summary: parentSummary = null, stripeData = null } = $props<{ 
+		summary?: any, 
+		stripeData?: any 
+	}>();
 
 	onMount(async () => {
-		if (data) {
-			summary = data;
+		if (parentSummary && stripeData) {
+			// Use pre-loaded data from parent
+			summary = parentSummary;
+			products = stripeData.products || [];
 			loading = false;
+			console.log('✅ Products: Using pre-loaded data from parent');
 		} else {
-			await fetchSummary();
+			// This shouldn't happen in normal flow
+			error = 'No data available - please refresh the dashboard';
+			loading = false;
 		}
 	});
-
-	async function fetchSummary() {
-		try {
-			loading = true;
-			error = '';
-			const res = await apiRequest('/admin/streaming/stripe/summary');
-			if (res.ok) {
-				const data = await res.json();
-				summary = data.summary;
-			} else {
-				error = 'Failed to load products';
-			}
-		} catch (err) {
-			error = 'Failed to load products';
-			console.error(err);
-		} finally {
-			loading = false;
-		}
-	}
 
 	function formatDate(date: string): string {
 		return new Date(date).toLocaleDateString('en-US', {

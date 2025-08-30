@@ -306,6 +306,20 @@ func (s *AdvertisementService) GetActiveAdsForPlacement(placementID int) ([]*dat
 	return ads, nil
 }
 
+// GetPlacementByID retrieves a placement by ID
+func (s *AdvertisementService) GetPlacementByID(id int) (*database.AdPlacement, error) {
+	placement := &database.AdPlacement{}
+	err := s.db.QueryRow(`
+		SELECT id, name, description, location, ad_type, max_width, max_height, base_rate, is_active, created_at, updated_at
+		FROM ad_placements WHERE id = $1
+	`, id).Scan(&placement.ID, &placement.Name, &placement.Description, &placement.Location, &placement.AdType, &placement.MaxWidth, &placement.MaxHeight, &placement.BaseRate, &placement.IsActive, &placement.CreatedAt, &placement.UpdatedAt)
+
+	if err != nil {
+		return nil, err
+	}
+	return placement, nil
+}
+
 // RecordAdImpression records an ad impression
 func (s *AdvertisementService) RecordAdImpression(adID int, userID *int, ipAddress, userAgent string, viewDuration int) error {
 	_, err := s.db.Exec(`

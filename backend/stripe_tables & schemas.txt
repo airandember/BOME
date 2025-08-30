@@ -1,0 +1,232 @@
+ Table "public.stripe_coupons"
+   Column    |           Type           | Collation | Nullable |                  Default
+-------------+--------------------------+-----------+----------+--------------------------------------------
+ id          | integer                  |           | not null | nextval('stripe_coupons_id_seq'::regclass)
+ stripe_id   | character varying(255)   |           | not null |
+ name        | character varying(255)   |           |          |
+ percent_off | numeric(5,2)             |           |          |
+ amount_off  | integer                  |           |          |
+ duration    | character varying(50)    |           |          |
+ created_at  | timestamp with time zone |           |          |
+Indexes:
+    "stripe_coupons_pkey" PRIMARY KEY, btree (id)
+    "stripe_coupons_stripe_id_key" UNIQUE CONSTRAINT, btree (stripe_id)
+
+
+ Table "public.stripe_customer_segments"
+     Column     |          Type          | Collation | Nullable | Default
+----------------+------------------------+-----------+----------+---------
+ segment_name   | character varying(255) |           | not null |
+ criteria       | text                   |           |          |
+ customer_count | integer                |           |          |
+ total_value    | integer                |           |          |
+Indexes:
+    "stripe_customer_segments_pkey" PRIMARY KEY, btree (segment_name)
+
+
+                                       Table "public.stripe_customers"
+   Column   |           Type           | Collation | Nullable |                   Default
+------------+--------------------------+-----------+----------+----------------------------------------------
+ id         | integer                  |           | not null | nextval('stripe_customers_id_seq'::regclass)
+ stripe_id  | character varying(255)   |           | not null |
+ email      | character varying(255)   |           |          |
+ name       | character varying(255)   |           |          |
+ created_at | timestamp with time zone |           |          |
+ updated_at | timestamp with time zone |           |          |
+ metadata   | jsonb                    |           |          |
+Indexes:
+    "stripe_customers_pkey" PRIMARY KEY, btree (id)
+    "stripe_customers_stripe_id_key" UNIQUE CONSTRAINT, btree (stripe_id)
+Referenced by:
+    TABLE "stripe_invoices" CONSTRAINT "stripe_invoices_customer_id_fkey" FOREIGN KEY (customer_id) REFERENCES stripe_customers(id)
+    TABLE "stripe_payment_intents" CONSTRAINT "stripe_payment_intents_customer_id_fkey" FOREIGN KEY (customer_id) REFERENCES stripe_customers(id)
+    TABLE "stripe_subscriptions" CONSTRAINT "stripe_subscriptions_customer_id_fkey" FOREIGN KEY (customer_id) REFERENCES stripe_customers(id)
+
+ 
+ 
+ 
+ 
+ Table "public.stripe_daily_revenue"
+       Column       |  Type   | Collation | Nullable | Default
+--------------------+---------+-----------+----------+---------
+ date               | date    |           | not null |
+ total_revenue      | integer |           |          |
+ customer_count     | integer |           |          |
+ subscription_count | integer |           |          |
+Indexes:
+    "stripe_daily_revenue_pkey" PRIMARY KEY, btree (date)
+
+
+   Table "public.stripe_entities"
+      Column       |            Type             | Collation | Nullable |                   Default
+-------------------+-----------------------------+-----------+----------+---------------------------------------------
+ id                | integer                     |           | not null | nextval('stripe_entities_id_seq'::regclass)
+ entity_type       | character varying(50)       |           | not null |
+ entity_id         | character varying(255)      |           | not null |
+ local_id          | integer                     |           | not null |
+ metadata          | jsonb                       |           |          |
+ created_at        | timestamp without time zone |           |          | now()
+ updated_at        | timestamp without time zone |           |          | now()
+ last_synced_at    | timestamp without time zone |           |          |
+ stripe_created_at | timestamp without time zone |           |          |
+ stripe_updated_at | timestamp without time zone |           |          |
+ sync_status       | character varying(20)       |           |          | 'pending'::character varying
+Indexes:
+    "stripe_entities_pkey" PRIMARY KEY, btree (id)
+    "idx_stripe_entities_stripe_id" btree (entity_id)
+    "idx_stripe_entities_stripe_updated" btree (entity_type, stripe_updated_at)
+    "idx_stripe_entities_sync_status" btree (sync_status, entity_type)
+    "idx_stripe_entities_type_sync" btree (entity_type, last_synced_at)
+Triggers:
+    update_stripe_entities_timestamp BEFORE UPDATE ON stripe_entities FOR EACH ROW EXECUTE FUNCTION update_stripe_sync_timestamp()
+
+
+
+                                         Table "public.stripe_invoices"
+     Column      |           Type           | Collation | Nullable |                   Default
+-----------------+--------------------------+-----------+----------+---------------------------------------------
+ id              | integer                  |           | not null | nextval('stripe_invoices_id_seq'::regclass)
+ stripe_id       | character varying(255)   |           | not null |
+ customer_id     | integer                  |           |          |
+ subscription_id | integer                  |           |          |
+ amount_paid     | integer                  |           |          |
+ status          | character varying(50)    |           |          |
+ created_at      | timestamp with time zone |           |          |
+Indexes:
+    "stripe_invoices_pkey" PRIMARY KEY, btree (id)
+    "stripe_invoices_stripe_id_key" UNIQUE CONSTRAINT, btree (stripe_id)
+Foreign-key constraints:
+    "stripe_invoices_customer_id_fkey" FOREIGN KEY (customer_id) REFERENCES stripe_customers(id)
+    "stripe_invoices_subscription_id_fkey" FOREIGN KEY (subscription_id) REFERENCES stripe_subscriptions(id)
+
+ 
+ 
+ 
+ Table "public.stripe_monthly_metrics"
+   Column    |     Type     | Collation | Nullable | Default
+-------------+--------------+-----------+----------+---------
+ year_month  | character(7) |           | not null |
+ mrr         | integer      |           |          |
+ arr         | integer      |           |          |
+ churn_rate  | numeric(5,2) |           |          |
+ growth_rate | numeric(5,2) |           |          |
+Indexes:
+    "stripe_monthly_metrics_pkey" PRIMARY KEY, btree (year_month)
+
+
+                                       Table "public.stripe_payment_intents"
+   Column    |           Type           | Collation | Nullable |                      Default
+-------------+--------------------------+-----------+----------+----------------------------------------------------
+ id          | integer                  |           | not null | nextval('stripe_payment_intents_id_seq'::regclass)
+ stripe_id   | character varying(255)   |           | not null |
+ customer_id | integer                  |           |          |
+ amount      | integer                  |           |          |
+ currency    | character(3)             |           |          |
+ status      | character varying(50)    |           |          |
+ created_at  | timestamp with time zone |           |          |
+Indexes:
+    "stripe_payment_intents_pkey" PRIMARY KEY, btree (id)
+    "stripe_payment_intents_stripe_id_key" UNIQUE CONSTRAINT, btree (stripe_id)
+Foreign-key constraints:
+    "stripe_payment_intents_customer_id_fkey" FOREIGN KEY (customer_id) REFERENCES stripe_customers(id)
+
+
+
+
+                                          Table "public.stripe_prices"
+       Column       |           Type           | Collation | Nullable |                  Default
+--------------------+--------------------------+-----------+----------+-------------------------------------------
+ id                 | integer                  |           | not null | nextval('stripe_prices_id_seq'::regclass)
+ stripe_id          | character varying(255)   |           | not null |
+ product_id         | integer                  |           |          |
+ currency           | character(3)             |           |          |
+ unit_amount        | integer                  |           |          |
+ recurring_interval | character varying(50)    |           |          |
+ created_at         | timestamp with time zone |           |          |
+Indexes:
+    "stripe_prices_pkey" PRIMARY KEY, btree (id)
+    "stripe_prices_stripe_id_key" UNIQUE CONSTRAINT, btree (stripe_id)
+Foreign-key constraints:
+    "stripe_prices_product_id_fkey" FOREIGN KEY (product_id) REFERENCES stripe_products(id)
+
+
+
+                                      Table "public.stripe_products"
+   Column    |           Type           | Collation | Nullable |                   Default
+-------------+--------------------------+-----------+----------+---------------------------------------------
+ id          | integer                  |           | not null | nextval('stripe_products_id_seq'::regclass)
+ stripe_id   | character varying(255)   |           | not null |
+ name        | character varying(255)   |           |          |
+ description | text                     |           |          |
+ active      | boolean                  |           |          |
+ created_at  | timestamp with time zone |           |          |
+Indexes:
+    "stripe_products_pkey" PRIMARY KEY, btree (id)
+    "stripe_products_stripe_id_key" UNIQUE CONSTRAINT, btree (stripe_id)
+Referenced by:
+    TABLE "stripe_prices" CONSTRAINT "stripe_prices_product_id_fkey" FOREIGN KEY (product_id) REFERENCES stripe_products(id)
+
+
+
+                                           Table "public.stripe_subscriptions"
+        Column        |           Type           | Collation | Nullable |                     Default
+----------------------+--------------------------+-----------+----------+--------------------------------------------------
+ id                   | integer                  |           | not null | nextval('stripe_subscriptions_id_seq'::regclass)
+ stripe_id            | character varying(255)   |           | not null |
+ customer_id          | integer                  |           |          |
+ status               | character varying(50)    |           |          |
+ current_period_start | timestamp with time zone |           |          |
+ current_period_end   | timestamp with time zone |           |          |
+ created_at           | timestamp with time zone |           |          |
+Indexes:
+    "stripe_subscriptions_pkey" PRIMARY KEY, btree (id)
+    "stripe_subscriptions_stripe_id_key" UNIQUE CONSTRAINT, btree (stripe_id)
+Foreign-key constraints:
+    "stripe_subscriptions_customer_id_fkey" FOREIGN KEY (customer_id) REFERENCES stripe_customers(id)
+Referenced by:
+    TABLE "stripe_invoices" CONSTRAINT "stripe_invoices_subscription_id_fkey" FOREIGN KEY (subscription_id) REFERENCES stripe_subscriptions(id)
+
+
+  Table "public.stripe_sync_config"
+        Column         |            Type             | Collation | Nullable |                    Default
+-----------------------+-----------------------------+-----------+----------+------------------------------------------------
+ id                    | integer                     |           | not null | nextval('stripe_sync_config_id_seq'::regclass)
+ entity_type           | character varying(50)       |           | not null |
+ sync_enabled          | boolean                     |           |          | true
+ sync_interval_hours   | integer                     |           |          | 6
+ batch_size            | integer                     |           |          | 100
+ last_full_sync        | timestamp without time zone |           |          |
+ last_incremental_sync | timestamp without time zone |           |          |
+ config_data           | jsonb                       |           |          |
+ created_at            | timestamp without time zone |           |          | now()
+ updated_at            | timestamp without time zone |           |          | now()
+Indexes:
+    "stripe_sync_config_pkey" PRIMARY KEY, btree (id)
+    "stripe_sync_config_entity_type_key" UNIQUE CONSTRAINT, btree (entity_type)
+Triggers:
+    update_sync_config_timestamp BEFORE UPDATE ON stripe_sync_config FOR EACH ROW EXECUTE FUNCTION update_stripe_sync_timestamp()
+
+
+                                           Table "public.stripe_sync_jobs"
+     Column      |            Type             | Collation | Nullable |                   Default
+-----------------+-----------------------------+-----------+----------+----------------------------------------------
+ id              | integer                     |           | not null | nextval('stripe_sync_jobs_id_seq'::regclass)
+ job_type        | character varying(50)       |           | not null |
+ entity_type     | character varying(50)       |           |          |
+ status          | character varying(20)       |           | not null | 'pending'::character varying
+ total_items     | integer                     |           |          | 0
+ processed_items | integer                     |           |          | 0
+ last_cursor     | character varying(255)      |           |          |
+ error_message   | text                        |           |          |
+ started_at      | timestamp without time zone |           |          |
+ completed_at    | timestamp without time zone |           |          |
+ created_at      | timestamp without time zone |           |          | now()
+ updated_at      | timestamp without time zone |           |          | now()
+Indexes:
+    "stripe_sync_jobs_pkey" PRIMARY KEY, btree (id)
+    "idx_sync_jobs_entity_type" btree (entity_type, status)
+    "idx_sync_jobs_status" btree (status, job_type)
+Triggers:
+    update_sync_jobs_timestamp BEFORE UPDATE ON stripe_sync_jobs FOR EACH ROW EXECUTE FUNCTION update_stripe_sync_timestamp()
+
+

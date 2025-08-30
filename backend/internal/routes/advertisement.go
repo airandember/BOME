@@ -1,10 +1,12 @@
 package routes
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
+	"bome-backend/internal/database"
 	"bome-backend/internal/middleware"
 	"bome-backend/internal/services"
 
@@ -16,6 +18,7 @@ func SetupAdvertisementRoutes(
 	router *gin.RouterGroup,
 	adService *services.AdvertisementService,
 ) {
+	fmt.Printf("Setting up advertisement routes with router group: %s\n", router.BasePath())
 	// Advertiser routes (require advertiser role)
 	advertiser := router.Group("/advertiser")
 	advertiser.Use(middleware.AuthRequired(), RoleRequired(
@@ -77,11 +80,18 @@ func SetupAdvertisementRoutes(
 
 	// Public routes (no authentication required)
 	public := router.Group("/ads")
+	fmt.Printf("Setting up public ads routes with base path: %s\n", public.BasePath())
 	{
+		// Test route
+		public.GET("/test", func(c *gin.Context) {
+			c.JSON(200, gin.H{"message": "Ads routes are working!"})
+		})
+
 		// Ad serving
 		public.GET("/serve/:placementId", serveAdHandler(adService))
 		public.POST("/impression/:adId", recordImpressionHandler(adService))
 		public.POST("/click/:adId", recordClickHandler(adService))
+		fmt.Printf("Registered public ad routes: /test, /serve/:placementId, /impression/:adId, /click/:adId\n")
 	}
 }
 
@@ -619,17 +629,68 @@ func serveAdHandler(adService *services.AdvertisementService) gin.HandlerFunc {
 			return
 		}
 
-		// Return the first ad (highest priority + random)
+		// Get placement information
+		placement, err := adService.GetPlacementByID(placementID)
+		if err != nil {
+			// If placement doesn't exist, create a fallback placement
+			placement = &database.AdPlacement{
+				ID:          placementID,
+				Name:        fmt.Sprintf("Placement %d", placementID),
+				Description: "Default advertisement placement",
+				Location:    "content",
+				AdType:      "banner",
+				MaxWidth:    728,
+				MaxHeight:   90,
+				BaseRate:    100.00,
+				IsActive:    true,
+				CreatedAt:   time.Now(),
+				UpdatedAt:   time.Now(),
+			}
+		}
+
+		// Return the first ad (highest priority + random) with proper response structure
 		var ad interface{}
 		if len(ads) > 0 {
 			ad = ads[0]
 		}
 
+		// Create the proper response structure that matches AdServeResponse
+		responseData := gin.H{
+			"ad": ad,
+			"placement": placement,
+			"tracking_data": gin.H{
+				"impression_url": fmt.Sprintf("/api/v1/ads/impression/%d", getAdID(ad)),
+				"click_url":      fmt.Sprintf("/api/v1/ads/click/%d", getAdID(ad)),
+				"view_tracking":  true,
+			},
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"data":    ad,
+			"data":    responseData,
 		})
 	}
+}
+
+// Helper function to extract ad ID from ad interface
+func getAdID(ad interface{}) int {
+	if ad == nil {
+		return 0
+	}
+	
+	// Type assertion to get the ID field
+	if adMap, ok := ad.(map[string]interface{}); ok {
+		if id, exists := adMap["id"]; exists {
+			if idInt, ok := id.(int); ok {
+				return idInt
+			}
+			if idFloat, ok := id.(float64); ok {
+				return int(idFloat)
+			}
+		}
+	}
+	
+	return 0
 }
 
 func recordImpressionHandler(adService *services.AdvertisementService) gin.HandlerFunc {

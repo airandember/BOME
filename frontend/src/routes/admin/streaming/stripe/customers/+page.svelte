@@ -25,26 +25,23 @@
 	let localOnlyCount = $state(0);
 	let stripeOnlyCount = $state(0);
 
-	onMount(() => {
-		// Load initial data
-		loadAllData();
+	// Accept data from parent - NO API calls needed!
+	const { summary: parentSummary = null, stripeData = null } = $props<{ 
+		summary?: any, 
+		stripeData?: any 
+	}>();
 
-		// Add page visibility listener to refresh data when returning to this page
-		// This ensures that after creating a user from the users page, the data updates
-		const handleVisibilityChange = () => {
-			if (!document.hidden) {
-				console.log('🔄 Page became visible, refreshing customer data...');
-				loadAllData();
-			}
-		};
-
-		if (typeof document !== 'undefined') {
-			document.addEventListener('visibilitychange', handleVisibilityChange);
-
-			// Return cleanup function
-			return () => {
-				document.removeEventListener('visibilitychange', handleVisibilityChange);
-			};
+	onMount(async () => {
+		if (parentSummary && stripeData) {
+			// Use pre-loaded data from parent
+			summary = parentSummary;
+			customers = stripeData.customers || [];
+			loading = false;
+			console.log('✅ Customers: Using pre-loaded data from parent');
+		} else {
+			// This shouldn't happen in normal flow
+			error = 'No data available - please refresh the dashboard';
+			loading = false;
 		}
 	});
 

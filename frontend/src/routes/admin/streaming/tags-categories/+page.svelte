@@ -248,8 +248,8 @@
 					// Update local state immediately for better UX
 					if (categoryId === null) {
 						// Remove tag from category
-						tags = tags.map(t => 
-							t.id === tagId 
+				tags = tags.map(t => 
+					t.id === tagId 
 								? { ...t, category_ids: t.category_ids?.filter((id: number) => id !== tagId) || [] }
 								: t
 						);
@@ -263,7 +263,7 @@
 						});
 						
 						toastStore.success('Tag removed from category successfully');
-					} else {
+			} else {
 						// Add tag to category
 						tags = tags.map(t => 
 							t.id === tagId 
@@ -625,8 +625,8 @@
 				<a href="/admin/tags-categories" class="global-link">
 					🌐 View Global Tags
 				</a>
-			</div>
 		</div>
+	</div>
 	</div>-->
 
 
@@ -697,7 +697,7 @@
 			onRemoveExclusion={removeArticleExclusion}
 		/>
 	{/if}
-</div>
+			</div>
 
 
 <style>
@@ -836,7 +836,7 @@
 
 		.tab-navigation {
 			justify-content: center;
-		}
+	}
 	}
 </style>
 
