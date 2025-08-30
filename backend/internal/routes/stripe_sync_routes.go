@@ -2,6 +2,7 @@ package routes
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -15,7 +16,7 @@ import (
 func RegisterStripeSyncRoutes(router *gin.RouterGroup, syncService *services.StripeSyncService, cronService *services.StripeCronService) {
 	sync := router.Group("/stripe/sync")
 	{
-		// Manual sync triggers
+		// System/Automated sync triggers (for cron jobs, initial setup)
 		sync.POST("/initial", func(c *gin.Context) { triggerInitialSync(c, syncService) })
 		sync.POST("/incremental", func(c *gin.Context) { triggerIncrementalSync(c, syncService) })
 		sync.POST("/quarterly", func(c *gin.Context) { triggerQuarterlySync(c, cronService) })
@@ -31,7 +32,8 @@ func RegisterStripeSyncRoutes(router *gin.RouterGroup, syncService *services.Str
 	}
 }
 
-// triggerInitialSync manually triggers the initial 1.5-year sync
+// triggerInitialSync triggers the system-level initial 1.5-year sync
+// This endpoint is for automated systems, cron jobs, and initial key setup
 func triggerInitialSync(c *gin.Context, syncService *services.StripeSyncService) {
 	// Check if there's already a running sync
 	running, err := isInitialSyncRunning(syncService)
@@ -48,13 +50,16 @@ func triggerInitialSync(c *gin.Context, syncService *services.StripeSyncService)
 		return
 	}
 
+	log.Printf("🚀 [SYSTEM-AUTO] Initial sync triggered via system endpoint")
+
 	// Start initial sync in background
 	go func() {
 		ctx := context.Background()
 		err := syncService.InitialDataSync(ctx)
 		if err != nil {
-			// Log error - in production you might want to send notifications
-			// log.Printf("❌ Initial sync failed: %v", err)
+			log.Printf("❌ [SYSTEM-AUTO] Initial sync failed: %v", err)
+		} else {
+			log.Printf("✅ [SYSTEM-AUTO] Initial sync completed successfully")
 		}
 	}()
 

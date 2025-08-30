@@ -41,6 +41,15 @@
 	let v2LastUpdated = $state<Date | null>(null)
 	let v2FetchTime = $state<string>('')
 
+	// Database stats state
+	let databaseStats = $state<any>(null)
+	let dbStatsLoading = $state(false)
+	let dbStatsLastUpdated = $state<Date | null>(null)
+
+	// Manual sync state
+	let syncInProgress = $state(false)
+	let syncStatus = $state('')
+
 	// Endpoint configuration
 	const endpoints = [
 		{ 
@@ -83,6 +92,7 @@
 	onMount(() => {
 		loadAnalyticsData();
 		loadV2Analytics();
+		loadDatabaseStats();
 	});
 
 	// Load v2 analytics data
@@ -141,6 +151,156 @@
 			
 		} catch (error) {
 			console.error("❌ v1 vs v2 test failed:", error)
+		}
+	}
+
+	// System Management
+	let systemHealth = $state(null)
+	let systemStats = $state(null)
+	let syncJobs = $state([])
+	let systemLoading = $state(false)
+
+	async function loadSystemHealth() {
+		if (systemLoading) return
+		
+		systemLoading = true
+		try {
+			const response = await apiRequest('/admin/streaming/stripe/system/health')
+			const data = await response.json()
+			systemHealth = data
+			console.log("🏥 System health loaded:", data)
+		} catch (error) {
+			console.error("❌ Failed to load system health:", error)
+		} finally {
+			systemLoading = false
+		}
+	}
+
+	async function loadSystemStats() {
+		try {
+			const response = await apiRequest('/admin/streaming/stripe/system/stats')
+			const data = await response.json()
+			systemStats = data
+			console.log("📊 System stats loaded:", data)
+		} catch (error) {
+			console.error("❌ Failed to load system stats:", error)
+		}
+	}
+
+	async function loadSyncJobs() {
+		try {
+			const response = await apiRequest('/admin/streaming/stripe/system/jobs?limit=10')
+			const data = await response.json()
+			syncJobs = data.jobs || []
+			console.log("📋 Sync jobs loaded:", data)
+		} catch (error) {
+			console.error("❌ Failed to load sync jobs:", error)
+		}
+	}
+
+	async function loadSystemData() {
+		await Promise.all([
+			loadSystemHealth(),
+			loadSystemStats(),
+			loadSyncJobs()
+		])
+	}
+
+	// Load database stats (real counts from database)
+	async function loadDatabaseStats() {
+		if (dbStatsLoading) return
+		
+		dbStatsLoading = true
+		console.log("📊 Loading database stats...")
+		
+		try {
+			const response = await apiRequest('/admin/streaming/stripe/database/stats')
+			const data = await response.json()
+			
+			databaseStats = data
+			dbStatsLastUpdated = new Date()
+			
+			console.log("✅ Database stats loaded:", data)
+		} catch (error) {
+			console.error("❌ Failed to load database stats:", error)
+		} finally {
+			dbStatsLoading = false
+		}
+	}
+
+	// Trigger manual sync with debounce protection
+	let lastSyncTime = 0
+	async function triggerManualSync(syncType = 'customers') {
+		console.log(`🔍 [MANUAL-SYNC] ${syncType} sync requested`)
+		
+		// Prevent double execution within 2 seconds
+		const now = Date.now()
+		if (syncInProgress || (now - lastSyncTime) < 2000) {
+			console.log("🚫 Sync already in progress or too recent, skipping...")
+			return
+		}
+		
+		lastSyncTime = now
+		syncInProgress = true
+		syncStatus = `Starting ${syncType} sync...`
+		// console.log(`🚀 Triggering manual sync: ${syncType} (timestamp: ${now})`)
+		
+		try {
+			const uniqueRequestId = `frontend_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+			
+			// 🌐 COMPREHENSIVE FRONTEND NETWORK DEBUGGING (COMMENTED OUT FOR PRODUCTION)
+			// console.log(`🌐 [FRONTEND-NETWORK] ==================== FRONTEND REQUEST START ====================`)
+			// console.log(`🌐 [FRONTEND-NETWORK] Timestamp: ${new Date().toISOString()}`)
+			// console.log(`🌐 [FRONTEND-NETWORK] Browser: ${navigator.userAgent}`)
+			// console.log(`🌐 [FRONTEND-NETWORK] Connection: ${navigator.connection ? JSON.stringify({
+			// 	effectiveType: navigator.connection.effectiveType,
+			// 	downlink: navigator.connection.downlink,
+			// 	rtt: navigator.connection.rtt
+			// }) : 'Not available'}`)
+			// console.log(`🌐 [FRONTEND-NETWORK] Online: ${navigator.onLine}`)
+			// console.log(`🌐 [FRONTEND-NETWORK] URL: ${window.location.href}`)
+			// console.log(`🌐 [FRONTEND-NETWORK] Protocol: ${window.location.protocol}`)
+			// console.log(`🌐 [FRONTEND-NETWORK] Host: ${window.location.host}`)
+			
+			console.log(`🔍 [MANUAL-SYNC] Manual sync: ${syncType} (ID: ${uniqueRequestId})`)
+			// console.log(`🔍 [MANUAL-SYNC] About to call manual sync API: /admin/streaming/stripe/sync/trigger?type=${syncType}`)
+			// console.log(`🔍 [MANUAL-SYNC] Frontend Request ID: ${uniqueRequestId}`)
+			// console.log(`🔍 [MANUAL-SYNC] This is the manual sync function - should NOT trigger key detection`)
+			// console.log(`🌐 [FRONTEND-NETWORK] Making single API request with ID: ${uniqueRequestId}`)
+			
+			const response = await apiRequest(`/admin/streaming/stripe/sync/trigger?type=${syncType}`, {
+				method: 'POST',
+				headers: {
+					'X-Frontend-Request-ID': uniqueRequestId,
+					'X-Frontend-Timestamp': Date.now().toString(),
+					'X-Frontend-User-Agent': navigator.userAgent
+				}
+			})
+			const data = await response.json()
+			console.log(`🔍 [MANUAL-SYNC] Manual sync API response:`, data)
+			
+			if (response.ok) {
+				syncStatus = `✅ ${syncType} sync completed successfully!`
+				console.log("✅ Manual sync completed:", data)
+				
+				// Reload database stats to show updated counts
+				setTimeout(() => {
+					loadDatabaseStats()
+				}, 1000)
+			} else {
+				syncStatus = `❌ ${syncType} sync failed: ${data.error}`
+				console.error("❌ Manual sync failed:", data)
+			}
+		} catch (error: any) {
+			syncStatus = `❌ ${syncType} sync failed: ${error.message || 'Unknown error'}`
+			console.error("❌ Manual sync error:", error)
+		} finally {
+			syncInProgress = false
+			
+			// Clear status after 5 seconds
+			setTimeout(() => {
+				syncStatus = ''
+			}, 5000)
 		}
 	}
 
@@ -295,23 +455,52 @@
 		<div class="header-actions">
 			<button 
 				class="btn btn-secondary" 
-				onclick={testV1vsV2}
+				onclick={loadDatabaseStats}
+				disabled={dbStatsLoading}
 			>
-				🏁 Test v1 vs v2 Performance
+				{dbStatsLoading ? '🔄 Loading...' : '📊 Refresh DB Stats'}
+			</button>
+			<button 
+				class="btn btn-success" 
+				onclick={() => triggerManualSync('customers')}
+				disabled={syncInProgress}
+			>
+				{syncInProgress ? '🔄 Syncing...' : '🚀 Sync Customers'}
+			</button>
+			<button 
+				class="btn btn-warning" 
+				onclick={() => triggerManualSync('initial')}
+				disabled={syncInProgress}
+			>
+				{syncInProgress ? '🔄 Syncing...' : '🔄 Full Sync'}
+			</button>
+			<button 
+				class="btn btn-info" 
+				onclick={() => triggerManualSync('coupons')}
+				disabled={syncInProgress}
+			>
+				{syncInProgress ? '🔄 Syncing...' : '🎟️ Sync Coupons'}
+			</button>
+			<button 
+				class="btn btn-secondary" 
+				onclick={() => triggerManualSync('monthly_metrics')}
+				disabled={syncInProgress}
+			>
+				{syncInProgress ? '🔄 Syncing...' : '📊 Sync Metrics'}
 			</button>
 			<button 
 				class="btn btn-primary" 
 				onclick={loadV2Analytics}
 				disabled={v2Loading}
 			>
-				{v2Loading ? '🔄 Loading...' : '🔄 Update V2 Analytics'}
+				{v2Loading ? '🔄 Loading...' : '📈 V2 Analytics'}
 			</button>
 			<button 
-				class="btn btn-primary" 
-				onclick={refreshData}
-				disabled={isLoading || isRefreshing}
+				class="btn btn-info" 
+				onclick={loadSystemData}
+				disabled={systemLoading}
 			>
-				{isRefreshing ? '🔄 Refreshing...' : '🔄 Refresh V1 Data'}
+				{systemLoading ? '🔄 Loading...' : '🏥 System Health'}
 			</button>
 		</div>
 	</div>
@@ -333,7 +522,7 @@
 			</div>
 			
 			<div class="metric-card success">
-				<div class="metric-value">{v2Analytics?.enabled ? '7' : '0'}</div>
+				<div class="metric-value">{v2Analytics?.enabled ? '8' : '0'}</div>
 				<div class="metric-label">V2 Endpoints</div>
 			</div>
 			
@@ -366,13 +555,13 @@
 				</div>
 			</div>
 
-			<!-- Customers Card -->
+			<!-- Customers Card (Real Database Count) -->
 			<div class="summary-card customer-card">
 				<div class="card-icon">👥</div>
 				<div class="card-content">
-					<div class="card-value">{v2Analytics?.customer_analytics?.total_customers || 0}</div>
-					<div class="card-label">Total Customers</div>
-					<div class="card-subtitle">{v2Analytics?.customer_analytics?.growth_rate_120d || '0.0%'} 120d growth</div>
+					<div class="card-value">{databaseStats?.customers || 0}</div>
+					<div class="card-label">Total Customers (DB)</div>
+					<div class="card-subtitle">{dbStatsLastUpdated ? `Updated: ${dbStatsLastUpdated.toLocaleTimeString()}` : 'Not loaded'}</div>
 				</div>
 			</div>
 
@@ -380,19 +569,19 @@
 			<div class="summary-card mrr-card">
 				<div class="card-icon">📈</div>
 				<div class="card-content">
-					<div class="card-value">{v2Analytics?.mrr_analytics?.estimated_mrr || '$0.00'}</div>
+					<div class="card-value">{v2Analytics?.mrr_analytics?.actual_mrr || '$0.00'}</div>
 					<div class="card-label">Monthly Recurring Revenue</div>
-					<div class="card-subtitle">{v2Analytics?.mrr_analytics?.estimated_arr || '$0.00'} ARR</div>
+					<div class="card-subtitle">{v2Analytics?.mrr_analytics?.actual_arr || '$0.00'} ARR</div>
 				</div>
 			</div>
 
-			<!-- Subscriptions Card -->
+			<!-- Subscriptions Card (Real Database Count) -->
 			<div class="summary-card subscription-card">
 				<div class="card-icon">📋</div>
 				<div class="card-content">
-					<div class="card-value">{v2Analytics?.subscription_health?.active_subscriptions || 0}</div>
-					<div class="card-label">Active Subscriptions</div>
-					<div class="card-subtitle">{v2Analytics?.subscription_health?.health_score || '10.0/10'} health</div>
+					<div class="card-value">{databaseStats?.subscriptions || 0}</div>
+					<div class="card-label">Total Subscriptions (DB)</div>
+					<div class="card-subtitle">{databaseStats?.invoices || 0} invoices</div>
 				</div>
 			</div>
 
@@ -406,17 +595,107 @@
 				</div>
 			</div>
 
-			<!-- Products Card -->
+			<!-- Products Card (Real Database Count) -->
 			<div class="summary-card product-card">
 				<div class="card-icon">📦</div>
 				<div class="card-content">
-					<div class="card-value">{v2Analytics?.product_performance?.active_products || 0}</div>
-					<div class="card-label">Active Products</div>
-					<div class="card-subtitle">{v2Analytics?.product_performance?.active_prices || 0} prices</div>
+					<div class="card-value">{databaseStats?.products || 0}</div>
+					<div class="card-label">Total Products (DB)</div>
+					<div class="card-subtitle">From database</div>
 				</div>
 			</div>
 		</div>
 	</div>
+
+	<!-- Subscription Diagnostics Section -->
+	{#if v2Analytics?.subscription_diagnostics}
+		<div class="diagnostics-section">
+			<div class="diagnostics-header">
+				<h2>🔍 Subscription Diagnostics</h2>
+				<p>Investigating the discrepancy between subscription count (496) and unique customers (~70)</p>
+			</div>
+			
+			<div class="diagnostics-grid">
+				<div class="diagnostic-card">
+					<div class="diagnostic-icon">📊</div>
+					<div class="diagnostic-content">
+						<div class="diagnostic-value">{v2Analytics.subscription_diagnostics.total_active_subscriptions}</div>
+						<div class="diagnostic-label">Total Active Subscriptions</div>
+					</div>
+				</div>
+				
+				<div class="diagnostic-card highlight">
+					<div class="diagnostic-icon">👥</div>
+					<div class="diagnostic-content">
+						<div class="diagnostic-value">{v2Analytics.subscription_diagnostics.total_active_customers}</div>
+						<div class="diagnostic-label">Active Customers</div>
+						<div class="diagnostic-subtitle">This is your real active user count!</div>
+					</div>
+				</div>
+				
+				<div class="diagnostic-card">
+					<div class="diagnostic-icon">📈</div>
+					<div class="diagnostic-content">
+						<div class="diagnostic-value">{v2Analytics.subscription_diagnostics.avg_subscriptions_per_customer}</div>
+						<div class="diagnostic-label">Avg Subs per Customer</div>
+					</div>
+				</div>
+				
+				<div class="diagnostic-card">
+					<div class="diagnostic-icon">🆓</div>
+					<div class="diagnostic-content">
+						<div class="diagnostic-value">{v2Analytics.subscription_diagnostics.trial_subscriptions}</div>
+						<div class="diagnostic-label">Trial Subscriptions</div>
+					</div>
+				</div>
+				
+				<div class="diagnostic-card">
+					<div class="diagnostic-icon">⏰</div>
+					<div class="diagnostic-content">
+						<div class="diagnostic-value">{v2Analytics.subscription_diagnostics.canceled_but_active_until_period_end}</div>
+						<div class="diagnostic-label">Canceled but Active</div>
+						<div class="diagnostic-subtitle">Until period end</div>
+					</div>
+				</div>
+				
+				<div class="diagnostic-card">
+					<div class="diagnostic-icon">❌</div>
+					<div class="diagnostic-content">
+						<div class="diagnostic-value">{v2Analytics.subscription_diagnostics.recently_canceled_30_days}</div>
+						<div class="diagnostic-label">Recently Canceled</div>
+						<div class="diagnostic-subtitle">Last 30 days</div>
+					</div>
+				</div>
+			</div>
+			
+			<div class="diagnostics-explanation">
+				<div class="explanation-card">
+					<h3>💡 Explanation</h3>
+					<p><strong>Why 496 subscriptions ≠ 70 customers:</strong></p>
+					<ul>
+						<li><strong>Multiple subscriptions per customer:</strong> Some customers have multiple active subscriptions</li>
+						<li><strong>Canceled but active:</strong> Subscriptions canceled but still active until billing period ends</li>
+						<li><strong>Trial subscriptions:</strong> May be counted as "active" even if not paying yet</li>
+						<li><strong>Incomplete subscriptions:</strong> Failed payments but still technically active</li>
+					</ul>
+					<p><strong>Your real active customer count is: {v2Analytics.subscription_diagnostics.total_active_customers}</strong></p>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Sync Status Display -->
+	{#if syncStatus}
+		<div class="sync-status-banner">
+			<div class="sync-status-content">
+				<span class="sync-status-message">{syncStatus}</span>
+				{#if syncInProgress}
+					<div class="sync-spinner"></div>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
 	<!-- Endpoints Grid -->
 	<div class="endpoints-grid">
 		{#each endpoints as endpoint}
@@ -483,6 +762,139 @@
 				<span class="error-message">{error}</span>
 				<button class="btn btn-secondary" onclick={refreshData}>Retry</button>
 			</div>
+		</div>
+	{/if}
+
+	<!-- System Management Panel -->
+	{#if systemHealth || systemStats || syncJobs.length > 0}
+		<div class="system-panel">
+			<h2>🏥 System Management</h2>
+			
+			{#if systemHealth}
+				<div class="system-health">
+					<h3>System Health</h3>
+					<div class="health-grid">
+						<div class="health-card status-{systemHealth.status}">
+							<div class="health-icon">
+								{systemHealth.status === 'healthy' ? '✅' : systemHealth.status === 'degraded' ? '⚠️' : '❌'}
+							</div>
+							<div class="health-info">
+								<div class="health-status">{systemHealth.status.toUpperCase()}</div>
+								<div class="health-detail">Overall Status</div>
+							</div>
+						</div>
+						
+						<div class="health-card">
+							<div class="health-icon">🗄️</div>
+							<div class="health-info">
+								<div class="health-status">{systemHealth.database_status}</div>
+								<div class="health-detail">Database</div>
+							</div>
+						</div>
+						
+						<div class="health-card">
+							<div class="health-icon">🔄</div>
+							<div class="health-info">
+								<div class="health-status">{systemHealth.active_jobs}</div>
+								<div class="health-detail">Active Jobs</div>
+							</div>
+						</div>
+						
+						<div class="health-card">
+							<div class="health-icon">❌</div>
+							<div class="health-info">
+								<div class="health-status">{systemHealth.failed_jobs}</div>
+								<div class="health-detail">Failed Jobs (24h)</div>
+							</div>
+						</div>
+						
+						<div class="health-card">
+							<div class="health-icon">📊</div>
+							<div class="health-info">
+								<div class="health-status">{systemHealth.total_entities}</div>
+								<div class="health-detail">Total Entities</div>
+							</div>
+						</div>
+						
+						<div class="health-card">
+							<div class="health-icon">⚡</div>
+							<div class="health-info">
+								<div class="health-status">{systemHealth.stripe_api_status}</div>
+								<div class="health-detail">Stripe API</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			{/if}
+
+			{#if syncJobs.length > 0}
+				<div class="sync-jobs">
+					<h3>Recent Sync Jobs</h3>
+					<div class="jobs-list">
+						{#each syncJobs as job}
+							<div class="job-card status-{job.status}">
+								<div class="job-header">
+									<span class="job-type">{job.job_type}</span>
+									<span class="job-entity">{job.entity_type}</span>
+									<span class="job-status status-{job.status}">
+										{job.status === 'completed' ? '✅' : job.status === 'failed' ? '❌' : job.status === 'running' ? '🔄' : '⏸️'}
+										{job.status}
+									</span>
+								</div>
+								<div class="job-progress">
+									{#if job.total_items > 0}
+										<div class="progress-bar">
+											<div class="progress-fill" style="width: {(job.processed_items / job.total_items) * 100}%"></div>
+										</div>
+										<span class="progress-text">{job.processed_items}/{job.total_items}</span>
+									{/if}
+								</div>
+								{#if job.error_message}
+									<div class="job-error">{job.error_message}</div>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			{#if systemStats}
+				<div class="system-stats">
+					<h3>System Statistics</h3>
+					<div class="stats-grid">
+						<div class="stat-card">
+							<div class="stat-value">{systemStats.total_sync_jobs}</div>
+							<div class="stat-label">Total Jobs</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-value">{systemStats.completed_jobs}</div>
+							<div class="stat-label">Completed</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-value">{systemStats.failed_jobs}</div>
+							<div class="stat-label">Failed</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-value">{systemStats.running_jobs}</div>
+							<div class="stat-label">Running</div>
+						</div>
+					</div>
+					
+					{#if Object.keys(systemStats.entities_by_type).length > 0}
+						<div class="entity-breakdown">
+							<h4>Entities by Type</h4>
+							<div class="entity-grid">
+								{#each Object.entries(systemStats.entities_by_type) as [type, count]}
+									<div class="entity-item">
+										<span class="entity-type">{type}</span>
+										<span class="entity-count">{count}</span>
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
+				</div>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -558,6 +970,26 @@
 
 	.btn-secondary:hover:not(:disabled) {
 		background: #e5e7eb;
+	}
+
+	.btn-success {
+		background: #059669;
+		color: white;
+	}
+
+	.btn-success:hover:not(:disabled) {
+		background: #047857;
+		transform: translateY(-1px);
+	}
+
+	.btn-warning {
+		background: #d97706;
+		color: white;
+	}
+
+	.btn-warning:hover:not(:disabled) {
+		background: #b45309;
+		transform: translateY(-1px);
 	}
 
 	/* Performance Overview */
@@ -734,6 +1166,168 @@
 	.product-card .card-icon {
 		background: rgba(232, 62, 140, 0.1);
 		color: #e83e8c;
+	}
+
+	/* Diagnostics Section */
+	.diagnostics-section {
+		background: var(--surface, white);
+		border: 1px solid var(--border, #e5e7eb);
+		border-radius: var(--radius-lg, 0.5rem);
+		padding: var(--space-lg, 1.5rem);
+		margin: var(--space-xl, 2rem) 0;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+	}
+
+	.diagnostics-header {
+		margin-bottom: var(--space-lg, 1.5rem);
+		text-align: center;
+	}
+
+	.diagnostics-header h2 {
+		margin: 0 0 var(--space-sm, 0.5rem) 0;
+		color: var(--text, #111827);
+		font-size: 1.5rem;
+		font-weight: 600;
+	}
+
+	.diagnostics-header p {
+		margin: 0;
+		color: var(--text-muted, #6b7280);
+		font-size: 1rem;
+	}
+
+	.diagnostics-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		gap: var(--space-md, 1rem);
+		margin-bottom: var(--space-lg, 1.5rem);
+	}
+
+	.diagnostic-card {
+		background: var(--bg-secondary, #f9fafb);
+		border: 1px solid var(--border, #e5e7eb);
+		border-radius: var(--radius-md, 0.375rem);
+		padding: var(--space-md, 1rem);
+		text-align: center;
+		transition: all 0.2s ease;
+	}
+
+	.diagnostic-card:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+	}
+
+	.diagnostic-card.highlight {
+		border-color: #059669;
+		background: #f0fdf4;
+		border-width: 2px;
+	}
+
+	.diagnostic-icon {
+		font-size: 2rem;
+		margin-bottom: var(--space-sm, 0.5rem);
+	}
+
+	.diagnostic-value {
+		font-size: 1.5rem;
+		font-weight: bold;
+		color: var(--primary, #2563eb);
+		margin-bottom: var(--space-xs, 0.25rem);
+	}
+
+	.diagnostic-card.highlight .diagnostic-value {
+		color: #059669;
+	}
+
+	.diagnostic-label {
+		font-size: 0.875rem;
+		color: var(--text, #111827);
+		font-weight: 500;
+		margin-bottom: var(--space-xs, 0.25rem);
+	}
+
+	.diagnostic-subtitle {
+		font-size: 0.75rem;
+		color: var(--text-muted, #6b7280);
+		font-style: italic;
+	}
+
+	.diagnostics-explanation {
+		border-top: 1px solid var(--border, #e5e7eb);
+		padding-top: var(--space-lg, 1.5rem);
+	}
+
+	.explanation-card {
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: var(--radius-md, 0.375rem);
+		padding: var(--space-lg, 1.5rem);
+	}
+
+	.explanation-card h3 {
+		margin: 0 0 var(--space-md, 1rem) 0;
+		color: var(--text, #111827);
+		font-size: 1.125rem;
+		font-weight: 600;
+	}
+
+	.explanation-card p {
+		margin: 0 0 var(--space-sm, 0.5rem) 0;
+		color: var(--text, #111827);
+		line-height: 1.5;
+	}
+
+	.explanation-card ul {
+		margin: var(--space-sm, 0.5rem) 0;
+		padding-left: var(--space-lg, 1.5rem);
+		color: var(--text-muted, #6b7280);
+	}
+
+	.explanation-card li {
+		margin-bottom: var(--space-xs, 0.25rem);
+		line-height: 1.4;
+	}
+
+	/* Sync Status Banner */
+	.sync-status-banner {
+		background: #f0f9ff;
+		border: 1px solid #0ea5e9;
+		border-radius: var(--radius-md, 0.375rem);
+		padding: var(--space-md, 1rem);
+		margin: var(--space-lg, 1.5rem) 0;
+		animation: slideIn 0.3s ease-out;
+	}
+
+	.sync-status-content {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md, 1rem);
+	}
+
+	.sync-status-message {
+		flex: 1;
+		color: #0369a1;
+		font-weight: 500;
+	}
+
+	.sync-spinner {
+		width: 20px;
+		height: 20px;
+		border: 2px solid #e0f2fe;
+		border-top: 2px solid #0ea5e9;
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes slideIn {
+		from {
+			opacity: 0;
+			transform: translateY(-10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 
 	/* Endpoints Grid */
@@ -974,4 +1568,261 @@
 			align-self: center;
 		}
 	}
+
+	/* System Management Panel */
+	.system-panel {
+		margin-top: var(--space-xl, 2rem);
+		padding: var(--space-lg, 1.5rem);
+		background: var(--surface, white);
+		border: 1px solid var(--border, #e5e7eb);
+		border-radius: var(--radius-lg, 0.5rem);
+	}
+
+	.system-panel h2 {
+		margin: 0 0 var(--space-lg, 1.5rem) 0;
+		color: var(--text, #111827);
+		font-size: 1.5rem;
+		font-weight: 600;
+	}
+
+	.system-panel h3 {
+		margin: 0 0 var(--space-md, 1rem) 0;
+		color: var(--text, #111827);
+		font-size: 1.25rem;
+		font-weight: 600;
+	}
+
+	.system-panel h4 {
+		margin: var(--space-md, 1rem) 0 var(--space-sm, 0.5rem) 0;
+		color: var(--text, #111827);
+		font-size: 1rem;
+		font-weight: 600;
+	}
+
+	/* System Health */
+	.system-health {
+		margin-bottom: var(--space-xl, 2rem);
+	}
+
+	.health-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		gap: var(--space-md, 1rem);
+	}
+
+	.health-card {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md, 1rem);
+		padding: var(--space-md, 1rem);
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: var(--radius-md, 0.375rem);
+		transition: all 0.2s ease;
+	}
+
+	.health-card:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+	}
+
+	.health-card.status-healthy {
+		border-left: 4px solid #059669;
+	}
+
+	.health-card.status-degraded {
+		border-left: 4px solid #f59e0b;
+	}
+
+	.health-card.status-unhealthy {
+		border-left: 4px solid #dc2626;
+	}
+
+	.health-icon {
+		font-size: 1.5rem;
+		line-height: 1;
+	}
+
+	.health-info {
+		flex: 1;
+	}
+
+	.health-status {
+		font-weight: 600;
+		font-size: 1rem;
+		color: var(--text, #111827);
+		margin-bottom: var(--space-xs, 0.25rem);
+	}
+
+	.health-detail {
+		font-size: 0.875rem;
+		color: var(--text-muted, #6b7280);
+	}
+
+	/* Sync Jobs */
+	.sync-jobs {
+		margin-bottom: var(--space-xl, 2rem);
+	}
+
+	.jobs-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-sm, 0.5rem);
+	}
+
+	.job-card {
+		padding: var(--space-md, 1rem);
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: var(--radius-md, 0.375rem);
+	}
+
+	.job-card.status-completed {
+		border-left: 4px solid #059669;
+	}
+
+	.job-card.status-failed {
+		border-left: 4px solid #dc2626;
+	}
+
+	.job-card.status-running {
+		border-left: 4px solid #2563eb;
+	}
+
+	.job-header {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md, 1rem);
+		margin-bottom: var(--space-sm, 0.5rem);
+	}
+
+	.job-type {
+		font-weight: 600;
+		color: var(--text, #111827);
+	}
+
+	.job-entity {
+		font-size: 0.875rem;
+		color: var(--text-muted, #6b7280);
+		background: #e5e7eb;
+		padding: 0.25rem 0.5rem;
+		border-radius: var(--radius-sm, 0.25rem);
+	}
+
+	.job-status {
+		margin-left: auto;
+		font-size: 0.875rem;
+		font-weight: 500;
+	}
+
+	.job-status.status-completed {
+		color: #059669;
+	}
+
+	.job-status.status-failed {
+		color: #dc2626;
+	}
+
+	.job-status.status-running {
+		color: #2563eb;
+	}
+
+	.job-progress {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm, 0.5rem);
+	}
+
+	.progress-bar {
+		flex: 1;
+		height: 8px;
+		background: #e5e7eb;
+		border-radius: 4px;
+		overflow: hidden;
+	}
+
+	.progress-fill {
+		height: 100%;
+		background: #2563eb;
+		transition: width 0.3s ease;
+	}
+
+	.progress-text {
+		font-size: 0.875rem;
+		color: var(--text-muted, #6b7280);
+		min-width: 60px;
+		text-align: right;
+	}
+
+	.job-error {
+		margin-top: var(--space-sm, 0.5rem);
+		padding: var(--space-sm, 0.5rem);
+		background: #fef2f2;
+		border: 1px solid #fecaca;
+		border-radius: var(--radius-sm, 0.25rem);
+		font-size: 0.875rem;
+		color: #dc2626;
+	}
+
+	/* System Stats */
+	.stats-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+		gap: var(--space-md, 1rem);
+		margin-bottom: var(--space-lg, 1.5rem);
+	}
+
+	.stat-card {
+		text-align: center;
+		padding: var(--space-md, 1rem);
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		border-radius: var(--radius-md, 0.375rem);
+	}
+
+	.stat-value {
+		font-size: 2rem;
+		font-weight: 700;
+		color: var(--primary, #2563eb);
+		margin-bottom: var(--space-xs, 0.25rem);
+	}
+
+	.stat-label {
+		font-size: 0.875rem;
+		color: var(--text-muted, #6b7280);
+		font-weight: 500;
+	}
+
+	.entity-breakdown {
+		padding-top: var(--space-lg, 1.5rem);
+		border-top: 1px solid var(--border, #e5e7eb);
+	}
+
+	.entity-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+		gap: var(--space-sm, 0.5rem);
+	}
+
+	.entity-item {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: var(--space-sm, 0.5rem);
+		background: white;
+		border: 1px solid #e5e7eb;
+		border-radius: var(--radius-sm, 0.25rem);
+	}
+
+	.entity-type {
+		font-weight: 500;
+		color: var(--text, #111827);
+		text-transform: capitalize;
+	}
+
+	.entity-count {
+		font-weight: 600;
+		color: var(--primary, #2563eb);
+	}
 </style>
+

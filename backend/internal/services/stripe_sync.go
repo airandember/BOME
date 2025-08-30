@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stripe/stripe-go/v74"
+	"github.com/stripe/stripe-go/v74/coupon"
 	"github.com/stripe/stripe-go/v74/customer"
 	"github.com/stripe/stripe-go/v74/invoice"
 	"github.com/stripe/stripe-go/v74/price"
@@ -34,6 +35,8 @@ type SyncConfig struct {
 	LastFullSync        *time.Time             `json:"last_full_sync"`
 	LastIncrementalSync *time.Time             `json:"last_incremental_sync"`
 	ConfigData          map[string]interface{} `json:"config_data"`
+	CreatedAt           *time.Time             `json:"created_at"`
+	UpdatedAt           *time.Time             `json:"updated_at"`
 }
 
 // SyncJob represents a sync job
@@ -49,6 +52,7 @@ type SyncJob struct {
 	StartedAt      *time.Time `json:"started_at"`
 	CompletedAt    *time.Time `json:"completed_at"`
 	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      *time.Time `json:"updated_at"`
 }
 
 // NewStripeSyncService creates a new sync service
@@ -63,6 +67,129 @@ func NewStripeSyncService(db *database.DB, stripeService *StripeService) *Stripe
 // GetDB returns the database instance for testing
 func (s *StripeSyncService) GetDB() *database.DB {
 	return s.db
+}
+
+// TestCustomerSync manually triggers a customer sync for testing (no date filter)
+func (s *StripeSyncService) TestCustomerSync(ctx context.Context) error {
+	log.Println("🧪 TEST: Manual customer sync triggered...")
+
+	// Use a dummy time since we're not filtering by date anyway
+	dummyTime := time.Now().AddDate(-10, 0, 0) // 10 years ago
+
+	return s.syncCustomers(ctx, dummyTime, 0)
+}
+
+// TestCustomerSyncUnlimited pulls ALL customers without any limits
+func (s *StripeSyncService) TestCustomerSyncUnlimited(ctx context.Context) error {
+	log.Println("🚀 TEST: UNLIMITED customer sync - pulling ALL customers...")
+
+	params := &stripe.CustomerListParams{}
+	// No date filter, no limits - get everything
+	params.Limit = stripe.Int64(100) // Stripe's max per request
+
+	iter := customer.List(params)
+	totalProcessed := 0
+	batchCount := 0
+
+	log.Printf("📊 Starting unlimited customer sync...")
+
+	for iter.Next() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		cust := iter.Current().(*stripe.Customer)
+
+		// Insert/update customer
+		err := s.upsertCustomer(cust)
+		if err != nil {
+			log.Printf("⚠️ Failed to upsert customer %s: %v", cust.ID, err)
+			continue
+		}
+
+		totalProcessed++
+
+		// Progress logging every 100 customers
+		if totalProcessed%100 == 0 {
+			batchCount++
+			log.Printf("📈 Progress: %d customers processed (batch %d)", totalProcessed, batchCount)
+
+			// Small pause for rate limiting
+			time.Sleep(50 * time.Millisecond)
+		}
+
+		// Longer pause every 500 customers for large accounts
+		if totalProcessed%500 == 0 {
+			log.Printf("⏸️ Rate limiting pause after %d customers", totalProcessed)
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+
+	if err := iter.Err(); err != nil {
+		return fmt.Errorf("stripe API error during unlimited customer sync: %w", err)
+	}
+
+	log.Printf("🎉 UNLIMITED customer sync completed: %d customers processed", totalProcessed)
+	return nil
+}
+
+// SyncCouponsManual performs manual coupon sync (all historical coupons)
+func (s *StripeSyncService) SyncCouponsManual(ctx context.Context) error {
+	if !s.stripeService.IsEnabled() {
+		return fmt.Errorf("stripe service is not enabled")
+	}
+
+	log.Println("🎟️ Manual coupon sync - pulling ALL coupons...")
+
+	// Create sync job
+	jobID, err := s.createSyncJob("manual_sync", "coupon", 1)
+	if err != nil {
+		return fmt.Errorf("failed to create sync job: %w", err)
+	}
+
+	defer func() {
+		s.completeSyncJob(jobID, err)
+	}()
+
+	// Sync all coupons (no time filter)
+	err = s.syncCoupons(ctx, time.Time{}, jobID)
+	if err != nil {
+		return fmt.Errorf("failed to sync coupons: %w", err)
+	}
+
+	log.Println("✅ Manual coupon sync completed successfully")
+	return nil
+}
+
+// SyncMonthlyMetricsManual performs manual monthly metrics calculation
+func (s *StripeSyncService) SyncMonthlyMetricsManual(ctx context.Context) error {
+	if !s.stripeService.IsEnabled() {
+		return fmt.Errorf("stripe service is not enabled")
+	}
+
+	log.Println("📊 Manual monthly metrics sync - calculating last 2 years...")
+
+	// Create sync job
+	jobID, err := s.createSyncJob("manual_sync", "monthly_metrics", 24) // 24 months
+	if err != nil {
+		return fmt.Errorf("failed to create sync job: %w", err)
+	}
+
+	defer func() {
+		s.completeSyncJob(jobID, err)
+	}()
+
+	// Calculate metrics for last 2 years
+	twoYearsAgo := time.Now().AddDate(-2, 0, 0)
+	err = s.syncMonthlyMetrics(ctx, twoYearsAgo, jobID)
+	if err != nil {
+		return fmt.Errorf("failed to sync monthly metrics: %w", err)
+	}
+
+	log.Println("✅ Manual monthly metrics sync completed successfully")
+	return nil
 }
 
 // InitialDataSync performs the initial 1.5-year historical data sync
@@ -84,6 +211,7 @@ func (s *StripeSyncService) InitialDataSync(ctx context.Context) error {
 		"subscription",
 		"invoice",
 		"coupon",
+		"monthly_metrics", // Calculate after all data is synced
 	}
 
 	// Create initial sync job
@@ -113,6 +241,8 @@ func (s *StripeSyncService) InitialDataSync(ctx context.Context) error {
 			err = s.syncInvoices(ctx, oneAndHalfYearsAgo, jobID)
 		case "coupon":
 			err = s.syncCoupons(ctx, oneAndHalfYearsAgo, jobID)
+		case "monthly_metrics":
+			err = s.syncMonthlyMetrics(ctx, oneAndHalfYearsAgo, jobID)
 		}
 
 		if err != nil {
@@ -121,7 +251,7 @@ func (s *StripeSyncService) InitialDataSync(ctx context.Context) error {
 		}
 
 		// Update progress
-		s.updateSyncJobProgress(jobID, i+1)
+		s.updateSyncJobProgress(jobID, i+1, "")
 		log.Printf("✅ Completed %s sync", entityType)
 	}
 
@@ -131,7 +261,7 @@ func (s *StripeSyncService) InitialDataSync(ctx context.Context) error {
 
 // syncProducts syncs products with batch processing
 func (s *StripeSyncService) syncProducts(ctx context.Context, since time.Time, jobID int) error {
-	log.Println("📦 Starting product sync with batch processing...")
+	log.Println("📦 Starting product sync with batch processing (ALL products)...")
 
 	config, err := s.getSyncConfig("product")
 	if err != nil {
@@ -139,7 +269,7 @@ func (s *StripeSyncService) syncProducts(ctx context.Context, since time.Time, j
 	}
 
 	params := &stripe.ProductListParams{}
-	params.Created = stripe.Int64(since.Unix())
+	// Remove date filter - we want ALL products regardless of creation date
 	params.Limit = stripe.Int64(int64(config.BatchSize))
 
 	iter := product.List(params)
@@ -198,7 +328,9 @@ func (s *StripeSyncService) syncCustomers(ctx context.Context, since time.Time, 
 	}
 
 	params := &stripe.CustomerListParams{}
-	params.Created = stripe.Int64(since.Unix())
+	// TEMPORARILY REMOVE DATE FILTER TO GET ALL CUSTOMERS
+	// params.Created = stripe.Int64(since.Unix())
+	log.Printf("🔍 Syncing ALL customers (no date filter) to test data availability...")
 	params.Limit = stripe.Int64(int64(config.BatchSize))
 
 	iter := customer.List(params)
@@ -247,7 +379,7 @@ func (s *StripeSyncService) syncCustomers(ctx context.Context, since time.Time, 
 
 // syncPrices syncs prices with batch processing
 func (s *StripeSyncService) syncPrices(ctx context.Context, since time.Time, jobID int) error {
-	log.Println("💰 Starting price sync with batch processing...")
+	log.Println("💰 Starting price sync with batch processing (ALL prices)...")
 
 	config, err := s.getSyncConfig("price")
 	if err != nil {
@@ -255,7 +387,7 @@ func (s *StripeSyncService) syncPrices(ctx context.Context, since time.Time, job
 	}
 
 	params := &stripe.PriceListParams{}
-	params.Created = stripe.Int64(since.Unix())
+	// Remove date filter - we want ALL prices regardless of creation date
 	params.Limit = stripe.Int64(int64(config.BatchSize))
 
 	iter := price.List(params)
@@ -290,44 +422,68 @@ func (s *StripeSyncService) syncPrices(ctx context.Context, since time.Time, job
 
 // syncSubscriptions syncs subscriptions with batch processing
 func (s *StripeSyncService) syncSubscriptions(ctx context.Context, since time.Time, jobID int) error {
-	log.Println("📋 Starting subscription sync with batch processing...")
+	log.Println("📋 Starting subscription sync with batch processing (past 2 years, active/canceled/trialing)...")
 
 	config, err := s.getSyncConfig("subscription")
 	if err != nil {
 		return err
 	}
 
-	params := &stripe.SubscriptionListParams{}
-	params.Created = stripe.Int64(since.Unix())
-	params.Limit = stripe.Int64(int64(config.BatchSize))
-
-	iter := subscription.List(params)
+	// Target statuses we want to sync
+	targetStatuses := []string{"active", "canceled", "trialing"}
 	totalProcessed := 0
 
-	for iter.Next() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+	log.Printf("📋 Syncing ALL subscriptions (no date filter) with statuses: %v", targetStatuses)
+
+	// Sync each status separately for better control
+	for _, status := range targetStatuses {
+		log.Printf("📋 Syncing %s subscriptions (ALL historical data)...", status)
+
+		params := &stripe.SubscriptionListParams{
+			ListParams: stripe.ListParams{
+				Limit: stripe.Int64(int64(config.BatchSize)),
+			},
+			Status: stripe.String(status),
 		}
 
-		sub := iter.Current().(*stripe.Subscription)
+		// NO DATE FILTER - get ALL subscriptions regardless of creation date
 
-		err := s.upsertSubscription(sub)
-		if err != nil {
-			log.Printf("⚠️ Failed to upsert subscription %s: %v", sub.ID, err)
-			continue
+		iter := subscription.List(params)
+		statusProcessed := 0
+
+		for iter.Next() {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+
+			sub := iter.Current().(*stripe.Subscription)
+
+			err := s.upsertSubscription(sub)
+			if err != nil {
+				log.Printf("⚠️ Failed to upsert subscription %s (status: %s): %v", sub.ID, status, err)
+				continue
+			}
+
+			statusProcessed++
+			totalProcessed++
+
+			if statusProcessed%25 == 0 {
+				log.Printf("📋 Processed %d %s subscriptions", statusProcessed, status)
+				time.Sleep(100 * time.Millisecond)
+			}
 		}
 
-		totalProcessed++
-
-		if totalProcessed%25 == 0 {
-			log.Printf("📋 Processed %d subscriptions", totalProcessed)
-			time.Sleep(100 * time.Millisecond)
+		if err := iter.Err(); err != nil {
+			log.Printf("❌ Error iterating %s subscriptions: %v", status, err)
+			return fmt.Errorf("failed to iterate %s subscriptions: %w", status, err)
 		}
+
+		log.Printf("✅ Completed %s subscriptions: %d processed", status, statusProcessed)
 	}
 
-	log.Printf("✅ Subscription sync completed: %d subscriptions processed", totalProcessed)
+	log.Printf("✅ Subscription sync completed: %d total subscriptions processed", totalProcessed)
 	return nil
 }
 
@@ -381,7 +537,99 @@ func (s *StripeSyncService) syncPaymentIntents(ctx context.Context, since time.T
 }
 
 func (s *StripeSyncService) syncCoupons(ctx context.Context, since time.Time, jobID int) error {
-	log.Println("🎟️ Coupon sync - implementing...")
+	log.Println("🎟️ Starting coupon sync with batch processing...")
+
+	config, err := s.getSyncConfig("coupon")
+	if err != nil {
+		return err
+	}
+
+	params := &stripe.CouponListParams{
+		ListParams: stripe.ListParams{
+			Limit: stripe.Int64(int64(config.BatchSize)),
+		},
+	}
+
+	// Add time filter for historical sync (coupons created since the specified date)
+	if !since.IsZero() {
+		params.Created = stripe.Int64(since.Unix())
+	}
+
+	iter := coupon.List(params)
+	processed := 0
+
+	for iter.Next() {
+		select {
+		case <-ctx.Done():
+			log.Printf("⚠️ Coupon sync cancelled: %v", ctx.Err())
+			return ctx.Err()
+		default:
+		}
+
+		coup := iter.Current().(*stripe.Coupon)
+
+		err := s.upsertCoupon(coup)
+		if err != nil {
+			log.Printf("⚠️ Failed to upsert coupon %s: %v", coup.ID, err)
+			continue
+		}
+
+		processed++
+
+		if processed%25 == 0 {
+			log.Printf("   📊 Processed %d coupons...", processed)
+		}
+	}
+
+	if iter.Err() != nil {
+		log.Printf("❌ Error listing coupons: %v", iter.Err())
+		return fmt.Errorf("failed to list coupons: %w", iter.Err())
+	}
+
+	log.Printf("✅ Completed coupon sync. Total processed: %d", processed)
+	return nil
+}
+
+func (s *StripeSyncService) syncMonthlyMetrics(ctx context.Context, since time.Time, jobID int) error {
+	log.Println("📊 Starting monthly metrics calculation for last 2 years...")
+
+	// Calculate metrics for the last 2 years (24 months)
+	now := time.Now()
+	twoYearsAgo := now.AddDate(-2, 0, 0)
+
+	// Start from the beginning of the month 2 years ago
+	startDate := time.Date(twoYearsAgo.Year(), twoYearsAgo.Month(), 1, 0, 0, 0, 0, time.UTC)
+
+	processed := 0
+
+	// Process each month from 2 years ago to current month
+	for currentMonth := startDate; currentMonth.Before(now) || currentMonth.Equal(time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)); currentMonth = currentMonth.AddDate(0, 1, 0) {
+		select {
+		case <-ctx.Done():
+			log.Printf("⚠️ Monthly metrics sync cancelled: %v", ctx.Err())
+			return ctx.Err()
+		default:
+		}
+
+		yearMonth := currentMonth.Format("2006-01")
+		log.Printf("   📈 Calculating metrics for %s...", yearMonth)
+
+		metrics, err := s.calculateMonthlyMetrics(currentMonth)
+		if err != nil {
+			log.Printf("⚠️ Failed to calculate metrics for %s: %v", yearMonth, err)
+			continue
+		}
+
+		err = s.upsertMonthlyMetrics(yearMonth, metrics)
+		if err != nil {
+			log.Printf("⚠️ Failed to upsert metrics for %s: %v", yearMonth, err)
+			continue
+		}
+
+		processed++
+	}
+
+	log.Printf("✅ Completed monthly metrics sync. Total processed: %d months", processed)
 	return nil
 }
 
@@ -532,44 +780,154 @@ func (s *StripeSyncService) upsertInvoice(inv *stripe.Invoice) error {
 	return err
 }
 
-// Sync job management
-func (s *StripeSyncService) createSyncJob(jobType, entityType string, totalItems int) (int, error) {
+func (s *StripeSyncService) upsertCoupon(coup *stripe.Coupon) error {
 	query := `
-		INSERT INTO stripe_sync_jobs (job_type, entity_type, status, total_items, started_at)
-		VALUES ($1, $2, 'running', $3, NOW())
-		RETURNING id
+		INSERT INTO stripe_coupons (stripe_id, name, percent_off, amount_off, duration, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (stripe_id) 
+		DO UPDATE SET 
+			name = EXCLUDED.name,
+			percent_off = EXCLUDED.percent_off,
+			amount_off = EXCLUDED.amount_off,
+			duration = EXCLUDED.duration,
+			created_at = EXCLUDED.created_at
 	`
 
-	var jobID int
-	err := s.db.QueryRow(query, jobType, entityType, totalItems).Scan(&jobID)
-	return jobID, err
-}
-
-func (s *StripeSyncService) updateSyncJobProgress(jobID, processedItems int) error {
-	query := `UPDATE stripe_sync_jobs SET processed_items = $1, updated_at = NOW() WHERE id = $2`
-	_, err := s.db.Exec(query, processedItems, jobID)
-	return err
-}
-
-func (s *StripeSyncService) completeSyncJob(jobID int, jobError error) error {
-	status := "completed"
-	var errorMsg *string
-
-	if jobError != nil {
-		status = "failed"
-		errStr := jobError.Error()
-		errorMsg = &errStr
+	var percentOff sql.NullFloat64
+	if coup.PercentOff > 0 {
+		percentOff = sql.NullFloat64{Float64: float64(coup.PercentOff), Valid: true}
 	}
 
-	query := `
-		UPDATE stripe_sync_jobs 
-		SET status = $1, error_message = $2, completed_at = NOW(), updated_at = NOW() 
-		WHERE id = $3
-	`
+	var amountOff sql.NullInt64
+	if coup.AmountOff > 0 {
+		amountOff = sql.NullInt64{Int64: coup.AmountOff, Valid: true}
+	}
 
-	_, err := s.db.Exec(query, status, errorMsg, jobID)
+	_, err := s.db.Exec(query,
+		coup.ID,
+		coup.Name,
+		percentOff,
+		amountOff,
+		string(coup.Duration),
+		time.Unix(coup.Created, 0),
+	)
 	return err
 }
+
+// MonthlyMetrics represents calculated monthly metrics
+type MonthlyMetrics struct {
+	MRR        float64
+	ARR        float64
+	ChurnRate  float64
+	GrowthRate float64
+}
+
+func (s *StripeSyncService) calculateMonthlyMetrics(month time.Time) (*MonthlyMetrics, error) {
+	// Get the start and end of the month
+	startOfMonth := time.Date(month.Year(), month.Month(), 1, 0, 0, 0, 0, time.UTC)
+	endOfMonth := startOfMonth.AddDate(0, 1, 0).Add(-time.Second)
+
+	// Calculate MRR from active subscriptions at end of month
+	// Simple approach: count active subscriptions and use average revenue estimate
+	var activeSubCount int
+	var mrr float64
+
+	// Count active subscriptions
+	countQuery := `
+		SELECT COUNT(*)
+		FROM stripe_subscriptions s
+		WHERE s.status IN ('active', 'trialing')
+		AND s.created_at <= $1
+		AND (s.current_period_end IS NULL OR s.current_period_end > $1)
+	`
+
+	err := s.db.QueryRow(countQuery, endOfMonth).Scan(&activeSubCount)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("failed to count active subscriptions: %w", err)
+	}
+
+	// Calculate MRR using average subscription value
+	// This is a simplified calculation - in production you'd want actual pricing data
+	averageSubscriptionValue := 50.0 // $50 average monthly subscription
+	mrr = float64(activeSubCount) * averageSubscriptionValue
+
+	// Calculate ARR
+	arr := mrr * 12
+
+	// Calculate churn rate (simplified - subscriptions that ended this month / total active at start)
+	var churnRate float64
+	churnQuery := `
+		WITH month_start_subs AS (
+			SELECT COUNT(*) as start_count
+			FROM stripe_subscriptions s
+			WHERE s.status IN ('active', 'trialing')
+			AND s.created_at < $1
+		),
+		churned_subs AS (
+			SELECT COUNT(*) as churned_count
+			FROM stripe_subscriptions s
+			WHERE s.status = 'canceled'
+			AND s.current_period_end >= $1 
+			AND s.current_period_end < $2
+		)
+		SELECT 
+			CASE 
+				WHEN mss.start_count > 0 THEN (cs.churned_count::float / mss.start_count::float) * 100
+				ELSE 0 
+			END
+		FROM month_start_subs mss, churned_subs cs
+	`
+
+	err = s.db.QueryRow(churnQuery, startOfMonth, endOfMonth).Scan(&churnRate)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("failed to calculate churn rate: %w", err)
+	}
+
+	// Calculate growth rate (MRR growth compared to previous month)
+	var growthRate float64
+	prevMonthEnd := startOfMonth.Add(-time.Second)
+
+	// Count active subscriptions in previous month
+	var prevActiveSubCount int
+	err = s.db.QueryRow(countQuery, prevMonthEnd).Scan(&prevActiveSubCount)
+	if err == nil && prevActiveSubCount > 0 {
+		prevMRR := float64(prevActiveSubCount) * averageSubscriptionValue
+		if prevMRR > 0 {
+			growthRate = ((mrr - prevMRR) / prevMRR) * 100
+		}
+	}
+
+	return &MonthlyMetrics{
+		MRR:        mrr,
+		ARR:        arr,
+		ChurnRate:  churnRate,
+		GrowthRate: growthRate,
+	}, nil
+}
+
+func (s *StripeSyncService) upsertMonthlyMetrics(yearMonth string, metrics *MonthlyMetrics) error {
+	query := `
+		INSERT INTO stripe_monthly_metrics (year_month, mrr, arr, churn_rate, growth_rate)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (year_month) 
+		DO UPDATE SET 
+			mrr = EXCLUDED.mrr,
+			arr = EXCLUDED.arr,
+			churn_rate = EXCLUDED.churn_rate,
+			growth_rate = EXCLUDED.growth_rate
+	`
+
+	_, err := s.db.Exec(query,
+		yearMonth,
+		int(metrics.MRR*100), // Store as cents
+		int(metrics.ARR*100), // Store as cents
+		metrics.ChurnRate,
+		metrics.GrowthRate,
+	)
+	return err
+}
+
+// Sync job management functions are now in the System Management section below
 
 // getSyncConfig gets sync configuration for an entity type
 func (s *StripeSyncService) getSyncConfig(entityType string) (*SyncConfig, error) {
@@ -713,7 +1071,7 @@ func (s *StripeSyncService) IncrementalSync(ctx context.Context, since time.Time
 			return fmt.Errorf("incremental sync failed for %s: %w", entityType, err)
 		}
 
-		s.updateSyncJobProgress(jobID, i+1)
+		s.updateSyncJobProgress(jobID, i+1, "")
 	}
 
 	log.Println("✅ Incremental sync completed successfully")
@@ -814,4 +1172,632 @@ func (s *StripeSyncService) updateMonthlyMetrics() error {
 
 	_, err := s.db.Exec(query)
 	return err
+}
+
+// ===== SYNC JOB MANAGEMENT =====
+
+// createSyncJob creates a new sync job and returns its ID
+func (s *StripeSyncService) createSyncJob(jobType, entityType string, totalItems int) (int, error) {
+	query := `
+		INSERT INTO stripe_sync_jobs (job_type, entity_type, status, total_items, started_at)
+		VALUES ($1, $2, 'running', $3, NOW())
+		RETURNING id
+	`
+
+	var jobID int
+	err := s.db.QueryRow(query, jobType, entityType, totalItems).Scan(&jobID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create sync job: %w", err)
+	}
+
+	log.Printf("📋 Created sync job #%d: %s/%s (expected: %d items)", jobID, jobType, entityType, totalItems)
+	return jobID, nil
+}
+
+// completeSyncJob marks a sync job as completed or failed
+func (s *StripeSyncService) completeSyncJob(jobID int, syncErr error) error {
+	var status, errorMessage string
+
+	if syncErr != nil {
+		status = "failed"
+		errorMessage = syncErr.Error()
+		log.Printf("❌ Sync job #%d failed: %v", jobID, syncErr)
+	} else {
+		status = "completed"
+		log.Printf("✅ Sync job #%d completed successfully", jobID)
+	}
+
+	query := `
+		UPDATE stripe_sync_jobs 
+		SET status = $1, error_message = $2, completed_at = NOW(), updated_at = NOW()
+		WHERE id = $3
+	`
+
+	_, err := s.db.Exec(query, status, errorMessage, jobID)
+	if err != nil {
+		log.Printf("⚠️ Failed to update sync job #%d status: %v", jobID, err)
+		return err
+	}
+
+	return nil
+}
+
+// updateSyncJobProgress updates the progress of a sync job
+func (s *StripeSyncService) updateSyncJobProgress(jobID int, processedItems int, cursor string) error {
+	query := `
+		UPDATE stripe_sync_jobs 
+		SET processed_items = $1, last_cursor = $2, updated_at = NOW()
+		WHERE id = $3
+	`
+
+	_, err := s.db.Exec(query, processedItems, cursor, jobID)
+	return err
+}
+
+// ===== STRIPE ENTITIES TRACKING =====
+
+// trackStripeEntity records or updates a Stripe entity in the universal tracking table
+func (s *StripeSyncService) trackStripeEntity(entityType, entityID string, localID int, metadata map[string]interface{}, stripeCreated, stripeUpdated time.Time) error {
+	metadataJSON, _ := json.Marshal(metadata)
+
+	query := `
+		INSERT INTO stripe_entities (entity_type, entity_id, local_id, metadata, stripe_created_at, stripe_updated_at, last_synced_at, sync_status)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW(), 'synced')
+		ON CONFLICT (entity_type, entity_id) 
+		DO UPDATE SET 
+			local_id = EXCLUDED.local_id,
+			metadata = EXCLUDED.metadata,
+			stripe_updated_at = EXCLUDED.stripe_updated_at,
+			last_synced_at = NOW(),
+			sync_status = 'synced',
+			updated_at = NOW()
+	`
+
+	_, err := s.db.Exec(query, entityType, entityID, localID, metadataJSON, stripeCreated, stripeUpdated)
+	return err
+}
+
+// markEntitySyncError marks an entity as having a sync error
+func (s *StripeSyncService) markEntitySyncError(entityType, entityID string, syncError error) error {
+	query := `
+		INSERT INTO stripe_entities (entity_type, entity_id, sync_status, last_synced_at)
+		VALUES ($1, $2, 'error', NOW())
+		ON CONFLICT (entity_type, entity_id) 
+		DO UPDATE SET 
+			sync_status = 'error',
+			last_synced_at = NOW(),
+			updated_at = NOW()
+	`
+
+	_, err := s.db.Exec(query, entityType, entityID)
+	return err
+}
+
+// ===== SYNC CONFIGURATION MANAGEMENT =====
+
+// createOrUpdateSyncConfig creates or updates sync configuration for an entity type
+func (s *StripeSyncService) createOrUpdateSyncConfig(entityType string, config *SyncConfig) error {
+	configDataJSON, _ := json.Marshal(config.ConfigData)
+
+	query := `
+		INSERT INTO stripe_sync_config (entity_type, sync_enabled, sync_interval_hours, batch_size, config_data)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (entity_type) 
+		DO UPDATE SET 
+			sync_enabled = EXCLUDED.sync_enabled,
+			sync_interval_hours = EXCLUDED.sync_interval_hours,
+			batch_size = EXCLUDED.batch_size,
+			config_data = EXCLUDED.config_data,
+			updated_at = NOW()
+	`
+
+	_, err := s.db.Exec(query, entityType, config.SyncEnabled, config.SyncIntervalHours, config.BatchSize, configDataJSON)
+	return err
+}
+
+// updateLastSyncTime updates the last sync time for an entity type
+func (s *StripeSyncService) updateLastSyncTime(entityType string, isFullSync bool) error {
+	var query string
+
+	if isFullSync {
+		query = `
+			UPDATE stripe_sync_config 
+			SET last_full_sync = NOW(), updated_at = NOW()
+			WHERE entity_type = $1
+		`
+	} else {
+		query = `
+			UPDATE stripe_sync_config 
+			SET last_incremental_sync = NOW(), updated_at = NOW()
+			WHERE entity_type = $1
+		`
+	}
+
+	_, err := s.db.Exec(query, entityType)
+	return err
+}
+
+// ===== SYSTEM MANAGEMENT API METHODS =====
+
+// GetSyncJobs retrieves sync jobs with optional filtering
+func (s *StripeSyncService) GetSyncJobs(status, entityType string, limit int) ([]SyncJob, error) {
+	query := `
+		SELECT id, job_type, entity_type, status, total_items, processed_items, 
+		       last_cursor, error_message, started_at, completed_at, created_at, updated_at
+		FROM stripe_sync_jobs
+		WHERE ($1 = '' OR status = $1)
+		AND ($2 = '' OR entity_type = $2)
+		ORDER BY created_at DESC
+		LIMIT $3
+	`
+
+	rows, err := s.db.Query(query, status, entityType, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var jobs []SyncJob
+	for rows.Next() {
+		var job SyncJob
+		err := rows.Scan(
+			&job.ID, &job.JobType, &job.EntityType, &job.Status,
+			&job.TotalItems, &job.ProcessedItems, &job.LastCursor,
+			&job.ErrorMessage, &job.StartedAt, &job.CompletedAt,
+			&job.CreatedAt, &job.UpdatedAt,
+		)
+		if err != nil {
+			continue
+		}
+		jobs = append(jobs, job)
+	}
+
+	return jobs, nil
+}
+
+// GetSyncJobByID retrieves a specific sync job
+func (s *StripeSyncService) GetSyncJobByID(jobID int) (*SyncJob, error) {
+	query := `
+		SELECT id, job_type, entity_type, status, total_items, processed_items, 
+		       last_cursor, error_message, started_at, completed_at, created_at, updated_at
+		FROM stripe_sync_jobs
+		WHERE id = $1
+	`
+
+	var job SyncJob
+	err := s.db.QueryRow(query, jobID).Scan(
+		&job.ID, &job.JobType, &job.EntityType, &job.Status,
+		&job.TotalItems, &job.ProcessedItems, &job.LastCursor,
+		&job.ErrorMessage, &job.StartedAt, &job.CompletedAt,
+		&job.CreatedAt, &job.UpdatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &job, nil
+}
+
+// CancelSyncJob cancels a running sync job
+func (s *StripeSyncService) CancelSyncJob(jobID int) error {
+	query := `
+		UPDATE stripe_sync_jobs 
+		SET status = 'cancelled', completed_at = NOW(), updated_at = NOW()
+		WHERE id = $1 AND status = 'running'
+	`
+
+	_, err := s.db.Exec(query, jobID)
+	return err
+}
+
+// GetAllSyncConfigs retrieves all sync configurations
+func (s *StripeSyncService) GetAllSyncConfigs() ([]SyncConfig, error) {
+	query := `
+		SELECT entity_type, sync_enabled, sync_interval_hours, batch_size, 
+		       last_full_sync, last_incremental_sync, config_data, created_at, updated_at
+		FROM stripe_sync_config
+		ORDER BY entity_type
+	`
+
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var configs []SyncConfig
+	for rows.Next() {
+		var config SyncConfig
+		var configDataJSON []byte
+
+		err := rows.Scan(
+			&config.EntityType, &config.SyncEnabled, &config.SyncIntervalHours,
+			&config.BatchSize, &config.LastFullSync, &config.LastIncrementalSync,
+			&configDataJSON, &config.CreatedAt, &config.UpdatedAt,
+		)
+		if err != nil {
+			continue
+		}
+
+		if configDataJSON != nil {
+			json.Unmarshal(configDataJSON, &config.ConfigData)
+		}
+
+		configs = append(configs, config)
+	}
+
+	return configs, nil
+}
+
+// GetSyncConfigByType retrieves sync configuration for a specific entity type
+func (s *StripeSyncService) GetSyncConfigByType(entityType string) (*SyncConfig, error) {
+	return s.getSyncConfig(entityType)
+}
+
+// UpdateSyncConfig updates sync configuration for an entity type
+func (s *StripeSyncService) UpdateSyncConfig(entityType string, syncEnabled *bool, syncIntervalHours *int, batchSize *int, configData map[string]interface{}) error {
+	// Get current config
+	currentConfig, err := s.getSyncConfig(entityType)
+	if err != nil {
+		return err
+	}
+
+	// Update only provided fields
+	if syncEnabled != nil {
+		currentConfig.SyncEnabled = *syncEnabled
+	}
+	if syncIntervalHours != nil {
+		currentConfig.SyncIntervalHours = *syncIntervalHours
+	}
+	if batchSize != nil {
+		currentConfig.BatchSize = *batchSize
+	}
+	if configData != nil {
+		currentConfig.ConfigData = configData
+	}
+
+	return s.createOrUpdateSyncConfig(entityType, currentConfig)
+}
+
+// StripeEntity represents an entity in the universal tracking table
+type StripeEntity struct {
+	ID              int                    `json:"id"`
+	EntityType      string                 `json:"entity_type"`
+	EntityID        string                 `json:"entity_id"`
+	LocalID         int                    `json:"local_id"`
+	Metadata        map[string]interface{} `json:"metadata"`
+	CreatedAt       *time.Time             `json:"created_at"`
+	UpdatedAt       *time.Time             `json:"updated_at"`
+	LastSyncedAt    *time.Time             `json:"last_synced_at"`
+	StripeCreatedAt *time.Time             `json:"stripe_created_at"`
+	StripeUpdatedAt *time.Time             `json:"stripe_updated_at"`
+	SyncStatus      string                 `json:"sync_status"`
+}
+
+// GetStripeEntities retrieves entities with pagination
+func (s *StripeSyncService) GetStripeEntities(limit, offset int) ([]StripeEntity, int, error) {
+	// Get total count
+	var total int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM stripe_entities").Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Get entities
+	query := `
+		SELECT id, entity_type, entity_id, local_id, metadata, created_at, updated_at,
+		       last_synced_at, stripe_created_at, stripe_updated_at, sync_status
+		FROM stripe_entities
+		ORDER BY last_synced_at DESC
+		LIMIT $1 OFFSET $2
+	`
+
+	rows, err := s.db.Query(query, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var entities []StripeEntity
+	for rows.Next() {
+		var entity StripeEntity
+		var metadataJSON []byte
+
+		err := rows.Scan(
+			&entity.ID, &entity.EntityType, &entity.EntityID, &entity.LocalID,
+			&metadataJSON, &entity.CreatedAt, &entity.UpdatedAt,
+			&entity.LastSyncedAt, &entity.StripeCreatedAt, &entity.StripeUpdatedAt,
+			&entity.SyncStatus,
+		)
+		if err != nil {
+			continue
+		}
+
+		if metadataJSON != nil {
+			json.Unmarshal(metadataJSON, &entity.Metadata)
+		}
+
+		entities = append(entities, entity)
+	}
+
+	return entities, total, nil
+}
+
+// GetStripeEntitiesByType retrieves entities by type with pagination
+func (s *StripeSyncService) GetStripeEntitiesByType(entityType string, limit, offset int) ([]StripeEntity, int, error) {
+	// Get total count
+	var total int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM stripe_entities WHERE entity_type = $1", entityType).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Get entities
+	query := `
+		SELECT id, entity_type, entity_id, local_id, metadata, created_at, updated_at,
+		       last_synced_at, stripe_created_at, stripe_updated_at, sync_status
+		FROM stripe_entities
+		WHERE entity_type = $1
+		ORDER BY last_synced_at DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := s.db.Query(query, entityType, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var entities []StripeEntity
+	for rows.Next() {
+		var entity StripeEntity
+		var metadataJSON []byte
+
+		err := rows.Scan(
+			&entity.ID, &entity.EntityType, &entity.EntityID, &entity.LocalID,
+			&metadataJSON, &entity.CreatedAt, &entity.UpdatedAt,
+			&entity.LastSyncedAt, &entity.StripeCreatedAt, &entity.StripeUpdatedAt,
+			&entity.SyncStatus,
+		)
+		if err != nil {
+			continue
+		}
+
+		if metadataJSON != nil {
+			json.Unmarshal(metadataJSON, &entity.Metadata)
+		}
+
+		entities = append(entities, entity)
+	}
+
+	return entities, total, nil
+}
+
+// GetStripeEntitiesByStatus retrieves entities by sync status with pagination
+func (s *StripeSyncService) GetStripeEntitiesByStatus(status string, limit, offset int) ([]StripeEntity, int, error) {
+	// Get total count
+	var total int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM stripe_entities WHERE sync_status = $1", status).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Get entities
+	query := `
+		SELECT id, entity_type, entity_id, local_id, metadata, created_at, updated_at,
+		       last_synced_at, stripe_created_at, stripe_updated_at, sync_status
+		FROM stripe_entities
+		WHERE sync_status = $1
+		ORDER BY last_synced_at DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := s.db.Query(query, status, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var entities []StripeEntity
+	for rows.Next() {
+		var entity StripeEntity
+		var metadataJSON []byte
+
+		err := rows.Scan(
+			&entity.ID, &entity.EntityType, &entity.EntityID, &entity.LocalID,
+			&metadataJSON, &entity.CreatedAt, &entity.UpdatedAt,
+			&entity.LastSyncedAt, &entity.StripeCreatedAt, &entity.StripeUpdatedAt,
+			&entity.SyncStatus,
+		)
+		if err != nil {
+			continue
+		}
+
+		if metadataJSON != nil {
+			json.Unmarshal(metadataJSON, &entity.Metadata)
+		}
+
+		entities = append(entities, entity)
+	}
+
+	return entities, total, nil
+}
+
+// SystemHealth represents system health status
+type SystemHealth struct {
+	Status          string                 `json:"status"`
+	LastSyncTime    *time.Time             `json:"last_sync_time"`
+	ActiveJobs      int                    `json:"active_jobs"`
+	FailedJobs      int                    `json:"failed_jobs"`
+	ErrorEntities   int                    `json:"error_entities"`
+	TotalEntities   int                    `json:"total_entities"`
+	DatabaseStatus  string                 `json:"database_status"`
+	StripeAPIStatus string                 `json:"stripe_api_status"`
+	Details         map[string]interface{} `json:"details"`
+}
+
+// GetSystemHealth returns overall system health
+func (s *StripeSyncService) GetSystemHealth() (*SystemHealth, error) {
+	health := &SystemHealth{
+		Details: make(map[string]interface{}),
+	}
+
+	// Check database connectivity
+	err := s.db.Ping()
+	if err != nil {
+		health.DatabaseStatus = "error"
+		health.Status = "unhealthy"
+		health.Details["database_error"] = err.Error()
+	} else {
+		health.DatabaseStatus = "healthy"
+	}
+
+	// Get active jobs count
+	err = s.db.QueryRow("SELECT COUNT(*) FROM stripe_sync_jobs WHERE status = 'running'").Scan(&health.ActiveJobs)
+	if err != nil {
+		health.ActiveJobs = -1
+	}
+
+	// Get failed jobs count (last 24 hours)
+	err = s.db.QueryRow("SELECT COUNT(*) FROM stripe_sync_jobs WHERE status = 'failed' AND created_at > NOW() - INTERVAL '24 hours'").Scan(&health.FailedJobs)
+	if err != nil {
+		health.FailedJobs = -1
+	}
+
+	// Get error entities count
+	err = s.db.QueryRow("SELECT COUNT(*) FROM stripe_entities WHERE sync_status = 'error'").Scan(&health.ErrorEntities)
+	if err != nil {
+		health.ErrorEntities = -1
+	}
+
+	// Get total entities count
+	err = s.db.QueryRow("SELECT COUNT(*) FROM stripe_entities").Scan(&health.TotalEntities)
+	if err != nil {
+		health.TotalEntities = -1
+	}
+
+	// Get last sync time
+	err = s.db.QueryRow("SELECT MAX(completed_at) FROM stripe_sync_jobs WHERE status = 'completed'").Scan(&health.LastSyncTime)
+	if err != nil {
+		// No completed syncs yet
+	}
+
+	// Check Stripe API status (simple check)
+	if s.stripeService.IsEnabled() {
+		health.StripeAPIStatus = "enabled"
+	} else {
+		health.StripeAPIStatus = "disabled"
+	}
+
+	// Determine overall status
+	if health.DatabaseStatus == "healthy" && health.FailedJobs < 5 && health.ErrorEntities < 100 {
+		health.Status = "healthy"
+	} else if health.DatabaseStatus == "healthy" {
+		health.Status = "degraded"
+	} else {
+		health.Status = "unhealthy"
+	}
+
+	return health, nil
+}
+
+// SystemStats represents system statistics
+type SystemStats struct {
+	TotalSyncJobs    int                   `json:"total_sync_jobs"`
+	CompletedJobs    int                   `json:"completed_jobs"`
+	FailedJobs       int                   `json:"failed_jobs"`
+	RunningJobs      int                   `json:"running_jobs"`
+	EntitiesByType   map[string]int        `json:"entities_by_type"`
+	EntitiesByStatus map[string]int        `json:"entities_by_status"`
+	ConfiguredTypes  []string              `json:"configured_types"`
+	LastSyncTimes    map[string]*time.Time `json:"last_sync_times"`
+	SyncFrequency    map[string]int        `json:"sync_frequency"`
+}
+
+// GetSystemStats returns system statistics
+func (s *StripeSyncService) GetSystemStats() (*SystemStats, error) {
+	stats := &SystemStats{
+		EntitiesByType:   make(map[string]int),
+		EntitiesByStatus: make(map[string]int),
+		LastSyncTimes:    make(map[string]*time.Time),
+		SyncFrequency:    make(map[string]int),
+	}
+
+	// Get job statistics
+	jobStatsQuery := `
+		SELECT 
+			COUNT(*) as total,
+			COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
+			COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed,
+			COUNT(CASE WHEN status = 'running' THEN 1 END) as running
+		FROM stripe_sync_jobs
+	`
+
+	err := s.db.QueryRow(jobStatsQuery).Scan(&stats.TotalSyncJobs, &stats.CompletedJobs, &stats.FailedJobs, &stats.RunningJobs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get entities by type
+	entitiesByTypeQuery := `
+		SELECT entity_type, COUNT(*) 
+		FROM stripe_entities 
+		GROUP BY entity_type
+	`
+
+	rows, err := s.db.Query(entitiesByTypeQuery)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var entityType string
+			var count int
+			if rows.Scan(&entityType, &count) == nil {
+				stats.EntitiesByType[entityType] = count
+			}
+		}
+	}
+
+	// Get entities by status
+	entitiesByStatusQuery := `
+		SELECT sync_status, COUNT(*) 
+		FROM stripe_entities 
+		GROUP BY sync_status
+	`
+
+	rows, err = s.db.Query(entitiesByStatusQuery)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var status string
+			var count int
+			if rows.Scan(&status, &count) == nil {
+				stats.EntitiesByStatus[status] = count
+			}
+		}
+	}
+
+	// Get configured entity types and their last sync times
+	configQuery := `
+		SELECT entity_type, last_full_sync, sync_interval_hours
+		FROM stripe_sync_config
+		WHERE sync_enabled = true
+	`
+
+	rows, err = s.db.Query(configQuery)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var entityType string
+			var lastSync *time.Time
+			var intervalHours int
+			if rows.Scan(&entityType, &lastSync, &intervalHours) == nil {
+				stats.ConfiguredTypes = append(stats.ConfiguredTypes, entityType)
+				stats.LastSyncTimes[entityType] = lastSync
+				stats.SyncFrequency[entityType] = intervalHours
+			}
+		}
+	}
+
+	return stats, nil
 }

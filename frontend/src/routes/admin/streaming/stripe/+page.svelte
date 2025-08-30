@@ -174,7 +174,8 @@
 			console.log('🔧 Debug info loaded:', debugInfo);
 			
 			// 🚀 DASH MODE: Use lightning-fast dashboard endpoint for initial check
-			console.log('🔍 Checking Stripe configuration status via /stripe/dash...');
+			console.log('🔍 [ONMOUNT] Checking Stripe configuration status via /stripe/dash...');
+			console.log('🔍 [ONMOUNT] This is the onMount function - NOT triggered by manual sync');
 			const dashRes = await apiRequest('/admin/streaming/stripe/dash');
 			
 			if (dashRes.ok) {
@@ -1084,7 +1085,8 @@
 				await new Promise(resolve => setTimeout(resolve, 1000));
 				
 				// 🚀 DASH MODE: Use lightning-fast dashboard endpoint after key save
-				console.log('🚀 Key saved - using fast dash endpoint for immediate data...');
+				console.log('🚀 [KEY-SAVE] Key saved - using fast dash endpoint for immediate data...');
+				console.log('🚀 [KEY-SAVE] This is the key save function - triggered by user saving key');
 				const dashRes = await apiRequest('/admin/streaming/stripe/dash');
 				
 				if (dashRes.ok) {

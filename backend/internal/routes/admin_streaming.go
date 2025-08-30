@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -65,7 +64,12 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
 				return
 			}
-			log.Printf("🔑 Received key request: %s", req.Key[:8]+"...")
+			// Safe key logging - handle short keys
+			keyPrefix := req.Key
+			if len(req.Key) > 8 {
+				keyPrefix = req.Key[:8] + "..."
+			}
+			log.Printf("🔑 Received key request: %s", keyPrefix)
 
 			// Only allow server secret keys (sk_ or rk_)
 			if !(len(req.Key) > 3 && (req.Key[:3] == "sk_" || req.Key[:3] == "rk_")) {
@@ -125,28 +129,11 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 			stripeService.UpdateSecretKey(req.Key)
 
 			log.Printf("✅ Stripe key updated successfully - service enabled")
-			log.Printf("🚀 Triggering automatic initial sync for 1.5 years of historical data...")
-
-			// Automatically trigger initial sync when key is first entered
-			// This runs in background so the API response is immediate
-			go func() {
-				// Get the sync service from the initialized services
-				// Note: We need to access the syncService that was created in this function
-				// For now, we'll create a new instance - in production you might want to pass it as a parameter
-				syncService := services.NewStripeSyncService(db, stripeService)
-
-				ctx := context.Background()
-				err := syncService.InitialDataSync(ctx)
-				if err != nil {
-					log.Printf("❌ Automatic initial sync failed: %v", err)
-				} else {
-					log.Printf("✅ Automatic initial sync completed successfully")
-				}
-			}()
+			log.Printf("📋 Use the Analytics dashboard to manually trigger data sync when ready")
 
 			c.JSON(http.StatusOK, gin.H{
-				"message":     "Stripe secret updated",
-				"sync_status": "Initial sync started automatically - this will populate 1.5 years of historical data",
+				"message":     "Stripe secret updated successfully",
+				"sync_status": "Ready for manual sync - use the Analytics dashboard buttons to sync data",
 			})
 		})
 
@@ -364,12 +351,12 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 		customerSyncService := services.NewStripeCustomerSyncService(stripeService, db)
 		SetupStripeCustomerSyncRoutes(streaming.Group("/stripe"), customerSyncService)
 
-		// Setup Stripe analytics routes
-		RegisterStripeAnalyticsRoutes(streaming, stripeService)
-
 		// Initialize Stripe sync and cron services
 		syncService := services.NewStripeSyncService(db, stripeService)
 		cronService := services.NewStripeCronService(syncService)
+
+		// Setup Stripe analytics routes (now with database access)
+		RegisterStripeAnalyticsRoutes(streaming, stripeService, db, syncService)
 
 		// Setup Stripe sync management routes
 		RegisterStripeSyncRoutes(streaming, syncService, cronService)
@@ -379,6 +366,9 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 
 		// Setup Stripe testing and monitoring routes
 		RegisterStripeTestRoutes(streaming, stripeService, syncService, cronService)
+
+		// Setup Stripe system management routes
+		RegisterStripeSystemRoutes(streaming, syncService)
 
 		// Start the cron service for scheduled syncs
 		go cronService.StartCronJobs()

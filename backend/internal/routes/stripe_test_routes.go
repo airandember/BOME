@@ -25,6 +25,10 @@ func RegisterStripeTestRoutes(router *gin.RouterGroup, stripeService *services.S
 		// Data validation
 		test.GET("/validate", func(c *gin.Context) { validateSyncedData(c, syncService) })
 		test.GET("/sample", func(c *gin.Context) { getSampleData(c, syncService) })
+
+		// Manual sync testing
+		test.POST("/sync/customers", func(c *gin.Context) { testCustomerSync(c, syncService) })
+		test.POST("/sync/customers/unlimited", func(c *gin.Context) { testCustomerSyncUnlimited(c, syncService) })
 	}
 }
 
@@ -333,4 +337,46 @@ func getSampleRecords(syncService *services.StripeSyncService, table string, lim
 	}
 
 	return results, nil
+}
+
+// testCustomerSync manually triggers a customer sync for testing
+func testCustomerSync(c *gin.Context, syncService *services.StripeSyncService) {
+	ctx := c.Request.Context()
+
+	// Trigger the test customer sync
+	err := syncService.TestCustomerSync(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":  "Failed to sync customers: " + err.Error(),
+			"status": "failed",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":   "Customer sync completed successfully",
+		"status":    "success",
+		"timestamp": time.Now().Unix(),
+	})
+}
+
+// testCustomerSyncUnlimited manually triggers an unlimited customer sync
+func testCustomerSyncUnlimited(c *gin.Context, syncService *services.StripeSyncService) {
+	ctx := c.Request.Context()
+
+	// Trigger the unlimited customer sync
+	err := syncService.TestCustomerSyncUnlimited(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":  "Failed to sync customers (unlimited): " + err.Error(),
+			"status": "failed",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":   "Unlimited customer sync completed successfully",
+		"status":    "success",
+		"timestamp": time.Now().Unix(),
+	})
 }
