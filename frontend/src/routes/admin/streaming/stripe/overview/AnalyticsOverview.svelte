@@ -41,14 +41,7 @@
 	let v2LastUpdated = $state<Date | null>(null)
 	let v2FetchTime = $state<string>('')
 
-	// Database stats state
-	let databaseStats = $state<any>(null)
-	let dbStatsLoading = $state(false)
-	let dbStatsLastUpdated = $state<Date | null>(null)
 
-	// Manual sync state
-	let syncInProgress = $state(false)
-	let syncStatus = $state('')
 
 	// Endpoint configuration
 	const endpoints = [
@@ -92,7 +85,6 @@
 	onMount(() => {
 		loadAnalyticsData();
 		loadV2Analytics();
-		loadDatabaseStats();
 	});
 
 	// Load v2 analytics data
@@ -155,154 +147,9 @@
 	}
 
 	// System Management
-	let systemHealth = $state(null)
-	let systemStats = $state(null)
-	let syncJobs = $state([])
-	let systemLoading = $state(false)
 
-	async function loadSystemHealth() {
-		if (systemLoading) return
-		
-		systemLoading = true
-		try {
-			const response = await apiRequest('/admin/streaming/stripe/system/health')
-			const data = await response.json()
-			systemHealth = data
-			console.log("🏥 System health loaded:", data)
-		} catch (error) {
-			console.error("❌ Failed to load system health:", error)
-		} finally {
-			systemLoading = false
-		}
-	}
 
-	async function loadSystemStats() {
-		try {
-			const response = await apiRequest('/admin/streaming/stripe/system/stats')
-			const data = await response.json()
-			systemStats = data
-			console.log("📊 System stats loaded:", data)
-		} catch (error) {
-			console.error("❌ Failed to load system stats:", error)
-		}
-	}
 
-	async function loadSyncJobs() {
-		try {
-			const response = await apiRequest('/admin/streaming/stripe/system/jobs?limit=10')
-			const data = await response.json()
-			syncJobs = data.jobs || []
-			console.log("📋 Sync jobs loaded:", data)
-		} catch (error) {
-			console.error("❌ Failed to load sync jobs:", error)
-		}
-	}
-
-	async function loadSystemData() {
-		await Promise.all([
-			loadSystemHealth(),
-			loadSystemStats(),
-			loadSyncJobs()
-		])
-	}
-
-	// Load database stats (real counts from database)
-	async function loadDatabaseStats() {
-		if (dbStatsLoading) return
-		
-		dbStatsLoading = true
-		console.log("📊 Loading database stats...")
-		
-		try {
-			const response = await apiRequest('/admin/streaming/stripe/database/stats')
-			const data = await response.json()
-			
-			databaseStats = data
-			dbStatsLastUpdated = new Date()
-			
-			console.log("✅ Database stats loaded:", data)
-		} catch (error) {
-			console.error("❌ Failed to load database stats:", error)
-		} finally {
-			dbStatsLoading = false
-		}
-	}
-
-	// Trigger manual sync with debounce protection
-	let lastSyncTime = 0
-	async function triggerManualSync(syncType = 'customers') {
-		console.log(`🔍 [MANUAL-SYNC] ${syncType} sync requested`)
-		
-		// Prevent double execution within 2 seconds
-		const now = Date.now()
-		if (syncInProgress || (now - lastSyncTime) < 2000) {
-			console.log("🚫 Sync already in progress or too recent, skipping...")
-			return
-		}
-		
-		lastSyncTime = now
-		syncInProgress = true
-		syncStatus = `Starting ${syncType} sync...`
-		// console.log(`🚀 Triggering manual sync: ${syncType} (timestamp: ${now})`)
-		
-		try {
-			const uniqueRequestId = `frontend_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-			
-			// 🌐 COMPREHENSIVE FRONTEND NETWORK DEBUGGING (COMMENTED OUT FOR PRODUCTION)
-			// console.log(`🌐 [FRONTEND-NETWORK] ==================== FRONTEND REQUEST START ====================`)
-			// console.log(`🌐 [FRONTEND-NETWORK] Timestamp: ${new Date().toISOString()}`)
-			// console.log(`🌐 [FRONTEND-NETWORK] Browser: ${navigator.userAgent}`)
-			// console.log(`🌐 [FRONTEND-NETWORK] Connection: ${navigator.connection ? JSON.stringify({
-			// 	effectiveType: navigator.connection.effectiveType,
-			// 	downlink: navigator.connection.downlink,
-			// 	rtt: navigator.connection.rtt
-			// }) : 'Not available'}`)
-			// console.log(`🌐 [FRONTEND-NETWORK] Online: ${navigator.onLine}`)
-			// console.log(`🌐 [FRONTEND-NETWORK] URL: ${window.location.href}`)
-			// console.log(`🌐 [FRONTEND-NETWORK] Protocol: ${window.location.protocol}`)
-			// console.log(`🌐 [FRONTEND-NETWORK] Host: ${window.location.host}`)
-			
-			console.log(`🔍 [MANUAL-SYNC] Manual sync: ${syncType} (ID: ${uniqueRequestId})`)
-			// console.log(`🔍 [MANUAL-SYNC] About to call manual sync API: /admin/streaming/stripe/sync/trigger?type=${syncType}`)
-			// console.log(`🔍 [MANUAL-SYNC] Frontend Request ID: ${uniqueRequestId}`)
-			// console.log(`🔍 [MANUAL-SYNC] This is the manual sync function - should NOT trigger key detection`)
-			// console.log(`🌐 [FRONTEND-NETWORK] Making single API request with ID: ${uniqueRequestId}`)
-			
-			const response = await apiRequest(`/admin/streaming/stripe/sync/trigger?type=${syncType}`, {
-				method: 'POST',
-				headers: {
-					'X-Frontend-Request-ID': uniqueRequestId,
-					'X-Frontend-Timestamp': Date.now().toString(),
-					'X-Frontend-User-Agent': navigator.userAgent
-				}
-			})
-			const data = await response.json()
-			console.log(`🔍 [MANUAL-SYNC] Manual sync API response:`, data)
-			
-			if (response.ok) {
-				syncStatus = `✅ ${syncType} sync completed successfully!`
-				console.log("✅ Manual sync completed:", data)
-				
-				// Reload database stats to show updated counts
-				setTimeout(() => {
-					loadDatabaseStats()
-				}, 1000)
-			} else {
-				syncStatus = `❌ ${syncType} sync failed: ${data.error}`
-				console.error("❌ Manual sync failed:", data)
-			}
-		} catch (error: any) {
-			syncStatus = `❌ ${syncType} sync failed: ${error.message || 'Unknown error'}`
-			console.error("❌ Manual sync error:", error)
-		} finally {
-			syncInProgress = false
-			
-			// Clear status after 5 seconds
-			setTimeout(() => {
-				syncStatus = ''
-			}, 5000)
-		}
-	}
 
 	// Load all analytics data in parallel
 	async function loadAnalyticsData() {
@@ -454,53 +301,11 @@
 		
 		<div class="header-actions">
 			<button 
-				class="btn btn-secondary" 
-				onclick={loadDatabaseStats}
-				disabled={dbStatsLoading}
-			>
-				{dbStatsLoading ? '🔄 Loading...' : '📊 Refresh DB Stats'}
-			</button>
-			<button 
-				class="btn btn-success" 
-				onclick={() => triggerManualSync('customers')}
-				disabled={syncInProgress}
-			>
-				{syncInProgress ? '🔄 Syncing...' : '🚀 Sync Customers'}
-			</button>
-			<button 
-				class="btn btn-warning" 
-				onclick={() => triggerManualSync('initial')}
-				disabled={syncInProgress}
-			>
-				{syncInProgress ? '🔄 Syncing...' : '🔄 Full Sync'}
-			</button>
-			<button 
-				class="btn btn-info" 
-				onclick={() => triggerManualSync('coupons')}
-				disabled={syncInProgress}
-			>
-				{syncInProgress ? '🔄 Syncing...' : '🎟️ Sync Coupons'}
-			</button>
-			<button 
-				class="btn btn-secondary" 
-				onclick={() => triggerManualSync('monthly_metrics')}
-				disabled={syncInProgress}
-			>
-				{syncInProgress ? '🔄 Syncing...' : '📊 Sync Metrics'}
-			</button>
-			<button 
 				class="btn btn-primary" 
 				onclick={loadV2Analytics}
 				disabled={v2Loading}
 			>
 				{v2Loading ? '🔄 Loading...' : '📈 V2 Analytics'}
-			</button>
-			<button 
-				class="btn btn-info" 
-				onclick={loadSystemData}
-				disabled={systemLoading}
-			>
-				{systemLoading ? '🔄 Loading...' : '🏥 System Health'}
 			</button>
 		</div>
 	</div>
@@ -555,13 +360,13 @@
 				</div>
 			</div>
 
-			<!-- Customers Card (Real Database Count) -->
+			<!-- Customers Card -->
 			<div class="summary-card customer-card">
 				<div class="card-icon">👥</div>
 				<div class="card-content">
-					<div class="card-value">{databaseStats?.customers || 0}</div>
-					<div class="card-label">Total Customers (DB)</div>
-					<div class="card-subtitle">{dbStatsLastUpdated ? `Updated: ${dbStatsLastUpdated.toLocaleTimeString()}` : 'Not loaded'}</div>
+					<div class="card-value">{v2Analytics?.customer_analytics?.total_customers || 0}</div>
+					<div class="card-label">Total Customers</div>
+					<div class="card-subtitle">{v2Analytics?.customer_analytics?.growth_rate_30d || '0.0%'} growth (30d)</div>
 				</div>
 			</div>
 
@@ -575,13 +380,13 @@
 				</div>
 			</div>
 
-			<!-- Subscriptions Card (Real Database Count) -->
+			<!-- Subscriptions Card -->
 			<div class="summary-card subscription-card">
 				<div class="card-icon">📋</div>
 				<div class="card-content">
-					<div class="card-value">{databaseStats?.subscriptions || 0}</div>
-					<div class="card-label">Total Subscriptions (DB)</div>
-					<div class="card-subtitle">{databaseStats?.invoices || 0} invoices</div>
+					<div class="card-value">{v2Analytics?.subscription_health?.active_subscriptions || 0}</div>
+					<div class="card-label">Active Subscriptions</div>
+					<div class="card-subtitle">{v2Analytics?.subscription_health?.churn_rate || '0.0%'} churn rate</div>
 				</div>
 			</div>
 
@@ -595,13 +400,13 @@
 				</div>
 			</div>
 
-			<!-- Products Card (Real Database Count) -->
+			<!-- Products Card -->
 			<div class="summary-card product-card">
 				<div class="card-icon">📦</div>
 				<div class="card-content">
-					<div class="card-value">{databaseStats?.products || 0}</div>
-					<div class="card-label">Total Products (DB)</div>
-					<div class="card-subtitle">From database</div>
+					<div class="card-value">{v2Analytics?.product_performance?.total_products || 0}</div>
+					<div class="card-label">Total Products</div>
+					<div class="card-subtitle">{v2Analytics?.product_performance?.top_product || 'N/A'} top seller</div>
 				</div>
 			</div>
 		</div>
@@ -684,17 +489,7 @@
 		</div>
 	{/if}
 
-	<!-- Sync Status Display -->
-	{#if syncStatus}
-		<div class="sync-status-banner">
-			<div class="sync-status-content">
-				<span class="sync-status-message">{syncStatus}</span>
-				{#if syncInProgress}
-					<div class="sync-spinner"></div>
-				{/if}
-			</div>
-		</div>
-	{/if}
+
 
 	<!-- Endpoints Grid -->
 	<div class="endpoints-grid">
@@ -765,138 +560,8 @@
 		</div>
 	{/if}
 
-	<!-- System Management Panel -->
-	{#if systemHealth || systemStats || syncJobs.length > 0}
-		<div class="system-panel">
-			<h2>🏥 System Management</h2>
-			
-			{#if systemHealth}
-				<div class="system-health">
-					<h3>System Health</h3>
-					<div class="health-grid">
-						<div class="health-card status-{systemHealth.status}">
-							<div class="health-icon">
-								{systemHealth.status === 'healthy' ? '✅' : systemHealth.status === 'degraded' ? '⚠️' : '❌'}
-							</div>
-							<div class="health-info">
-								<div class="health-status">{systemHealth.status.toUpperCase()}</div>
-								<div class="health-detail">Overall Status</div>
-							</div>
-						</div>
-						
-						<div class="health-card">
-							<div class="health-icon">🗄️</div>
-							<div class="health-info">
-								<div class="health-status">{systemHealth.database_status}</div>
-								<div class="health-detail">Database</div>
-							</div>
-						</div>
-						
-						<div class="health-card">
-							<div class="health-icon">🔄</div>
-							<div class="health-info">
-								<div class="health-status">{systemHealth.active_jobs}</div>
-								<div class="health-detail">Active Jobs</div>
-							</div>
-						</div>
-						
-						<div class="health-card">
-							<div class="health-icon">❌</div>
-							<div class="health-info">
-								<div class="health-status">{systemHealth.failed_jobs}</div>
-								<div class="health-detail">Failed Jobs (24h)</div>
-							</div>
-						</div>
-						
-						<div class="health-card">
-							<div class="health-icon">📊</div>
-							<div class="health-info">
-								<div class="health-status">{systemHealth.total_entities}</div>
-								<div class="health-detail">Total Entities</div>
-							</div>
-						</div>
-						
-						<div class="health-card">
-							<div class="health-icon">⚡</div>
-							<div class="health-info">
-								<div class="health-status">{systemHealth.stripe_api_status}</div>
-								<div class="health-detail">Stripe API</div>
-							</div>
-						</div>
-					</div>
-				</div>
-			{/if}
 
-			{#if syncJobs.length > 0}
-				<div class="sync-jobs">
-					<h3>Recent Sync Jobs</h3>
-					<div class="jobs-list">
-						{#each syncJobs as job}
-							<div class="job-card status-{job.status}">
-								<div class="job-header">
-									<span class="job-type">{job.job_type}</span>
-									<span class="job-entity">{job.entity_type}</span>
-									<span class="job-status status-{job.status}">
-										{job.status === 'completed' ? '✅' : job.status === 'failed' ? '❌' : job.status === 'running' ? '🔄' : '⏸️'}
-										{job.status}
-									</span>
-								</div>
-								<div class="job-progress">
-									{#if job.total_items > 0}
-										<div class="progress-bar">
-											<div class="progress-fill" style="width: {(job.processed_items / job.total_items) * 100}%"></div>
-										</div>
-										<span class="progress-text">{job.processed_items}/{job.total_items}</span>
-									{/if}
-								</div>
-								{#if job.error_message}
-									<div class="job-error">{job.error_message}</div>
-								{/if}
-							</div>
-						{/each}
-					</div>
-				</div>
-			{/if}
 
-			{#if systemStats}
-				<div class="system-stats">
-					<h3>System Statistics</h3>
-					<div class="stats-grid">
-						<div class="stat-card">
-							<div class="stat-value">{systemStats.total_sync_jobs}</div>
-							<div class="stat-label">Total Jobs</div>
-						</div>
-						<div class="stat-card">
-							<div class="stat-value">{systemStats.completed_jobs}</div>
-							<div class="stat-label">Completed</div>
-						</div>
-						<div class="stat-card">
-							<div class="stat-value">{systemStats.failed_jobs}</div>
-							<div class="stat-label">Failed</div>
-						</div>
-						<div class="stat-card">
-							<div class="stat-value">{systemStats.running_jobs}</div>
-							<div class="stat-label">Running</div>
-						</div>
-					</div>
-					
-					{#if Object.keys(systemStats.entities_by_type).length > 0}
-						<div class="entity-breakdown">
-							<h4>Entities by Type</h4>
-							<div class="entity-grid">
-								{#each Object.entries(systemStats.entities_by_type) as [type, count]}
-									<div class="entity-item">
-										<span class="entity-type">{type}</span>
-										<span class="entity-count">{count}</span>
-									</div>
-								{/each}
-							</div>
-						</div>
-					{/if}
-				</div>
-			{/if}
-		</div>
-	{/if}
 </div>
 
 <style>
@@ -1569,260 +1234,6 @@
 		}
 	}
 
-	/* System Management Panel */
-	.system-panel {
-		margin-top: var(--space-xl, 2rem);
-		padding: var(--space-lg, 1.5rem);
-		background: var(--surface, white);
-		border: 1px solid var(--border, #e5e7eb);
-		border-radius: var(--radius-lg, 0.5rem);
-	}
 
-	.system-panel h2 {
-		margin: 0 0 var(--space-lg, 1.5rem) 0;
-		color: var(--text, #111827);
-		font-size: 1.5rem;
-		font-weight: 600;
-	}
-
-	.system-panel h3 {
-		margin: 0 0 var(--space-md, 1rem) 0;
-		color: var(--text, #111827);
-		font-size: 1.25rem;
-		font-weight: 600;
-	}
-
-	.system-panel h4 {
-		margin: var(--space-md, 1rem) 0 var(--space-sm, 0.5rem) 0;
-		color: var(--text, #111827);
-		font-size: 1rem;
-		font-weight: 600;
-	}
-
-	/* System Health */
-	.system-health {
-		margin-bottom: var(--space-xl, 2rem);
-	}
-
-	.health-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-		gap: var(--space-md, 1rem);
-	}
-
-	.health-card {
-		display: flex;
-		align-items: center;
-		gap: var(--space-md, 1rem);
-		padding: var(--space-md, 1rem);
-		background: #f8fafc;
-		border: 1px solid #e2e8f0;
-		border-radius: var(--radius-md, 0.375rem);
-		transition: all 0.2s ease;
-	}
-
-	.health-card:hover {
-		transform: translateY(-2px);
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-	}
-
-	.health-card.status-healthy {
-		border-left: 4px solid #059669;
-	}
-
-	.health-card.status-degraded {
-		border-left: 4px solid #f59e0b;
-	}
-
-	.health-card.status-unhealthy {
-		border-left: 4px solid #dc2626;
-	}
-
-	.health-icon {
-		font-size: 1.5rem;
-		line-height: 1;
-	}
-
-	.health-info {
-		flex: 1;
-	}
-
-	.health-status {
-		font-weight: 600;
-		font-size: 1rem;
-		color: var(--text, #111827);
-		margin-bottom: var(--space-xs, 0.25rem);
-	}
-
-	.health-detail {
-		font-size: 0.875rem;
-		color: var(--text-muted, #6b7280);
-	}
-
-	/* Sync Jobs */
-	.sync-jobs {
-		margin-bottom: var(--space-xl, 2rem);
-	}
-
-	.jobs-list {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-sm, 0.5rem);
-	}
-
-	.job-card {
-		padding: var(--space-md, 1rem);
-		background: #f8fafc;
-		border: 1px solid #e2e8f0;
-		border-radius: var(--radius-md, 0.375rem);
-	}
-
-	.job-card.status-completed {
-		border-left: 4px solid #059669;
-	}
-
-	.job-card.status-failed {
-		border-left: 4px solid #dc2626;
-	}
-
-	.job-card.status-running {
-		border-left: 4px solid #2563eb;
-	}
-
-	.job-header {
-		display: flex;
-		align-items: center;
-		gap: var(--space-md, 1rem);
-		margin-bottom: var(--space-sm, 0.5rem);
-	}
-
-	.job-type {
-		font-weight: 600;
-		color: var(--text, #111827);
-	}
-
-	.job-entity {
-		font-size: 0.875rem;
-		color: var(--text-muted, #6b7280);
-		background: #e5e7eb;
-		padding: 0.25rem 0.5rem;
-		border-radius: var(--radius-sm, 0.25rem);
-	}
-
-	.job-status {
-		margin-left: auto;
-		font-size: 0.875rem;
-		font-weight: 500;
-	}
-
-	.job-status.status-completed {
-		color: #059669;
-	}
-
-	.job-status.status-failed {
-		color: #dc2626;
-	}
-
-	.job-status.status-running {
-		color: #2563eb;
-	}
-
-	.job-progress {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm, 0.5rem);
-	}
-
-	.progress-bar {
-		flex: 1;
-		height: 8px;
-		background: #e5e7eb;
-		border-radius: 4px;
-		overflow: hidden;
-	}
-
-	.progress-fill {
-		height: 100%;
-		background: #2563eb;
-		transition: width 0.3s ease;
-	}
-
-	.progress-text {
-		font-size: 0.875rem;
-		color: var(--text-muted, #6b7280);
-		min-width: 60px;
-		text-align: right;
-	}
-
-	.job-error {
-		margin-top: var(--space-sm, 0.5rem);
-		padding: var(--space-sm, 0.5rem);
-		background: #fef2f2;
-		border: 1px solid #fecaca;
-		border-radius: var(--radius-sm, 0.25rem);
-		font-size: 0.875rem;
-		color: #dc2626;
-	}
-
-	/* System Stats */
-	.stats-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-		gap: var(--space-md, 1rem);
-		margin-bottom: var(--space-lg, 1.5rem);
-	}
-
-	.stat-card {
-		text-align: center;
-		padding: var(--space-md, 1rem);
-		background: #f8fafc;
-		border: 1px solid #e2e8f0;
-		border-radius: var(--radius-md, 0.375rem);
-	}
-
-	.stat-value {
-		font-size: 2rem;
-		font-weight: 700;
-		color: var(--primary, #2563eb);
-		margin-bottom: var(--space-xs, 0.25rem);
-	}
-
-	.stat-label {
-		font-size: 0.875rem;
-		color: var(--text-muted, #6b7280);
-		font-weight: 500;
-	}
-
-	.entity-breakdown {
-		padding-top: var(--space-lg, 1.5rem);
-		border-top: 1px solid var(--border, #e5e7eb);
-	}
-
-	.entity-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-		gap: var(--space-sm, 0.5rem);
-	}
-
-	.entity-item {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: var(--space-sm, 0.5rem);
-		background: white;
-		border: 1px solid #e5e7eb;
-		border-radius: var(--radius-sm, 0.25rem);
-	}
-
-	.entity-type {
-		font-weight: 500;
-		color: var(--text, #111827);
-		text-transform: capitalize;
-	}
-
-	.entity-count {
-		font-weight: 600;
-		color: var(--primary, #2563eb);
-	}
 </style>
 

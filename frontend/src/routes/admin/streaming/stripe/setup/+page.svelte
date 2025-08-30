@@ -21,6 +21,17 @@
 	let portalSuccess = $state('');
 	let editingPortal = $state(false); // Whether we're in edit mode
 
+	// Stripe Data Management state
+	let databaseStats = $state<any>(null)
+	let dbStatsLoading = $state(false)
+	let dbStatsLastUpdated = $state<Date | null>(null)
+	let syncInProgress = $state(false)
+	let syncStatus = $state('')
+	let systemHealth = $state<any>(null)
+	let systemStats = $state<any>(null)
+	let syncJobs = $state<any[]>([])
+	let systemLoading = $state(false)
+
 	const { data = null, onClearKey } = $props<{ data?: any; onClearKey: () => void }>();
 
 	onMount(async () => {
@@ -165,6 +176,149 @@
 		} catch (err) {
 			console.error('Failed to load portal link', err);
 		}
+	}
+
+	// === STRIPE DATA MANAGEMENT FUNCTIONS ===
+
+	// Load database stats (real counts from database)
+	async function loadDatabaseStats() {
+		if (dbStatsLoading) return
+		
+		dbStatsLoading = true
+		console.log("📊 Loading database stats...")
+		
+		try {
+			const response = await apiRequest('/admin/streaming/stripe/database/stats')
+			const data = await response.json()
+			
+			databaseStats = data
+			dbStatsLastUpdated = new Date()
+			
+			console.log("✅ Database stats loaded:", data)
+		} catch (error) {
+			console.error("❌ Failed to load database stats:", error)
+		} finally {
+			dbStatsLoading = false
+		}
+	}
+
+	// Trigger manual sync with enhanced debounce protection
+	let lastSyncTime = 0
+	let activeRequestIds = new Set()
+	
+	async function triggerManualSync(syncType = 'customers') {
+		console.log(`🔍 [MANUAL-SYNC] ${syncType} sync requested`)
+		
+		// Generate unique request ID for this specific request
+		const requestId = `${syncType}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+		
+		// Prevent double execution within 3 seconds OR if sync is in progress
+		const now = Date.now()
+		if (syncInProgress || (now - lastSyncTime) < 3000 || activeRequestIds.has(syncType)) {
+			console.log(`🚫 Sync blocked: inProgress=${syncInProgress}, timeSince=${now - lastSyncTime}ms, activeRequests=${Array.from(activeRequestIds)}`)
+			return
+		}
+		
+		// Mark this request as active
+		activeRequestIds.add(syncType)
+		lastSyncTime = now
+		syncInProgress = true
+		syncStatus = `Starting ${syncType} sync...`
+		
+		try {
+			const uniqueRequestId = `frontend_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+			
+			console.log(`🔍 [MANUAL-SYNC] Manual sync: ${syncType} (ID: ${uniqueRequestId})`)
+			
+			const response = await apiRequest(`/admin/streaming/stripe/sync/trigger?type=${syncType}`, {
+				method: 'POST',
+				headers: {
+					'X-Frontend-Request-ID': uniqueRequestId,
+					'X-Frontend-Timestamp': Date.now().toString(),
+					'X-Frontend-User-Agent': navigator.userAgent
+				}
+			})
+			const data = await response.json()
+			console.log(`🔍 [MANUAL-SYNC] Manual sync API response:`, data)
+			
+			if (response.ok) {
+				syncStatus = `✅ ${syncType} sync completed successfully!`
+				console.log("✅ Manual sync completed:", data)
+				
+				// Reload database stats to show updated counts
+				setTimeout(() => {
+					loadDatabaseStats()
+				}, 1000)
+			} else {
+				// Handle rate limiting gracefully - don't show technical details to user
+				if (response.status === 429 || data.status === 'rate_limited') {
+					syncStatus = `⏳ ${syncType} sync is cooling down. Please wait a few minutes before trying again.`
+					console.log("⏳ Sync rate limited:", data)
+				} else {
+					syncStatus = `❌ ${syncType} sync failed: ${data.error || data.message || 'Unknown error'}`
+					console.error("❌ Manual sync failed:", data)
+				}
+			}
+		} catch (error: any) {
+			syncStatus = `❌ ${syncType} sync failed: ${error.message || 'Unknown error'}`
+			console.error("❌ Manual sync error:", error)
+		} finally {
+			syncInProgress = false
+			// Remove this sync type from active requests
+			activeRequestIds.delete(syncType)
+			
+			// Clear status after different timeouts based on message type
+			const clearTimeout = syncStatus.includes('cooling down') ? 10000 : 5000 // 10s for rate limit, 5s for others
+			setTimeout(() => {
+				syncStatus = ''
+			}, clearTimeout)
+		}
+	}
+
+	async function loadSystemHealth() {
+		if (systemLoading) return
+		
+		systemLoading = true
+		try {
+			const response = await apiRequest('/admin/streaming/stripe/system/health')
+			const data = await response.json()
+			systemHealth = data
+			console.log("🏥 System health loaded:", data)
+		} catch (error) {
+			console.error("❌ Failed to load system health:", error)
+		} finally {
+			systemLoading = false
+		}
+	}
+
+	async function loadSystemStats() {
+		try {
+			const response = await apiRequest('/admin/streaming/stripe/system/stats')
+			const data = await response.json()
+			systemStats = data
+			console.log("📊 System stats loaded:", data)
+		} catch (error) {
+			console.error("❌ Failed to load system stats:", error)
+		}
+	}
+
+	async function loadSyncJobs() {
+		try {
+			const response = await apiRequest('/admin/streaming/stripe/system/jobs?limit=10')
+			const data = await response.json()
+			syncJobs = data.jobs || []
+			console.log("📋 Sync jobs loaded:", data)
+		} catch (error) {
+			console.error("❌ Failed to load sync jobs:", error)
+		}
+	}
+
+	async function loadSystemData() {
+		await Promise.all([
+			loadSystemHealth(),
+			loadSystemStats(),
+			loadSyncJobs()
+		])
 	}
 </script>
 
@@ -418,6 +572,161 @@
 						</div>
 					{/if}
 				</div>
+
+				<!-- Stripe Data Management Section -->
+				<div class="data-management-card">
+					<h3>🔧 Stripe Data Management</h3>
+					<p>Manage and synchronize your Stripe data with the local database</p>
+					
+					<!-- Sync Status Display -->
+					{#if syncStatus}
+						<div class="sync-status {syncStatus.includes('✅') ? 'success' : syncStatus.includes('⏳') ? 'warning' : 'error'}">
+							<div class="sync-status-message">{syncStatus}</div>
+						</div>
+					{/if}
+
+					<!-- Database Stats Display -->
+					{#if databaseStats}
+						<div class="database-stats">
+							<h4>📊 Database Statistics</h4>
+							<div class="stats-grid">
+								<div class="stat-card">
+									<div class="stat-value">{databaseStats.customers || 0}</div>
+									<div class="stat-label">Customers</div>
+								</div>
+								<div class="stat-card">
+									<div class="stat-value">{databaseStats.subscriptions || 0}</div>
+									<div class="stat-label">Subscriptions</div>
+								</div>
+								<div class="stat-card">
+									<div class="stat-value">{databaseStats.products || 0}</div>
+									<div class="stat-label">Products</div>
+								</div>
+								<div class="stat-card">
+									<div class="stat-value">{databaseStats.coupons || 0}</div>
+									<div class="stat-label">Coupons</div>
+								</div>
+							</div>
+							{#if dbStatsLastUpdated}
+								<div class="last-updated">
+									Last updated: {dbStatsLastUpdated.toLocaleString()}
+								</div>
+							{/if}
+						</div>
+					{/if}
+
+					<!-- Management Actions -->
+					<div class="management-actions">
+						<div class="action-group">
+							<h4>📊 Database Operations</h4>
+							<div class="button-group">
+								<button 
+									class="btn btn-secondary" 
+									onclick={(e) => { e.preventDefault(); e.stopPropagation(); loadDatabaseStats(); }}
+									disabled={dbStatsLoading}
+								>
+									{dbStatsLoading ? '🔄 Loading...' : '📊 Refresh DB Stats'}
+								</button>
+							</div>
+						</div>
+
+						<div class="action-group">
+							<h4>🔄 Data Synchronization</h4>
+							<div class="button-group">
+								<!--<button 
+									class="btn btn-success" 
+									onclick={(e) => { e.preventDefault(); e.stopPropagation(); triggerManualSync('customers'); }}
+									disabled={syncInProgress}
+							>
+									{syncInProgress ? '🔄 Syncing...' : '🚀 Sync Customers'}
+								</button>-->
+								<button 
+									class="btn btn-warning" 
+									onclick={(e) => { e.preventDefault(); e.stopPropagation(); triggerManualSync('initial'); }}
+									disabled={syncInProgress}
+								>
+									{syncInProgress ? '🔄 Syncing...' : '🔄 Full Sync'}
+								</button>
+								<!--<button 
+									class="btn btn-info" 
+									onclick={(e) => { e.preventDefault(); e.stopPropagation(); triggerManualSync('coupons'); }}
+									disabled={syncInProgress}
+								>
+									{syncInProgress ? '🔄 Syncing...' : '🎟️ Sync Coupons'}
+								</button>-->
+								<button 
+									class="btn btn-secondary" 
+									onclick={(e) => { e.preventDefault(); e.stopPropagation(); triggerManualSync('monthly_metrics'); }}
+									disabled={syncInProgress}
+								>
+									{syncInProgress ? '🔄 Syncing...' : '📊 Sync Metrics'}
+								</button>
+							</div>
+						</div>
+
+						<div class="action-group">
+							<h4>🏥 System Management</h4>
+							<div class="button-group">
+								<button 
+									class="btn btn-info" 
+									onclick={(e) => { e.preventDefault(); e.stopPropagation(); loadSystemData(); }}
+									disabled={systemLoading}
+								>
+									{systemLoading ? '🔄 Loading...' : '🏥 System Health'}
+								</button>
+							</div>
+						</div>
+					</div>
+
+					<!-- System Health Panel -->
+					{#if systemHealth || systemStats || syncJobs.length > 0}
+						<div class="system-panel">
+							<h4>🏥 System Status</h4>
+
+							{#if systemHealth}
+								<div class="system-health">
+									<div class="health-grid">
+										<div class="health-card status-{systemHealth.status}">
+											<div class="health-icon">
+												{systemHealth.status === 'healthy' ? '✅' : systemHealth.status === 'degraded' ? '⚠️' : '❌'}
+											</div>
+											<div class="health-info">
+												<div class="health-label">System Status</div>
+												<div class="health-value">{systemHealth.status}</div>
+											</div>
+										</div>
+										<div class="health-card">
+											<div class="health-icon">🗄️</div>
+											<div class="health-info">
+												<div class="health-label">Database</div>
+												<div class="health-value">{systemHealth.database_status}</div>
+											</div>
+										</div>
+									</div>
+								</div>
+							{/if}
+
+							{#if syncJobs.length > 0}
+								<div class="sync-jobs">
+									<h5>Recent Sync Jobs</h5>
+									<div class="jobs-list">
+										{#each syncJobs.slice(0, 3) as job}
+											<div class="job-card status-{job.status}">
+												<div class="job-info">
+													<div class="job-type">{job.job_type} - {job.entity_type}</div>
+													<div class="job-status">{job.status}</div>
+												</div>
+												<div class="job-progress">
+													{job.processed_items || 0} / {job.total_items || 0}
+												</div>
+											</div>
+										{/each}
+									</div>
+								</div>
+							{/if}
+						</div>
+					{/if}
+				</div>
 			</div>
 		<!--{/if}-->
 	</div>
@@ -426,7 +735,7 @@
 <style>
 	.setup-container {
 		padding: var(--space-lg);
-		max-width: 800px;
+		max-width: 1800px;
 		margin: 0 auto;
 	}
 
@@ -1063,6 +1372,259 @@
 		.next-step {
 			flex-direction: column;
 			text-align: center;
+		}
+	}
+
+	/* Stripe Data Management Styles */
+	.data-management-card {
+		background: var(--surface, white);
+		border: 1px solid var(--border, #e5e7eb);
+		border-radius: var(--radius-lg, 0.5rem);
+		padding: var(--space-xl, 2rem);
+		margin-top: var(--space-xl, 2rem);
+	}
+
+	.data-management-card h3 {
+		margin: 0 0 var(--space-sm, 0.5rem) 0;
+		color: var(--text, #111827);
+		font-size: 1.95rem;
+		font-weight: 600;
+	}
+
+	.data-management-card > p {
+		margin: 0 0 var(--space-lg, 1.5rem) 0;
+		color: var(--text-muted, #6b7280);
+	}
+
+	.sync-status {
+		border-radius: var(--radius-md, 0.375rem);
+		padding: var(--space-md, 1rem);
+		margin-bottom: var(--space-lg, 1.5rem);
+		border: 1px solid;
+	}
+
+	.sync-status.success {
+		background: var(--success-light, #ecfdf5);
+		border-color: var(--success, #10b981);
+		color: var(--success-dark, #047857);
+	}
+
+	.sync-status.warning {
+		background: var(--warning-light, #fffbeb);
+		border-color: var(--warning, #f59e0b);
+		color: var(--warning-dark, #d97706);
+	}
+
+	.sync-status.error {
+		background: var(--error-light, #fef2f2);
+		border-color: var(--error, #ef4444);
+		color: var(--error-dark, #dc2626);
+	}
+
+	.sync-status-message {
+		font-weight: 500;
+	}
+
+	.database-stats {
+		margin-bottom: var(--space-lg, 1.5rem);
+	}
+
+	.database-stats h4 {
+		margin: 0 0 var(--space-md, 1rem) 0;
+		color: var(--text, #111827);
+		font-size: 1.125rem;
+		font-weight: 600;
+	}
+
+	.stats-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+		gap: var(--space-md, 1rem);
+		margin-bottom: var(--space-md, 1rem);
+	}
+
+	.stat-card {
+		background: var(--surface-secondary, #f8fafc);
+		border: 1px solid var(--border, #e5e7eb);
+		border-radius: var(--radius-md, 0.375rem);
+		padding: var(--space-md, 1rem);
+		text-align: center;
+	}
+
+	.stat-value {
+		display: block;
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: var(--primary, #3b82f6);
+		margin-bottom: var(--space-xs, 0.25rem);
+	}
+
+	.stat-label {
+		font-size: 0.875rem;
+		color: var(--text-muted, #6b7280);
+		font-weight: 500;
+	}
+
+	.last-updated {
+		font-size: 0.875rem;
+		color: var(--text-muted, #6b7280);
+		font-style: italic;
+	}
+
+	.management-actions {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: var(--space-lg, 1.5rem);
+		justify-content: space-between;
+	}
+
+	.action-group h4 {
+		margin: 0 0 var(--space-md, 1rem) 0;
+		color: var(--text, #111827);
+		font-size: 1.75rem;
+		font-weight: 600;
+	}
+
+	.button-group {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-sm, 0.5rem);
+		justify-content: center;
+	}
+
+	.system-panel {
+		margin-top: var(--space-lg, 1.5rem);
+		padding-top: var(--space-lg, 1.5rem);
+		border-top: 1px solid var(--border, #e5e7eb);
+	}
+
+	.system-panel h4, .system-panel h5 {
+		margin: 0 0 var(--space-md, 1rem) 0;
+		color: var(--text, #111827);
+		font-weight: 600;
+	}
+
+	.system-health .health-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		gap: var(--space-md, 1rem);
+		margin-bottom: var(--space-lg, 1.5rem);
+	}
+
+	.health-card {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm, 0.5rem);
+		background: var(--surface-secondary, #f8fafc);
+		border: 1px solid var(--border, #e5e7eb);
+		border-radius: var(--radius-md, 0.375rem);
+		padding: var(--space-md, 1rem);
+	}
+
+	.health-card.status-healthy {
+		border-color: var(--success, #10b981);
+		background: var(--success-light, #ecfdf5);
+	}
+
+	.health-card.status-degraded {
+		border-color: var(--warning, #f59e0b);
+		background: var(--warning-light, #fffbeb);
+	}
+
+	.health-card.status-unhealthy {
+		border-color: var(--error, #ef4444);
+		background: var(--error-light, #fef2f2);
+	}
+
+	.health-icon {
+		font-size: 1.25rem;
+	}
+
+	.health-info {
+		flex: 1;
+	}
+
+	.health-label {
+		font-size: 0.875rem;
+		color: var(--text-muted, #6b7280);
+		margin-bottom: var(--space-xs, 0.25rem);
+	}
+
+	.health-value {
+		font-weight: 600;
+		color: var(--text, #111827);
+		text-transform: capitalize;
+	}
+
+	.sync-jobs {
+		margin-top: var(--space-lg, 1.5rem);
+	}
+
+	.jobs-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-sm, 0.5rem);
+	}
+
+	.job-card {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		background: var(--surface-secondary, #f8fafc);
+		border: 1px solid var(--border, #e5e7eb);
+		border-radius: var(--radius-md, 0.375rem);
+		padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+	}
+
+	.job-card.status-completed {
+		border-color: var(--success, #10b981);
+		background: var(--success-light, #ecfdf5);
+	}
+
+	.job-card.status-running {
+		border-color: var(--primary, #3b82f6);
+		background: var(--primary-light, #eff6ff);
+	}
+
+	.job-card.status-failed {
+		border-color: var(--error, #ef4444);
+		background: var(--error-light, #fef2f2);
+	}
+
+	.job-info {
+		flex: 1;
+	}
+
+	.job-type {
+		font-weight: 500;
+		color: var(--text, #111827);
+		font-size: 0.875rem;
+	}
+
+	.job-status {
+		font-size: 0.75rem;
+		color: var(--text-muted, #6b7280);
+		text-transform: capitalize;
+	}
+
+	.job-progress {
+		font-size: 0.875rem;
+		color: var(--text-muted, #6b7280);
+		font-weight: 500;
+	}
+
+	@media (max-width: 768px) {
+		.stats-grid {
+			grid-template-columns: repeat(2, 1fr);
+		}
+
+		.button-group {
+			flex-direction: column;
+		}
+
+		.system-health .health-grid {
+			grid-template-columns: 1fr;
 		}
 	}
 </style> 
