@@ -25,6 +25,15 @@
 	let localOnlyCount = $state(0);
 	let stripeOnlyCount = $state(0);
 
+	// Pagination for Stripe Only customers
+	let stripeOnlyCurrentPage = $state(1);
+	let stripeOnlyItemsPerPage = $state(50);
+	let stripeOnlyTotalPages = $state(1);
+	let stripeOnlyDisplayed = $state<any[]>([]);
+	
+	// All stripe only customers (unpaginated)
+	let allStripeOnlyCustomers = $state<any[]>([]);
+
 	// Accept data from parent - NO API calls needed!
 	const { summary: parentSummary = null, stripeData = null } = $props<{ 
 		summary?: any, 
@@ -40,32 +49,92 @@
 			// Use pre-loaded data from parent
 			summary = parentSummary;
 			customers = stripeData.customers || [];
+			
+			// Load local users to compare against Stripe customers
+			const usersRes = await apiRequest('/admin/users?limit=1000');
+			let localUsers: any[] = [];
+			if (usersRes.ok) {
+				const usersData = await usersRes.json();
+				localUsers = usersData.users || [];
+				console.log('✅ Loaded local users for matching:', localUsers.length);
+			} else {
+				console.warn('⚠️ Users endpoint not available (404), using subscriber data as fallback');
+				
+				// Also fetch subscribers to get subscription plan information
+				const subscribersData = await StreamingSubscriberService.getSubscribers({ limit: 1000 });
+				const subscribers = subscribersData.subscribers || [];
+				console.log('✅ Loaded subscribers for plan data:', subscribers.length);
+
+				// Use subscribers as the base data source
+				localUsers = subscribers.map((sub: any) => ({
+					ID: sub.id,
+					id: sub.id,
+					Email: sub.email,
+					email: sub.email,
+					FirstName: sub.first_name,
+					first_name: sub.first_name,
+					LastName: sub.last_name,
+					last_name: sub.last_name,
+					Role: sub.role,
+					role: sub.role,
+					StripeCustomerID: sub.stripe_customer_id,
+					stripe_customer_id: sub.stripe_customer_id,
+					CreatedAt: sub.created_at,
+					created_at: sub.created_at,
+					plan_name: sub.plan_name,
+					stripe_price_id: sub.stripe_price_id,
+					subscription_id: sub.subscription_id
+				}));
+			}
+
+			// Create customer lists using the pre-loaded Stripe data
+			createCustomerLists(stripeData.customers || [], localUsers);
 			loading = false;
 			console.log('✅ Customers: Using pre-loaded data from parent');
 		} else {
-			// This shouldn't happen in normal flow
-			error = 'No data available - please refresh the dashboard';
-			loading = false;
+			// Fallback to loading data directly (shouldn't happen in normal flow)
+			console.warn('⚠️ No data from parent, loading directly...');
+			await loadAllData();
 		}
 	});
 
-	// Load both local users and Stripe customers
+	// Load both local users and Stripe customers from database
 	async function loadAllData() {
 		try {
 			loading = true;
 			error = '';
 
-			console.log('🔄 Loading Stripe customers and checking against local users...');
+			console.log('🔄 Loading Stripe customers from database and checking against local users...');
 
-			// First, fetch all Stripe customers (primary source)
-			const stripeRes = await apiRequest('/admin/streaming/stripe/summary');
+			// First, fetch all Stripe customers from database (primary source)
+			const stripeRes = await apiRequest('/admin/streaming/stripe/database/customers?limit=1000&include_subscriptions=true');
 			let allStripeCustomers: any[] = [];
 			if (stripeRes.ok) {
 				const stripeData = await stripeRes.json();
-				allStripeCustomers = stripeData.summary?.customers || [];
-				console.log('✅ Loaded Stripe customers:', allStripeCustomers.length);
+				allStripeCustomers = stripeData.customers || [];
+				console.log('✅ Loaded Stripe customers from database:', allStripeCustomers.length);
+			
+				// Debug: Show first customer structure
+				if (allStripeCustomers.length > 0) {
+					console.log('🔍 Sample Stripe customer from database:', {
+						stripe_id: allStripeCustomers[0].stripe_id,
+						email: allStripeCustomers[0].email,
+						name: allStripeCustomers[0].name,
+						subscriptions: allStripeCustomers[0].subscriptions?.length || 0
+					});
+				} else {
+					console.warn('⚠️ No customers found in stripe_customers database table');
+					console.warn('💡 You may need to run a Stripe sync first to populate the database');
+				}
 			} else {
-				console.error('❌ Failed to load Stripe customers');
+				console.error('❌ Failed to load Stripe customers from database');
+				console.error('Response status:', stripeRes.status);
+				try {
+					const errorText = await stripeRes.text();
+					console.error('Response text:', errorText);
+				} catch (e) {
+					console.error('Could not read response text');
+				}
 				allStripeCustomers = [];
 			}
 
@@ -145,6 +214,7 @@
 	// Create separate customer lists for different sync states
 	function createCustomerLists(allStripeCustomers: any[], localUsers: any[]) {
 		console.log('🔄 Creating customer lists...');
+		console.log(`📊 Input data: ${allStripeCustomers.length} Stripe customers, ${localUsers.length} local users`);
 
 		// Create maps for fast lookup
 		const usersByEmail = new Map();
@@ -165,67 +235,86 @@
 			}
 		});
 
-		// Map Stripe customers
+		// Map Stripe customers (from database format)
 		allStripeCustomers.forEach((customer: any) => {
-			const email = customer.Email?.toLowerCase();
+			const email = (customer.email || customer.Email)?.toLowerCase();
 			if (email) {
 				stripeCustomersByEmail.set(email, customer);
 			}
-			stripeCustomersById.set(customer.ID, customer);
+			// Use stripe_id from database instead of ID from API
+			const stripeId = customer.stripe_id || customer.ID;
+			if (stripeId) {
+				stripeCustomersById.set(stripeId, customer);
+			}
 		});
 
-		// 1. Stripe Only Customers - exist in Stripe but not locally
-		stripeOnlyCustomers = allStripeCustomers.filter((stripeCustomer: any) => {
-			const email = stripeCustomer.Email?.toLowerCase();
-			const stripeId = stripeCustomer.ID;
+		// 1. Stripe Only Customers - exist in Stripe_customers database but not locally
+		allStripeOnlyCustomers = allStripeCustomers.filter((stripeCustomer: any) => {
+			const email = (stripeCustomer.email || stripeCustomer.Email)?.toLowerCase();
+			const stripeId = stripeCustomer.stripe_id || stripeCustomer.ID;
 			
 			// Check if this Stripe customer has a local user
 			const localUser = usersByStripeId.get(stripeId) || usersByEmail.get(email);
-			return !localUser; // Only include if no local user found
+			const hasLocalUser = !!localUser;
+			
+			// Debug logging for first few customers
+			if (allStripeCustomers.indexOf(stripeCustomer) < 3) {
+				console.log(`🔍 Customer ${stripeId} (${email}): hasLocalUser=${hasLocalUser}`);
+			}
+			
+			return !hasLocalUser; // Only include if no local user found
 		}).map((customer: any) => ({
-			id: `stripe_${customer.ID}`,
+			id: `stripe_${customer.stripe_id || customer.ID}`,
 			source: 'stripe',
-			name: customer.Name || 'Unnamed Customer',
-			email: customer.Email,
+			name: customer.name || customer.Name || 'Unnamed Customer',
+			email: customer.email || customer.Email,
 			localId: null,
 			role: null,
 			planName: null,
 			stripePriceId: null,
-			stripeId: customer.ID,
-			stripeCreatedAt: customer.CreatedAt,
-			stripeMetadata: customer.Metadata,
-			createdAt: customer.CreatedAt,
-			stripeCustomerId: null,
+			stripeId: customer.stripe_id || customer.ID,
+			stripeCreatedAt: customer.created_at || customer.CreatedAt,
+			stripeMetadata: customer.metadata || customer.Metadata,
+			createdAt: customer.created_at || customer.CreatedAt,
+			stripeCustomerId: customer.stripe_id || customer.ID,
+			subscriptions: customer.subscriptions || [],
 			syncStatus: 'stripe_only'
 		}));
 
+		// Set up pagination for Stripe Only customers
+		stripeOnlyCount = allStripeOnlyCustomers.length;
+		stripeOnlyTotalPages = Math.ceil(stripeOnlyCount / stripeOnlyItemsPerPage);
+		stripeOnlyCurrentPage = 1; // Reset to first page
+		updateStripeOnlyPagination();
+
 		// 2. Synced Customers - exist in both Stripe and locally
 		syncedCustomers = allStripeCustomers.filter((stripeCustomer: any) => {
-			const email = stripeCustomer.Email?.toLowerCase();
-			const stripeId = stripeCustomer.ID;
+			const email = (stripeCustomer.email || stripeCustomer.Email)?.toLowerCase();
+			const stripeId = stripeCustomer.stripe_id || stripeCustomer.ID;
 			
 			// Check if this Stripe customer has a local user
 			const localUser = usersByStripeId.get(stripeId) || usersByEmail.get(email);
 			return !!localUser; // Only include if local user found
 		}).map((stripeCustomer: any) => {
-			const email = stripeCustomer.Email?.toLowerCase();
-			const stripeId = stripeCustomer.ID;
+			const email = (stripeCustomer.email || stripeCustomer.Email)?.toLowerCase();
+			const stripeId = stripeCustomer.stripe_id || stripeCustomer.ID;
 			const localUser = usersByStripeId.get(stripeId) || usersByEmail.get(email);
 			
 			return {
 				id: `hybrid_${stripeId}`,
 				source: 'hybrid',
-				name: stripeCustomer.Name || `${localUser.FirstName || localUser.first_name || ''} ${localUser.LastName || localUser.last_name || ''}`.trim(),
-				email: stripeCustomer.Email,
+				name: stripeCustomer.name || stripeCustomer.Name || `${localUser.FirstName || localUser.first_name || ''} ${localUser.LastName || localUser.last_name || ''}`.trim(),
+				email: stripeCustomer.email || stripeCustomer.Email,
 				localId: localUser.ID || localUser.id,
 				role: localUser.Role || localUser.role,
 				planName: localUser.plan_name || null,
 				stripePriceId: localUser.stripe_price_id || null,
 				stripeId: stripeId,
-				stripeCreatedAt: stripeCustomer.CreatedAt,
-				stripeMetadata: stripeCustomer.Metadata,
+				stripeCreatedAt: stripeCustomer.created_at || stripeCustomer.CreatedAt,
+				stripeMetadata: stripeCustomer.metadata || stripeCustomer.Metadata,
 				createdAt: localUser.CreatedAt || localUser.created_at,
 				stripeCustomerId: localUser.StripeCustomerID || localUser.stripe_customer_id,
+				subscriptions: stripeCustomer.subscriptions || [],
 				syncStatus: 'synced'
 			};
 		});
@@ -267,6 +356,13 @@
 			localOnly: localOnlyCount,
 			stripeOnly: stripeOnlyCount
 		});
+		
+		console.log('📋 Breakdown:');
+		console.log(`  • ${allStripeCustomers.length} customers from stripe_customers table`);
+		console.log(`  • ${localUsers.length} local users`);
+		console.log(`  • ${syncedCustomers.length} synced (in both Stripe DB and local)`);
+		console.log(`  • ${stripeOnlyCustomers.length} Stripe-only (in Stripe DB but not local)`);
+		console.log(`  • ${localOnlyUsers.length} local-only (local but not in Stripe DB)`);
 	}
 
 	// Create user directly from Stripe customer data (inline)
@@ -420,6 +516,38 @@
 		}
 	}
 
+	// Update Stripe Only pagination
+	function updateStripeOnlyPagination() {
+		const startIndex = (stripeOnlyCurrentPage - 1) * stripeOnlyItemsPerPage;
+		const endIndex = startIndex + stripeOnlyItemsPerPage;
+		stripeOnlyDisplayed = allStripeOnlyCustomers.slice(startIndex, endIndex);
+		stripeOnlyCustomers = stripeOnlyDisplayed; // For backward compatibility with existing components
+		
+		console.log(`📄 Stripe Only pagination: Page ${stripeOnlyCurrentPage}/${stripeOnlyTotalPages}, showing ${stripeOnlyDisplayed.length} of ${allStripeOnlyCustomers.length} customers`);
+	}
+
+	// Pagination navigation functions
+	function goToStripeOnlyPage(page: number) {
+		if (page >= 1 && page <= stripeOnlyTotalPages) {
+			stripeOnlyCurrentPage = page;
+			updateStripeOnlyPagination();
+		}
+	}
+
+	function nextStripeOnlyPage() {
+		if (stripeOnlyCurrentPage < stripeOnlyTotalPages) {
+			stripeOnlyCurrentPage++;
+			updateStripeOnlyPagination();
+		}
+	}
+
+	function prevStripeOnlyPage() {
+		if (stripeOnlyCurrentPage > 1) {
+			stripeOnlyCurrentPage--;
+			updateStripeOnlyPagination();
+		}
+	}
+
 	// Format date
 	function formatDate(dateString: string): string {
 		if (!dateString) return 'N/A';
@@ -432,8 +560,14 @@
 
 	// Refresh data
 	async function refreshData() {
-		await loadAllData();
-		showToast('Data refreshed', 'success');
+		if (parentSummary && stripeData) {
+			// If we have parent data, we should refresh from parent
+			// For now, just reload the current data
+			showToast('Please refresh from the main subscribers page', 'info');
+		} else {
+			await loadAllData();
+			showToast('Data refreshed', 'success');
+		}
 	}
 
 	// Event handlers for table components
@@ -462,7 +596,7 @@
 	<div class="page-header">
 		<div class="header-content">
 			<h1>👥 Customer Sync Dashboard</h1>
-			<p>Compare local subscribers with Stripe customers and manage synchronization</p>
+			<p>Compare local subscribers with Stripe customers from database and manage synchronization</p>
 		</div>
 		<div class="header-stats">
 			<div class="stat-card">
@@ -490,8 +624,8 @@
 		</div>
 	</div>
 
-	<!-- Customer Sync Panel -->
-	<CustomerSyncPanel customerId={null} customerEmail="" />
+	<!-- Customer Sync Panel 
+	<CustomerSyncPanel customerId={null} customerEmail="" />-->
 
 	{#if loading}
 		<div class="loading-container">
@@ -508,7 +642,11 @@
 		<div class="empty-state">
 			<div class="empty-icon">👥</div>
 			<h3>No Customers Found</h3>
-			<p>No local subscribers or Stripe customers found.</p>
+			<p>No local subscribers or Stripe customers found in the database.</p>
+			<p class="empty-hint">💡 If you have Stripe customers, you may need to run a sync first to populate the database tables.</p>
+			<button class="btn btn-primary" onclick={() => window.location.href = '/admin/streaming/stripe/setup'}>
+				Go to Stripe Setup
+			</button>
 		</div>
 	{:else}
 		<div class="customers-table-container">
@@ -524,7 +662,7 @@
 
 			<!-- Stripe Only Customers Table -->
 			<SimpleTable
-				title="💳 Stripe Only Customers"
+				title="💳 Stripe Only Customers ({allStripeOnlyCustomers.length} total)"
 				customers={stripeOnlyCustomers}
 				tableType="stripe-only"
 				{syncingCustomers}
@@ -532,6 +670,50 @@
 				on:createUser={handleCreateUser}
 				on:createAllUsers={handleCreateAllUsers}
 			/>
+
+			<!-- Stripe Only Customers Pagination -->
+			{#if stripeOnlyTotalPages > 1}
+				<div class="pagination-container">
+					<div class="pagination-info">
+						<span>
+							Showing {((stripeOnlyCurrentPage - 1) * stripeOnlyItemsPerPage) + 1} - 
+							{Math.min(stripeOnlyCurrentPage * stripeOnlyItemsPerPage, allStripeOnlyCustomers.length)} 
+							of {allStripeOnlyCustomers.length} Stripe Only customers
+						</span>
+					</div>
+					<div class="pagination-controls">
+						<button 
+							class="btn btn-pagination" 
+							onclick={prevStripeOnlyPage}
+							disabled={stripeOnlyCurrentPage === 1}
+						>
+							← Previous
+						</button>
+						
+						<div class="page-numbers">
+							{#each Array(Math.min(5, stripeOnlyTotalPages)) as _, i}
+								{@const pageNum = Math.max(1, Math.min(stripeOnlyTotalPages - 4, stripeOnlyCurrentPage - 2)) + i}
+								{#if pageNum <= stripeOnlyTotalPages}
+									<button 
+										class="btn btn-page {pageNum === stripeOnlyCurrentPage ? 'active' : ''}"
+										onclick={() => goToStripeOnlyPage(pageNum)}
+									>
+										{pageNum}
+									</button>
+								{/if}
+							{/each}
+						</div>
+						
+						<button 
+							class="btn btn-pagination" 
+							onclick={nextStripeOnlyPage}
+							disabled={stripeOnlyCurrentPage === stripeOnlyTotalPages}
+						>
+							Next →
+						</button>
+					</div>
+				</div>
+			{/if}
 
 			<!-- Synced Customers Table -->
 			<SimpleTable
@@ -695,6 +877,12 @@
 		opacity: 0.5;
 	}
 
+	.empty-hint {
+		color: var(--text-muted, #6b7280);
+		font-style: italic;
+		margin: var(--space-md, 1rem) 0;
+	}
+
 	.loading-spinner {
 		width: 40px;
 		height: 40px;
@@ -716,6 +904,77 @@
 		border: 1px solid var(--border, #e5e7eb);
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 		margin-top: var(--space-lg, 1.5rem);
+	}
+
+	/* Pagination Styles */
+	.pagination-container {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: var(--space-md, 1rem);
+		background: var(--surface, white);
+		border-top: 1px solid var(--border, #e5e7eb);
+		flex-wrap: wrap;
+		gap: var(--space-sm, 0.75rem);
+	}
+
+	.pagination-info {
+		color: var(--text-muted, #6b7280);
+		font-size: 0.875rem;
+	}
+
+	.pagination-controls {
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs, 0.5rem);
+	}
+
+	.page-numbers {
+		display: flex;
+		gap: var(--space-xs, 0.25rem);
+	}
+
+	.btn-pagination {
+		padding: var(--space-xs, 0.5rem) var(--space-sm, 0.75rem);
+		font-size: 0.875rem;
+		background: var(--surface, white);
+		border: 1px solid var(--border, #d1d5db);
+		color: var(--text, #374151);
+	}
+
+	.btn-pagination:hover:not(:disabled) {
+		background: var(--surface-hover, #f9fafb);
+		border-color: var(--border-hover, #9ca3af);
+	}
+
+	.btn-pagination:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.btn-page {
+		padding: var(--space-xs, 0.5rem) var(--space-sm, 0.75rem);
+		font-size: 0.875rem;
+		background: var(--surface, white);
+		border: 1px solid var(--border, #d1d5db);
+		color: var(--text, #374151);
+		min-width: 40px;
+	}
+
+	.btn-page:hover {
+		background: var(--surface-hover, #f9fafb);
+		border-color: var(--border-hover, #9ca3af);
+	}
+
+	.btn-page.active {
+		background: var(--primary, #2563eb);
+		border-color: var(--primary, #2563eb);
+		color: white;
+	}
+
+	.btn-page.active:hover {
+		background: var(--primary-hover, #1d4ed8);
+		border-color: var(--primary-hover, #1d4ed8);
 	}
 
 	@media (max-width: 768px) {

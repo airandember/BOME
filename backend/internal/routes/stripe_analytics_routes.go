@@ -2,9 +2,11 @@ package routes
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -32,6 +34,8 @@ func RegisterStripeAnalyticsRoutes(router *gin.RouterGroup, stripeService *servi
 
 		// Database stats endpoints
 		stripe.GET("/database/stats", func(c *gin.Context) { getDatabaseStats(c, db) })
+		stripe.GET("/database/customers", func(c *gin.Context) { getDatabaseCustomers(c, db) })
+		stripe.GET("/database/subscriptions", func(c *gin.Context) { getDatabaseSubscriptions(c, db) })
 
 		// Manual UI-triggered sync endpoints (for frontend users)
 		stripe.POST("/sync/trigger", func(c *gin.Context) { triggerManualSync(c, syncService) })
@@ -211,6 +215,252 @@ func getDatabaseStats(c *gin.Context, db *database.DB) {
 		customerCount, subscriptionCount, productCount, invoiceCount)
 
 	c.JSON(http.StatusOK, stats)
+}
+
+// getDatabaseCustomers returns customers from stripe_customers table with optional subscriptions
+func getDatabaseCustomers(c *gin.Context, db *database.DB) {
+	// Parse query parameters
+	limitStr := c.DefaultQuery("limit", "100")
+	offsetStr := c.DefaultQuery("offset", "0")
+	includeSubscriptions := c.DefaultQuery("include_subscriptions", "true") == "true"
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000 // Cap at 1000 for performance
+	}
+
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+
+	var customers []map[string]interface{}
+	var totalCount int
+
+	// Get total count
+	err = db.QueryRow("SELECT COUNT(*) FROM stripe_customers").Scan(&totalCount)
+	if err != nil {
+		log.Printf("Error getting customer count: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get customer count"})
+		return
+	}
+
+	// Base query for customers
+	baseQuery := `
+		SELECT 
+			stripe_id, name, email, created_at, updated_at, metadata
+		FROM stripe_customers 
+		ORDER BY created_at DESC 
+		LIMIT $1 OFFSET $2
+	`
+
+	rows, err := db.Query(baseQuery, limit, offset)
+	if err != nil {
+		log.Printf("Error querying customers: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query customers"})
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var customer map[string]interface{} = make(map[string]interface{})
+		var stripeID, name, email, metadata sql.NullString
+		var createdAt, updatedAt sql.NullTime
+
+		err := rows.Scan(
+			&stripeID, &name, &email, &createdAt, &updatedAt, &metadata,
+		)
+		if err != nil {
+			log.Printf("Error scanning customer row: %v", err)
+			continue
+		}
+
+		customer["stripe_id"] = stripeID.String
+		customer["name"] = name.String
+		customer["email"] = email.String
+		customer["created_at"] = createdAt.Time
+		customer["updated_at"] = updatedAt.Time
+		customer["metadata"] = metadata.String
+
+		// If requested, get subscriptions for this customer
+		if includeSubscriptions {
+			subscriptions, err := getCustomerSubscriptions(db, stripeID.String)
+			if err != nil {
+				log.Printf("Error getting subscriptions for customer %s: %v", stripeID.String, err)
+				customer["subscriptions"] = []map[string]interface{}{}
+			} else {
+				customer["subscriptions"] = subscriptions
+			}
+		}
+
+		customers = append(customers, customer)
+	}
+
+	log.Printf("📊 Retrieved %d customers from database (offset: %d, limit: %d, total: %d)",
+		len(customers), offset, limit, totalCount)
+
+	c.JSON(http.StatusOK, gin.H{
+		"customers": customers,
+		"pagination": gin.H{
+			"limit":  limit,
+			"offset": offset,
+			"total":  totalCount,
+		},
+		"source": "database",
+	})
+}
+
+// getDatabaseSubscriptions returns subscriptions from stripe_subscriptions table
+func getDatabaseSubscriptions(c *gin.Context, db *database.DB) {
+	// Parse query parameters
+	limitStr := c.DefaultQuery("limit", "100")
+	offsetStr := c.DefaultQuery("offset", "0")
+	status := c.Query("status") // active, canceled, trialing, etc.
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000 // Cap at 1000 for performance
+	}
+
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+
+	var subscriptions []map[string]interface{}
+	var totalCount int
+
+	// Build query with optional status filter
+	countQuery := "SELECT COUNT(*) FROM stripe_subscriptions"
+	baseQuery := `
+		SELECT 
+			stripe_id, customer_id, status, current_period_start, current_period_end,
+			created_at
+		FROM stripe_subscriptions
+	`
+
+	var args []interface{}
+	argIndex := 1
+
+	if status != "" {
+		countQuery += " WHERE status = $" + strconv.Itoa(argIndex)
+		baseQuery += " WHERE status = $" + strconv.Itoa(argIndex)
+		args = append(args, status)
+		argIndex++
+	}
+
+	baseQuery += " ORDER BY created_at DESC LIMIT $" + strconv.Itoa(argIndex) + " OFFSET $" + strconv.Itoa(argIndex+1)
+	args = append(args, limit, offset)
+
+	// Get total count
+	var countArgs []interface{}
+	if status != "" {
+		countArgs = []interface{}{status}
+	}
+	err = db.QueryRow(countQuery, countArgs...).Scan(&totalCount)
+	if err != nil {
+		log.Printf("Error getting subscription count: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get subscription count"})
+		return
+	}
+
+	rows, err := db.Query(baseQuery, args...)
+	if err != nil {
+		log.Printf("Error querying subscriptions: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query subscriptions"})
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var subscription map[string]interface{} = make(map[string]interface{})
+		var stripeID, customerID, status sql.NullString
+		var currentPeriodStart, currentPeriodEnd, createdAt sql.NullTime
+
+		err := rows.Scan(
+			&stripeID, &customerID, &status, &currentPeriodStart, &currentPeriodEnd,
+			&createdAt,
+		)
+		if err != nil {
+			log.Printf("Error scanning subscription row: %v", err)
+			continue
+		}
+
+		subscription["stripe_id"] = stripeID.String
+		subscription["customer_id"] = customerID.String
+		subscription["status"] = status.String
+		subscription["current_period_start"] = currentPeriodStart.Time
+		subscription["current_period_end"] = currentPeriodEnd.Time
+		subscription["created_at"] = createdAt.Time
+
+		subscriptions = append(subscriptions, subscription)
+	}
+
+	log.Printf("📊 Retrieved %d subscriptions from database (offset: %d, limit: %d, total: %d, status: %s)",
+		len(subscriptions), offset, limit, totalCount, status)
+
+	c.JSON(http.StatusOK, gin.H{
+		"subscriptions": subscriptions,
+		"pagination": gin.H{
+			"limit":  limit,
+			"offset": offset,
+			"total":  totalCount,
+		},
+		"filters": gin.H{
+			"status": status,
+		},
+		"source": "database",
+	})
+}
+
+// Helper function to get subscriptions for a specific customer (by Stripe customer ID)
+func getCustomerSubscriptions(db *database.DB, stripeCustomerID string) ([]map[string]interface{}, error) {
+	query := `
+		SELECT 
+			s.stripe_id, s.status, s.current_period_start, s.current_period_end,
+			s.created_at
+		FROM stripe_subscriptions s
+		INNER JOIN stripe_customers c ON s.customer_id = c.id
+		WHERE c.stripe_id = $1 
+		ORDER BY s.created_at DESC
+	`
+
+	rows, err := db.Query(query, stripeCustomerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var subscriptions []map[string]interface{}
+	for rows.Next() {
+		var subscription map[string]interface{} = make(map[string]interface{})
+		var stripeID, status sql.NullString
+		var currentPeriodStart, currentPeriodEnd, createdAt sql.NullTime
+
+		err := rows.Scan(
+			&stripeID, &status, &currentPeriodStart, &currentPeriodEnd,
+			&createdAt,
+		)
+		if err != nil {
+			continue
+		}
+
+		subscription["stripe_id"] = stripeID.String
+		subscription["status"] = status.String
+		subscription["current_period_start"] = currentPeriodStart.Time
+		subscription["current_period_end"] = currentPeriodEnd.Time
+		subscription["created_at"] = createdAt.Time
+
+		subscriptions = append(subscriptions, subscription)
+	}
+
+	return subscriptions, nil
 }
 
 // triggerManualSync triggers a manual sync from the UI/frontend

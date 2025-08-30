@@ -71,6 +71,7 @@
 					<th>Source</th>
 					<th>Local ID</th>
 					<th>Stripe ID</th>
+					<th>Subscriptions</th>
 					<th>Plan</th>
 					<th>Role</th>
 					<th>Sync Status</th>
@@ -105,6 +106,11 @@
 						<td>
 							<span class="stripe-id">
 								{customer.stripeId ? `#${customer.stripeId.slice(-8)}` : 'N/A'}
+							</span>
+						</td>
+						<td>
+							<span class="subscription-count">
+								{customer.subscriptions ? customer.subscriptions.length : 0} subs
 							</span>
 						</td>
 						<td>

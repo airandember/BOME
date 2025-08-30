@@ -40,6 +40,10 @@
 	// Subscription plans for edit modal
 	let subscriptionPlans: any[] = $state([]);
 
+	// Stripe data from database
+	let stripeCustomers = $state<any[]>([]);
+	let stripeSubscriptions = $state<any[]>([]);
+
 	// Edit modal state
 	let showEditModal = $state(false);
 	let selectedSubscriber: Subscriber | null = $state(null);
@@ -141,6 +145,64 @@ async function fetchSubscriptionPlans() {
 	}
 }
 
+// Load Stripe customers from database (all customers, no limit)
+async function loadStripeCustomers() {
+	try {
+		console.log('🔄 Loading ALL Stripe customers from database...');
+		let allCustomers = [];
+		let offset = 0;
+		const limit = 1000; // Batch size for API calls
+		let hasMore = true;
+
+		while (hasMore) {
+			const response = await apiRequest(`/admin/streaming/stripe/database/customers?limit=${limit}&offset=${offset}&include_subscriptions=true`);
+			
+			if (response.ok) {
+				const data = await response.json();
+				const customers = data.customers || [];
+				allCustomers = [...allCustomers, ...customers];
+				
+				console.log(`✅ Loaded batch: ${customers.length} customers (offset: ${offset}, total so far: ${allCustomers.length})`);
+				
+				// Check if we have more data
+				hasMore = customers.length === limit;
+				offset += limit;
+			} else {
+				console.error('❌ Failed to load Stripe customers batch:', response.status);
+				hasMore = false;
+			}
+		}
+
+		console.log('✅ Loaded ALL Stripe customers from database:', allCustomers.length);
+		return allCustomers;
+	} catch (error) {
+		console.error('❌ Error loading Stripe customers:', error);
+		return [];
+	}
+}
+
+// Load Stripe subscriptions from database
+async function loadStripeSubscriptions() {
+	try {
+		console.log('🔄 Loading Stripe subscriptions from database...');
+		const response = await apiRequest('/admin/streaming/stripe/database/subscriptions?limit=1000');
+		
+		if (response.ok) {
+			const data = await response.json();
+			const subscriptions = data.subscriptions || [];
+			console.log('✅ Loaded Stripe subscriptions from database:', subscriptions.length);
+			return subscriptions;
+		} else {
+			console.error('❌ Failed to load Stripe subscriptions:', response.status);
+			return [];
+		}
+	} catch (error) {
+		console.error('❌ Error loading Stripe subscriptions:', error);
+		return [];
+	}
+}
+
+
 // Load data on mount
 onMount(async () => {
 	await fetchRoles();
@@ -173,6 +235,10 @@ async function loadInitialData() {
 		nonSubscriberCount = allNonSubscribers.length;
 		
 		console.log('Loaded non-subscribers with roles:', allNonSubscribers.map(ns => ({ id: ns.id, role: ns.role, email: ns.email })));
+		
+		// Load Stripe data from database
+		stripeCustomers = await loadStripeCustomers();
+		stripeSubscriptions = await loadStripeSubscriptions();
 		
 		// Initialize display arrays with all data (no filters applied initially)
 		displayedSubscribers = [...allSubscribers];
@@ -1342,8 +1408,14 @@ async function loadInitialData() {
 			<div class="stripe-subs-section">
 				<!-- Pass the required props to the customers component -->
 				<StripeCustomers 
-					summary={null} 
-					stripeData={null} 
+					summary={{ 
+						total_customers: stripeCustomers.length,
+						total_subscriptions: stripeSubscriptions.length 
+					}} 
+					stripeData={{ 
+						customers: stripeCustomers,
+						subscriptions: stripeSubscriptions 
+					}} 
 				/>
 			</div>
 		{/if}
