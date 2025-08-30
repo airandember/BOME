@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1849,11 +1850,12 @@ func (s *StripeService) getCustomerAnalytics() (map[string]interface{}, error) {
 	for thirtyDayIter.Next() {
 		select {
 		case <-timeout:
-			break
+			goto thirtyDayDone
 		default:
 			thirtyDayCount++
 		}
 	}
+thirtyDayDone:
 
 	// Get customers from last 7 days
 	sevenDaysAgo := time.Now().AddDate(0, 0, -7)
@@ -1870,11 +1872,12 @@ func (s *StripeService) getCustomerAnalytics() (map[string]interface{}, error) {
 	for sevenDayIter.Next() {
 		select {
 		case <-timeout:
-			break
+			goto sevenDayDone
 		default:
 			sevenDayCount++
 		}
 	}
+sevenDayDone:
 
 	// Calculate REAL growth rates
 	thirtyDayGrowth := 0.0
@@ -1993,17 +1996,24 @@ func (s *StripeService) getRevenueAnalytics() (map[string]interface{}, error) {
 
 // GetComprehensiveAnalytics returns all analytics data in one optimized call
 func (s *StripeService) GetComprehensiveAnalytics() (map[string]interface{}, error) {
+	// Use default context with no timeout for backward compatibility
+	ctx := context.Background()
+	return s.GetComprehensiveAnalyticsWithContext(ctx)
+}
+
+// GetComprehensiveAnalyticsWithContext returns all analytics data with context timeout support
+func (s *StripeService) GetComprehensiveAnalyticsWithContext(ctx context.Context) (map[string]interface{}, error) {
 	if !s.IsEnabled() {
 		return nil, errors.New("Stripe service is not enabled")
 	}
 
 	startTime := time.Now()
 	analytics := map[string]interface{}{
-		"method":    "stripe_comprehensive_analytics",
+		"method":    "stripe_comprehensive_analytics_with_timeout",
 		"timestamp": time.Now().Unix(),
 	}
 
-	// Fetch all analytics in parallel using goroutines
+	// Fetch all analytics in parallel using goroutines with context support
 	type result struct {
 		key   string
 		data  map[string]interface{}
@@ -2012,35 +2022,74 @@ func (s *StripeService) GetComprehensiveAnalytics() (map[string]interface{}, err
 
 	results := make(chan result, 3)
 
-	// Fetch subscription metrics
+	// Fetch subscription metrics with context
 	go func() {
-		data, err := s.getSubscriptionMetrics()
+		select {
+		case <-ctx.Done():
+			results <- result{"subscription_metrics", nil, ctx.Err()}
+			return
+		default:
+		}
+
+		// Add timeout for individual API call
+		callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+
+		data, err := s.getSubscriptionMetricsWithContext(callCtx)
 		results <- result{"subscription_metrics", data, err}
 	}()
 
-	// Fetch customer analytics
+	// Fetch customer analytics with context
 	go func() {
-		data, err := s.getCustomerAnalytics()
+		select {
+		case <-ctx.Done():
+			results <- result{"customer_analytics", nil, ctx.Err()}
+			return
+		default:
+		}
+
+		// Add timeout for individual API call
+		callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+
+		data, err := s.getCustomerAnalyticsWithContext(callCtx)
 		results <- result{"customer_analytics", data, err}
 	}()
 
-	// Fetch revenue analytics
+	// Fetch revenue analytics with context
 	go func() {
-		data, err := s.getRevenueAnalytics()
+		select {
+		case <-ctx.Done():
+			results <- result{"revenue_analytics", nil, ctx.Err()}
+			return
+		default:
+		}
+
+		// Add timeout for individual API call
+		callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+
+		data, err := s.getRevenueAnalyticsWithContext(callCtx)
 		results <- result{"revenue_analytics", data, err}
 	}()
 
-	// Collect results
+	// Collect results with timeout protection
 	for i := 0; i < 3; i++ {
-		result := <-results
-		if result.error != nil {
-			log.Printf("Warning: %s failed: %v", result.key, result.error)
-			analytics[result.key] = map[string]interface{}{
-				"error":  result.error.Error(),
-				"status": "failed",
+		select {
+		case result := <-results:
+			if result.error != nil {
+				log.Printf("Warning: %s failed: %v", result.key, result.error)
+				analytics[result.key] = map[string]interface{}{
+					"error":  result.error.Error(),
+					"status": "failed",
+				}
+			} else {
+				analytics[result.key] = result.data
 			}
-		} else {
-			analytics[result.key] = result.data
+		case <-ctx.Done():
+			log.Printf("⏰ Context timeout while collecting results: %v", ctx.Err())
+			analytics["timeout_error"] = ctx.Err().Error()
+			return analytics, ctx.Err()
 		}
 	}
 
@@ -2048,8 +2097,100 @@ func (s *StripeService) GetComprehensiveAnalytics() (map[string]interface{}, err
 	analytics["total_fetch_time"] = duration.String()
 	analytics["total_fetch_time_ms"] = duration.Milliseconds()
 
-	log.Printf("✅ Comprehensive analytics fetched in %v", duration)
+	log.Printf("✅ Comprehensive analytics with context fetched in %v", duration)
 	return analytics, nil
+}
+
+// Context-aware versions of analytics methods for timeout protection
+
+// getSubscriptionMetricsWithContext fetches subscription analytics with context timeout
+func (s *StripeService) getSubscriptionMetricsWithContext(ctx context.Context) (map[string]interface{}, error) {
+	if !s.IsEnabled() {
+		return nil, errors.New("Stripe service is not enabled")
+	}
+
+	// Use a timeout channel to prevent hanging
+	done := make(chan map[string]interface{}, 1)
+	errChan := make(chan error, 1)
+
+	go func() {
+		// Call the original method
+		result, err := s.getSubscriptionMetrics()
+		if err != nil {
+			errChan <- err
+		} else {
+			done <- result
+		}
+	}()
+
+	select {
+	case result := <-done:
+		return result, nil
+	case err := <-errChan:
+		return nil, err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// getCustomerAnalyticsWithContext fetches customer analytics with context timeout
+func (s *StripeService) getCustomerAnalyticsWithContext(ctx context.Context) (map[string]interface{}, error) {
+	if !s.IsEnabled() {
+		return nil, errors.New("Stripe service is not enabled")
+	}
+
+	// Use a timeout channel to prevent hanging
+	done := make(chan map[string]interface{}, 1)
+	errChan := make(chan error, 1)
+
+	go func() {
+		// Call the original method
+		result, err := s.getCustomerAnalytics()
+		if err != nil {
+			errChan <- err
+		} else {
+			done <- result
+		}
+	}()
+
+	select {
+	case result := <-done:
+		return result, nil
+	case err := <-errChan:
+		return nil, err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// getRevenueAnalyticsWithContext fetches revenue analytics with context timeout
+func (s *StripeService) getRevenueAnalyticsWithContext(ctx context.Context) (map[string]interface{}, error) {
+	if !s.IsEnabled() {
+		return nil, errors.New("Stripe service is not enabled")
+	}
+
+	// Use a timeout channel to prevent hanging
+	done := make(chan map[string]interface{}, 1)
+	errChan := make(chan error, 1)
+
+	go func() {
+		// Call the original method
+		result, err := s.getRevenueAnalytics()
+		if err != nil {
+			errChan <- err
+		} else {
+			done <- result
+		}
+	}()
+
+	select {
+	case result := <-done:
+		return result, nil
+	case err := <-errChan:
+		return nil, err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // GetStripeAnalyticsV2 returns analytics using Stripe API v2 for speed

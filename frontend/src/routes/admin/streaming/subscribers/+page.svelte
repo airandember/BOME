@@ -149,7 +149,7 @@ async function fetchSubscriptionPlans() {
 async function loadStripeCustomers() {
 	try {
 		console.log('🔄 Loading ALL Stripe customers from database...');
-		let allCustomers = [];
+		let allCustomers: any[] = [];
 		let offset = 0;
 		const limit = 1000; // Batch size for API calls
 		let hasMore = true;
