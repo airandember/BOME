@@ -102,7 +102,7 @@ func getProductCounts(c *gin.Context, stripeService *services.StripeService) {
 	c.JSON(http.StatusOK, counts)
 }
 
-// 🚀 getDashboardData returns lightning-fast aggregated dashboard data
+// 🚀 getDashboardData returns lightning-fast aggregated dashboard data with timeout protection
 func getDashboardData(c *gin.Context, stripeService *services.StripeService) {
 	startTime := time.Now()
 
@@ -115,20 +115,70 @@ func getDashboardData(c *gin.Context, stripeService *services.StripeService) {
 		return
 	}
 
-	// Use the comprehensive analytics instead of basic counts
-	analytics, err := stripeService.GetComprehensiveAnalytics()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get comprehensive analytics: " + err.Error()})
-		return
+	// 🔥 TIMEOUT PROTECTION: Create context with 45-second timeout for production
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 45*time.Second)
+	defer cancel()
+
+	// Use channel to handle timeout gracefully
+	type result struct {
+		analytics map[string]interface{}
+		err       error
 	}
 
-	// Add the enabled flag that frontend expects
-	analytics["enabled"] = true
+	resultChan := make(chan result, 1)
 
-	duration := time.Since(startTime)
-	log.Printf("🚀 /stripe/dash completed in %v - comprehensive analytics", duration)
+	// Run analytics in goroutine with timeout protection
+	go func() {
+		analytics, err := stripeService.GetComprehensiveAnalyticsWithContext(ctx)
+		resultChan <- result{analytics, err}
+	}()
 
-	c.JSON(http.StatusOK, analytics)
+	// Wait for result or timeout
+	select {
+	case res := <-resultChan:
+		if res.err != nil {
+			log.Printf("❌ Analytics failed: %v", res.err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":              "Failed to get comprehensive analytics: " + res.err.Error(),
+				"timeout_protection": true,
+			})
+			return
+		}
+
+		// Add the enabled flag that frontend expects
+		res.analytics["enabled"] = true
+
+		duration := time.Since(startTime)
+		log.Printf("🚀 /stripe/dash completed in %v - comprehensive analytics", duration)
+
+		c.JSON(http.StatusOK, res.analytics)
+
+	case <-ctx.Done():
+		duration := time.Since(startTime)
+		log.Printf("⏰ /stripe/dash TIMEOUT after %v - returning fallback data", duration)
+
+		// Return minimal fallback data instead of 504 error
+		fallbackData := map[string]interface{}{
+			"enabled":          true,
+			"error":            "Analytics request timed out - using fallback data",
+			"timeout":          true,
+			"timeout_duration": duration.String(),
+			"subscription_metrics": map[string]interface{}{
+				"error":  "Timed out",
+				"status": "timeout",
+			},
+			"customer_analytics": map[string]interface{}{
+				"error":  "Timed out",
+				"status": "timeout",
+			},
+			"revenue_analytics": map[string]interface{}{
+				"error":  "Timed out",
+				"status": "timeout",
+			},
+		}
+
+		c.JSON(http.StatusOK, fallbackData)
+	}
 }
 
 // getComprehensiveAnalytics returns comprehensive analytics data

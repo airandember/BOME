@@ -356,7 +356,7 @@
 			localOnly: localOnlyCount,
 			stripeOnly: stripeOnlyCount
 		});
-		
+		``
 		console.log('📋 Breakdown:');
 		console.log(`  • ${allStripeCustomers.length} customers from stripe_customers table`);
 		console.log(`  • ${localUsers.length} local users`);
@@ -375,8 +375,8 @@
 		if (syncingCustomers.has(customer.id)) return;
 
 		try {
-			syncingCustomers.add(customer.id);
-			syncingCustomers = new Set(syncingCustomers); // Trigger reactivity
+			// Svelte 5 immutable Set update
+			syncingCustomers = new Set([...syncingCustomers, customer.id]);
 
 			// Parse name into first and last name if possible
 			let firstName = '';
@@ -415,8 +415,8 @@
 				const responseData = await response.json();
 				showToast(`User created successfully! Temporary password: ${responseData.temporary_password}`, 'success');
 				
-				// Refresh data to show the updated status
-				await loadAllData();
+				// Immediately update state - no refresh needed!
+				moveCustomerFromStripeOnlyToSynced(customer, responseData.user?.id);
 			} else {
 				const errorData = await response.json();
 				throw new Error(errorData.error || 'Failed to create user');
@@ -425,14 +425,14 @@
 			console.error('Failed to create user from Stripe:', error);
 			showToast(error.message || 'Failed to create user', 'error');
 		} finally {
-			syncingCustomers.delete(customer.id);
-			syncingCustomers = new Set(syncingCustomers); // Trigger reactivity
+			// Svelte 5 immutable Set update
+			syncingCustomers = new Set([...syncingCustomers].filter(id => id !== customer.id));
 		}
 	}
 
 	// Create all users from Stripe-only customers (bulk action)
 	async function createAllUsersFromStripe() {
-		if (stripeOnlyCustomers.length === 0) {
+		if (allStripeOnlyCustomers.length === 0) {
 			showToast('No Stripe-only customers to create', 'info');
 			return;
 		}
@@ -445,10 +445,12 @@
 			let errorCount = 0;
 			const errors: string[] = [];
 
-			showToast(`Creating ${stripeOnlyCustomers.length} users...`, 'info');
+			// Work with a snapshot of customers to avoid mutation during iteration
+			const customersToCreate = [...allStripeOnlyCustomers];
+			showToast(`Creating ${customersToCreate.length} users...`, 'info');
 
 			// Create users one by one (could be optimized to batch API calls)
-			for (const customer of stripeOnlyCustomers) {
+			for (const customer of customersToCreate) {
 				try {
 					// Parse name into first and last name if possible
 					let firstName = '';
@@ -484,7 +486,10 @@
 					});
 
 					if (response.ok) {
+						const responseData = await response.json();
 						successCount++;
+						// Immediately move customer to synced (immutable update)
+						moveCustomerFromStripeOnlyToSynced(customer, responseData.user?.id);
 					} else {
 						const errorData = await response.json();
 						errors.push(`${customer.email}: ${errorData.error || 'Unknown error'}`);
@@ -505,15 +510,46 @@
 				console.error('Bulk user creation errors:', errors);
 			}
 
-			// Refresh data to show the updated status
-			await loadAllData();
-
 		} catch (error: any) {
 			console.error('Failed to create users in bulk:', error);
 			showToast('Failed to create users in bulk', 'error');
 		} finally {
 			bulkCreatingUsers = false;
 		}
+	}
+
+	// Immediately move customer from Stripe Only to Synced (immutable update)
+	function moveCustomerFromStripeOnlyToSynced(customer: any, localId?: number) {
+		console.log('🔄 Moving customer from Stripe Only to Synced:', customer.email);
+		
+		// Remove from Stripe Only list (immutable)
+		allStripeOnlyCustomers = allStripeOnlyCustomers.filter(c => c.id !== customer.id);
+		
+		// Create synced customer with proper local ID
+		const syncedCustomer = {
+			...customer,
+			syncStatus: 'synced',
+			source: 'hybrid',
+			id: `hybrid_${customer.stripeId}`,
+			localId: localId || 'pending',
+			role: 'user'
+		};
+		
+		// Add to synced list (immutable)
+		syncedCustomers = [syncedCustomer, ...syncedCustomers];
+		
+		// Update counts immediately
+		stripeOnlyCount = allStripeOnlyCustomers.length;
+		syncedCount = syncedCustomers.length;
+		
+		// Update pagination
+		stripeOnlyTotalPages = Math.ceil(stripeOnlyCount / stripeOnlyItemsPerPage);
+		updateStripeOnlyPagination();
+		
+		console.log('✅ Customer moved successfully. New counts:', {
+			stripeOnly: stripeOnlyCount,
+			synced: syncedCount
+		});
 	}
 
 	// Update Stripe Only pagination
@@ -612,7 +648,7 @@
 				<span class="stat-label">Local Only</span>
 			</div>
 			<div class="stat-card stripe">
-				<span class="stat-value">{stripeOnlyCount}</span>
+				<span class="stat-value">{allStripeOnlyCustomers.length}</span>
 				<span class="stat-label">Stripe Only</span>
 			</div>
 		</div>
@@ -662,71 +698,30 @@
 
 			<!-- Stripe Only Customers Table -->
 			<SimpleTable
-				title="💳 Stripe Only Customers ({allStripeOnlyCustomers.length} total)"
+				title ="💳 Stripe Only Customers ({allStripeOnlyCustomers.length} total)"
 				customers={stripeOnlyCustomers}
 				tableType="stripe-only"
+				initiallyExpanded={true}
 				{syncingCustomers}
 				{bulkCreatingUsers}
 				on:createUser={handleCreateUser}
 				on:createAllUsers={handleCreateAllUsers}
 			/>
 
-			<!-- Stripe Only Customers Pagination -->
-			{#if stripeOnlyTotalPages > 1}
-				<div class="pagination-container">
-					<div class="pagination-info">
-						<span>
-							Showing {((stripeOnlyCurrentPage - 1) * stripeOnlyItemsPerPage) + 1} - 
-							{Math.min(stripeOnlyCurrentPage * stripeOnlyItemsPerPage, allStripeOnlyCustomers.length)} 
-							of {allStripeOnlyCustomers.length} Stripe Only customers
-						</span>
-					</div>
-					<div class="pagination-controls">
-						<button 
-							class="btn btn-pagination" 
-							onclick={prevStripeOnlyPage}
-							disabled={stripeOnlyCurrentPage === 1}
-						>
-							← Previous
-						</button>
-						
-						<div class="page-numbers">
-							{#each Array(Math.min(5, stripeOnlyTotalPages)) as _, i}
-								{@const pageNum = Math.max(1, Math.min(stripeOnlyTotalPages - 4, stripeOnlyCurrentPage - 2)) + i}
-								{#if pageNum <= stripeOnlyTotalPages}
-									<button 
-										class="btn btn-page {pageNum === stripeOnlyCurrentPage ? 'active' : ''}"
-										onclick={() => goToStripeOnlyPage(pageNum)}
-									>
-										{pageNum}
-									</button>
-								{/if}
-							{/each}
-						</div>
-						
-						<button 
-							class="btn btn-pagination" 
-							onclick={nextStripeOnlyPage}
-							disabled={stripeOnlyCurrentPage === stripeOnlyTotalPages}
-						>
-							Next →
-						</button>
-					</div>
-				</div>
-			{/if}
-
 			<!-- Synced Customers Table -->
 			<SimpleTable
-				title="🔗 Synced Customers"
+				title="🔗 Synced Customers ({syncedCustomers.length})"
 				customers={syncedCustomers}
 				tableType="synced"
+				initiallyExpanded={false}
 			/>
 			
 			<!-- Local Only Users Table -->
 			<SimpleTable
-				title="🏠 Local Only Users"
+				title="🏠 Local Only Users ({localOnlyUsers.length})"
 				customers={localOnlyUsers}
 				tableType="local-only"
+				initiallyExpanded={false}
 				on:syncToStripe={handleSyncToStripe}
 				on:syncAllToStripe={handleSyncAllToStripe}
 			/>
@@ -904,77 +899,6 @@
 		border: 1px solid var(--border, #e5e7eb);
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 		margin-top: var(--space-lg, 1.5rem);
-	}
-
-	/* Pagination Styles */
-	.pagination-container {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: var(--space-md, 1rem);
-		background: var(--surface, white);
-		border-top: 1px solid var(--border, #e5e7eb);
-		flex-wrap: wrap;
-		gap: var(--space-sm, 0.75rem);
-	}
-
-	.pagination-info {
-		color: var(--text-muted, #6b7280);
-		font-size: 0.875rem;
-	}
-
-	.pagination-controls {
-		display: flex;
-		align-items: center;
-		gap: var(--space-xs, 0.5rem);
-	}
-
-	.page-numbers {
-		display: flex;
-		gap: var(--space-xs, 0.25rem);
-	}
-
-	.btn-pagination {
-		padding: var(--space-xs, 0.5rem) var(--space-sm, 0.75rem);
-		font-size: 0.875rem;
-		background: var(--surface, white);
-		border: 1px solid var(--border, #d1d5db);
-		color: var(--text, #374151);
-	}
-
-	.btn-pagination:hover:not(:disabled) {
-		background: var(--surface-hover, #f9fafb);
-		border-color: var(--border-hover, #9ca3af);
-	}
-
-	.btn-pagination:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.btn-page {
-		padding: var(--space-xs, 0.5rem) var(--space-sm, 0.75rem);
-		font-size: 0.875rem;
-		background: var(--surface, white);
-		border: 1px solid var(--border, #d1d5db);
-		color: var(--text, #374151);
-		min-width: 40px;
-	}
-
-	.btn-page:hover {
-		background: var(--surface-hover, #f9fafb);
-		border-color: var(--border-hover, #9ca3af);
-	}
-
-	.btn-page.active {
-		background: var(--primary, #2563eb);
-		border-color: var(--primary, #2563eb);
-		color: white;
-	}
-
-	.btn-page.active:hover {
-		background: var(--primary-hover, #1d4ed8);
-		border-color: var(--primary-hover, #1d4ed8);
 	}
 
 	@media (max-width: 768px) {

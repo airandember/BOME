@@ -1,13 +1,31 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	
-	export let title: string;
-	export let customers: any[] = [];
-	export let tableType: 'stripe-only' | 'synced' | 'local-only' = 'synced';
-	export let syncingCustomers: Set<string> = new Set();
-	export let bulkCreatingUsers = false;
+	interface Props {
+		title: string;
+		customers?: any[];
+		tableType?: 'stripe-only' | 'synced' | 'local-only';
+		syncingCustomers?: Set<string>;
+		bulkCreatingUsers?: boolean;
+		initiallyExpanded?: boolean;
+	}
+	
+	let {
+		title,
+		customers = [],
+		tableType = 'synced',
+		syncingCustomers = new Set(),
+		bulkCreatingUsers = false,
+		initiallyExpanded = false
+	}: Props = $props();
+	
+	let isExpanded = $state(initiallyExpanded);
 	
 	const dispatch = createEventDispatcher();
+	
+	function toggleAccordion() {
+		isExpanded = !isExpanded;
+	}
 	
 	function formatDate(dateString: string): string {
 		if (!dateString) return 'N/A';
@@ -36,34 +54,45 @@
 </script>
 
 {#if customers.length > 0}
-	<div class="table-section">
-		<div class="table-header">
-			<h2>{title} ({customers.length})</h2>
-			{#if tableType === 'stripe-only' && customers.length > 0}
-				<button 
-					class="btn btn-success"
-					on:click={handleCreateAllUsers}
-					disabled={bulkCreatingUsers}
-					title="Create local users for all Stripe-only customers"
-				>
-					{#if bulkCreatingUsers}
-						<div class="loading-spinner small"></div>
-						Creating All...
-					{:else}
-						➕ Add All Users
-					{/if}
-				</button>
-			{:else if tableType === 'local-only' && customers.length > 0}
-				<button 
-					class="btn btn-warning"
-					disabled={true}
-					title="Sync all local users to Stripe (Coming Soon)"
-				>
-					🔄 Sync All to Stripe
-				</button>
-			{/if}
+	<div class="accordion-section">
+		<div class="accordion-header" on:click={toggleAccordion}>
+			<div class="accordion-title">
+				<div class="accordion-icon {isExpanded ? 'expanded' : ''}">
+					▶
+				</div>
+				<h2>{title}</h2>
+			</div>
+			<div class="accordion-actions">
+				{#if tableType === 'stripe-only' && customers.length > 0}
+					<button 
+						class="btn btn-success"
+						on:click|stopPropagation={handleCreateAllUsers}
+						disabled={bulkCreatingUsers}
+						title="Create local users for all Stripe-only customers"
+					>
+						{#if bulkCreatingUsers}
+							<div class="loading-spinner small"></div>
+							Creating All...
+						{:else}
+							➕ Add All Users
+						{/if}
+					</button>
+				{:else if tableType === 'local-only' && customers.length > 0}
+					<button 
+						class="btn btn-warning"
+						disabled={true}
+						title="Sync all local users to Stripe (Coming Soon)"
+						on:click|stopPropagation
+					>
+						🔄 Sync All to Stripe
+					</button>
+				{/if}
+			</div>
 		</div>
-		<div class="table-container">
+		
+		{#if isExpanded}
+			<div class="accordion-content">
+				<div class="table-container">
 			<table class="customers-table">
 				<thead>
 					<tr>
@@ -169,36 +198,84 @@
 				</tbody>
 			</table>
 		</div>
+			</div>
+		{/if}
 	</div>
 {/if}
 
 <style>
-	.table-section {
-		margin-bottom: 2rem;
-		padding-bottom: 1.5rem;
-		border-bottom: 1px solid #e5e7eb;
+	.accordion-section {
+		margin-bottom: 1rem;
+		border: 1px solid #e5e7eb;
+		border-radius: 0.5rem;
+		overflow: hidden;
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 	}
 
-	.table-header {
+	.accordion-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 1rem;
-		padding: 1rem;
+		padding: 1rem 1.5rem;
+		background: #f9fafb;
+		cursor: pointer;
+		transition: background-color 0.2s ease;
+		border-bottom: 1px solid #e5e7eb;
 	}
 
-	.table-header h2 {
+	.accordion-header:hover {
+		background: #f3f4f6;
+	}
+
+	.accordion-title {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.accordion-icon {
+		font-size: 0.875rem;
+		color: #6b7280;
+		transition: transform 0.2s ease;
+		user-select: none;
+	}
+
+	.accordion-icon.expanded {
+		transform: rotate(90deg);
+	}
+
+	.accordion-title h2 {
 		margin: 0;
 		color: #111827;
 		font-size: 1.25rem;
 		font-weight: 600;
 	}
 
+	.accordion-actions {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
+
+	.accordion-content {
+		animation: slideDown 0.3s ease-out;
+	}
+
+	@keyframes slideDown {
+		from {
+			opacity: 0;
+			max-height: 0;
+		}
+		to {
+			opacity: 1;
+			max-height: 1000px;
+		}
+	}
+
 	.table-container {
 		overflow-x: auto;
-		border-radius: 0.5rem;
-		border: 1px solid #e5e7eb;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+		border: none;
+		border-radius: 0;
 	}
 
 	.customers-table {
