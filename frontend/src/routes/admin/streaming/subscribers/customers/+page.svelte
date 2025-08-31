@@ -704,8 +704,8 @@
 				initiallyExpanded={true}
 				{syncingCustomers}
 				{bulkCreatingUsers}
-				on:createUser={handleCreateUser}
-				on:createAllUsers={handleCreateAllUsers}
+				oncreateUser={handleCreateUser}
+				oncreateAllUsers={handleCreateAllUsers}
 			/>
 
 			<!-- Synced Customers Table -->
@@ -722,8 +722,8 @@
 				customers={localOnlyUsers}
 				tableType="local-only"
 				initiallyExpanded={false}
-				on:syncToStripe={handleSyncToStripe}
-				on:syncAllToStripe={handleSyncAllToStripe}
+				onsyncToStripe={handleSyncToStripe}
+				onsyncAllToStripe={handleSyncAllToStripe}
 			/>
 		</div>
 	{/if}

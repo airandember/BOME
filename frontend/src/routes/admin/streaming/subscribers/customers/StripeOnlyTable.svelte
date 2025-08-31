@@ -1,13 +1,19 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+	interface Props {
+		customers?: any[];
+		syncingCustomers?: Set<string>;
+		bulkCreatingUsers?: boolean;
+		oncreateUser?: (customer: any) => void;
+		oncreateAllUsers?: () => void;
+	}
 
-	// Props
-	export let customers: any[] = [];
-	export let syncingCustomers: Set<string> = new Set();
-	export let bulkCreatingUsers = false;
-
-	// Event dispatcher
-	const dispatch = createEventDispatcher();
+	let {
+		customers = [],
+		syncingCustomers = new Set(),
+		bulkCreatingUsers = false,
+		oncreateUser,
+		oncreateAllUsers
+	}: Props = $props();
 
 	// Format date
 	function formatDate(dateString: string): string {
@@ -37,11 +43,11 @@
 
 	// Event handlers
 	function handleCreateUser(customer: any) {
-		dispatch('createUser', customer);
+		oncreateUser?.(customer);
 	}
 
 	function handleCreateAllUsers() {
-		dispatch('createAllUsers');
+		oncreateAllUsers?.();
 	}
 </script>
 

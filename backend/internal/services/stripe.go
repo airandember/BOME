@@ -2003,15 +2003,20 @@ func (s *StripeService) GetComprehensiveAnalytics() (map[string]interface{}, err
 
 // GetComprehensiveAnalyticsWithContext returns all analytics data with context timeout support
 func (s *StripeService) GetComprehensiveAnalyticsWithContext(ctx context.Context) (map[string]interface{}, error) {
+	log.Printf("🔄 [STRIPE-SERVICE] GetComprehensiveAnalyticsWithContext started")
+
 	if !s.IsEnabled() {
+		log.Printf("❌ [STRIPE-SERVICE] Service not enabled")
 		return nil, errors.New("Stripe service is not enabled")
 	}
+	log.Printf("✅ [STRIPE-SERVICE] Service enabled, proceeding with analytics")
 
 	startTime := time.Now()
 	analytics := map[string]interface{}{
 		"method":    "stripe_comprehensive_analytics_with_timeout",
 		"timestamp": time.Now().Unix(),
 	}
+	log.Printf("📊 [STRIPE-SERVICE] Analytics structure initialized")
 
 	// Fetch all analytics in parallel using goroutines with context support
 	type result struct {
@@ -2024,8 +2029,10 @@ func (s *StripeService) GetComprehensiveAnalyticsWithContext(ctx context.Context
 
 	// Fetch subscription metrics with context
 	go func() {
+		log.Printf("🔄 [STRIPE-SERVICE] Starting subscription metrics goroutine")
 		select {
 		case <-ctx.Done():
+			log.Printf("⏰ [STRIPE-SERVICE] Subscription metrics goroutine cancelled by context")
 			results <- result{"subscription_metrics", nil, ctx.Err()}
 			return
 		default:
@@ -2034,15 +2041,23 @@ func (s *StripeService) GetComprehensiveAnalyticsWithContext(ctx context.Context
 		// Add timeout for individual API call
 		callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
+		log.Printf("⏰ [STRIPE-SERVICE] Subscription metrics timeout set to 15s")
 
 		data, err := s.getSubscriptionMetricsWithContext(callCtx)
+		if err != nil {
+			log.Printf("❌ [STRIPE-SERVICE] Subscription metrics failed: %v", err)
+		} else {
+			log.Printf("✅ [STRIPE-SERVICE] Subscription metrics completed")
+		}
 		results <- result{"subscription_metrics", data, err}
 	}()
 
 	// Fetch customer analytics with context
 	go func() {
+		log.Printf("🔄 [STRIPE-SERVICE] Starting customer analytics goroutine")
 		select {
 		case <-ctx.Done():
+			log.Printf("⏰ [STRIPE-SERVICE] Customer analytics goroutine cancelled by context")
 			results <- result{"customer_analytics", nil, ctx.Err()}
 			return
 		default:
@@ -2051,15 +2066,23 @@ func (s *StripeService) GetComprehensiveAnalyticsWithContext(ctx context.Context
 		// Add timeout for individual API call
 		callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
+		log.Printf("⏰ [STRIPE-SERVICE] Customer analytics timeout set to 15s")
 
 		data, err := s.getCustomerAnalyticsWithContext(callCtx)
+		if err != nil {
+			log.Printf("❌ [STRIPE-SERVICE] Customer analytics failed: %v", err)
+		} else {
+			log.Printf("✅ [STRIPE-SERVICE] Customer analytics completed")
+		}
 		results <- result{"customer_analytics", data, err}
 	}()
 
 	// Fetch revenue analytics with context
 	go func() {
+		log.Printf("🔄 [STRIPE-SERVICE] Starting revenue analytics goroutine")
 		select {
 		case <-ctx.Done():
+			log.Printf("⏰ [STRIPE-SERVICE] Revenue analytics goroutine cancelled by context")
 			results <- result{"revenue_analytics", nil, ctx.Err()}
 			return
 		default:
@@ -2068,36 +2091,51 @@ func (s *StripeService) GetComprehensiveAnalyticsWithContext(ctx context.Context
 		// Add timeout for individual API call
 		callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
+		log.Printf("⏰ [STRIPE-SERVICE] Revenue analytics timeout set to 15s")
 
 		data, err := s.getRevenueAnalyticsWithContext(callCtx)
+		if err != nil {
+			log.Printf("❌ [STRIPE-SERVICE] Revenue analytics failed: %v", err)
+		} else {
+			log.Printf("✅ [STRIPE-SERVICE] Revenue analytics completed")
+		}
 		results <- result{"revenue_analytics", data, err}
 	}()
 
+	log.Printf("🚀 [STRIPE-SERVICE] All 3 analytics goroutines started, waiting for results...")
+
 	// Collect results with timeout protection
+	log.Printf("📥 [STRIPE-SERVICE] Starting to collect results from 3 goroutines...")
 	for i := 0; i < 3; i++ {
+		log.Printf("📥 [STRIPE-SERVICE] Waiting for result %d/3...", i+1)
 		select {
 		case result := <-results:
+			log.Printf("📥 [STRIPE-SERVICE] Received result %d/3: %s", i+1, result.key)
 			if result.error != nil {
-				log.Printf("Warning: %s failed: %v", result.key, result.error)
+				log.Printf("❌ [STRIPE-SERVICE] %s failed: %v", result.key, result.error)
 				analytics[result.key] = map[string]interface{}{
 					"error":  result.error.Error(),
 					"status": "failed",
 				}
 			} else {
+				log.Printf("✅ [STRIPE-SERVICE] %s completed successfully", result.key)
 				analytics[result.key] = result.data
 			}
 		case <-ctx.Done():
-			log.Printf("⏰ Context timeout while collecting results: %v", ctx.Err())
+			log.Printf("⏰ [STRIPE-SERVICE] Context timeout while collecting results (got %d/3): %v", i, ctx.Err())
 			analytics["timeout_error"] = ctx.Err().Error()
+			analytics["partial_results"] = i
 			return analytics, ctx.Err()
 		}
 	}
+	log.Printf("✅ [STRIPE-SERVICE] All 3 results collected successfully")
 
 	duration := time.Since(startTime)
 	analytics["total_fetch_time"] = duration.String()
 	analytics["total_fetch_time_ms"] = duration.Milliseconds()
 
-	log.Printf("✅ Comprehensive analytics with context fetched in %v", duration)
+	log.Printf("🎉 [STRIPE-SERVICE] Comprehensive analytics with context fetched in %v", duration)
+	log.Printf("📊 [STRIPE-SERVICE] Returning analytics data with %d keys", len(analytics))
 	return analytics, nil
 }
 
