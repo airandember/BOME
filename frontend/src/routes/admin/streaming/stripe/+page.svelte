@@ -1236,10 +1236,8 @@
 				error = '';
 				keyType = null;
 				
-				// Force page reload to ensure clean state
-				setTimeout(() => {
-					window.location.reload();
-				}, 1000);
+				// No forced reload - let the reactive state handle the UI updates
+				console.log('✅ Key cleared - state updated, no reload needed');
 				
 				console.log('✅ Summary reset to disabled state:', summary);
 				console.log('✅ Active tab switched to analytics:', activeTab);
