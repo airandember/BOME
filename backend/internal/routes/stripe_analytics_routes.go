@@ -38,6 +38,33 @@ func RegisterStripeAnalyticsRoutes(router *gin.RouterGroup, stripeService *servi
 			log.Printf("🏓 [PING] Ping response sent successfully")
 		})
 
+		// 🎯 STATUS: Explicit Stripe configuration status (bulletproof)
+		stripe.GET("/status", func(c *gin.Context) {
+			log.Printf("🔍 [STATUS] Received status request from IP: %s", c.ClientIP())
+
+			if stripeService == nil {
+				log.Printf("❌ [STATUS] Stripe service is nil")
+				c.JSON(http.StatusOK, gin.H{
+					"configured": false,
+					"enabled":    false,
+					"reason":     "service_nil",
+					"message":    "Stripe service not initialized",
+				})
+				return
+			}
+
+			enabled := stripeService.IsEnabled()
+			log.Printf("✅ [STATUS] Stripe enabled check: %v", enabled)
+
+			c.JSON(http.StatusOK, gin.H{
+				"configured": enabled,
+				"enabled":    enabled,
+				"reason":     "checked_service",
+				"message":    "Status checked successfully",
+			})
+			log.Printf("📤 [STATUS] Status response sent: configured=%v", enabled)
+		})
+
 		// Individual analytics endpoints (for detailed views)
 		stripe.GET("/balance", func(c *gin.Context) { getAccountBalance(c, stripeService) })
 		stripe.GET("/charges", func(c *gin.Context) { getChargeCounts(c, stripeService) })
