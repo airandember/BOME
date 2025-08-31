@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"bome-backend/internal/database"
@@ -216,6 +217,20 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 			decrypted, err := crypto.DecryptString(encrypted)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decrypt portal link"})
+				return
+			}
+
+			// 🚨 SECURITY CHECK: Prevent Stripe keys from being exposed as portal URLs
+			if strings.HasPrefix(decrypted, "sk_") || strings.HasPrefix(decrypted, "rk_") {
+				log.Printf("🚨 SECURITY ALERT: Stripe key detected in portal URL field - clearing corrupted data")
+
+				// Clear the corrupted data immediately
+				if err := db.SetSecureSetting("stripe_portal_url", ""); err != nil {
+					log.Printf("❌ Failed to clear corrupted portal URL: %v", err)
+				}
+
+				// Return empty portal URL instead of exposing the key
+				c.JSON(http.StatusOK, gin.H{"portal_url": ""})
 				return
 			}
 
