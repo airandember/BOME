@@ -211,6 +211,12 @@
 					console.log('⚙️ Stripe service unavailable (not configured) - showing setup screen');
 					summary = { enabled: false };
 					loading = false;
+				} else if (dashRes.status === 504) {
+					// 504 Gateway Timeout - could be Stripe disabled or slow API
+					console.log('⏰ Gateway timeout (504) - assuming Stripe not configured, showing setup screen');
+					console.log('💡 If Stripe IS configured, this indicates a performance issue that needs investigation');
+					summary = { enabled: false };
+					loading = false;
 				} else {
 					// ❌ Other API error - show error state
 					console.log('❌ Failed to check Stripe status - showing error state');
