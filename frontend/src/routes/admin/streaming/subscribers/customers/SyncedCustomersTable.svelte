@@ -1,6 +1,9 @@
 <script lang="ts">
-	// Props
-	export let customers: any[] = [];
+	interface Props {
+		customers?: any[];
+	}
+
+	let { customers = [] }: Props = $props();
 
 	// Format date
 	function formatDate(dateString: string): string {

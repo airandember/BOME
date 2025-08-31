@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
-	
 	interface Props {
 		title: string;
 		customers?: any[];
@@ -8,6 +6,10 @@
 		syncingCustomers?: Set<string>;
 		bulkCreatingUsers?: boolean;
 		initiallyExpanded?: boolean;
+		oncreateUser?: (customer: any) => void;
+		oncreateAllUsers?: () => void;
+		onsyncAllToStripe?: () => void;
+		onsyncToStripe?: (customer: any) => void;
 	}
 	
 	let {
@@ -16,12 +18,14 @@
 		tableType = 'synced',
 		syncingCustomers = new Set(),
 		bulkCreatingUsers = false,
-		initiallyExpanded = false
+		initiallyExpanded = false,
+		oncreateUser,
+		oncreateAllUsers,
+		onsyncAllToStripe,
+		onsyncToStripe
 	}: Props = $props();
 	
 	let isExpanded = $state(initiallyExpanded);
-	
-	const dispatch = createEventDispatcher();
 	
 	function toggleAccordion() {
 		isExpanded = !isExpanded;
@@ -37,25 +41,25 @@
 	}
 
 	function handleCreateUser(customer: any) {
-		dispatch('createUser', customer);
+		oncreateUser?.(customer);
 	}
 
 	function handleCreateAllUsers() {
-		dispatch('createAllUsers');
+		oncreateAllUsers?.();
 	}
 
 	function handleSyncAllToStripe() {
-		dispatch('syncAllToStripe');
+		onsyncAllToStripe?.();
 	}
 
 	function handleSyncToStripe(customer: any) {
-		dispatch('syncToStripe', customer);
+		onsyncToStripe?.(customer);
 	}
 </script>
 
 {#if customers.length > 0}
 	<div class="accordion-section">
-		<div class="accordion-header" on:click={toggleAccordion}>
+		<div class="accordion-header" onclick={toggleAccordion} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && toggleAccordion()}>
 			<div class="accordion-title">
 				<div class="accordion-icon {isExpanded ? 'expanded' : ''}">
 					▶
@@ -66,7 +70,7 @@
 				{#if tableType === 'stripe-only' && customers.length > 0}
 					<button 
 						class="btn btn-success"
-						on:click|stopPropagation={handleCreateAllUsers}
+						onclick={(e) => { e.stopPropagation(); handleCreateAllUsers(); }}
 						disabled={bulkCreatingUsers}
 						title="Create local users for all Stripe-only customers"
 					>
@@ -82,7 +86,7 @@
 						class="btn btn-warning"
 						disabled={true}
 						title="Sync all local users to Stripe (Coming Soon)"
-						on:click|stopPropagation
+						onclick={(e) => e.stopPropagation()}
 					>
 						🔄 Sync All to Stripe
 					</button>
@@ -169,7 +173,7 @@
 									{#if tableType === 'stripe-only'}
 										<button 
 											class="btn btn-sm btn-success"
-											on:click={() => handleCreateUser(customer)}
+											onclick={() => handleCreateUser(customer)}
 											disabled={syncingCustomers.has(customer.id) || bulkCreatingUsers}
 											title="Create local user from Stripe customer data"
 										>

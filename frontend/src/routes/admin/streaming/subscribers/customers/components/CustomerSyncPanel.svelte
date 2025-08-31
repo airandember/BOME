@@ -4,20 +4,27 @@
 	import { StreamingSubscriberService, type Subscriber } from '$lib/services/streaming-subscribers';
 	import { showToast } from '$lib/toast';
 
-	export let customerId: number | null = null;
-	export let customerEmail: string = '';
+	interface Props {
+		customerId?: number | null;
+		customerEmail?: string;
+	}
 
-	let syncStatus: CustomerSyncResult | null = null;
-	let loading = false;
-	let syncing = false;
-	let lastSyncStats: CustomerSyncStats | null = null;
+	let { 
+		customerId = null, 
+		customerEmail = '' 
+	}: Props = $props();
+
+	let syncStatus = $state<CustomerSyncResult | null>(null);
+	let loading = $state(false);
+	let syncing = $state(false);
+	let lastSyncStats = $state<CustomerSyncStats | null>(null);
 	
 	// Active subscribers sync
-	let activeSubscribers: Subscriber[] = [];
-	let activeSubscribersLoading = false;
-	let activeSubscribersCount = 0;
-	let activeSubscribersSyncing = false;
-	let activeSubscribersSyncStats: CustomerSyncStats | null = null;
+	let activeSubscribers = $state<Subscriber[]>([]);
+	let activeSubscribersLoading = $state(false);
+	let activeSubscribersCount = $state(0);
+	let activeSubscribersSyncing = $state(false);
+	let activeSubscribersSyncStats = $state<CustomerSyncStats | null>(null);
 
 	onMount(async () => {
 		if (customerId) {
@@ -140,8 +147,8 @@
 		}
 	}
 
-	$: actionDescription = syncStatus ? StripeCustomerSyncService.getActionDescription(syncStatus.action) : '';
-	$: actionColor = syncStatus ? StripeCustomerSyncService.getActionColor(syncStatus.action) : '';
+	let actionDescription = $derived(syncStatus?.action ? StripeCustomerSyncService.getActionDescription(syncStatus.action) : '');
+	let actionColor = $derived(syncStatus?.action ? StripeCustomerSyncService.getActionColor(syncStatus.action) : '');
 </script>
 
 <div class="customer-sync-panel">
@@ -179,7 +186,7 @@
 						<div class="sync-actions">
 							<button 
 								class="btn btn-primary" 
-								on:click={syncToStripe}
+								onclick={syncToStripe}
 								disabled={syncing}
 							>
 								{syncing ? '🔄 Syncing...' : '📤 Sync to Stripe'}
@@ -188,7 +195,7 @@
 							{#if syncStatus.stripe_id}
 								<button 
 									class="btn btn-secondary" 
-									on:click={syncFromStripe}
+									onclick={syncFromStripe}
 									disabled={syncing}
 								>
 									{syncing ? '🔄 Syncing...' : '📥 Sync from Stripe'}
@@ -206,7 +213,7 @@
 				
 				<button 
 					class="btn btn-warning" 
-					on:click={syncAllCustomers}
+					onclick={syncAllCustomers}
 					disabled={syncing}
 				>
 					{syncing ? '🔄 Syncing All...' : '🔄 Sync All Customers'}
@@ -251,7 +258,7 @@
 							<span class="subscribers-count">{activeSubscribersCount} active subscribers found</span>
 							<button 
 								class="btn btn-success" 
-								on:click={syncActiveSubscribersToStripe}
+								onclick={syncActiveSubscribersToStripe}
 								disabled={activeSubscribersSyncing}
 							>
 								{activeSubscribersSyncing ? '🔄 Syncing...' : '🟢 Sync Active Subscribers to Stripe'}
@@ -262,7 +269,7 @@
 							<span>No active subscribers loaded</span>
 							<button 
 								class="btn btn-secondary" 
-								on:click={loadActiveSubscribers}
+								onclick={loadActiveSubscribers}
 							>
 								📊 Load Active Subscribers
 							</button>
