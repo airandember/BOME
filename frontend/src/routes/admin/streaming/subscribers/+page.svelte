@@ -1248,7 +1248,7 @@ async function loadInitialData() {
 			onclick={() => changeTab('stripe-subs')}
 		>
 			<span class="tab-icon">🔗</span>
-			Stripe Subs ({stripeOnlyCount + syncedCount})
+			Stripe Subs <!--({stripeOnlyCount + syncedCount})-->
 		</button>
 	</div>
 

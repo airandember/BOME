@@ -213,11 +213,14 @@ func getDashboardData(c *gin.Context, stripeService *services.StripeService) {
 
 	if !enabled {
 		log.Printf("❌ [DASH-ERROR] Stripe service is not enabled")
-		c.JSON(http.StatusServiceUnavailable, gin.H{
+		responseData := gin.H{
 			"error":   "Stripe service is not enabled",
 			"enabled": false,
 			"debug":   "service_disabled",
-		})
+		}
+		log.Printf("📤 [DASH-RESPONSE] Sending 503 Service Unavailable with data: %+v", responseData)
+		c.JSON(http.StatusServiceUnavailable, responseData)
+		log.Printf("✅ [DASH-RESPONSE] 503 response sent successfully")
 		return
 	}
 	log.Printf("✅ [DASH-ENABLED] Stripe service is enabled, proceeding with analytics")
