@@ -23,6 +23,9 @@ func RegisterStripeAnalyticsRoutes(router *gin.RouterGroup, stripeService *servi
 		// 🚀 DASH: Lightning-fast dashboard endpoint (double entendre!)
 		stripe.GET("/dash", func(c *gin.Context) { getDashboardData(c, stripeService) })
 
+		// 🏥 HEALTH: Quick health check for Stripe connectivity
+		stripe.GET("/health", func(c *gin.Context) { getStripeHealth(c, stripeService) })
+
 		// Individual analytics endpoints (for detailed views)
 		stripe.GET("/balance", func(c *gin.Context) { getAccountBalance(c, stripeService) })
 		stripe.GET("/charges", func(c *gin.Context) { getChargeCounts(c, stripeService) })
@@ -39,6 +42,77 @@ func RegisterStripeAnalyticsRoutes(router *gin.RouterGroup, stripeService *servi
 
 		// Manual UI-triggered sync endpoints (for frontend users)
 		stripe.POST("/sync/trigger", func(c *gin.Context) { triggerManualSync(c, syncService) })
+	}
+}
+
+// getStripeHealth returns a quick health check for Stripe connectivity
+func getStripeHealth(c *gin.Context, stripeService *services.StripeService) {
+	startTime := time.Now()
+
+	// Check if Stripe is enabled first
+	if !stripeService.IsEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"healthy": false,
+			"error":   "Stripe service is not enabled",
+			"enabled": false,
+		})
+		return
+	}
+
+	// Quick 5-second timeout for health check
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	// Use channel for timeout protection
+	type healthResult struct {
+		healthy bool
+		error   error
+	}
+
+	resultChan := make(chan healthResult, 1)
+
+	// Run quick health check in goroutine
+	go func() {
+		// Just try to get account balance (fastest Stripe API call)
+		_, err := stripeService.GetAccountBalance()
+		resultChan <- healthResult{err == nil, err}
+	}()
+
+	// Wait for result or timeout
+	select {
+	case res := <-resultChan:
+		duration := time.Since(startTime)
+
+		if res.healthy {
+			log.Printf("✅ Stripe health check passed in %v", duration)
+			c.JSON(http.StatusOK, gin.H{
+				"healthy":  true,
+				"enabled":  true,
+				"duration": duration.String(),
+				"status":   "ok",
+			})
+		} else {
+			log.Printf("❌ Stripe health check failed in %v: %v", duration, res.error)
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"healthy":  false,
+				"enabled":  true,
+				"duration": duration.String(),
+				"error":    res.error.Error(),
+				"status":   "error",
+			})
+		}
+
+	case <-ctx.Done():
+		duration := time.Since(startTime)
+		log.Printf("⏰ Stripe health check TIMEOUT after %v", duration)
+
+		c.JSON(http.StatusRequestTimeout, gin.H{
+			"healthy":  false,
+			"enabled":  true,
+			"duration": duration.String(),
+			"error":    "Health check timed out",
+			"status":   "timeout",
+		})
 	}
 }
 
@@ -105,19 +179,23 @@ func getProductCounts(c *gin.Context, stripeService *services.StripeService) {
 // 🚀 getDashboardData returns lightning-fast aggregated dashboard data with timeout protection
 func getDashboardData(c *gin.Context, stripeService *services.StripeService) {
 	startTime := time.Now()
+	log.Printf("🚀 [DASH-START] Dashboard request initiated at %v", startTime)
 
 	// Check if Stripe is enabled first
 	if !stripeService.IsEnabled() {
+		log.Printf("❌ [DASH-ERROR] Stripe service is not enabled")
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error":   "Stripe service is not enabled",
 			"enabled": false,
 		})
 		return
 	}
+	log.Printf("✅ [DASH-ENABLED] Stripe service is enabled, proceeding with analytics")
 
-	// 🔥 TIMEOUT PROTECTION: Create context with 45-second timeout for production
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 45*time.Second)
+	// 🔥 TIMEOUT PROTECTION: Create context with 30-second timeout for production (more aggressive)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
+	log.Printf("⏰ [DASH-TIMEOUT] Context timeout set to 30 seconds")
 
 	// Use channel to handle timeout gracefully
 	type result struct {
@@ -129,15 +207,24 @@ func getDashboardData(c *gin.Context, stripeService *services.StripeService) {
 
 	// Run analytics in goroutine with timeout protection
 	go func() {
+		log.Printf("🔄 [DASH-GOROUTINE] Starting comprehensive analytics fetch")
 		analytics, err := stripeService.GetComprehensiveAnalyticsWithContext(ctx)
+		if err != nil {
+			log.Printf("❌ [DASH-GOROUTINE] Analytics fetch failed: %v", err)
+		} else {
+			log.Printf("✅ [DASH-GOROUTINE] Analytics fetch completed successfully")
+		}
 		resultChan <- result{analytics, err}
+		log.Printf("📤 [DASH-GOROUTINE] Result sent to channel")
 	}()
 
 	// Wait for result or timeout
+	log.Printf("⏳ [DASH-SELECT] Waiting for analytics result or timeout...")
 	select {
 	case res := <-resultChan:
+		log.Printf("📥 [DASH-SELECT] Received result from channel")
 		if res.err != nil {
-			log.Printf("❌ Analytics failed: %v", res.err)
+			log.Printf("❌ [DASH-ERROR] Analytics failed: %v", res.err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":              "Failed to get comprehensive analytics: " + res.err.Error(),
 				"timeout_protection": true,
@@ -147,15 +234,18 @@ func getDashboardData(c *gin.Context, stripeService *services.StripeService) {
 
 		// Add the enabled flag that frontend expects
 		res.analytics["enabled"] = true
+		log.Printf("✅ [DASH-SUCCESS] Analytics data prepared, adding enabled flag")
 
 		duration := time.Since(startTime)
-		log.Printf("🚀 /stripe/dash completed in %v - comprehensive analytics", duration)
+		log.Printf("🚀 [DASH-COMPLETE] /stripe/dash completed in %v - comprehensive analytics", duration)
 
 		c.JSON(http.StatusOK, res.analytics)
+		log.Printf("📤 [DASH-RESPONSE] JSON response sent to client")
 
 	case <-ctx.Done():
 		duration := time.Since(startTime)
-		log.Printf("⏰ /stripe/dash TIMEOUT after %v - returning fallback data", duration)
+		log.Printf("⏰ [DASH-TIMEOUT] Context timeout triggered after %v", duration)
+		log.Printf("🔄 [DASH-TIMEOUT] Preparing fallback data to avoid 504 error")
 
 		// Return minimal fallback data instead of 504 error
 		fallbackData := map[string]interface{}{
@@ -163,21 +253,25 @@ func getDashboardData(c *gin.Context, stripeService *services.StripeService) {
 			"error":            "Analytics request timed out - using fallback data",
 			"timeout":          true,
 			"timeout_duration": duration.String(),
+			"method":           "fallback_timeout_protection",
+			"timestamp":        time.Now().Unix(),
 			"subscription_metrics": map[string]interface{}{
-				"error":  "Timed out",
+				"error":  "Timed out after " + duration.String(),
 				"status": "timeout",
 			},
 			"customer_analytics": map[string]interface{}{
-				"error":  "Timed out",
+				"error":  "Timed out after " + duration.String(),
 				"status": "timeout",
 			},
 			"revenue_analytics": map[string]interface{}{
-				"error":  "Timed out",
+				"error":  "Timed out after " + duration.String(),
 				"status": "timeout",
 			},
 		}
 
+		log.Printf("📤 [DASH-TIMEOUT] Sending fallback response (200 OK) to prevent 504")
 		c.JSON(http.StatusOK, fallbackData)
+		log.Printf("✅ [DASH-TIMEOUT] Fallback response sent successfully")
 	}
 }
 
