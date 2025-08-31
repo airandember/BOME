@@ -173,12 +173,63 @@
 			console.log('🚀 Initializing Stripe dashboard...');
 			console.log('🔧 Debug info loaded:', debugInfo);
 			
-			// 🚀 DASH MODE: Use lightning-fast dashboard endpoint for initial check
-			console.log('🔍 [ONMOUNT] Checking Stripe configuration status via /stripe/dash...');
+			// 🎯 EXPLICIT STATUS CHECK: Use dedicated status endpoint first (no assumptions)
+			console.log('🔍 [ONMOUNT] Checking Stripe configuration status via /stripe/status...');
 			console.log('🔍 [ONMOUNT] This is the onMount function - NOT triggered by manual sync');
-			const dashRes = await apiRequest('/admin/streaming/stripe/dash');
 			
-			if (dashRes.ok) {
+			// First, check explicit status (always returns 200 OK with clear info)
+			const statusRes = await apiRequest('/admin/streaming/stripe/status');
+			
+			if (statusRes.ok) {
+				const statusData = await statusRes.json();
+				console.log('✅ [STATUS] Explicit status received:', statusData);
+				
+				if (statusData.configured) {
+					// Stripe is configured - now get the dashboard data
+					console.log('🚀 [DASH] Stripe configured - fetching dashboard data...');
+					const dashRes = await apiRequest('/admin/streaming/stripe/dash');
+					
+					if (dashRes.ok) {
+						const dashData = await dashRes.json();
+						if (dashData.enabled) {
+							// 🚀 DASH MODE: Use the fast data we already have!
+							console.log('🎯 Stripe configured - using lightning-fast dash data!');
+							console.log('⚡ No need for slow comprehensive loading - dash has everything!');
+							
+							// Use the dash data directly instead of calling loadAllStripeData
+							summary = {
+								enabled: true,
+								...dashData
+							};
+							
+							// Process the dash data into our frontend structure
+							await processStripeData(summary);
+							
+							// Set loading to false since we're done
+							loading = false;
+							loadingStatus = 'Dashboard ready via dash!';
+						} else {
+							// ⚙️ Stripe not configured - skip to setup (no loading needed)
+							console.log('⚙️ Stripe not configured - showing setup screen');
+							loading = false;
+						}
+					} else {
+						// Dashboard call failed - but we know Stripe is configured
+						console.log('⚠️ Stripe configured but dashboard failed - trying fallback...');
+						await loadAllStripeData();
+					}
+				} else {
+					// Stripe explicitly not configured
+					console.log('⚙️ [STATUS] Stripe not configured - showing setup screen');
+					summary = { enabled: false };
+					loading = false;
+				}
+			} else {
+				// Status endpoint failed - fallback to old method
+				console.log('⚠️ [STATUS] Status endpoint failed - falling back to /stripe/dash...');
+				const dashRes = await apiRequest('/admin/streaming/stripe/dash');
+				
+				if (dashRes.ok) {
 				const dashData = await dashRes.json();
 				if (dashData.enabled) {
 					// 🚀 DASH MODE: Use the fast data we already have!
@@ -223,6 +274,7 @@
 					error = 'Failed to connect to Stripe service';
 					loading = false;
 				}
+			}
 			}
 			
 		await loadPortalLink();
