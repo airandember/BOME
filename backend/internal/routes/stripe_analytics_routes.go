@@ -26,6 +26,18 @@ func RegisterStripeAnalyticsRoutes(router *gin.RouterGroup, stripeService *servi
 		// 🏥 HEALTH: Quick health check for Stripe connectivity
 		stripe.GET("/health", func(c *gin.Context) { getStripeHealth(c, stripeService) })
 
+		// 🔥 PING: Super simple endpoint to test if backend is reachable (no Stripe dependency)
+		stripe.GET("/ping", func(c *gin.Context) {
+			log.Printf("🏓 [PING] Received ping request from IP: %s", c.ClientIP())
+			c.JSON(http.StatusOK, gin.H{
+				"status":    "ok",
+				"timestamp": time.Now().Unix(),
+				"message":   "Backend is reachable",
+				"endpoint":  "/stripe/ping",
+			})
+			log.Printf("🏓 [PING] Ping response sent successfully")
+		})
+
 		// Individual analytics endpoints (for detailed views)
 		stripe.GET("/balance", func(c *gin.Context) { getAccountBalance(c, stripeService) })
 		stripe.GET("/charges", func(c *gin.Context) { getChargeCounts(c, stripeService) })
@@ -179,14 +191,32 @@ func getProductCounts(c *gin.Context, stripeService *services.StripeService) {
 // 🚀 getDashboardData returns lightning-fast aggregated dashboard data with timeout protection
 func getDashboardData(c *gin.Context, stripeService *services.StripeService) {
 	startTime := time.Now()
-	log.Printf("🚀 [DASH-START] Dashboard request initiated at %v", startTime)
+	log.Printf("🚀 [DASH-START] Dashboard request initiated at %v from IP: %s", startTime, c.ClientIP())
 
-	// Check if Stripe is enabled first
-	if !stripeService.IsEnabled() {
+	// IMMEDIATE RESPONSE: Check if service is nil first (defensive programming)
+	if stripeService == nil {
+		log.Printf("❌ [DASH-ERROR] Stripe service is nil")
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "Stripe service is not initialized",
+			"enabled": false,
+			"debug":   "service_nil",
+		})
+		return
+	}
+	log.Printf("✅ [DASH-SERVICE] Stripe service object exists")
+
+	// IMMEDIATE RESPONSE: Check if Stripe is enabled (with timeout protection)
+	enabledCheckStart := time.Now()
+	enabled := stripeService.IsEnabled()
+	enabledCheckDuration := time.Since(enabledCheckStart)
+	log.Printf("⏱️ [DASH-ENABLED-CHECK] IsEnabled() took %v, result: %v", enabledCheckDuration, enabled)
+
+	if !enabled {
 		log.Printf("❌ [DASH-ERROR] Stripe service is not enabled")
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error":   "Stripe service is not enabled",
 			"enabled": false,
+			"debug":   "service_disabled",
 		})
 		return
 	}
