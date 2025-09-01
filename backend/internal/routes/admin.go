@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"bome-backend/internal/database"
 	"bome-backend/internal/middleware"
@@ -23,6 +24,7 @@ import (
 	"github.com/shirou/gopsutil/v3/load"
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/net"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // UpdateUserRequest represents a user update payload
@@ -1501,6 +1503,7 @@ func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
 	// Users
 	router.GET("/users", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUsersHandler(db))
 	router.POST("/users", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), CreateUserHandler(db))
+	router.POST("/users/bulk", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), CreateBulkUsersHandler(db))
 	router.GET("/users/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUserHandler(db))
 	router.PUT("/users/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), UpdateUserHandler(db))
 	router.DELETE("/users/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), DeleteUserHandler(db))
@@ -2702,4 +2705,324 @@ func CreateUserHandler(db *database.DB) gin.HandlerFunc {
 			"note":               "The user should change this password on first login",
 		})
 	}
+}
+
+// BulkCreateUserRequest represents a bulk user creation payload
+type BulkCreateUserRequest struct {
+	Users []CreateUserRequest `json:"users" binding:"required"`
+}
+
+// BulkCreateUserResponse represents the response for bulk user creation
+type BulkCreateUserResponse struct {
+	TotalRequested int                      `json:"total_requested"`
+	TotalCreated   int                      `json:"total_created"`
+	TotalFailed    int                      `json:"total_failed"`
+	CreatedUsers   []map[string]interface{} `json:"created_users"`
+	Errors         []string                 `json:"errors"`
+	Successes      []string                 `json:"successes"`
+	Message        string                   `json:"message"`
+}
+
+// CreateBulkUsersHandler handles creating multiple users in a single request
+func CreateBulkUsersHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req BulkCreateUserRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Validate bulk request size (prevent abuse)
+		if len(req.Users) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No users provided"})
+			return
+		}
+		if len(req.Users) > 5000 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Too many users requested. Maximum 5000 users per batch."})
+			return
+		}
+
+		log.Printf("🔄 Processing bulk user creation request for %d users", len(req.Users))
+
+		response := BulkCreateUserResponse{
+			TotalRequested: len(req.Users),
+			TotalCreated:   0,
+			TotalFailed:    0,
+			CreatedUsers:   make([]map[string]interface{}, 0),
+			Errors:         make([]string, 0),
+			Successes:      make([]string, 0),
+		}
+
+		// Process users in batches to avoid overwhelming the database
+		batchSize := 100
+		for i := 0; i < len(req.Users); i += batchSize {
+			end := i + batchSize
+			if end > len(req.Users) {
+				end = len(req.Users)
+			}
+
+			batch := req.Users[i:end]
+			log.Printf("📦 Processing batch %d-%d of %d users", i+1, end, len(req.Users))
+
+			for _, userReq := range batch {
+				// Process each user in the batch
+				if err := processSingleUserCreation(db, userReq, &response, c); err != nil {
+					// Log error but continue with next user
+					log.Printf("❌ Failed to process user %s: %v", userReq.Email, err)
+				}
+			}
+		}
+
+		// Generate response message
+		if response.TotalCreated == response.TotalRequested {
+			response.Message = fmt.Sprintf("Successfully created all %d users", response.TotalCreated)
+		} else if response.TotalCreated > 0 {
+			response.Message = fmt.Sprintf("Created %d out of %d users. %d failed.", response.TotalCreated, response.TotalRequested, response.TotalFailed)
+		} else {
+			response.Message = "Failed to create any users"
+		}
+
+		log.Printf("✅ Bulk user creation completed: %d created, %d failed out of %d requested",
+			response.TotalCreated, response.TotalFailed, response.TotalRequested)
+
+		// Return appropriate status code
+		if response.TotalCreated > 0 {
+			c.JSON(http.StatusCreated, response)
+		} else {
+			c.JSON(http.StatusBadRequest, response)
+		}
+	}
+}
+
+// processSingleUserCreation handles the creation of a single user within the bulk operation
+func processSingleUserCreation(db *database.DB, userReq CreateUserRequest, response *BulkCreateUserResponse, c *gin.Context) error {
+	// Validate and sanitize input
+	userReq.Email = strings.ToLower(services.SanitizeString(userReq.Email))
+	userReq.FirstName = services.SanitizeString(userReq.FirstName)
+	userReq.LastName = services.SanitizeString(userReq.LastName)
+
+	// Validate required fields
+	if userReq.Email == "" {
+		response.TotalFailed++
+		response.Errors = append(response.Errors, "undefined: Email is required")
+		return fmt.Errorf("email is required")
+	}
+
+	if userReq.FirstName == "" {
+		response.TotalFailed++
+		response.Errors = append(response.Errors, fmt.Sprintf("%s: First name is required", userReq.Email))
+		return fmt.Errorf("first name is required")
+	}
+
+	if userReq.LastName == "" {
+		response.TotalFailed++
+		response.Errors = append(response.Errors, fmt.Sprintf("%s: Last name is required", userReq.Email))
+		return fmt.Errorf("last name is required")
+	}
+
+	// Clean and validate names - be more permissive for Stripe imports
+	userReq.FirstName = cleanNameForStripeImport(userReq.FirstName)
+	userReq.LastName = cleanNameForStripeImport(userReq.LastName)
+
+	// If names are still invalid after cleaning, use fallbacks
+	if userReq.FirstName == "" || len(userReq.FirstName) < 1 {
+		userReq.FirstName = "User"
+	}
+	if userReq.LastName == "" || len(userReq.LastName) < 1 {
+		userReq.LastName = "Unknown"
+	}
+
+	// Final validation - only reject if names are still problematic after cleaning
+	if err := services.ValidateName(userReq.FirstName); err != nil {
+		userReq.FirstName = "User" // Fallback
+	}
+	if err := services.ValidateName(userReq.LastName); err != nil {
+		userReq.LastName = "Unknown" // Fallback
+	}
+
+	// Check if user already exists and handle multiple Stripe IDs
+	existingUser, err := db.GetUserByEmail(userReq.Email)
+	if err == nil && existingUser != nil {
+		log.Printf("🔍 User %s already exists, checking Stripe ID handling...", userReq.Email)
+
+		// User exists - add new Stripe ID to their array if it's different
+		if userReq.StripeCustomerID != "" {
+			// Check if this Stripe ID already exists in their array
+			hasStripeID := false
+
+			// Check legacy single ID
+			if existingUser.StripeCustomerID.Valid && existingUser.StripeCustomerID.String == userReq.StripeCustomerID {
+				hasStripeID = true
+				log.Printf("🔍 Stripe ID %s already exists as primary ID for %s", userReq.StripeCustomerID, userReq.Email)
+			}
+
+			// Check array of IDs
+			for _, existingID := range existingUser.StripeCustomerIDs {
+				if existingID == userReq.StripeCustomerID {
+					hasStripeID = true
+					log.Printf("🔍 Stripe ID %s already exists in array for %s", userReq.StripeCustomerID, userReq.Email)
+					break
+				}
+			}
+
+			if !hasStripeID {
+				log.Printf("➕ Adding new Stripe ID %s to existing user %s", userReq.StripeCustomerID, userReq.Email)
+				// Add new Stripe ID to existing user
+				err = db.AddStripeCustomerID(existingUser.ID, userReq.StripeCustomerID)
+				if err != nil {
+					log.Printf("❌ Failed to add Stripe ID %s to user %s: %v", userReq.StripeCustomerID, userReq.Email, err)
+					response.TotalFailed++
+					response.Errors = append(response.Errors, fmt.Sprintf("%s: Failed to add Stripe ID - %v", userReq.Email, err))
+					return fmt.Errorf("failed to add stripe id: %v", err)
+				}
+
+				log.Printf("✅ Successfully added Stripe ID %s to existing user %s", userReq.StripeCustomerID, userReq.Email)
+				response.TotalCreated++ // Count as success - we added the Stripe ID
+				response.Successes = append(response.Successes, fmt.Sprintf("%s: Added Stripe ID %s to existing user", userReq.Email, userReq.StripeCustomerID))
+
+				// Add to CreatedUsers so frontend can update state
+				response.CreatedUsers = append(response.CreatedUsers, map[string]interface{}{
+					"id":         existingUser.ID,
+					"email":      existingUser.Email,
+					"first_name": existingUser.FirstName,
+					"last_name":  existingUser.LastName,
+					"role":       existingUser.Role,
+					"updated":    true, // Flag to indicate this was an update, not creation
+				})
+				return nil
+			} else {
+				// Stripe ID already exists, but this is still a success case - user is properly linked
+				log.Printf("✅ User %s already properly linked to Stripe ID %s", userReq.Email, userReq.StripeCustomerID)
+				response.TotalCreated++ // Count as success - user already has this Stripe ID
+				response.Successes = append(response.Successes, fmt.Sprintf("%s: Already linked to Stripe ID %s", userReq.Email, userReq.StripeCustomerID))
+
+				// Add to CreatedUsers so frontend can update state (even though no change was made)
+				response.CreatedUsers = append(response.CreatedUsers, map[string]interface{}{
+					"id":         existingUser.ID,
+					"email":      existingUser.Email,
+					"first_name": existingUser.FirstName,
+					"last_name":  existingUser.LastName,
+					"role":       existingUser.Role,
+					"updated":    false, // Flag to indicate no change was needed
+				})
+				return nil
+			}
+		} else {
+			// User exists but no Stripe ID provided - this is also a success case
+			log.Printf("✅ User %s already exists (no Stripe ID to add)", userReq.Email)
+			response.TotalCreated++
+			response.Successes = append(response.Successes, fmt.Sprintf("%s: User already exists", userReq.Email))
+
+			// Add to CreatedUsers so frontend can update state
+			response.CreatedUsers = append(response.CreatedUsers, map[string]interface{}{
+				"id":         existingUser.ID,
+				"email":      existingUser.Email,
+				"first_name": existingUser.FirstName,
+				"last_name":  existingUser.LastName,
+				"role":       existingUser.Role,
+				"updated":    false, // Flag to indicate no change was needed
+			})
+			return nil
+		}
+	}
+
+	// Set defaults
+	if userReq.Role == "" {
+		userReq.Role = "user"
+	}
+	if userReq.RoleID == "" {
+		userReq.RoleID = "user" // Default to 'user' role_id
+	}
+
+	// Generate temporary password
+	tempPassword := services.GenerateSecureToken()[:12]
+	hash, err := bcrypt.GenerateFromPassword([]byte(tempPassword), bcrypt.DefaultCost)
+	if err != nil {
+		response.TotalFailed++
+		response.Errors = append(response.Errors, fmt.Sprintf("%s: Failed to generate password", userReq.Email))
+		return fmt.Errorf("failed to generate password: %v", err)
+	}
+
+	// Prepare user data
+	userData := map[string]interface{}{
+		"email":              userReq.Email,
+		"password_hash":      string(hash),
+		"first_name":         userReq.FirstName,
+		"last_name":          userReq.LastName,
+		"role":               userReq.Role,
+		"role_id":            userReq.RoleID,
+		"email_verified":     userReq.EmailVerified,
+		"is_active":          userReq.IsActive,
+		"has_subbed":         userReq.HasSubbed,
+		"stripe_customer_id": userReq.StripeCustomerID,
+	}
+
+	// Create user
+	user, err := db.CreateUserWithDetails(userData)
+	if err != nil {
+		response.TotalFailed++
+		response.Errors = append(response.Errors, fmt.Sprintf("%s: %s", userReq.Email, err.Error()))
+		return fmt.Errorf("failed to create user: %v", err)
+	}
+
+	// Success
+	response.TotalCreated++
+	response.CreatedUsers = append(response.CreatedUsers, map[string]interface{}{
+		"id":                 user.ID,
+		"email":              user.Email,
+		"first_name":         user.FirstName,
+		"last_name":          user.LastName,
+		"role":               user.Role,
+		"temporary_password": tempPassword,
+	})
+
+	return nil
+}
+
+// cleanNameForStripeImport cleans names from Stripe data to be more database-friendly
+func cleanNameForStripeImport(name string) string {
+	if name == "" {
+		return ""
+	}
+
+	// Remove common problematic characters but keep basic punctuation
+	name = strings.ReplaceAll(name, "_", " ")
+	name = strings.ReplaceAll(name, ".", " ")
+	name = strings.ReplaceAll(name, "@", " ")
+	name = strings.ReplaceAll(name, "+", " ")
+	name = strings.ReplaceAll(name, "=", " ")
+	name = strings.ReplaceAll(name, "#", " ")
+	name = strings.ReplaceAll(name, "$", " ")
+	name = strings.ReplaceAll(name, "%", " ")
+	name = strings.ReplaceAll(name, "&", " ")
+
+	// Remove numbers from names (common in email-derived names)
+	var result strings.Builder
+	for _, char := range name {
+		if !unicode.IsDigit(char) {
+			result.WriteRune(char)
+		}
+	}
+	name = result.String()
+
+	// Clean up multiple spaces and trim
+	name = strings.TrimSpace(name)
+	for strings.Contains(name, "  ") {
+		name = strings.ReplaceAll(name, "  ", " ")
+	}
+
+	// If the cleaned name is too short or looks like an email domain, return empty
+	if len(name) < 2 || strings.Contains(name, "com") || strings.Contains(name, "net") || strings.Contains(name, "org") {
+		return ""
+	}
+
+	// Capitalize first letter of each word
+	words := strings.Fields(name)
+	for i, word := range words {
+		if len(word) > 0 {
+			words[i] = strings.ToUpper(string(word[0])) + strings.ToLower(word[1:])
+		}
+	}
+
+	return strings.Join(words, " ")
 }
