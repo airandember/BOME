@@ -71,6 +71,7 @@ func initializeSchema(db *sql.DB) error {
     role_id VARCHAR(100),
     email_verified BOOLEAN DEFAULT FALSE,
     stripe_customer_id VARCHAR(255),
+    stripe_customer_ids TEXT[],
     reset_token VARCHAR(255),
     reset_token_expiry TIMESTAMP,
     verification_token VARCHAR(255),
@@ -290,11 +291,12 @@ func initializeSchema(db *sql.DB) error {
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);",
 		"CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);",
+		"CREATE INDEX IF NOT EXISTS idx_users_stripe_customer_ids ON users USING GIN(stripe_customer_ids);",
 		"CREATE INDEX IF NOT EXISTS idx_analytics_events_created_at ON analytics_events(created_at);",
 		"CREATE INDEX IF NOT EXISTS idx_subscription_plans_active ON subscription_plans(is_active);",
 		"CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);",
 		"CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);",
-		
+
 		// Master video list indexes
 		"CREATE INDEX IF NOT EXISTS idx_master_video_bunny_id ON master_video_list(bunny_video_id);",
 		"CREATE INDEX IF NOT EXISTS idx_master_video_status ON master_video_list(status);",
@@ -304,12 +306,12 @@ func initializeSchema(db *sql.DB) error {
 		"CREATE INDEX IF NOT EXISTS idx_master_video_views ON master_video_list(views DESC);",
 		"CREATE INDEX IF NOT EXISTS idx_master_video_collection ON master_video_list(collection_id);",
 		"CREATE INDEX IF NOT EXISTS idx_master_video_tagged ON master_video_list(tagged);",
-		
+
 		// Video tags indexes
 		"CREATE INDEX IF NOT EXISTS idx_video_tags_word ON video_tags(word);",
 		"CREATE INDEX IF NOT EXISTS idx_video_tags_frequency ON video_tags(frequency DESC);",
 		"CREATE INDEX IF NOT EXISTS idx_video_tags_category ON video_tags(category_id);",
-		
+
 		// Tag categories indexes
 		"CREATE INDEX IF NOT EXISTS idx_tag_categories_name ON tag_categories(name);",
 	}

@@ -14,6 +14,7 @@
 	let stripeOnlyCustomers = $state<any[]>([]);
 	let syncedCustomers = $state<any[]>([]);
 	let localOnlyUsers = $state<any[]>([]);
+ // New: Multiple Stripe IDs for same email
 	
 	// Sync state
 	let syncingCustomers = $state(new Set<string>());
@@ -25,6 +26,7 @@
 	let localOnlyCount = $state(0);
 	let stripeOnlyCount = $state(0);
 
+
 	// Pagination for Stripe Only customers
 	let stripeOnlyCurrentPage = $state(1);
 	let stripeOnlyItemsPerPage = $state(50);
@@ -33,6 +35,10 @@
 	
 	// All stripe only customers (unpaginated)
 	let allStripeOnlyCustomers = $state<any[]>([]);
+
+	// Pagination and search for Synced customers
+	// All synced customers (no pagination needed - handled by SimpleTable)
+	let allSyncedCustomers = $state<any[]>([]);
 
 	// Accept data from parent - NO API calls needed!
 	const { summary: parentSummary = null, stripeData = null } = $props<{ 
@@ -51,7 +57,7 @@
 			customers = stripeData.customers || [];
 			
 			// Load local users to compare against Stripe customers
-			const usersRes = await apiRequest('/admin/users?limit=1000');
+			const usersRes = await apiRequest('/admin/users?limit=3000');
 			let localUsers: any[] = [];
 			if (usersRes.ok) {
 				const usersData = await usersRes.json();
@@ -139,12 +145,19 @@
 			}
 
 			// Then, fetch all local users to check against
-			const usersRes = await apiRequest('/admin/users?limit=1000');
+			const usersRes = await apiRequest('/admin/users?limit=3000');
 			let localUsers: any[] = [];
 			if (usersRes.ok) {
 				const usersData = await usersRes.json();
 				localUsers = usersData.users || [];
 				console.log('✅ Loaded local users for matching:', localUsers.length);
+				
+				// 🔍 DEBUG: Check if users have stripe_customer_ids arrays
+				const usersWithArrays = localUsers.filter(user => 
+					Array.isArray(user.StripeCustomerIDs || user.stripe_customer_ids) && 
+					(user.StripeCustomerIDs || user.stripe_customer_ids).length > 0
+				).length;
+				console.log(`🔍 Users with stripe_customer_ids arrays: ${usersWithArrays}/${localUsers.length}`);
 			} else {
 				console.warn('⚠️ Users endpoint not available (404), using subscriber data as fallback');
 				console.warn('Response status:', usersRes.status);
@@ -171,6 +184,9 @@
 					role: sub.role,
 					StripeCustomerID: sub.stripe_customer_id,
 					stripe_customer_id: sub.stripe_customer_id,
+					// 🔥 CRITICAL: Include the stripe_customer_ids array!
+					StripeCustomerIDs: sub.stripe_customer_ids || [],
+					stripe_customer_ids: sub.stripe_customer_ids || [],
 					CreatedAt: sub.created_at,
 					created_at: sub.created_at,
 					plan_name: sub.plan_name,
@@ -215,6 +231,32 @@
 	function createCustomerLists(allStripeCustomers: any[], localUsers: any[]) {
 		console.log('🔄 Creating customer lists...');
 		console.log(`📊 Input data: ${allStripeCustomers.length} Stripe customers, ${localUsers.length} local users`);
+		
+		// 🔍 DEBUG: Sample the first few users to see their structure
+		console.log('🔍 Sample local users (first 3):');
+		localUsers.slice(0, 3).forEach((user, index) => {
+			const primaryStripeId = user.StripeCustomerID || user.stripe_customer_id;
+			console.log(`User ${index + 1}:`, {
+				email: user.Email || user.email,
+				primary_stripe_id_raw: primaryStripeId,
+				primary_stripe_id_type: typeof primaryStripeId,
+				primary_stripe_id_valid: primaryStripeId?.Valid,
+				primary_stripe_id_string: primaryStripeId?.String,
+				stripe_ids_array: user.StripeCustomerIDs || user.stripe_customer_ids,
+				array_type: typeof (user.StripeCustomerIDs || user.stripe_customer_ids),
+				array_length: Array.isArray(user.StripeCustomerIDs || user.stripe_customer_ids) ? (user.StripeCustomerIDs || user.stripe_customer_ids).length : 'not array'
+			});
+		});
+		
+		console.log('🔍 Sample Stripe customers (first 3):');
+		allStripeCustomers.slice(0, 3).forEach((customer, index) => {
+			console.log(`Stripe Customer ${index + 1}:`, {
+				email: customer.email || customer.Email,
+				stripe_id: customer.stripe_id || customer.ID
+			});
+		});
+		
+		let totalStripeIdsMapped = 0;
 
 		// Create maps for fast lookup
 		const usersByEmail = new Map();
@@ -223,17 +265,68 @@
 		const stripeCustomersById = new Map();
 		
 		// Map local users
-		localUsers.forEach((user: any) => {
+		let usersWithArrays = 0;
+		let usersWithPrimary = 0;
+		localUsers.forEach((user: any, index) => {
 			const email = (user.Email || user.email || '').toLowerCase();
 			if (email) {
 				usersByEmail.set(email, user);
 			}
 			
-			const stripeId = user.StripeCustomerID || user.stripe_customer_id;
-			if (stripeId) {
-				usersByStripeId.set(stripeId, user);
+			// Map primary Stripe ID - handle sql.NullString object
+			let primaryStripeId = user.StripeCustomerID || user.stripe_customer_id;
+			
+			// Handle sql.NullString object from backend
+			if (primaryStripeId && typeof primaryStripeId === 'object') {
+				if (primaryStripeId.Valid && primaryStripeId.String) {
+					primaryStripeId = primaryStripeId.String;
+				} else {
+					primaryStripeId = null;
+				}
+			}
+			
+			if (primaryStripeId && typeof primaryStripeId === 'string') {
+				usersByStripeId.set(primaryStripeId, user);
+				totalStripeIdsMapped++;
+				usersWithPrimary++;
+				
+				// Debug first few mappings
+				if (index < 3) {
+					console.log(`🔗 Mapped primary Stripe ID: ${primaryStripeId} -> ${email}`);
+				}
+			}
+			
+			// 🔥 CRITICAL: Also map ALL Stripe IDs from the array
+			const allStripeIds = user.StripeCustomerIDs || user.stripe_customer_ids || [];
+			if (Array.isArray(allStripeIds) && allStripeIds.length > 0) {
+				usersWithArrays++;
+				allStripeIds.forEach((stripeId: string) => {
+					if (stripeId && stripeId.trim()) {
+						usersByStripeId.set(stripeId.trim(), user);
+						totalStripeIdsMapped++;
+						
+						// Debug first few array mappings
+						if (index < 3) {
+							console.log(`🔗 Mapped array Stripe ID: ${stripeId.trim()} -> ${email}`);
+						}
+					}
+				});
 			}
 		});
+		
+		console.log(`📊 Mapping summary: ${usersWithPrimary} users with primary IDs, ${usersWithArrays} users with ID arrays`);
+		
+		// 🔍 DEBUG: Sample what's actually in our Maps
+		console.log('🔍 Sample usersByStripeId entries (first 5):');
+		let count = 0;
+		for (const [stripeId, user] of usersByStripeId) {
+			if (count < 5) {
+				console.log(`  ${stripeId} -> ${user.Email || user.email}`);
+				count++;
+			} else {
+				break;
+			}
+		}
 
 		// Map Stripe customers (from database format)
 		allStripeCustomers.forEach((customer: any) => {
@@ -249,20 +342,35 @@
 		});
 
 		// 1. Stripe Only Customers - exist in Stripe_customers database but not locally
+		let filteredOut = 0;
+		let keptAsStripeOnly = 0;
+		
 		allStripeOnlyCustomers = allStripeCustomers.filter((stripeCustomer: any) => {
 			const email = (stripeCustomer.email || stripeCustomer.Email)?.toLowerCase();
 			const stripeId = stripeCustomer.stripe_id || stripeCustomer.ID;
 			
 			// Check if this Stripe customer has a local user
-			const localUser = usersByStripeId.get(stripeId) || usersByEmail.get(email);
-			const hasLocalUser = !!localUser;
+			const localUserByStripeId = usersByStripeId.get(stripeId);
+			const localUserByEmail = usersByEmail.get(email);
+			const hasLocalUser = !!(localUserByStripeId || localUserByEmail);
 			
 			// Debug logging for first few customers
-			if (allStripeCustomers.indexOf(stripeCustomer) < 3) {
-				console.log(`🔍 Customer ${stripeId} (${email}): hasLocalUser=${hasLocalUser}`);
+			if (allStripeCustomers.indexOf(stripeCustomer) < 10) {
+				console.log(`🔍 Customer ${stripeId} (${email}):`, {
+					hasLocalUser,
+					foundByStripeId: !!localUserByStripeId,
+					foundByEmail: !!localUserByEmail,
+					localUserEmail: localUserByStripeId?.Email || localUserByEmail?.Email || 'none'
+				});
 			}
 			
-			return !hasLocalUser; // Only include if no local user found
+			if (hasLocalUser) {
+				filteredOut++;
+				return false; // Filter out - user exists locally
+			} else {
+				keptAsStripeOnly++;
+				return true; // Keep as Stripe-only
+			}
 		}).map((customer: any) => ({
 			id: `stripe_${customer.stripe_id || customer.ID}`,
 			source: 'stripe',
@@ -286,6 +394,30 @@
 		stripeOnlyTotalPages = Math.ceil(stripeOnlyCount / stripeOnlyItemsPerPage);
 		stripeOnlyCurrentPage = 1; // Reset to first page
 		updateStripeOnlyPagination();
+		
+		console.log(`🔍 Filtering results:`, {
+			totalStripeIdsMapped,
+			filteredOut,
+			keptAsStripeOnly,
+			finalStripeOnlyCount: stripeOnlyCount,
+			usersByStripeIdSize: usersByStripeId.size,
+			usersByEmailSize: usersByEmail.size
+		});
+		
+		// 🔍 DEBUG: Check if we're finding matches for the first few Stripe customers
+		//console.log('🔍 Testing first 5 Stripe customers for matches:');
+		//allStripeCustomers.slice(0, 5).forEach((customer, index) => {
+		//	const email = (customer.email || customer.Email)?.toLowerCase();
+		//	const stripeId = customer.stripe_id || customer.ID;
+		//	const foundByStripeId = usersByStripeId.get(stripeId);
+		//	const foundByEmail = usersByEmail.get(email);
+		//	console.log(`Customer ${index + 1} (${stripeId}):`, {
+		//		email,
+		//		foundByStripeId: !!foundByStripeId,
+		//		foundByEmail: !!foundByEmail,
+		//		shouldBeFiltered: !!(foundByStripeId || foundByEmail)
+		//	});
+		//});
 
 		// 2. Synced Customers - exist in both Stripe and locally
 		syncedCustomers = allStripeCustomers.filter((stripeCustomer: any) => {
@@ -319,6 +451,9 @@
 			};
 		});
 
+		// Store all synced customers (pagination handled by SimpleTable)
+		allSyncedCustomers = [...syncedCustomers];
+
 		// 3. Local Only Users - exist locally but not in Stripe
 		localOnlyUsers = localUsers.filter((localUser: any) => {
 			const email = (localUser.Email || localUser.email || '').toLowerCase();
@@ -344,11 +479,14 @@
 			syncStatus: 'local_only'
 		}));
 
+
+
 		// Calculate stats
 		totalCount = allStripeCustomers.length + localOnlyUsers.length;
 		syncedCount = syncedCustomers.length;
 		localOnlyCount = localOnlyUsers.length;
 		stripeOnlyCount = stripeOnlyCustomers.length;
+
 
 		console.log('✅ Customer lists created:', {
 			total: totalCount,
@@ -356,13 +494,14 @@
 			localOnly: localOnlyCount,
 			stripeOnly: stripeOnlyCount
 		});
-		``
+		
 		console.log('📋 Breakdown:');
 		console.log(`  • ${allStripeCustomers.length} customers from stripe_customers table`);
 		console.log(`  • ${localUsers.length} local users`);
 		console.log(`  • ${syncedCustomers.length} synced (in both Stripe DB and local)`);
 		console.log(`  • ${stripeOnlyCustomers.length} Stripe-only (in Stripe DB but not local)`);
 		console.log(`  • ${localOnlyUsers.length} local-only (local but not in Stripe DB)`);
+
 	}
 
 	// Create user directly from Stripe customer data (inline)
@@ -378,18 +517,43 @@
 			// Svelte 5 immutable Set update
 			syncingCustomers = new Set([...syncingCustomers, customer.id]);
 
-			// Parse name into first and last name if possible
+			// Parse name into first and last name with better fallbacks
 			let firstName = '';
 			let lastName = '';
-			if (customer.name) {
-				const nameParts = customer.name.trim().split(' ');
+			
+			if (customer.name && customer.name.trim()) {
+				const cleanName = customer.name.trim();
+				const nameParts = cleanName.split(' ').filter((part: any) => part.length > 0);
+				
 				if (nameParts.length === 1) {
 					firstName = nameParts[0];
+					lastName = 'Unknown'; // Provide fallback
 				} else if (nameParts.length >= 2) {
 					firstName = nameParts[0];
 					lastName = nameParts.slice(1).join(' ');
 				}
+			} else {
+				// If no name provided, try to extract from email
+				const emailParts = customer.email.split('@')[0];
+				const emailName = emailParts.replace(/[._-]/g, ' ');
+				const emailNameParts = emailName.split(' ').filter((part: any) => part.length > 0);
+				
+				if (emailNameParts.length >= 2) {
+					firstName = emailNameParts[0];
+					lastName = emailNameParts.slice(1).join(' ');
+				} else {
+					firstName = emailNameParts[0] || 'User';
+					lastName = 'Unknown';
+				}
 			}
+			
+			// Clean up names - remove numbers and special characters
+			firstName = firstName.replace(/[0-9._@-]/g, '').trim() || 'User';
+			lastName = lastName.replace(/[0-9._@-]/g, '').trim() || 'Unknown';
+			
+			// Capitalize names
+			firstName = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+			lastName = lastName.charAt(0).toUpperCase() + lastName.slice(1).toLowerCase();
 
 			// Create user with Stripe customer data
 			const userData = {
@@ -397,6 +561,7 @@
 				last_name: lastName,
 				email: customer.email,
 				role: 'user', // Default role
+				role_id: 'user', // Required role_id for database foreign key
 				stripe_customer_id: customer.stripeId,
 				email_verified: false,
 				is_active: true,
@@ -441,73 +606,172 @@
 
 		try {
 			bulkCreatingUsers = true;
-			let successCount = 0;
-			let errorCount = 0;
-			const errors: string[] = [];
 
 			// Work with a snapshot of customers to avoid mutation during iteration
 			const customersToCreate = [...allStripeOnlyCustomers];
-			showToast(`Creating ${customersToCreate.length} users...`, 'info');
+			showToast(`🚀 Creating ${customersToCreate.length} users via bulk API...`, 'info');
 
-			// Create users one by one (could be optimized to batch API calls)
-			for (const customer of customersToCreate) {
-				try {
-					// Parse name into first and last name if possible
-					let firstName = '';
-					let lastName = '';
-					if (customer.name) {
-						const nameParts = customer.name.trim().split(' ');
-						if (nameParts.length === 1) {
-							firstName = nameParts[0];
-						} else if (nameParts.length >= 2) {
-							firstName = nameParts[0];
-							lastName = nameParts.slice(1).join(' ');
+			// Prepare bulk user data
+			const usersToCreate = customersToCreate.map(customer => {
+				// Parse name into first and last name with better fallbacks
+				let firstName = '';
+				let lastName = '';
+				
+				if (customer.name && customer.name.trim()) {
+					const cleanName = customer.name.trim();
+					const nameParts = cleanName.split(' ').filter((part: any) => part.length > 0);
+					
+					if (nameParts.length === 1) {
+						firstName = nameParts[0];
+						lastName = 'Unknown'; // Provide fallback
+					} else if (nameParts.length >= 2) {
+						firstName = nameParts[0];
+						lastName = nameParts.slice(1).join(' ');
+					}
+				} else {
+					// If no name provided, try to extract from email
+					const emailParts = customer.email.split('@')[0];
+					const emailName = emailParts.replace(/[._-]/g, ' ');
+					const emailNameParts = emailName.split(' ').filter((part: any) => part.length > 0);
+					
+					if (emailNameParts.length >= 2) {
+						firstName = emailNameParts[0];
+						lastName = emailNameParts.slice(1).join(' ');
+					} else {
+						firstName = emailNameParts[0] || 'User';
+						lastName = 'Unknown';
+					}
+				}
+				
+				// Clean up names - remove numbers and special characters
+				firstName = firstName.replace(/[0-9._@-]/g, '').trim() || 'User';
+				lastName = lastName.replace(/[0-9._@-]/g, '').trim() || 'Unknown';
+				
+				// Capitalize names
+				firstName = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+				lastName = lastName.charAt(0).toUpperCase() + lastName.slice(1).toLowerCase();
+
+				return {
+					first_name: firstName,
+					last_name: lastName,
+					email: customer.email,
+					role: 'user', // Default role
+					role_id: 'user', // Required role_id for database foreign key
+					stripe_customer_id: customer.stripeId,
+					email_verified: false,
+					is_active: true,
+					has_subbed: false
+				};
+			});
+
+			// Make single bulk API call instead of thousands of individual calls
+			const response = await apiRequest('/admin/users/bulk', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ users: usersToCreate })
+			});
+
+			if (response.ok) {
+				const responseData = await response.json();
+				
+				console.log(`✅ Bulk creation completed: ${responseData.total_created}/${responseData.total_requested} users created`);
+				
+				// Update frontend state for successfully created users
+				if (responseData.created_users && responseData.created_users.length > 0) {
+					for (const createdUser of responseData.created_users) {
+						// Find the corresponding customer and move to synced
+						const customer = customersToCreate.find(c => c.email === createdUser.email);
+						if (customer) {
+							moveCustomerFromStripeOnlyToSynced(customer, createdUser.id);
 						}
 					}
-
-					// Create user with Stripe customer data
-					const userData = {
-						first_name: firstName,
-						last_name: lastName,
-						email: customer.email,
-						role: 'user', // Default role
-						stripe_customer_id: customer.stripeId,
-						email_verified: false,
-						is_active: true,
-						has_subbed: false
-					};
-
-					const response = await apiRequest('/admin/users', {
-						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json',
-						},
-						body: JSON.stringify(userData)
-					});
-
-					if (response.ok) {
-						const responseData = await response.json();
-						successCount++;
-						// Immediately move customer to synced (immutable update)
-						moveCustomerFromStripeOnlyToSynced(customer, responseData.user?.id);
-					} else {
-						const errorData = await response.json();
-						errors.push(`${customer.email}: ${errorData.error || 'Unknown error'}`);
-						errorCount++;
-					}
-				} catch (error: any) {
-					errors.push(`${customer.email}: ${error.message || 'Network error'}`);
-					errorCount++;
 				}
-			}
 
-			// Show results
-			if (successCount > 0) {
-				showToast(`✅ Successfully created ${successCount} users!`, 'success');
-			}
-			if (errorCount > 0) {
-				showToast(`❌ Failed to create ${errorCount} users. Check console for details.`, 'error');
-				console.error('Bulk user creation errors:', errors);
+				// Show success message
+				if (responseData.total_created > 0) {
+					showToast(`✅ Successfully processed ${responseData.total_created} users!`, 'success');
+				}
+
+				// Show success details for added Stripe IDs
+				if (responseData.successes && responseData.successes.length > 0) {
+					const addedStripeIDs = responseData.successes.filter((success: string) => success.includes('Added Stripe ID'));
+					if (addedStripeIDs.length > 0) {
+						showToast(`🔗 ${addedStripeIDs.length} Stripe IDs added to existing users!`, 'success');
+						console.log('🔗 Added Stripe IDs:', addedStripeIDs);
+					}
+				}
+
+				// 🔄 CRITICAL: Refresh data from database to get latest state
+				console.log('🔄 Refreshing data from database after bulk creation...');
+				await refreshData();
+				console.log('✅ Data refreshed. New Stripe Only count:', allStripeOnlyCustomers.length);
+
+				// Show error details if any failed
+				if (responseData.total_failed > 0) {
+					// Categorize errors by actual issue type
+					const emailErrors = responseData.errors.filter((error: string) => 
+						error.includes('email is required') || error.includes('invalid email')
+					);
+					const nameErrors = responseData.errors.filter((error: string) => 
+						error.includes('name is required') || error.includes('invalid name')
+					);
+					const duplicateErrors = responseData.errors.filter((error: string) => 
+						error.includes('already exists with this Stripe ID')
+					);
+					const databaseErrors = responseData.errors.filter((error: string) => 
+						error.includes('Failed to create user') || error.includes('database error')
+					);
+					const otherErrors = responseData.errors.filter((error: string) => 
+						!emailErrors.includes(error) && 
+						!nameErrors.includes(error) && 
+						!duplicateErrors.includes(error) && 
+						!databaseErrors.includes(error)
+					);
+					
+					// Show specific error categories
+					if (emailErrors.length > 0) {
+						showToast(`📧 ${emailErrors.length} users failed due to email issues.`, 'error');
+						console.error('📧 Email validation errors:', emailErrors);
+					}
+					
+					if (nameErrors.length > 0) {
+						showToast(`👤 ${nameErrors.length} users failed due to name validation.`, 'error');
+						console.error('👤 Name validation errors:', nameErrors);
+					}
+					
+					if (duplicateErrors.length > 0) {
+						showToast(`ℹ️ ${duplicateErrors.length} users already exist with same Stripe ID (skipped).`, 'info');
+						console.log('📋 Duplicate users (same Stripe ID):', duplicateErrors.length);
+					}
+					
+					if (databaseErrors.length > 0) {
+						showToast(`💾 ${databaseErrors.length} users failed due to database issues.`, 'error');
+						console.error('💾 Database errors:', databaseErrors);
+					}
+					
+					if (otherErrors.length > 0) {
+						showToast(`⚠️ ${otherErrors.length} users failed due to other issues.`, 'warning');
+						console.warn('⚠️ Other errors:', otherErrors);
+					}
+					
+					// Full error list for debugging
+					console.warn('📊 Bulk user creation summary:', {
+						total_failed: responseData.total_failed,
+						email_errors: emailErrors.length,
+						name_errors: nameErrors.length,
+						duplicates: duplicateErrors.length,
+						database_errors: databaseErrors.length,
+						other_errors: otherErrors.length,
+						all_errors: responseData.errors
+					});
+				}
+
+			} else {
+				const errorData = await response.json();
+				console.error('Bulk user creation failed:', errorData);
+				showToast(`❌ Bulk user creation failed: ${errorData.error || 'Unknown error'}`, 'error');
 			}
 
 		} catch (error: any) {
@@ -583,6 +847,8 @@
 			updateStripeOnlyPagination();
 		}
 	}
+
+
 
 	// Format date
 	function formatDate(dateString: string): string {
@@ -707,13 +973,16 @@
 				oncreateUser={handleCreateUser}
 				oncreateAllUsers={handleCreateAllUsers}
 			/>
-
-			<!-- Synced Customers Table -->
+			<!-- Synced Customers Table with Built-in Search and Pagination -->
 			<SimpleTable
-				title="🔗 Synced Customers ({syncedCustomers.length})"
-				customers={syncedCustomers}
+				title="🔗 Synced Customers"
+				customers={allSyncedCustomers}
 				tableType="synced"
-				initiallyExpanded={false}
+				initiallyExpanded={true}
+				enableSearch={true}
+				enablePagination={true}
+				itemsPerPage={50}
+				searchPlaceholder="Search by name, email, or Stripe ID..."
 			/>
 			
 			<!-- Local Only Users Table -->
@@ -725,6 +994,8 @@
 				onsyncToStripe={handleSyncToStripe}
 				onsyncAllToStripe={handleSyncAllToStripe}
 			/>
+			
+	
 		</div>
 	{/if}
 </div>
@@ -908,8 +1179,93 @@
 			text-align: center;
 		}
 
-		.header-stats {
-			justify-content: center;
-		}
+			.header-stats {
+		justify-content: center;
 	}
+
+	/* Conflict Section Styles */
+	.conflict-section {
+		background: #fef3c7;
+		border: 1px solid #f59e0b;
+		border-radius: var(--radius-lg, 0.5rem);
+		padding: var(--space-lg, 1.5rem);
+		margin-top: var(--space-lg, 1.5rem);
+	}
+
+	.conflict-header h3 {
+		margin: 0 0 var(--space-xs, 0.5rem) 0;
+		color: #92400e;
+		font-size: 1.25rem;
+		font-weight: 600;
+	}
+
+	.conflict-header p {
+		margin: 0 0 var(--space-lg, 1.5rem) 0;
+		color: #92400e;
+		font-size: 0.875rem;
+	}
+
+	.conflict-item {
+		background: white;
+		border: 1px solid #f59e0b;
+		border-radius: var(--radius-md, 0.375rem);
+		padding: var(--space-md, 1rem);
+		margin-bottom: var(--space-md, 1rem);
+	}
+
+	.conflict-item:last-child {
+		margin-bottom: 0;
+	}
+
+	.conflict-email {
+		margin-bottom: var(--space-md, 1rem);
+		padding-bottom: var(--space-sm, 0.75rem);
+		border-bottom: 1px solid #fde68a;
+		font-size: 1.1rem;
+		color: #92400e;
+	}
+
+	.conflict-details {
+		display: flex;
+		gap: var(--space-lg, 1.5rem);
+		margin-bottom: var(--space-md, 1rem);
+		flex-wrap: wrap;
+	}
+
+	.conflict-customer {
+		flex: 1;
+		min-width: 250px;
+		background: #f9fafb;
+		border: 1px solid #e5e7eb;
+		border-radius: var(--radius-sm, 0.25rem);
+		padding: var(--space-sm, 0.75rem);
+	}
+
+	.conflict-source {
+		font-weight: 600;
+		margin-bottom: var(--space-xs, 0.5rem);
+		color: #374151;
+	}
+
+	.conflict-info div {
+		margin-bottom: var(--space-xs, 0.5rem);
+		font-size: 0.875rem;
+		color: #6b7280;
+	}
+
+	.conflict-info div:last-child {
+		margin-bottom: 0;
+	}
+
+	.conflict-actions {
+		text-align: right;
+	}
+
+	.btn-sm {
+		padding: var(--space-xs, 0.5rem) var(--space-sm, 0.75rem);
+		font-size: 0.875rem;
+	}
+
+
+}
 </style> 

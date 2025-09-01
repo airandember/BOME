@@ -7,6 +7,8 @@ import (
 	"log"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // User represents a user in the system
@@ -18,7 +20,8 @@ type User struct {
 	LastName          string
 	Role              string
 	EmailVerified     bool
-	StripeCustomerID  sql.NullString
+	StripeCustomerID  sql.NullString // Primary/most recent Stripe ID
+	StripeCustomerIDs pq.StringArray // All Stripe IDs (including primary)
 	ResetToken        sql.NullString
 	ResetTokenExpiry  sql.NullTime
 	VerificationToken sql.NullString
@@ -121,7 +124,7 @@ func (db *DB) CreateUserWithDetails(userData map[string]interface{}) (*User, err
 		"role":               "role",
 		"role_id":            "role_id",
 		"email_verified":     "email_verified",
-		"stripe_customer_id": "stripe_customer_id",
+		"stripe_customer_id": "stripe_customer_id", // Legacy single ID
 		"bio":                "bio",
 		"location":           "location",
 		"website":            "website",
@@ -140,6 +143,21 @@ func (db *DB) CreateUserWithDetails(userData map[string]interface{}) (*User, err
 			placeholders = append(placeholders, fmt.Sprintf("$%d", argCount))
 			values = append(values, value)
 		}
+	}
+
+	// Handle Stripe customer ID fields
+	if stripeCustomerID, exists := userData["stripe_customer_id"]; exists && stripeCustomerID != "" {
+		// Set the primary stripe_customer_id field
+		argCount++
+		fields = append(fields, "stripe_customer_id")
+		placeholders = append(placeholders, fmt.Sprintf("$%d", argCount))
+		values = append(values, stripeCustomerID)
+
+		// Also add it to the stripe_customer_ids array
+		argCount++
+		fields = append(fields, "stripe_customer_ids")
+		placeholders = append(placeholders, fmt.Sprintf("ARRAY[$%d]", argCount))
+		values = append(values, stripeCustomerID)
 	}
 
 	// Always add timestamps
@@ -166,9 +184,13 @@ func (db *DB) CreateUserWithDetails(userData map[string]interface{}) (*User, err
 func (db *DB) GetUserByID(id int) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
-		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed, password_changed FROM users WHERE id = $1`,
+		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
+		 stripe_customer_id, stripe_customer_ids,
+		 reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed, password_changed FROM users WHERE id = $1`,
 		id,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed, &user.PasswordChanged)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified,
+		&user.StripeCustomerID, &user.StripeCustomerIDs,
+		&user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed, &user.PasswordChanged)
 	if err != nil {
 		return nil, err
 	}
@@ -179,9 +201,13 @@ func (db *DB) GetUserByID(id int) (*User, error) {
 func (db *DB) GetUserByEmail(email string) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
-		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed, password_changed FROM users WHERE email = $1`,
+		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
+		 stripe_customer_id, stripe_customer_ids,
+		 reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed, password_changed FROM users WHERE email = $1`,
 		email,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed, &user.PasswordChanged)
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified,
+		&user.StripeCustomerID, &user.StripeCustomerIDs,
+		&user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed, &user.PasswordChanged)
 	if err != nil {
 		return nil, err
 	}
@@ -371,10 +397,77 @@ func (db *DB) ClearVerificationToken(userID int) error {
 	return err
 }
 
-// UpdateUserStripeCustomerID updates a user's Stripe customer ID
+// UpdateUserStripeCustomerID updates a user's Stripe customer ID (legacy method)
 func (db *DB) UpdateUserStripeCustomerID(userID int, stripeCustomerID string) error {
 	_, err := db.Exec(`UPDATE users SET stripe_customer_id = $1, updated_at = NOW() WHERE id = $2`, stripeCustomerID, userID)
 	return err
+}
+
+// AddStripeCustomerID adds a new Stripe customer ID to a user's array
+func (db *DB) AddStripeCustomerID(userID int, stripeCustomerID string) error {
+	// First check if the ID already exists in the array or as primary
+	var exists bool
+	err := db.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM users 
+			WHERE id = $1 AND (
+				stripe_customer_id = $2 OR 
+				$2 = ANY(COALESCE(stripe_customer_ids, '{}'))
+			)
+		)
+	`, userID, stripeCustomerID).Scan(&exists)
+
+	if err != nil {
+		return fmt.Errorf("failed to check existing Stripe ID: %v", err)
+	}
+
+	if exists {
+		// ID already exists, just update the primary ID
+		_, err = db.Exec(`
+			UPDATE users 
+			SET stripe_customer_id = $1, updated_at = NOW() 
+			WHERE id = $2
+		`, stripeCustomerID, userID)
+		return err
+	}
+
+	// Add new ID to array and set as primary
+	_, err = db.Exec(`
+		UPDATE users 
+		SET stripe_customer_ids = array_append(COALESCE(stripe_customer_ids, '{}'), $1),
+		    stripe_customer_id = $1,
+		    updated_at = NOW() 
+		WHERE id = $2
+	`, stripeCustomerID, userID)
+
+	return err
+}
+
+// GetUserByAnyStripeID finds a user by any of their Stripe customer IDs
+func (db *DB) GetUserByAnyStripeID(stripeCustomerID string) (*User, error) {
+	user := &User{}
+	err := db.QueryRow(`
+		SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
+		       stripe_customer_id, stripe_customer_ids,
+		       reset_token, reset_token_expiry, verification_token, bio, 
+		       location, website, phone, avatar_url, preferences, last_login, last_logout, 
+		       max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed, password_changed 
+		FROM users 
+		WHERE stripe_customer_id = $1 OR $1 = ANY(COALESCE(stripe_customer_ids, '{}'))
+	`, stripeCustomerID).Scan(
+		&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName,
+		&user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.StripeCustomerIDs,
+		&user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location,
+		&user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin,
+		&user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID,
+		&user.IsActive, &user.SubID, &user.HasSubbed, &user.PasswordChanged,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
 }
 
 // UpdateUserActiveStatus updates a user's active status
@@ -589,13 +682,13 @@ func (db *DB) GetUsers(limit, offset int, role, search string) ([]*User, error) 
 	var query string
 	if maxSessionsExists {
 		query = `SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
-              stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, 
+              stripe_customer_id, stripe_customer_ids, reset_token, reset_token_expiry, verification_token, bio, 
               location, website, phone, avatar_url, preferences, last_login, last_logout, 
               max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed
               FROM users WHERE 1=1`
 	} else {
 		query = `SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
-              stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, 
+              stripe_customer_id, stripe_customer_ids, reset_token, reset_token_expiry, verification_token, bio, 
               location, website, phone, avatar_url, preferences, last_login, last_logout, 
               5 as max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed
               FROM users WHERE 1=1`
@@ -631,7 +724,7 @@ func (db *DB) GetUsers(limit, offset int, role, search string) ([]*User, error) 
 	for rows.Next() {
 		user := &User{}
 		err := rows.Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName,
-			&user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken,
+			&user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.StripeCustomerIDs, &user.ResetToken,
 			&user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location,
 			&user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin,
 			&user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed)
@@ -771,7 +864,7 @@ func (db *DB) GetUsersWithRoles(limit, offset int, role, search, status string) 
 	if maxSessionsExists {
 		query = `SELECT DISTINCT u.id, u.email, u.password_hash, u.first_name, u.last_name, 
               COALESCE(ur.role_id, u.role_id, 'user') as role, u.email_verified, 
-              u.stripe_customer_id, u.reset_token, u.reset_token_expiry, u.verification_token, u.bio, 
+              u.stripe_customer_id, u.stripe_customer_ids, u.reset_token, u.reset_token_expiry, u.verification_token, u.bio, 
               u.location, u.website, u.phone, u.avatar_url, u.preferences, u.last_login, u.last_logout, 
               u.max_sessions, u.created_at, u.updated_at, u.role_id, u.is_active, u.sub_id, u.has_subbed
               FROM users u 
@@ -780,7 +873,7 @@ func (db *DB) GetUsersWithRoles(limit, offset int, role, search, status string) 
 	} else {
 		query = `SELECT DISTINCT u.id, u.email, u.password_hash, u.first_name, u.last_name, 
               COALESCE(ur.role_id, u.role_id, 'user') as role, u.email_verified, 
-              u.stripe_customer_id, u.reset_token, u.reset_token_expiry, u.verification_token, u.bio, 
+              u.stripe_customer_id, u.stripe_customer_ids, u.reset_token, u.reset_token_expiry, u.verification_token, u.bio, 
               u.location, u.website, u.phone, u.avatar_url, u.preferences, u.last_login, u.last_logout, 
               5 as max_sessions, u.created_at, u.updated_at, u.role_id, u.is_active, u.sub_id, u.has_subbed
               FROM users u 
@@ -808,9 +901,9 @@ func (db *DB) GetUsersWithRoles(limit, offset int, role, search, status string) 
 
 	if status != "" {
 		if status == "verified" {
-			query += fmt.Sprintf(" AND u.email_verified = true")
+			query += " AND u.email_verified = true"
 		} else if status == "pending" {
-			query += fmt.Sprintf(" AND u.email_verified = false")
+			query += " AND u.email_verified = false"
 		}
 	}
 
@@ -827,7 +920,7 @@ func (db *DB) GetUsersWithRoles(limit, offset int, role, search, status string) 
 	for rows.Next() {
 		user := &User{}
 		err := rows.Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName,
-			&user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken,
+			&user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.StripeCustomerIDs, &user.ResetToken,
 			&user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location,
 			&user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin,
 			&user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed)

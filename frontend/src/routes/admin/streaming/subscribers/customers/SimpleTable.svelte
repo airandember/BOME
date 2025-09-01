@@ -6,6 +6,10 @@
 		syncingCustomers?: Set<string>;
 		bulkCreatingUsers?: boolean;
 		initiallyExpanded?: boolean;
+		enableSearch?: boolean;
+		enablePagination?: boolean;
+		itemsPerPage?: number;
+		searchPlaceholder?: string;
 		oncreateUser?: (customer: any) => void;
 		oncreateAllUsers?: () => void;
 		onsyncAllToStripe?: () => void;
@@ -19,6 +23,10 @@
 		syncingCustomers = new Set(),
 		bulkCreatingUsers = false,
 		initiallyExpanded = false,
+		enableSearch = false,
+		enablePagination = false,
+		itemsPerPage = 50,
+		searchPlaceholder = "Search by name, email, or Stripe ID...",
 		oncreateUser,
 		oncreateAllUsers,
 		onsyncAllToStripe,
@@ -27,9 +35,97 @@
 	
 	let isExpanded = $state(initiallyExpanded);
 	
+	// Search and pagination state
+	let searchTerm = $state('');
+	let currentPage = $state(1);
+	
+	// Filtered and paginated data
+	let filteredCustomers = $derived.by(() => {
+		if (!enableSearch || !searchTerm.trim()) {
+			return customers;
+		}
+		
+		const term = searchTerm.toLowerCase().trim();
+		return customers.filter(customer => {
+			const name = (customer.name || '').toLowerCase();
+			const email = (customer.email || '').toLowerCase();
+			const stripeId = (customer.stripeId || customer.stripe_id || '').toLowerCase();
+			
+			return name.includes(term) || 
+				   email.includes(term) || 
+				   stripeId.includes(term);
+		});
+	});
+	
+	let totalPages = $derived.by(() => {
+		if (!enablePagination) return 1;
+		return Math.ceil(filteredCustomers.length / itemsPerPage);
+	});
+	
+	let displayedCustomers = $derived.by(() => {
+		if (!enablePagination) {
+			return filteredCustomers;
+		}
+		
+		const startIndex = (currentPage - 1) * itemsPerPage;
+		const endIndex = startIndex + itemsPerPage;
+		return filteredCustomers.slice(startIndex, endIndex);
+	});
+	
+	// Reset to page 1 when search changes
+	$effect(() => {
+		if (enableSearch) {
+			currentPage = 1;
+		}
+	});
+	
 	function toggleAccordion() {
 		isExpanded = !isExpanded;
 	}
+	
+	// Pagination functions
+	function goToPage(page: number) {
+		if (page >= 1 && page <= totalPages) {
+			currentPage = page;
+		}
+	}
+	
+	function nextPage() {
+		if (currentPage < totalPages) {
+			currentPage++;
+		}
+	}
+	
+	function prevPage() {
+		if (currentPage > 1) {
+			currentPage--;
+		}
+	}
+	
+	function handleSearch() {
+		// Search is reactive via $derived, but we can add any additional logic here if needed
+		currentPage = 1; // Reset to first page when searching
+	}
+	
+	function clearSearch() {
+		searchTerm = '';
+		currentPage = 1;
+	}
+	
+	// Dynamic title with counts
+	let dynamicTitle = $derived.by(() => {
+		const totalCount = customers.length;
+		const filteredCount = filteredCustomers.length;
+		const displayedCount = displayedCustomers.length;
+		
+		if (enableSearch && searchTerm.trim()) {
+			return `${title} (${totalCount} total, ${filteredCount} filtered${enablePagination ? `, ${displayedCount} showing` : ''})`;
+		} else if (enablePagination && totalPages > 1) {
+			return `${title} (${totalCount} total, ${displayedCount} showing)`;
+		} else {
+			return `${title} (${totalCount} total)`;
+		}
+	});
 	
 	function formatDate(dateString: string): string {
 		if (!dateString) return 'N/A';
@@ -64,8 +160,29 @@
 				<div class="accordion-icon {isExpanded ? 'expanded' : ''}">
 					▶
 				</div>
-				<h2>{title}</h2>
+				<h2>{dynamicTitle}</h2>
 			</div>
+			
+			{#if enableSearch}
+				<div class="search-controls" onclick={(e) => e.stopPropagation()} role="search" onkeydown={(e) => e.key === 'Enter' && e.stopPropagation()}>
+					<input
+						type="text"
+						placeholder={searchPlaceholder}
+						bind:value={searchTerm}
+						oninput={handleSearch}
+						class="search-input"
+					/>
+					{#if searchTerm.trim()}
+						<button 
+							onclick={clearSearch}
+							class="btn btn-outline btn-sm clear-search"
+							title="Clear search"
+						>
+							Clear
+						</button>
+					{/if}
+				</div>
+			{/if}
 			<div class="accordion-actions">
 				{#if tableType === 'stripe-only' && customers.length > 0}
 					<button 
@@ -115,7 +232,7 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each customers as customer}
+					{#each displayedCustomers as customer}
 						<tr>
 							<td>
 								<div class="customer-info">
@@ -202,6 +319,33 @@
 				</tbody>
 			</table>
 		</div>
+		
+		{#if enablePagination && totalPages > 1}
+			<div class="pagination-controls">
+				<div class="pagination">
+					<button 
+						onclick={prevPage}
+						disabled={currentPage === 1}
+						class="btn btn-outline btn-sm"
+					>
+						Previous
+					</button>
+					
+					<span class="page-info">
+						Page {currentPage} of {totalPages}
+						({displayedCustomers.length} showing)
+					</span>
+					
+					<button 
+						onclick={nextPage}
+						disabled={currentPage === totalPages}
+						class="btn btn-outline btn-sm"
+					>
+						Next
+					</button>
+				</div>
+			</div>
+		{/if}
 			</div>
 		{/if}
 	</div>
@@ -259,6 +403,52 @@
 		display: flex;
 		gap: 0.5rem;
 		align-items: center;
+	}
+
+	.search-controls {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-right: 1rem;
+	}
+
+	.search-input {
+		padding: 0.5rem;
+		border: 1px solid #e5e7eb;
+		border-radius: 0.375rem;
+		font-size: 0.875rem;
+		background: white;
+		color: #111827;
+		min-width: 250px;
+	}
+
+	.search-input:focus {
+		outline: none;
+		border-color: #3b82f6;
+		box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+	}
+
+	.clear-search {
+		white-space: nowrap;
+	}
+
+	.pagination-controls {
+		padding: 1rem 1.5rem;
+		border-top: 1px solid #e5e7eb;
+		background: #f9fafb;
+	}
+
+	.pagination {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 1rem;
+	}
+
+	.page-info {
+		font-size: 0.875rem;
+		color: #6b7280;
+		white-space: nowrap;
 	}
 
 	.accordion-content {
@@ -427,6 +617,17 @@
 	.btn-warning:hover:not(:disabled) {
 		background: #d97706;
 		transform: translateY(-1px);
+	}
+
+	.btn-outline {
+		background: white;
+		color: #374151;
+		border: 1px solid #d1d5db;
+	}
+
+	.btn-outline:hover:not(:disabled) {
+		background: #f9fafb;
+		border-color: #9ca3af;
 	}
 
 	.btn-sm {
