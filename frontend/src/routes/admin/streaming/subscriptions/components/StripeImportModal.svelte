@@ -73,11 +73,6 @@
 	}
 
 	async function handleSave() {
-		if (selectedProducts.size === 0) {
-			showToast('Please select at least one product', 'warning');
-			return;
-		}
-
 		saving = true;
 		try {
 			// Step 1: Update availability in stripe_products table
@@ -98,12 +93,16 @@
 				throw new Error(`Failed to update product availability: ${availabilityResponse.status}`);
 			}
 
-			// Step 2: Import selected products as subscription plans
-			const selectedProductIds = Array.from(selectedProducts);
-			
-			const importResult = await StreamingSubscriptionService.importStripeProductsAsPlans(selectedProductIds);
-			
-			showToast(`Successfully processed ${importResult.imported_count} products as subscription plans${importResult.skipped_count > 0 ? ` (${importResult.skipped_count} already existed)` : ''}`, 'success');
+			// Step 2: Import selected products as subscription plans (only if any are selected)
+			if (selectedProducts.size > 0) {
+				const selectedProductIds = Array.from(selectedProducts);
+				
+				const importResult = await StreamingSubscriptionService.importStripeProductsAsPlans(selectedProductIds);
+				
+				showToast(`Successfully processed ${importResult.imported_count} products as subscription plans${importResult.skipped_count > 0 ? ` (${importResult.skipped_count} already existed)` : ''}`, 'success');
+			} else {
+				showToast('Product availability updated successfully', 'success');
+			}
 			
 			onImportComplete();
 			handleClose();

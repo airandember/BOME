@@ -74,9 +74,18 @@ export interface Refund {
 export const subscriptionService = {
 	// Get available subscription plans
 	getPlans: async () => {
-		const response = await apiRequest('/subscription-plans/active');
+		const response = await apiRequest('/subscription-plans/all');
 		const data = await response.json();
-		// Handle the wrapped response structure
+		// Handle the wrapped response structure from getAllSubscriptionData
+		if (data.status === 'success' && data.data) {
+			// Combine standard and promotional plans
+			const allPlans = [
+				...(data.data.standard_plans || []),
+				...(data.data.promotional_plans || [])
+			];
+			return { plans: allPlans };
+		}
+		// Fallback for other response formats
 		return {
 			plans: data.data?.subscription_plans || data.subscription_plans || []
 		};
