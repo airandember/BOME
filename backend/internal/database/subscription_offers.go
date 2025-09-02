@@ -61,7 +61,7 @@ func (db *DB) CreateSubscriptionOffer(offer *SubscriptionOffer) error {
 
 	// First, let's check the actual table schema
 	schemaQuery := "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'subscription_offers' ORDER BY ordinal_position"
-	rows, err := db.Query(schemaQuery)
+	rows, err := db.DB.Query(schemaQuery)
 	if err != nil {
 		log.Printf("Database: Error checking schema: %v", err)
 		return err
@@ -166,7 +166,7 @@ func (db *DB) CreateSubscriptionOffer(offer *SubscriptionOffer) error {
 	log.Printf("  off_priority: %v (type: %T)", offer.OffPriority, offer.OffPriority)
 	log.Printf("  off_auto_apply: %v (type: %T)", offer.OffAutoApply, offer.OffAutoApply)
 
-	err = db.QueryRow(
+	err = db.DB.QueryRow(
 		query,
 		offer.PlanID,
 		itemID,
@@ -213,7 +213,7 @@ func (db *DB) GetAllSubscriptionOffers() ([]*SubscriptionOffer, error) {
 		ORDER BY off_priority DESC, off_created_at DESC
 	`
 
-	rows, err := db.Query(query)
+	rows, err := db.DB.Query(query)
 	if err != nil {
 		log.Printf("Database: Error querying subscription offers: %v", err)
 		return nil, err
@@ -275,7 +275,7 @@ func (db *DB) GetSubscriptionOfferByID(id int) (*SubscriptionOffer, error) {
 	`
 
 	offer := &SubscriptionOffer{}
-	err := db.QueryRow(query, id).Scan(
+	err := db.DB.QueryRow(query, id).Scan(
 		&offer.ID,
 		&offer.PlanID,
 		&offer.ItemID,
@@ -432,7 +432,7 @@ func (db *DB) GetOfferHistory(offerID int) ([]*SubscriptionOfferHistory, error) 
 		ORDER BY created_at DESC
 	`
 
-	rows, err := db.Query(query, offerID)
+	rows, err := db.DB.Query(query, offerID)
 	if err != nil {
 		log.Printf("Database: Error querying offer history: %v", err)
 		return nil, err

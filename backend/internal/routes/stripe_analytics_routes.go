@@ -386,7 +386,7 @@ func getDatabaseStats(c *gin.Context, db *database.DB) {
 
 	// Get customer count from stripe_customers table
 	var customerCount int
-	err := db.QueryRow("SELECT COUNT(*) FROM stripe_customers").Scan(&customerCount)
+	err := db.DB.QueryRow("SELECT COUNT(*) FROM stripe_customers").Scan(&customerCount)
 	if err != nil {
 		log.Printf("Error getting customer count: %v", err)
 		customerCount = 0
@@ -394,7 +394,7 @@ func getDatabaseStats(c *gin.Context, db *database.DB) {
 
 	// Get active subscription count from stripe_subscriptions table
 	var subscriptionCount int
-	err = db.QueryRow("SELECT COUNT(*) FROM stripe_subscriptions WHERE status = 'active'").Scan(&subscriptionCount)
+	err = db.DB.QueryRow("SELECT COUNT(*) FROM stripe_subscriptions WHERE status = 'active'").Scan(&subscriptionCount)
 	if err != nil {
 		log.Printf("Error getting active subscription count: %v", err)
 		subscriptionCount = 0
@@ -402,7 +402,7 @@ func getDatabaseStats(c *gin.Context, db *database.DB) {
 
 	// Get product count from stripe_products table
 	var productCount int
-	err = db.QueryRow("SELECT COUNT(*) FROM stripe_products").Scan(&productCount)
+	err = db.DB.QueryRow("SELECT COUNT(*) FROM stripe_products").Scan(&productCount)
 	if err != nil {
 		log.Printf("Error getting product count: %v", err)
 		productCount = 0
@@ -410,7 +410,7 @@ func getDatabaseStats(c *gin.Context, db *database.DB) {
 
 	// Get invoice count from stripe_invoices table
 	var invoiceCount int
-	err = db.QueryRow("SELECT COUNT(*) FROM stripe_invoices").Scan(&invoiceCount)
+	err = db.DB.QueryRow("SELECT COUNT(*) FROM stripe_invoices").Scan(&invoiceCount)
 	if err != nil {
 		log.Printf("Error getting invoice count: %v", err)
 		invoiceCount = 0
@@ -453,7 +453,7 @@ func getDatabaseCustomers(c *gin.Context, db *database.DB) {
 	var totalCount int
 
 	// Get total count
-	err = db.QueryRow("SELECT COUNT(*) FROM stripe_customers").Scan(&totalCount)
+	err = db.DB.QueryRow("SELECT COUNT(*) FROM stripe_customers").Scan(&totalCount)
 	if err != nil {
 		log.Printf("Error getting customer count: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get customer count"})
@@ -469,7 +469,7 @@ func getDatabaseCustomers(c *gin.Context, db *database.DB) {
 		LIMIT $1 OFFSET $2
 	`
 
-	rows, err := db.Query(baseQuery, limit, offset)
+	rows, err := db.DB.Query(baseQuery, limit, offset)
 	if err != nil {
 		log.Printf("Error querying customers: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query customers"})
@@ -575,14 +575,14 @@ func getDatabaseSubscriptions(c *gin.Context, db *database.DB) {
 	if status != "" {
 		countArgs = []interface{}{status}
 	}
-	err = db.QueryRow(countQuery, countArgs...).Scan(&totalCount)
+	err = db.DB.QueryRow(countQuery, countArgs...).Scan(&totalCount)
 	if err != nil {
 		log.Printf("Error getting subscription count: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get subscription count"})
 		return
 	}
 
-	rows, err := db.Query(baseQuery, args...)
+	rows, err := db.DB.Query(baseQuery, args...)
 	if err != nil {
 		log.Printf("Error querying subscriptions: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query subscriptions"})
@@ -643,7 +643,7 @@ func getCustomerSubscriptions(db *database.DB, stripeCustomerID string) ([]map[s
 		ORDER BY s.created_at DESC
 	`
 
-	rows, err := db.Query(query, stripeCustomerID)
+	rows, err := db.DB.Query(query, stripeCustomerID)
 	if err != nil {
 		return nil, err
 	}
@@ -897,7 +897,7 @@ func getAvailableStripeProducts(c *gin.Context, db *database.DB) {
 		ORDER BY name ASC
 	`
 
-	rows, err := db.Query(query)
+	rows, err := db.DB.Query(query)
 	if err != nil {
 		log.Printf("❌ Error querying available Stripe products: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -949,7 +949,7 @@ func getAvailableStripeProducts(c *gin.Context, db *database.DB) {
 
 		var priceStripeID, currency, recurringInterval *string
 		var unitAmount *int64
-		err := db.QueryRow(priceQuery, productID).Scan(&priceStripeID, &unitAmount, &currency, &recurringInterval)
+		err := db.DB.QueryRow(priceQuery, productID).Scan(&priceStripeID, &unitAmount, &currency, &recurringInterval)
 		if err == nil && unitAmount != nil {
 			products[i]["price"] = *unitAmount
 			if priceStripeID != nil {
@@ -1051,7 +1051,7 @@ func getAllStripeProducts(c *gin.Context, db *database.DB) {
 		ORDER BY name ASC
 	`
 
-	rows, err := db.Query(query)
+	rows, err := db.DB.Query(query)
 	if err != nil {
 		log.Printf("❌ Error querying all Stripe products: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -1105,7 +1105,7 @@ func getAllStripeProducts(c *gin.Context, db *database.DB) {
 
 		var priceStripeID, currency, recurringInterval *string
 		var unitAmount *int64
-		err := db.QueryRow(priceQuery, productID).Scan(&priceStripeID, &unitAmount, &currency, &recurringInterval)
+		err := db.DB.QueryRow(priceQuery, productID).Scan(&priceStripeID, &unitAmount, &currency, &recurringInterval)
 		if err == nil && unitAmount != nil {
 			products[i]["price"] = *unitAmount
 			if priceStripeID != nil {
@@ -1371,7 +1371,7 @@ func debugStripeProductsData(c *gin.Context, db *database.DB) {
 		LIMIT 10
 	`
 
-	productsRows, err := db.Query(productsQuery)
+	productsRows, err := db.DB.Query(productsQuery)
 	if err != nil {
 		log.Printf("❌ Error querying stripe_products: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -1415,7 +1415,7 @@ func debugStripeProductsData(c *gin.Context, db *database.DB) {
 		LIMIT 10
 	`
 
-	pricesRows, err := db.Query(pricesQuery)
+	pricesRows, err := db.DB.Query(pricesQuery)
 	if err != nil {
 		log.Printf("❌ Error querying stripe_prices: %v", err)
 		// Continue even if prices query fails
@@ -1454,8 +1454,8 @@ func debugStripeProductsData(c *gin.Context, db *database.DB) {
 
 	// Get table counts
 	var productsCount, pricesCount int
-	db.QueryRow("SELECT COUNT(*) FROM stripe_products").Scan(&productsCount)
-	db.QueryRow("SELECT COUNT(*) FROM stripe_prices").Scan(&pricesCount)
+	db.DB.QueryRow("SELECT COUNT(*) FROM stripe_products").Scan(&productsCount)
+	db.DB.QueryRow("SELECT COUNT(*) FROM stripe_prices").Scan(&pricesCount)
 
 	// Check for products with associated prices
 	joinQuery := `
@@ -1470,7 +1470,7 @@ func debugStripeProductsData(c *gin.Context, db *database.DB) {
 		LIMIT 5
 	`
 
-	joinRows, err := db.Query(joinQuery)
+	joinRows, err := db.DB.Query(joinQuery)
 	var joinedData []map[string]interface{}
 	if err == nil {
 		defer joinRows.Close()
