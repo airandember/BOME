@@ -384,11 +384,11 @@ func getDatabaseStats(c *gin.Context, db *database.DB) {
 		customerCount = 0
 	}
 
-	// Get subscription count from stripe_subscriptions table
+	// Get active subscription count from stripe_subscriptions table
 	var subscriptionCount int
-	err = db.QueryRow("SELECT COUNT(*) FROM stripe_subscriptions").Scan(&subscriptionCount)
+	err = db.QueryRow("SELECT COUNT(*) FROM stripe_subscriptions WHERE status = 'active'").Scan(&subscriptionCount)
 	if err != nil {
-		log.Printf("Error getting subscription count: %v", err)
+		log.Printf("Error getting active subscription count: %v", err)
 		subscriptionCount = 0
 	}
 
@@ -415,7 +415,7 @@ func getDatabaseStats(c *gin.Context, db *database.DB) {
 	stats["last_updated"] = time.Now().Unix()
 	stats["source"] = "database"
 
-	log.Printf("📊 Database stats: %d customers, %d subscriptions, %d products, %d invoices",
+	log.Printf("📊 Database stats: %d customers, %d active subscriptions, %d products, %d invoices",
 		customerCount, subscriptionCount, productCount, invoiceCount)
 
 	c.JSON(http.StatusOK, stats)

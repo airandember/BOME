@@ -596,7 +596,7 @@
 								</div>
 								<div class="stat-card">
 									<div class="stat-value">{databaseStats.subscriptions || 0}</div>
-									<div class="stat-label">Subscriptions</div>
+									<div class="stat-label">Active Subscriptions</div>
 								</div>
 								<div class="stat-card">
 									<div class="stat-value">{databaseStats.products || 0}</div>
