@@ -25,11 +25,21 @@ const getEnvironment = (): 'development' | 'production' | 'staging' => {
 	return 'development';
 };
 
-// Configuration object with explicit fallbacks for preview mode
+// Validate required environment variables
+const validateConfig = () => {
+	const apiBaseUrl = getEnvVar('VITE_API_BASE_URL', '');
+	if (!apiBaseUrl) {
+		console.error('❌ VITE_API_BASE_URL environment variable is required but not set');
+		throw new Error('Missing required environment variable: VITE_API_BASE_URL');
+	}
+	return apiBaseUrl;
+};
+
+// Configuration object - relies on environment variables
 export const config: AppConfig = {
-	// Always use localhost:8080 for local development/preview
-	apiBaseUrl: getEnvVar('VITE_API_BASE_URL', 'http://localhost:8080/api/v1'),
-	wsUrl: getEnvVar('VITE_WS_URL', 'ws://localhost:8080/ws'),
+	// Use environment variable - no hardcoded fallbacks
+	apiBaseUrl: validateConfig(),
+	wsUrl: getEnvVar('VITE_WS_URL', ''),
 	appName: getEnvVar('VITE_APP_NAME', 'Book of Mormon Evidences'),
 	appVersion: getEnvVar('VITE_APP_VERSION', '1.0.0'),
 	environment: getEnvironment()
