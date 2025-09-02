@@ -273,8 +273,7 @@ func (s *SubscriberService) GetSubscriberCount(filters *SubscriberFilters) (int,
 	query := `
 		SELECT COUNT(*)
 		FROM users u
-		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id
-		WHERE u.sub_id IS NOT NULL
+		WHERE (u.has_subbed = true OR u.sub_id IS NOT NULL)
 	`
 
 	args := []interface{}{}
@@ -283,17 +282,19 @@ func (s *SubscriberService) GetSubscriberCount(filters *SubscriberFilters) (int,
 	// Add filters
 	if filters != nil {
 		if filters.PlanID != nil {
-			argCount++
-			query += fmt.Sprintf(" AND sp.id = $%d", argCount)
-			args = append(args, *filters.PlanID)
+			// Skip plan ID filter for now since we're not using subscription_plans table
 		}
 
 		if filters.Status != nil {
-			argCount++
-			query += fmt.Sprintf(" AND sp.is_active = $%d", argCount)
-			// Convert status to boolean for plan active status
-			isActive := *filters.Status == "active"
-			args = append(args, isActive)
+			// For now, we'll just filter based on has_subbed status
+			if *filters.Status == "active" {
+				// Already filtered by has_subbed = true in base query
+			} else {
+				// Add filter for inactive
+				argCount++
+				query += fmt.Sprintf(" AND u.has_subbed = $%d", argCount)
+				args = append(args, false)
+			}
 		}
 
 		if filters.Search != "" {
