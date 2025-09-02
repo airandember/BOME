@@ -19,6 +19,16 @@
 	let activeTab: 'subscribers' | 'non-subscribers' | 'stripe-subs' = $state('subscribers');
 	let loading = $state(false);
 	
+	// Separate loading states for each tab
+	let subscribersLoading = $state(false);
+	let nonSubscribersLoading = $state(false);
+	let stripeSubsLoading = $state(false);
+	
+	// Track which tabs have been loaded
+	let subscribersLoaded = $state(false);
+	let nonSubscribersLoaded = $state(false);
+	let stripeSubsLoaded = $state(false);
+	
 	// All data arrays (source of truth)
 	let allSubscribers = $state<Subscriber[]>([]);
 	let allNonSubscribers = $state<NonSubscriber[]>([]);
@@ -185,7 +195,7 @@ async function loadStripeCustomers() {
 async function loadStripeSubscriptions() {
 	try {
 		console.log('🔄 Loading Stripe subscriptions from database...');
-		const response = await apiRequest('/admin/streaming/stripe/database/subscriptions?limit=1000');
+		const response = await apiRequest('/admin/streaming/stripe/database/subscriptions'); // No limit
 		
 		if (response.ok) {
 			const data = await response.json();
@@ -207,66 +217,140 @@ async function loadStripeSubscriptions() {
 onMount(async () => {
 	await fetchRoles();
 	await fetchSubscriptionPlans();
-	await loadInitialData();
+	// Load the active tab's data immediately
+	await loadTabData(activeTab);
 });
 
-// Load all data once
-async function loadInitialData() {
-	loading = true;
+// Load data for a specific tab
+async function loadTabData(tab: 'subscribers' | 'non-subscribers' | 'stripe-subs') {
+	console.log(`🔄 Loading data for tab: ${tab}`);
+	
+	switch (tab) {
+		case 'subscribers':
+			await loadSubscribersData();
+			break;
+		case 'non-subscribers':
+			await loadNonSubscribersData();
+			break;
+		case 'stripe-subs':
+			await loadStripeSubsData();
+			break;
+	}
+}
+
+// Load subscribers data
+async function loadSubscribersData() {
+	if (subscribersLoaded) {
+		console.log('✅ Subscribers already loaded, skipping...');
+		return;
+	}
+	
+	subscribersLoading = true;
 	try {
-		console.log('Loading initial data for both tabs...');
+		console.log('🔄 Loading subscribers...');
 		
-		// Load all subscribers
 		const subscribersResponse = await StreamingSubscriberService.getSubscribers({
-			limit: 1000, // Get all subscribers
+			limit: 0, // Get all subscribers (no limit)
 			offset: 0
 		});
 		allSubscribers = subscribersResponse.subscribers || [];
 		subscriberCount = allSubscribers.length;
 		
-		console.log('Loaded subscribers with roles:', allSubscribers.map(s => ({ id: s.id, role: s.role, email: s.email })));
+		console.log('✅ Loaded subscribers:', allSubscribers.length);
 		
-		// Load all non-subscribers
+		// Initialize display array
+		displayedSubscribers = [...allSubscribers];
+		
+		// Apply filters if any are set
+		if (activeTab === 'subscribers') {
+			debounceApplyFilters();
+		}
+		
+		subscribersLoaded = true;
+	} catch (error) {
+		console.error('❌ Error loading subscribers:', error);
+		showToast('Failed to load subscribers', 'error');
+		allSubscribers = [];
+		displayedSubscribers = [];
+		subscriberCount = 0;
+	} finally {
+		subscribersLoading = false;
+	}
+}
+
+// Load non-subscribers data
+async function loadNonSubscribersData() {
+	if (nonSubscribersLoaded) {
+		console.log('✅ Non-subscribers already loaded, skipping...');
+		return;
+	}
+	
+	nonSubscribersLoading = true;
+	try {
+		console.log('🔄 Loading non-subscribers...');
+		
 		const nonSubscribersResponse = await StreamingSubscriberService.getNonSubscribers({
-			limit: 1000, // Get all non-subscribers
+			limit: 0, // Get all non-subscribers (no limit)
 			offset: 0
 		});
 		allNonSubscribers = nonSubscribersResponse.non_subscribers || [];
 		nonSubscriberCount = allNonSubscribers.length;
 		
-		console.log('Loaded non-subscribers with roles:', allNonSubscribers.map(ns => ({ id: ns.id, role: ns.role, email: ns.email })));
+		console.log('✅ Loaded non-subscribers:', allNonSubscribers.length);
 		
-		// Load Stripe data from database
-		stripeCustomers = await loadStripeCustomers();
-		stripeSubscriptions = await loadStripeSubscriptions();
-		
-		// Initialize display arrays with all data (no filters applied initially)
-		displayedSubscribers = [...allSubscribers];
+		// Initialize display array
 		displayedNonSubscribers = [...allNonSubscribers];
 		
-		// Apply initial filtering (roles should be loaded by now)
-		applyFilters();
+		// Apply filters if any are set
+		if (activeTab === 'non-subscribers') {
+			debounceApplyFilters();
+		}
 		
-		console.log('Initial data loaded:', {
-			subscribers: allSubscribers.length,
-			nonSubscribers: allNonSubscribers.length,
-			displayedSubscribers: displayedSubscribers.length,
-			displayedNonSubscribers: displayedNonSubscribers.length,
-			rolesLoaded: roles.length
-		});
+		nonSubscribersLoaded = true;
 	} catch (error) {
-		console.error('Error loading initial data:', error);
-		showToast('Failed to load data', 'error');
-		
-		// Set empty state
-		allSubscribers = [];
+		console.error('❌ Error loading non-subscribers:', error);
+		showToast('Failed to load non-subscribers', 'error');
 		allNonSubscribers = [];
-		displayedSubscribers = [];
 		displayedNonSubscribers = [];
-		subscriberCount = 0;
 		nonSubscriberCount = 0;
 	} finally {
-		loading = false;
+		nonSubscribersLoading = false;
+	}
+}
+
+// Load Stripe subs data
+async function loadStripeSubsData() {
+	if (stripeSubsLoaded) {
+		console.log('✅ Stripe subs already loaded, skipping...');
+		return;
+	}
+	
+	stripeSubsLoading = true;
+	try {
+		console.log('🔄 Loading Stripe subs data...');
+		
+		// Load Stripe data from database in parallel
+		const [customers, subscriptions] = await Promise.all([
+			loadStripeCustomers(),
+			loadStripeSubscriptions()
+		]);
+		
+		stripeCustomers = customers;
+		stripeSubscriptions = subscriptions;
+		
+		console.log('✅ Loaded Stripe subs data:', {
+			customers: stripeCustomers.length,
+			subscriptions: stripeSubscriptions.length
+		});
+		
+		stripeSubsLoaded = true;
+	} catch (error) {
+		console.error('❌ Error loading Stripe subs data:', error);
+		showToast('Failed to load Stripe data', 'error');
+		stripeCustomers = [];
+		stripeSubscriptions = [];
+	} finally {
+		stripeSubsLoading = false;
 	}
 }
 	
@@ -658,29 +742,39 @@ async function loadInitialData() {
 		}
 	}
 
-	// Watch filter variables for changes - only apply filters when filters actually change
-	$effect(() => {
-		if (allSubscribers.length > 0 && (
-			subscriberSearchTerm || 
-			subscriberEmailVerifiedFilter || 
-			subscriberRoleFilter || 
-			subscriberPlanFilter || 
-			subscriberLastLoginFilter || 
-			subscriberCreatedDateFilter
-		)) {
+	// Debounced filter application to prevent infinite loops
+	let filterTimeout: NodeJS.Timeout | null = null;
+	
+	function debounceApplyFilters() {
+		if (filterTimeout) {
+			clearTimeout(filterTimeout);
+		}
+		filterTimeout = setTimeout(() => {
 			applyFilters();
+		}, 100); // 100ms debounce
+	}
+
+	// Apply filters when data is loaded for the first time
+	$effect(() => {
+		if (activeTab === 'subscribers' && allSubscribers.length > 0 && subscribersLoaded) {
+			// Only apply on initial load, not on every filter change
+			const hasAnyFilters = subscriberSearchTerm || subscriberEmailVerifiedFilter !== undefined || 
+				subscriberRoleFilter || subscriberPlanFilter || subscriberLastLoginFilter || subscriberCreatedDateFilter;
+			if (!hasAnyFilters) {
+				displayedSubscribers = [...allSubscribers];
+			}
 		}
 	});
 
 	$effect(() => {
-		if (allNonSubscribers.length > 0 && (
-			nonSubscriberSearchTerm || 
-			nonSubscriberEmailVerifiedFilter || 
-			nonSubscriberRoleFilter || 
-			nonSubscriberLastLoginFilter || 
-			nonSubscriberCreatedDateFilter
-		)) {
-			applyFilters();
+		if (activeTab === 'non-subscribers' && allNonSubscribers.length > 0 && nonSubscribersLoaded) {
+			// Only apply on initial load, not on every filter change
+			const hasAnyFilters = nonSubscriberSearchTerm || nonSubscriberEmailVerifiedFilter !== undefined || 
+				nonSubscriberRoleFilter || nonSubscriberLastLoginFilter || nonSubscriberCreatedDateFilter || 
+				nonSubscriberHasSubbedFilter !== undefined;
+			if (!hasAnyFilters) {
+				displayedNonSubscribers = [...allNonSubscribers];
+			}
 		}
 	});
 
@@ -774,8 +868,8 @@ async function loadInitialData() {
 	}
 
 	// Modal state
-	let showSendOfferModal = false;
-	let offers: SubscriptionOffer[] = [];
+	let showSendOfferModal = $state(false);
+	let offers: SubscriptionOffer[] = $state([]);
 	let offersLoading = false;
 
 	// Load offers for the modal
@@ -841,7 +935,7 @@ async function loadInitialData() {
 		isAnimating = true;
 		
 		// Apply filters immediately
-		applyFilters();
+		debounceApplyFilters();
 		
 		// End transition after brief period
 		setTimeout(() => {
@@ -856,7 +950,7 @@ async function loadInitialData() {
 
 
 	// Update the changeTab function to handle the new tab
-	function changeTab(tab: 'subscribers' | 'non-subscribers' | 'stripe-subs') {
+	async function changeTab(tab: 'subscribers' | 'non-subscribers' | 'stripe-subs') {
 		if (tab === activeTab) return;
 		
 		// Clear selections when switching tabs
@@ -880,10 +974,8 @@ async function loadInitialData() {
 		
 		activeTab = tab;
 		
-		// Load data for the new tab if it's the Stripe tab
-		if (tab === 'stripe-subs') {
-			loadStripeData();
-		}
+		// Load data for the new tab immediately
+		await loadTabData(tab);
 	}
 
 	// Handle search
@@ -894,6 +986,7 @@ async function loadInitialData() {
 			nonSubscriberSearchTerm = term;
 		}
 		currentPage = 1;
+		debounceApplyFilters();
 	}
 
 	// Handle filter changes
@@ -943,6 +1036,7 @@ async function loadInitialData() {
 			}
 		}
 		currentPage = 1;
+		debounceApplyFilters();
 	}
 
 	// Handle clear all filters
@@ -963,6 +1057,7 @@ async function loadInitialData() {
 			nonSubscriberHasSubbedFilter = undefined;
 		}
 		currentPage = 1;
+		debounceApplyFilters();
 	}
 
 	// Handle page change
@@ -1025,7 +1120,7 @@ async function loadInitialData() {
 			if (result.successful && result.successful.length > 0) {
 				showToast(`Suspended ${result.successful.length} subscribers`, 'success');
 				clearSelection();
-				await loadInitialData(); // Refresh data
+				await loadTabData(activeTab); // Refresh current tab data
 			}
 			
 			if (result.failed && result.failed.length > 0) {
@@ -1050,7 +1145,7 @@ async function loadInitialData() {
 			if (result.successful && result.successful.length > 0) {
 				showToast(`Activated ${result.successful.length} subscribers`, 'success');
 				clearSelection();
-				await loadInitialData(); // Refresh data
+				await loadTabData(activeTab); // Refresh current tab data
 			}
 			
 			if (result.failed && result.failed.length > 0) {
@@ -1143,72 +1238,7 @@ async function loadInitialData() {
 	let localOnlyCount = $state(0);
 	let stripeOnlyCount = $state(0);
 
-	// Add function to load Stripe data
-	async function loadStripeData() {
-		// For now, use mock data - this will be replaced with real data later
-		stripeOnlyCustomers = [
-			{
-				id: 'stripe_1',
-				source: 'stripe',
-				name: 'John Doe',
-				email: 'john@example.com',
-				localId: null,
-				role: null,
-				planName: null,
-				stripePriceId: null,
-				stripeId: 'cus_123456',
-				stripeCreatedAt: '2024-01-01T00:00:00Z',
-				stripeMetadata: {},
-				createdAt: '2024-01-01T00:00:00Z',
-				stripeCustomerId: null,
-				syncStatus: 'stripe_only'
-			}
-		];
-		
-		syncedCustomers = [
-			{
-				id: 'hybrid_1',
-				source: 'hybrid',
-				name: 'Jane Smith',
-				email: 'jane@example.com',
-				localId: 1,
-				role: 'user',
-				planName: 'Basic Plan',
-				stripePriceId: 'price_123',
-				stripeId: 'cus_789012',
-				stripeCreatedAt: '2024-01-01T00:00:00Z',
-				stripeMetadata: {},
-				createdAt: '2024-01-01T00:00:00Z',
-				stripeCustomerId: 'cus_789012',
-				syncStatus: 'synced'
-			}
-		];
-		
-		localOnlyUsers = [
-			{
-				id: 'local_1',
-				source: 'local',
-				name: 'Bob Johnson',
-				email: 'bob@example.com',
-				localId: 2,
-				role: 'user',
-				planName: 'Premium Plan',
-				stripePriceId: 'price_456',
-				stripeId: null,
-				stripeCreatedAt: null,
-				stripeMetadata: null,
-				createdAt: '2024-01-01T00:00:00Z',
-				stripeCustomerId: null,
-				syncStatus: 'local_only'
-			}
-		];
-		
-		// Calculate stats
-		totalCount = stripeOnlyCustomers.length + localOnlyUsers.length;
-		syncedCount = syncedCustomers.length;
-		localOnlyCount = localOnlyUsers.length;
-		stripeOnlyCount = stripeOnlyCustomers.length;
-	}
+
 
 </script>
 
@@ -1306,10 +1336,10 @@ async function loadInitialData() {
 					</button>
 				</div>
 
-				{#if loading}
+				{#if subscribersLoading}
 					<div class="loading-container">
 						<LoadingSpinner />
-						<p>Loading {activeTab}...</p>
+						<p>Loading subscribers...</p>
 					</div>
 				{:else}
 					<SubscriberTable 
@@ -1376,10 +1406,10 @@ async function loadInitialData() {
 					</button>
 				</div>
 
-				{#if loading}
+				{#if nonSubscribersLoading}
 					<div class="loading-container">
 						<LoadingSpinner />
-						<p>Loading {activeTab}...</p>
+						<p>Loading non-subscribers...</p>
 					</div>
 				{:else}
 					<NonSubscriberTable 
@@ -1406,17 +1436,24 @@ async function loadInitialData() {
 		{:else if activeTab === 'stripe-subs'}
 			<!-- Stripe Subscribers Tab -->
 			<div class="stripe-subs-section">
-				<!-- Pass the required props to the customers component -->
-				<StripeCustomers 
-					summary={{ 
-						total_customers: stripeCustomers.length,
-						total_subscriptions: stripeSubscriptions.length 
-					}} 
-					stripeData={{ 
-						customers: stripeCustomers,
-						subscriptions: stripeSubscriptions 
-					}} 
-				/>
+				{#if stripeSubsLoading}
+					<div class="loading-container">
+						<LoadingSpinner />
+						<p>Loading Stripe customers and subscriptions...</p>
+					</div>
+				{:else}
+					<!-- Pass the required props to the customers component -->
+					<StripeCustomers 
+						summary={{ 
+							total_customers: stripeCustomers.length,
+							total_subscriptions: stripeSubscriptions.length 
+						}} 
+						stripeData={{ 
+							customers: stripeCustomers,
+							subscriptions: stripeSubscriptions 
+						}} 
+					/>
+				{/if}
 			</div>
 		{/if}
 	</div>
