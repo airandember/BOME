@@ -1044,6 +1044,55 @@ func updateStripeProductAvailability(c *gin.Context, db *database.DB) {
 func getAllStripeProducts(c *gin.Context, db *database.DB) {
 	log.Printf("📦 Getting all Stripe products...")
 
+	// Add detailed debugging
+	if db == nil {
+		log.Printf("❌ Database connection is nil")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Database connection is nil",
+		})
+		return
+	}
+
+	if db.DB == nil {
+		log.Printf("❌ Database DB field is nil")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Database DB field is nil",
+		})
+		return
+	}
+
+	log.Printf("✅ Database connections are valid, executing query...")
+
+	// First check if the stripe_products table exists
+	tableCheckQuery := `
+		SELECT EXISTS (
+			SELECT FROM information_schema.tables 
+			WHERE table_schema = 'public' 
+			AND table_name = 'stripe_products'
+		);
+	`
+
+	var tableExists bool
+	err := db.DB.QueryRow(tableCheckQuery).Scan(&tableExists)
+	if err != nil {
+		log.Printf("❌ Error checking if stripe_products table exists: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to check table existence",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	if !tableExists {
+		log.Printf("❌ stripe_products table does not exist")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "stripe_products table does not exist",
+		})
+		return
+	}
+
+	log.Printf("✅ stripe_products table exists, proceeding with query...")
+
 	// Start with a simple query to get just the products first
 	query := `
 		SELECT id, stripe_id, name, description, active, available, created_at
@@ -1051,9 +1100,11 @@ func getAllStripeProducts(c *gin.Context, db *database.DB) {
 		ORDER BY name ASC
 	`
 
+	log.Printf("🔍 Executing query: %s", query)
 	rows, err := db.DB.Query(query)
 	if err != nil {
 		log.Printf("❌ Error querying all Stripe products: %v", err)
+		log.Printf("❌ Error type: %T", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to fetch Stripe products",
 			"details": err.Error(),
@@ -1061,8 +1112,10 @@ func getAllStripeProducts(c *gin.Context, db *database.DB) {
 		return
 	}
 	defer rows.Close()
+	log.Printf("✅ Query executed successfully, processing rows...")
 
 	var products []map[string]interface{}
+	productCount := 0
 
 	for rows.Next() {
 		var id int
@@ -1074,8 +1127,12 @@ func getAllStripeProducts(c *gin.Context, db *database.DB) {
 		err := rows.Scan(&id, &stripeID, &name, &description, &active, &available, &createdAt)
 		if err != nil {
 			log.Printf("❌ Error scanning Stripe product: %v", err)
+			log.Printf("❌ Scan error type: %T", err)
 			continue
 		}
+
+		productCount++
+		log.Printf("✅ Scanned product %d: ID=%d, StripeID=%s, Name=%s", productCount, id, stripeID, name)
 
 		product := map[string]interface{}{
 			"id":          id,
@@ -1090,9 +1147,13 @@ func getAllStripeProducts(c *gin.Context, db *database.DB) {
 		products = append(products, product)
 	}
 
+	log.Printf("✅ Processed %d products from database", len(products))
+
 	// Now try to get prices for each product
+	log.Printf("🔍 Starting price lookup for %d products...", len(products))
 	for i, product := range products {
 		productID := product["id"].(int) // Use the integer ID, not the stripe_id string
+		log.Printf("🔍 Looking up price for product ID %d (stripe_id: %s)", productID, product["stripe_id"])
 
 		// Try to get comprehensive price information for this product
 		priceQuery := `
@@ -1107,6 +1168,7 @@ func getAllStripeProducts(c *gin.Context, db *database.DB) {
 		var unitAmount *int64
 		err := db.DB.QueryRow(priceQuery, productID).Scan(&priceStripeID, &unitAmount, &currency, &recurringInterval)
 		if err == nil && unitAmount != nil {
+			log.Printf("✅ Found price for product ID %d: $%.2f %s %s", productID, float64(*unitAmount)/100, *currency, *recurringInterval)
 			products[i]["price"] = *unitAmount
 			if priceStripeID != nil {
 				products[i]["price_id"] = *priceStripeID
@@ -1118,10 +1180,15 @@ func getAllStripeProducts(c *gin.Context, db *database.DB) {
 				products[i]["recurring_interval"] = *recurringInterval
 			}
 		} else if err != nil && err.Error() != "sql: no rows in result set" {
-			log.Printf("⚠️ Error getting price for product ID %d: %v", productID, err)
+			log.Printf("❌ Error getting price for product ID %d: %v", productID, err)
+			log.Printf("❌ Price query error type: %T", err)
+		} else {
+			log.Printf("⚠️ No price found for product ID %d", productID)
 		}
 		// If no price found or error, price remains nil
 	}
+
+	log.Printf("✅ Price lookup completed for all products")
 
 	log.Printf("✅ Found %d total Stripe products", len(products))
 
