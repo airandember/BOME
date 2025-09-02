@@ -1363,7 +1363,7 @@ func bulkUpdateStripeProductAvailability(c *gin.Context, db *database.DB) {
 	log.Printf("🔄 Bulk updating availability for %d Stripe products", len(requestBody.Updates))
 
 	// Start a transaction for bulk updates
-	tx, err := db.Begin()
+	tx, err := db.DB.Begin()
 	if err != nil {
 		log.Printf("❌ Error starting transaction: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
