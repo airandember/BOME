@@ -1,4 +1,5 @@
 import { apiRequest } from '$lib/auth';
+import { config } from '$lib/config';
 
 export interface PublicSubscriptionPlan {
 	id: string;
@@ -51,8 +52,48 @@ export const publicPlansService = {
 	// Get all subscription data (plans + offers) in one call
 	getAllSubscriptionData: async (): Promise<SubscriptionData> => {
 		try {
-			const response = await fetch('/api/v1/subscription-plans/all');
-			const data = await response.json();
+			console.log('🔍 getAllSubscriptionData: Starting request to:', `${config.apiBaseUrl}/subscription-plans/all`);
+			const response = await fetch(`${config.apiBaseUrl}/subscription-plans/all`);
+			
+			console.log('🔍 getAllSubscriptionData: Response received:', {
+				status: response.status,
+				statusText: response.statusText,
+				ok: response.ok,
+				url: response.url
+			});
+
+			if (!response.ok) {
+				let errorText = 'Unknown error';
+				try {
+					errorText = await response.text();
+				} catch (textError) {
+					console.warn('Could not read error response text:', textError);
+				}
+				console.error('🔍 getAllSubscriptionData: Error response:', errorText);
+				throw new Error(`Failed to fetch subscription data: ${response.status} - ${errorText}`);
+			}
+
+			let data;
+			try {
+				const responseText = await response.text();
+				console.log('🔍 getAllSubscriptionData: Raw response text length:', responseText.length);
+				
+				if (!responseText || responseText.trim() === '') {
+					console.warn('🔍 getAllSubscriptionData: Empty response, returning default structure');
+					return {
+						standard_plans: [],
+						promotional_plans: [],
+						offers: []
+					};
+				}
+				
+				data = JSON.parse(responseText);
+			} catch (parseError) {
+				console.error('🔍 getAllSubscriptionData: JSON parse error:', parseError);
+				throw new Error(`Invalid JSON response: ${parseError}`);
+			}
+			
+			console.log('🔍 getAllSubscriptionData: Data received:', data);
 			
 			if (data.status === 'success' && data.data) {
 				return {
@@ -73,8 +114,8 @@ export const publicPlansService = {
 	getAllActivePlans: async (): Promise<PublicSubscriptionPlan[]> => {
 		try {
 			const [standardResponse, promotionalResponse] = await Promise.allSettled([
-				fetch('/api/v1/subscription-plans/active'),
-				fetch('/api/v1/subscription-plans/promoted')
+				fetch(`${config.apiBaseUrl}/subscription-plans/active`),
+				fetch(`${config.apiBaseUrl}/subscription-plans/promoted`)
 			]);
 
 			const allPlans: PublicSubscriptionPlan[] = [];
@@ -105,7 +146,7 @@ export const publicPlansService = {
 	// Get only standard plans
 	getStandardPlans: async (): Promise<PublicSubscriptionPlan[]> => {
 		try {
-			const response = await fetch('/api/v1/subscription-plans/active');
+			const response = await fetch(`${config.apiBaseUrl}/subscription-plans/active`);
 			const data = await response.json();
 			return data.data?.subscription_plans || [];
 		} catch (error) {
@@ -117,7 +158,7 @@ export const publicPlansService = {
 	// Get only promotional plans
 	getPromotionalPlans: async (): Promise<PublicSubscriptionPlan[]> => {
 		try {
-			const response = await fetch('/api/v1/subscription-plans/promoted');
+			const response = await fetch(`${config.apiBaseUrl}/subscription-plans/promoted`);
 			const data = await response.json();
 			return data.data?.subscription_plans || [];
 		} catch (error) {

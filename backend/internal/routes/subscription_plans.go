@@ -447,22 +447,39 @@ func getAllSubscriptionData(c *gin.Context, service *services.SubscriptionPlanSe
 	var standardPlans []*services.SubscriptionPlanResponse
 	var promotionalPlans []*services.SubscriptionPlanResponse
 
-	for _, plan := range plans {
-		if plan.IsActive {
-			if plan.SubType == "stnd" {
-				standardPlans = append(standardPlans, plan)
-			} else if plan.SubType == "prmo" {
-				promotionalPlans = append(promotionalPlans, plan)
+	// Ensure plans is not nil
+	if plans != nil {
+		for _, plan := range plans {
+			if plan.IsActive {
+				if plan.SubType == "stnd" {
+					standardPlans = append(standardPlans, plan)
+				} else if plan.SubType == "prmo" {
+					promotionalPlans = append(promotionalPlans, plan)
+				}
 			}
 		}
 	}
 
 	// Filter active offers (exclude plan_id = 0 offers)
 	var activeOffers []*services.SubscriptionOfferResponse
-	for _, offer := range offers {
-		if offer.IsActive && offer.PlanID != 0 {
-			activeOffers = append(activeOffers, offer)
+	// Ensure offers is not nil
+	if offers != nil {
+		for _, offer := range offers {
+			if offer.IsActive && offer.PlanID != 0 {
+				activeOffers = append(activeOffers, offer)
+			}
 		}
+	}
+
+	// Ensure arrays are never nil
+	if standardPlans == nil {
+		standardPlans = []*services.SubscriptionPlanResponse{}
+	}
+	if promotionalPlans == nil {
+		promotionalPlans = []*services.SubscriptionPlanResponse{}
+	}
+	if activeOffers == nil {
+		activeOffers = []*services.SubscriptionOfferResponse{}
 	}
 
 	log.Printf("Retrieved %d standard plans, %d promotional plans, and %d active offers\n",
