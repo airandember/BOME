@@ -75,16 +75,17 @@ func NewSubscriberService(db *database.DB) *SubscriberService {
 
 // GetSubscribers retrieves all subscribers with optional filters
 func (s *SubscriberService) GetSubscribers(limit, offset int, filters *SubscriberFilters) ([]*Subscriber, error) {
+	// First, let's try a simpler query that doesn't rely on subscription_plans table
+	// We'll focus on users who have has_subbed = true or sub_id is not null
 	query := `
 		SELECT 
 			u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified,
 			u.stripe_customer_id, u.last_login, u.created_at, u.updated_at,
-			u.sub_id as subscription_id, sp.id as plan_id, sp.name as plan_name, 
-			sp.price as plan_price, sp.currency as plan_currency,
-			sp.interval, sp.interval_count, sp.is_active as plan_active
+			u.sub_id as subscription_id, 
+			NULL as plan_id, NULL as plan_name, NULL as plan_price, NULL as plan_currency,
+			NULL as interval, NULL as interval_count, true as plan_active
 		FROM users u
-		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id
-		WHERE u.sub_id IS NOT NULL
+		WHERE (u.has_subbed = true OR u.sub_id IS NOT NULL)
 	`
 
 	args := []interface{}{}
@@ -186,9 +187,9 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 	var subscribers []*Subscriber
 	for rows.Next() {
 		subscriber := &Subscriber{}
-		var interval string
-		var intervalCount int
-		var planActive bool
+		var interval sql.NullString
+		var intervalCount sql.NullInt64
+		var planActive sql.NullBool
 
 		err := rows.Scan(
 			&subscriber.ID, &subscriber.Email, &subscriber.FirstName, &subscriber.LastName,
@@ -204,22 +205,18 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 		// Set SubID to the same value as SubscriptionID
 		subscriber.SubID = subscriber.SubscriptionID
 
-		// Set plan interval data
-		if interval != "" {
-			subscriber.PlanInterval = &interval
+		// Set plan interval data if available
+		if interval.Valid && interval.String != "" {
+			subscriber.PlanInterval = &interval.String
 		}
-		if intervalCount > 0 {
-			subscriber.PlanIntervalCount = &intervalCount
+		if intervalCount.Valid && intervalCount.Int64 > 0 {
+			count := int(intervalCount.Int64)
+			subscriber.PlanIntervalCount = &count
 		}
 
-		// Set subscription status based on plan active status
-		if planActive {
-			status := "active"
-			subscriber.SubscriptionStatus = &status
-		} else {
-			status := "inactive"
-			subscriber.SubscriptionStatus = &status
-		}
+		// Set subscription status - for now, assume active if they have a subscription
+		status := "active"
+		subscriber.SubscriptionStatus = &status
 
 		subscribers = append(subscribers, subscriber)
 	}
