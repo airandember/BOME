@@ -10,8 +10,23 @@
 	let loading = true;
 	let syncing = false;
 
+	// Check if this is a Stripe product (not a regular subscription plan)
+	$: isStripeProduct = planId.startsWith('stripe_');
+
 	onMount(async () => {
-		await loadStatus();
+		if (!isStripeProduct) {
+			await loadStatus();
+		} else {
+			// For Stripe products, we don't need to load status since they're already from Stripe
+			loading = false;
+			status = {
+				sync_status: 'synced',
+				stripe_product_id: planId.replace('stripe_', ''),
+				stripe_price_id: null,
+				last_synced: new Date().toISOString(),
+				sync_errors: []
+			};
+		}
 	});
 
 	async function loadStatus() {
@@ -26,6 +41,11 @@
 	}
 
 	async function syncWithStripe() {
+		if (isStripeProduct) {
+			showToast('Stripe products are already synced from Stripe', 'info');
+			return;
+		}
+
 		try {
 			syncing = true;
 			await StripeSubscriptionIntegrationService.syncPlanWithStripe(planId);
@@ -41,7 +61,8 @@
 
 	$: statusColor = status?.sync_status === 'synced' ? 'var(--success)' : 
 	                 status?.sync_status === 'partial' ? 'var(--warning)' : 'var(--error)';
-	$: statusText = status?.sync_status === 'synced' ? 'Fully Synced' :
+	$: statusText = isStripeProduct ? 'Native Stripe Product' :
+	                status?.sync_status === 'synced' ? 'Fully Synced' :
 	                status?.sync_status === 'partial' ? 'Partially Synced' : 'Not Synced';
 </script>
 
@@ -59,37 +80,62 @@
 
 	{#if status && !loading}
 		<div class="status-details">
-			<div class="detail-row">
-				<span class="detail-label">Product:</span>
-				<span class="detail-value">
-					{#if status.has_stripe_product}
-						✅ Created ({status.stripe_product_id?.slice(-8) || 'Unknown'})
-					{:else}
-						❌ Not created
-					{/if}
-				</span>
-			</div>
-			
-			<div class="detail-row">
-				<span class="detail-label">Price:</span>
-				<span class="detail-value">
-					{#if status.has_stripe_price}
-						✅ Created ({status.stripe_price_id?.slice(-8) || 'Unknown'})
-					{:else}
-						❌ Not created
-					{/if}
-				</span>
-			</div>
-
-			{#if status.last_synced}
+			{#if isStripeProduct}
+				<!-- Display for Stripe Products -->
 				<div class="detail-row">
-					<span class="detail-label">Last Synced:</span>
-					<span class="detail-value">{new Date(status.last_synced).toLocaleString()}</span>
+					<span class="detail-label">Source:</span>
+					<span class="detail-value">
+						🔗 Native Stripe Product
+					</span>
 				</div>
+				
+				<div class="detail-row">
+					<span class="detail-label">Product ID:</span>
+					<span class="detail-value">
+						{status.stripe_product_id}
+					</span>
+				</div>
+
+				<div class="detail-row">
+					<span class="detail-label">Status:</span>
+					<span class="detail-value">
+						✅ Automatically synchronized
+					</span>
+				</div>
+			{:else}
+				<!-- Display for Regular Subscription Plans -->
+				<div class="detail-row">
+					<span class="detail-label">Product:</span>
+					<span class="detail-value">
+						{#if status.has_stripe_product}
+							✅ Created ({status.stripe_product_id?.slice(-8) || 'Unknown'})
+						{:else}
+							❌ Not created
+						{/if}
+					</span>
+				</div>
+				
+				<div class="detail-row">
+					<span class="detail-label">Price:</span>
+					<span class="detail-value">
+						{#if status.has_stripe_price}
+							✅ Created ({status.stripe_price_id?.slice(-8) || 'Unknown'})
+						{:else}
+							❌ Not created
+						{/if}
+					</span>
+				</div>
+
+				{#if status.last_synced}
+					<div class="detail-row">
+						<span class="detail-label">Last Synced:</span>
+						<span class="detail-value">{new Date(status.last_synced).toLocaleString()}</span>
+					</div>
+				{/if}
 			{/if}
 		</div>
 
-		{#if status.sync_status !== 'synced'}
+		{#if status.sync_status !== 'synced' && !isStripeProduct}
 			<div class="sync-actions">
 				<button 
 					class="btn btn-sm btn-primary" 

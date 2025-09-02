@@ -8,6 +8,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/stripe/stripe-go/v74"
 	"github.com/stripe/stripe-go/v74/coupon"
 	"github.com/stripe/stripe-go/v74/customer"
@@ -189,6 +190,66 @@ func (s *StripeSyncService) SyncMonthlyMetricsManual(ctx context.Context) error 
 	}
 
 	log.Println("✅ Manual monthly metrics sync completed successfully")
+	return nil
+}
+
+// SyncProductsManual performs manual product sync (all products)
+func (s *StripeSyncService) SyncProductsManual(ctx context.Context) error {
+	if !s.stripeService.IsEnabled() {
+		return fmt.Errorf("stripe service is not enabled")
+	}
+
+	log.Println("📦 Manual product sync - pulling ALL products...")
+
+	// Create sync job
+	jobID, err := s.createSyncJob("manual_sync", "product", 1)
+	if err != nil {
+		return fmt.Errorf("failed to create sync job: %w", err)
+	}
+
+	// Ensure job completion is tracked
+	defer func() {
+		s.completeSyncJob(jobID, err)
+	}()
+
+	// Sync all products (no time limit)
+	allTime := time.Time{} // Zero time means all products
+	err = s.syncProducts(ctx, allTime, jobID)
+	if err != nil {
+		return fmt.Errorf("failed to sync products: %w", err)
+	}
+
+	log.Println("✅ Manual product sync completed successfully")
+	return nil
+}
+
+// SyncPricesManual performs manual price sync (all prices)
+func (s *StripeSyncService) SyncPricesManual(ctx context.Context) error {
+	if !s.stripeService.IsEnabled() {
+		return fmt.Errorf("stripe service is not enabled")
+	}
+
+	log.Println("💰 Manual price sync - pulling ALL prices...")
+
+	// Create sync job
+	jobID, err := s.createSyncJob("manual_sync", "price", 1)
+	if err != nil {
+		return fmt.Errorf("failed to create sync job: %w", err)
+	}
+
+	// Ensure job completion is tracked
+	defer func() {
+		s.completeSyncJob(jobID, err)
+	}()
+
+	// Sync all prices (no time limit)
+	allTime := time.Time{} // Zero time means all prices
+	err = s.syncPrices(ctx, allTime, jobID)
+	if err != nil {
+		return fmt.Errorf("failed to sync prices: %w", err)
+	}
+
+	log.Println("✅ Manual price sync completed successfully")
 	return nil
 }
 
@@ -635,25 +696,85 @@ func (s *StripeSyncService) syncMonthlyMetrics(ctx context.Context, since time.T
 
 // Database operations with conflict resolution
 func (s *StripeSyncService) upsertProduct(prod *stripe.Product) error {
+	// Convert metadata to JSON
+	metadataJSON, err := json.Marshal(prod.Metadata)
+	if err != nil {
+		log.Printf("⚠️ Failed to marshal metadata for product %s: %v", prod.ID, err)
+		metadataJSON = []byte("{}")
+	}
+
+	// Convert images array to PostgreSQL array format
+	var images []string
+	if prod.Images != nil {
+		images = prod.Images
+	}
+
+	// Convert package dimensions to JSON if present
+	var packageDimensionsJSON []byte
+	if prod.PackageDimensions != nil {
+		packageDimensionsJSON, err = json.Marshal(map[string]interface{}{
+			"height": prod.PackageDimensions.Height,
+			"length": prod.PackageDimensions.Length,
+			"weight": prod.PackageDimensions.Weight,
+			"width":  prod.PackageDimensions.Width,
+		})
+		if err != nil {
+			log.Printf("⚠️ Failed to marshal package dimensions for product %s: %v", prod.ID, err)
+			packageDimensionsJSON = []byte("{}")
+		}
+	} else {
+		packageDimensionsJSON = []byte("{}")
+	}
+
 	query := `
-		INSERT INTO stripe_products (stripe_id, name, description, active, created_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO stripe_products (
+			stripe_id, name, description, active, created_at, updated_at,
+			metadata, url, images, package_dimensions, shippable, 
+			statement_descriptor, tax_code, unit_label, livemode
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		ON CONFLICT (stripe_id) 
 		DO UPDATE SET 
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
 			active = EXCLUDED.active,
-			created_at = EXCLUDED.created_at
+			updated_at = EXCLUDED.updated_at,
+			metadata = EXCLUDED.metadata,
+			url = EXCLUDED.url,
+			images = EXCLUDED.images,
+			package_dimensions = EXCLUDED.package_dimensions,
+			shippable = EXCLUDED.shippable,
+			statement_descriptor = EXCLUDED.statement_descriptor,
+			tax_code = EXCLUDED.tax_code,
+			unit_label = EXCLUDED.unit_label,
+			livemode = EXCLUDED.livemode
 	`
 
-	_, err := s.db.Exec(query,
-		prod.ID,
-		prod.Name,
-		prod.Description,
-		prod.Active,
-		time.Unix(prod.Created, 0),
+	_, err = s.db.Exec(query,
+		prod.ID,                       // $1
+		prod.Name,                     // $2
+		prod.Description,              // $3
+		prod.Active,                   // $4
+		time.Unix(prod.Created, 0),    // $5
+		time.Unix(prod.Updated, 0),    // $6
+		string(metadataJSON),          // $7
+		prod.URL,                      // $8
+		pq.Array(images),              // $9
+		string(packageDimensionsJSON), // $10
+		prod.Shippable,                // $11
+		prod.StatementDescriptor,      // $12
+		prod.TaxCode,                  // $13
+		prod.UnitLabel,                // $14
+		prod.Livemode,                 // $15
 	)
-	return err
+
+	if err != nil {
+		log.Printf("❌ Failed to upsert product %s: %v", prod.ID, err)
+		return err
+	}
+
+	log.Printf("✅ Upserted product: %s (%s)", prod.ID, prod.Name)
+	return nil
 }
 
 func (s *StripeSyncService) upsertCustomer(cust *stripe.Customer) error {

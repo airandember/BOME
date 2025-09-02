@@ -1,5 +1,35 @@
 import { apiRequest } from '$lib/auth';
 
+export interface StripeProduct {
+	id: number;
+	stripe_id: string;
+	name: string;
+	description: string | null;
+	active: boolean;
+	available: boolean;
+	created_at: string;
+	updated_at?: string;
+	metadata?: Record<string, string>;
+	url?: string;
+	images?: string[];
+	package_dimensions?: {
+		height?: number;
+		length?: number;
+		weight?: number;
+		width?: number;
+	};
+	shippable?: boolean;
+	statement_descriptor?: string;
+	tax_code?: string;
+	unit_label?: string;
+	livemode?: boolean;
+	// Pricing information from stripe_prices table
+	price?: number; // unit_amount in cents
+	price_id?: string; // Stripe price ID
+	currency?: string; // Price currency (e.g., 'usd')
+	recurring_interval?: string; // Billing interval (e.g., 'month', 'year')
+}
+
 export interface SubscriptionPlan {
 	id: string;
 	name: string;
@@ -10,6 +40,7 @@ export interface SubscriptionPlan {
 	interval: 'month' | 'year' | 'week' | 'day';
 	interval_count: number;
 	stripe_price_id: string | null;
+	stripe_product_id: string | null; // Link to Stripe product
 	features: string[];
 	is_active: boolean;
 	promotion_end_date: string | null;
@@ -31,6 +62,7 @@ export interface CreateSubscriptionPlanData {
 	interval: 'month' | 'year' | 'week' | 'day';
 	interval_count: number;
 	stripe_price_id: string;
+	stripe_product_id?: string | null; // Optional Stripe product ID
 	features: string[];
 	is_active: boolean;
 	promotion_start_date: string | null;
@@ -64,6 +96,67 @@ export class StreamingSubscriptionService {
 		} catch (error) {	
 			console.error('StreamingSubscriptionService: Error fetching subscription plans:', error);
 			throw error;
+		}
+	}
+
+	/**
+	 * Get all subscription plans including available Stripe products as potential plans
+	 */
+	static async getAllWithStripeProducts(): Promise<SubscriptionPlan[]> {
+		try {
+			// Get existing subscription plans
+			const existingPlans = await this.getAll();
+			
+			// Get available Stripe products
+			const stripeProducts = await this.getAvailableStripeProducts();
+			
+			// Convert Stripe products to subscription plan format
+			const stripeAsPlans: SubscriptionPlan[] = stripeProducts.map(product => ({
+				id: `stripe_${product.stripe_id}`, // Prefix to distinguish from real plans
+				name: product.name,
+				description: product.description || 'Imported from Stripe',
+				short_desc: product.description?.substring(0, 100) || 'Stripe Product',
+				price: product.price ? product.price / 100 : 0, // Convert from cents to dollars
+				currency: product.currency || 'usd',
+				interval: product.recurring_interval || 'month' as const,
+				interval_count: 1,
+				stripe_price_id: product.price_id || null,
+				stripe_product_id: product.stripe_id,
+				features: [],
+				is_active: product.active && product.available,
+				promotion_end_date: null,
+				promotion_start_date: null,
+				plan_change_history: [],
+				promotion_metadata: {},
+				sub_type: 'stnd',
+				created_at: product.created_at,
+				updated_at: product.created_at,
+				is_deleted: false
+			}));
+
+			// Combine existing plans with Stripe products
+			// Filter out Stripe products that already have corresponding plans
+			const existingStripeProductIds = new Set(
+				existingPlans
+					.filter(plan => plan.stripe_product_id)
+					.map(plan => plan.stripe_product_id)
+			);
+
+			const newStripeProducts = stripeAsPlans.filter(
+				stripePlan => !existingStripeProductIds.has(stripePlan.stripe_product_id)
+			);
+
+			console.log('StreamingSubscriptionService: Combined plans:', {
+				existing: existingPlans.length,
+				stripeProducts: newStripeProducts.length,
+				total: existingPlans.length + newStripeProducts.length
+			});
+
+			return [...existingPlans, ...newStripeProducts];
+		} catch (error) {
+			console.error('StreamingSubscriptionService: Error fetching plans with Stripe products:', error);
+			// Fallback to just existing plans if Stripe fetch fails
+			return await this.getAll();
 		}
 	}
 
@@ -312,6 +405,71 @@ export class StreamingSubscriptionService {
 			return (data as any).events as Record<string, any>[];
 		} catch (error) {
 			console.error('Error fetching history by date range:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Get available Stripe products
+	 */
+	static async getAvailableStripeProducts(): Promise<StripeProduct[]> {
+		try {
+			const response = await apiRequest('/admin/streaming/stripe/products/available');
+			
+			if (!response.ok) {
+				throw new Error(`Failed to fetch available Stripe products: ${response.status}`);
+			}
+
+			const data = await response.json();
+			return data.products || [];
+		} catch (error) {
+			console.error('Error fetching available Stripe products:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Update Stripe product availability
+	 */
+	static async updateStripeProductAvailability(stripeProductId: string, available: boolean): Promise<void> {
+		try {
+			const response = await apiRequest(`/admin/streaming/stripe/products/${stripeProductId}/availability`, {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ available }),
+			});
+			
+			if (!response.ok) {
+				throw new Error(`Failed to update Stripe product availability: ${response.status}`);
+			}
+		} catch (error) {
+			console.error('Error updating Stripe product availability:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Import selected Stripe products as subscription plans
+	 */
+	static async importStripeProductsAsPlans(stripeProductIds: string[]): Promise<{imported_count: number, skipped_count: number, total_count: number, message: string}> {
+		try {
+			const response = await apiRequest('/admin/streaming/stripe/products/import-as-plans', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ stripe_product_ids: stripeProductIds })
+			});
+
+			if (!response.ok) {
+				throw new Error(`Failed to import products as plans: ${response.status}`);
+			}
+
+			return await response.json();
+		} catch (error) {
+			console.error('Error importing Stripe products as plans:', error);
 			throw error;
 		}
 	}

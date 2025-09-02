@@ -13,7 +13,7 @@
 	export let onTogglePromotion: (plan: SubscriptionPlan) => void;
 	export let onViewDetails: (plan: SubscriptionPlan) => void;
 
-	// Format price
+	// Format price - both regular plans and Stripe products now use the same format
 	$: formattedPrice = new Intl.NumberFormat('en-US', {
 		style: 'currency',
 		currency: plan.currency || 'USD'
@@ -43,6 +43,10 @@
 
 	// Check if promotion is expired and should be deactivated
 	$: isExpired = promotionStatus?.status === 'expired';
+
+	// Check if this is a Stripe product (not a real subscription plan)
+	// All plans are now real subscription plans (Stripe products are imported)
+	$: isStripeProduct = false;
 
 	// Format plan change history for display
 	$: formattedHistory = plan.plan_change_history?.map((event: any) => ({
@@ -138,64 +142,89 @@
 	</div>
 
 	<!-- Stripe Integration Status -->
-	{#if showStripeStatus}
+	{#if showStripeStatus && !isStripeProduct}
 		<StripeIntegrationStatus planId={plan.id} planName={plan.name} />
 	{/if}
 
 	<div class="plan-footer">
 		<div class="plan-actions">
-			<button class="btn btn-secondary" on:click={() => onViewDetails(plan)} disabled={isOptimisticallyUpdating(plan.id)}>
-				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-				</svg>
-				Details
-			</button>
-			
-			<button class="btn btn-secondary" on:click={() => onEdit(plan)} disabled={isOptimisticallyUpdating(plan.id)}>
-				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-				</svg>
-				Edit
-			</button>
-			
-			<!-- Show Deactivate/Activate button only for standard plans (sub_type = stnd) -->
-			{#if plan.sub_type === "stnd" || !plan.sub_type}
-				<button 
-					class="btn" 
-					class:btn-secondary={plan.is_active} 
-					class:btn-primary={!plan.is_active}
-					on:click={() => onToggleStatus(plan)} 
-					disabled={isOptimisticallyUpdating(plan.id)}
-				>
+			{#if isStripeProduct}
+				<!-- Actions for Stripe Products -->
+				<button class="btn btn-secondary" on:click={() => onViewDetails(plan)} disabled={isOptimisticallyUpdating(plan.id)}>
 					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
 					</svg>
-					{plan.is_active ? 'Deactivate' : 'Activate'}
+					View Product
 				</button>
-			{/if}
-			
-			<!-- Show promotion button for promotional plans (sub_type = prmo) -->
-			{#if plan.sub_type === "prmo"}
-				<button
-					class="btn {plan.is_active ? 'btn-secondary' : 'btn-primary'}"
-					on:click={() => onToggleStatus(plan)}
-					disabled={isOptimisticallyUpdating(plan.id)}
-				>
-					{#if plan.is_active}
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-						</svg>
-						Deactivate
-					{:else}
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path>
-						</svg>
-						Activate
-					{/if}
+				
+				<button class="btn btn-primary" on:click={() => onEdit(plan)} disabled={isOptimisticallyUpdating(plan.id)}>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+					</svg>
+					Create Plan
 				</button>
+				
+				<div class="stripe-product-badge">
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path>
+					</svg>
+					Stripe Product
+				</div>
+			{:else}
+				<!-- Actions for Regular Subscription Plans -->
+				<button class="btn btn-secondary" on:click={() => onViewDetails(plan)} disabled={isOptimisticallyUpdating(plan.id)}>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+					</svg>
+					Details
+				</button>
+				
+				<button class="btn btn-secondary" on:click={() => onEdit(plan)} disabled={isOptimisticallyUpdating(plan.id)}>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+					</svg>
+					Edit
+				</button>
+				
+				<!-- Show Deactivate/Activate button only for standard plans (sub_type = stnd) -->
+				{#if plan.sub_type === "stnd" || !plan.sub_type}
+					<button 
+						class="btn" 
+						class:btn-secondary={plan.is_active} 
+						class:btn-primary={!plan.is_active}
+						on:click={() => onToggleStatus(plan)} 
+						disabled={isOptimisticallyUpdating(plan.id)}
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+						</svg>
+						{plan.is_active ? 'Deactivate' : 'Activate'}
+					</button>
+				{/if}
+				
+				<!-- Show promotion button for promotional plans (sub_type = prmo) -->
+				{#if plan.sub_type === "prmo"}
+					<button
+						class="btn {plan.is_active ? 'btn-secondary' : 'btn-primary'}"
+						on:click={() => onToggleStatus(plan)}
+						disabled={isOptimisticallyUpdating(plan.id)}
+					>
+						{#if plan.is_active}
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+							</svg>
+							Deactivate
+						{:else}
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path>
+							</svg>
+							Activate
+						{/if}
+					</button>
+				{/if}
 			{/if}
-			
 		</div>
 	</div>
 </div>
@@ -672,5 +701,29 @@
 		.plan-actions .btn {
 			flex: none;
 		}
+	}
+
+	/* Stripe Product Badge */
+	.stripe-product-badge {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		background: linear-gradient(135deg, #635bff 0%, #4f46e5 100%);
+		color: white;
+		border-radius: 0.375rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		box-shadow: 0 2px 4px rgba(99, 91, 255, 0.2);
+		border: none;
+		cursor: default;
+	}
+
+	.stripe-product-badge svg {
+		width: 1rem;
+		height: 1rem;
+		opacity: 0.9;
 	}
 </style> 

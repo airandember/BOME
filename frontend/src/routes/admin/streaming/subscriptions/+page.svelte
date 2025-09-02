@@ -19,6 +19,7 @@
 	import OfferCard from './components/OfferCard.svelte';
 	import OfferDetailsModal from './components/OfferDetailsModal.svelte';
 	import StripeIntegrationStatus from './components/StripeIntegrationStatus.svelte'; // Add Stripe status component
+	import StripeImportModal from './components/StripeImportModal.svelte';
 
 	// State
 	let isLoading = true;
@@ -42,6 +43,9 @@
 	let showCreateOfferModal = false;
 	let showEditOfferModal = false;
 	let showOfferDetailsModal = false;
+	
+	// Stripe import modal state
+	let showStripeImportModal = false;
 
 	// Initialize form data
 	let formData: CreateSubscriptionPlanData = {
@@ -53,6 +57,7 @@
 		interval: 'month',
 		interval_count: 1,
 		stripe_price_id: '',
+		stripe_product_id: null,
 		features: [],
 		is_active: true,
 		sub_type: 'stnd',
@@ -116,8 +121,9 @@
 			console.log('loadPlans: Is authenticated:', ($auth as any).isAuthenticated);
 			console.log('loadPlans: User role:', ($auth as any).user?.role);
 			
+			// Load subscription plans (Stripe products are now imported as real plans)
 			const allPlans = await StreamingSubscriptionService.getAll();
-			console.log('loadPlans: Received plans:', allPlans);
+			console.log('loadPlans: Received subscription plans:', allPlans);
 			subscriptionPlans = [...allPlans]; // Immutable update
 			
 			// Check for expired promotions and deactivate them
@@ -493,6 +499,7 @@
 		selectedPlan = plan;
 		if (!selectedPlan) return;
 		
+		// All plans are now real subscription plans (Stripe products are imported)
 		formData = {
 			name: selectedPlan.name,
 			description: selectedPlan.description,
@@ -502,6 +509,7 @@
 			interval: selectedPlan.interval,
 			interval_count: selectedPlan.interval_count,
 			stripe_price_id: selectedPlan.stripe_price_id || '',
+			stripe_product_id: selectedPlan.stripe_product_id,
 			features: [...selectedPlan.features],
 			is_active: selectedPlan.is_active,
 			sub_type: selectedPlan.sub_type as 'stnd' | 'prmo',
@@ -535,6 +543,7 @@
 			interval: 'month',
 			interval_count: 1,
 			stripe_price_id: '',
+			stripe_product_id: null,
 			features: [],
 			is_active: true,
 			sub_type: 'stnd',
@@ -669,10 +678,11 @@
 				<h2 class="section-title">Plans</h2>
 				<p class="section-description">Subscription plans for non-subscribed users</p>
 			</div>
-<SubscriptionHeader 
+		<SubscriptionHeader 
 			{subscriptionPlans} 
 			onCreateClick={() => showCreateModal = true}
 			onCreateWithStripeClick={() => showCreateStripeModal = true}
+			onSelectStripeClick={() => showStripeImportModal = true}
 		/>
 			<!-- Promoted Plans -->
 			<SubscriptionAccordion
@@ -831,6 +841,16 @@
 	on:planCreated={(event) => {
 		subscriptionPlans = [...subscriptionPlans, event.detail];
 		showCreateStripeModal = false;
+	}}
+/>
+
+<!-- Stripe Import Modal -->
+<StripeImportModal
+	bind:show={showStripeImportModal}
+	onClose={() => showStripeImportModal = false}
+	onImportComplete={() => {
+		// Optionally refresh plans or show success message
+		showToast('Stripe products updated successfully', 'success');
 	}}
 />
 

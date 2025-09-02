@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { formatDateForDisplay, dateInputToIso, isoToDateInput, getTodayDateInput, getDateInputFromToday } from '$lib/utils/date';
-	import type { CreateSubscriptionPlanData } from '$lib/services/streaming-subscriptions';
+	import type { CreateSubscriptionPlanData, StripeProduct } from '$lib/services/streaming-subscriptions';
+	import StripeProductModal from './StripeProductModal.svelte';
 
 	export let isOpen: boolean = false;
 	export let plan: any = null;
@@ -18,6 +19,7 @@
 		interval: 'month',
 		interval_count: 1,
 		stripe_price_id: '',
+		stripe_product_id: null,
 		features: [],
 		is_active: true,
 		promotion_start_date: getTodayDateInput(),
@@ -31,6 +33,10 @@
 	// const dispatch = createEventDispatcher();
 
 	let newFeature = '';
+	
+	// Stripe product modal state
+	let showStripeProductModal = false;
+	let selectedStripeProduct: StripeProduct | null = null;
 
 	// Convert ISO dates to HTML date input format for the form
 	$: formData.promotion_start_date = isoToDateInput(formData.promotion_start_date);
@@ -59,6 +65,22 @@
 
 	function removeFeature(index: number) {
 		formData.features = formData.features.filter((_, i) => i !== index);
+	}
+
+	// Stripe product handlers
+	function openStripeProductModal() {
+		showStripeProductModal = true;
+	}
+
+	function handleStripeProductSelect(product: StripeProduct | null) {
+		selectedStripeProduct = product;
+		formData.stripe_product_id = product?.stripe_id || null;
+		showStripeProductModal = false;
+	}
+
+	function clearStripeProduct() {
+		selectedStripeProduct = null;
+		formData.stripe_product_id = null;
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
@@ -180,6 +202,45 @@
 							class="form-input"
 							placeholder="price_..."
 						/>
+					</div>
+					
+					<!-- Stripe Product Selection -->
+					<div class="form-group">
+						<label class="form-label">Stripe Product</label>
+						<div class="stripe-product-selector">
+							{#if selectedStripeProduct}
+								<div class="selected-product">
+									<div class="product-info">
+										<span class="product-name">{selectedStripeProduct.name}</span>
+										<span class="product-id">{selectedStripeProduct.stripe_id}</span>
+									</div>
+									<div class="product-actions">
+										<button 
+											type="button" 
+											class="btn-change" 
+											on:click={openStripeProductModal}
+										>
+											Change
+										</button>
+										<button 
+											type="button" 
+											class="btn-clear" 
+											on:click={clearStripeProduct}
+										>
+											Clear
+										</button>
+									</div>
+								</div>
+							{:else}
+								<button 
+									type="button" 
+									class="btn-select-product" 
+									on:click={openStripeProductModal}
+								>
+									Select Stripe Product
+								</button>
+							{/if}
+						</div>
 					</div>
 				</div>
 
@@ -325,6 +386,14 @@
 		</div>
 	</div>
 {/if}
+
+<!-- Stripe Product Selection Modal -->
+<StripeProductModal
+	bind:show={showStripeProductModal}
+	selectedProductId={formData.stripe_product_id}
+	onSelect={handleStripeProductSelect}
+	onClose={() => showStripeProductModal = false}
+/>
 
 <style>
 	.modal-backdrop {
@@ -528,6 +597,91 @@
 		cursor: pointer;
 	}
 
+	/* Stripe Product Selector Styles */
+	.stripe-product-selector {
+		margin-top: 0.5rem;
+	}
+
+	.selected-product {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.75rem;
+		border: 1px solid #d1d5db;
+		border-radius: 6px;
+		background: #f9fafb;
+	}
+
+	.product-info {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.product-name {
+		font-weight: 600;
+		color: #111827;
+	}
+
+	.product-id {
+		font-size: 0.875rem;
+		color: #6b7280;
+		font-family: monospace;
+	}
+
+	.product-actions {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.btn-change, .btn-clear {
+		padding: 0.375rem 0.75rem;
+		border: 1px solid #d1d5db;
+		border-radius: 4px;
+		font-size: 0.875rem;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.btn-change {
+		background: white;
+		color: #374151;
+	}
+
+	.btn-change:hover {
+		background: #f3f4f6;
+		border-color: #9ca3af;
+	}
+
+	.btn-clear {
+		background: #fee2e2;
+		color: #dc2626;
+		border-color: #fecaca;
+	}
+
+	.btn-clear:hover {
+		background: #fecaca;
+		border-color: #f87171;
+	}
+
+	.btn-select-product {
+		width: 100%;
+		padding: 0.75rem;
+		border: 2px dashed #d1d5db;
+		border-radius: 6px;
+		background: white;
+		color: #6b7280;
+		font-size: 0.875rem;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.btn-select-product:hover {
+		border-color: #3b82f6;
+		color: #3b82f6;
+		background: #eff6ff;
+	}
+
 	@media (max-width: 768px) {
 		.modal-content {
 			margin: 0.5rem;
@@ -544,6 +698,16 @@
 
 		.modal-actions .btn {
 			width: 100%;
+		}
+
+		.product-actions {
+			flex-direction: column;
+		}
+
+		.selected-product {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0.75rem;
 		}
 	}
 </style> 

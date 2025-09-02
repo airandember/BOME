@@ -661,6 +661,20 @@
 								>
 									{syncInProgress ? '🔄 Syncing...' : '📊 Sync Metrics'}
 								</button>
+								<button 
+									class="btn btn-info" 
+									onclick={(e) => { e.preventDefault(); e.stopPropagation(); triggerManualSync('products'); }}
+									disabled={syncInProgress}
+								>
+									{syncInProgress ? '🔄 Syncing...' : '📦 Sync Products'}
+								</button>
+								<button 
+									class="btn btn-success" 
+									onclick={(e) => { e.preventDefault(); e.stopPropagation(); triggerManualSync('prices'); }}
+									disabled={syncInProgress}
+								>
+									{syncInProgress ? '🔄 Syncing...' : '💰 Sync Prices'}
+								</button>
 							</div>
 						</div>
 

@@ -4,6 +4,7 @@
 	export let subscriptionPlans: SubscriptionPlan[];
 	export let onCreateClick: () => void;
 	export let onCreateWithStripeClick: (() => void) | undefined = undefined; // Add Stripe create callback
+	export let onSelectStripeClick: (() => void) | undefined = undefined; // Add Stripe import callback
 
 	let showDropdown = false;
 
@@ -21,6 +22,13 @@
 	function handleCreateWithStripeClick() {
 		if (onCreateWithStripeClick) {
 			onCreateWithStripeClick();
+		}
+		showDropdown = false;
+	}
+
+	function handleSelectStripeClick() {
+		if (onSelectStripeClick) {
+			onSelectStripeClick();
 		}
 		showDropdown = false;
 	}
@@ -80,6 +88,14 @@
 							Create Basic Plan
 							<span class="dropdown-description">Manual Stripe setup later</span>
 						</button>
+						{#if onSelectStripeClick}
+							<div class="dropdown-divider"></div>
+							<button class="dropdown-item" on:click={handleSelectStripeClick}>
+								<span class="import-icon">📦</span>
+								Select Stripe Products
+								<span class="dropdown-description">Import existing Stripe products</span>
+							</button>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -252,10 +268,17 @@
 	}
 
 	.stripe-icon,
-	.basic-icon {
+	.basic-icon,
+	.import-icon {
 		flex-shrink: 0;
 		font-size: 1rem;
 		margin-top: 0.1rem;
+	}
+
+	.dropdown-divider {
+		height: 1px;
+		background: #e5e7eb;
+		margin: 0.5rem 0;
 	}
 
 	.dropdown-item > div {
