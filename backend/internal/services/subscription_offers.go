@@ -178,13 +178,18 @@ func (s *SubscriptionOffersService) GetAllSubscriptionOffers(ctx context.Context
 	offers, err := s.db.GetAllSubscriptionOffers()
 	if err != nil {
 		log.Printf("Service: Error getting subscription offers: %v", err)
-		return nil, err
+		return []*SubscriptionOfferResponse{}, err // Return empty array instead of nil
 	}
 
 	var responses []*SubscriptionOfferResponse
 	for _, offer := range offers {
 		response := s.convertToResponse(offer)
 		responses = append(responses, response)
+	}
+
+	// Ensure we never return nil, always return an array (even if empty)
+	if responses == nil {
+		responses = []*SubscriptionOfferResponse{}
 	}
 
 	log.Printf("Service: Retrieved %d subscription offers", len(responses))

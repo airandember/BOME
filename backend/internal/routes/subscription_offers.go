@@ -34,6 +34,11 @@ func SetupSubscriptionOfferRoutes(router *gin.Engine, db *database.DB, offersSer
 			return
 		}
 
+		// Ensure we always return an array, never null
+		if offers == nil {
+			offers = []*services.SubscriptionOfferResponse{}
+		}
+
 		log.Printf("Route: Successfully retrieved %d offers", len(offers))
 		c.JSON(http.StatusOK, offers)
 	})

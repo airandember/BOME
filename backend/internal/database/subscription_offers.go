@@ -246,9 +246,14 @@ func (db *DB) GetAllSubscriptionOffers() ([]*SubscriptionOffer, error) {
 		)
 		if err != nil {
 			log.Printf("Database: Error scanning offer row: %v", err)
-			return nil, err
+			return []*SubscriptionOffer{}, err // Return empty array instead of nil
 		}
 		offers = append(offers, offer)
+	}
+
+	// Ensure we never return nil, always return an array (even if empty)
+	if offers == nil {
+		offers = []*SubscriptionOffer{}
 	}
 
 	log.Printf("Database: Retrieved %d subscription offers", len(offers))
