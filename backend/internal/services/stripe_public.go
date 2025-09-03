@@ -141,6 +141,17 @@ func (s *StripePublicService) CreateEmbeddedCheckoutSession(planID, returnURL, u
 		return "", errors.New("plan is not configured with Stripe - please contact support")
 	}
 
+	// Get actual user email from database
+	userQuery := `SELECT email FROM users WHERE id = $1`
+	var userEmail string
+	err = s.db.DB.QueryRow(userQuery, userID).Scan(&userEmail)
+	if err != nil {
+		log.Printf("❌ [STRIPE-PUBLIC] Failed to get user email for ID %s: %v", userID, err)
+		return "", fmt.Errorf("user not found: %w", err)
+	}
+
+	log.Printf("🔍 [STRIPE-PUBLIC] Using customer email: %s", userEmail)
+
 	params := &stripe.CheckoutSessionParams{
 		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
@@ -149,7 +160,7 @@ func (s *StripePublicService) CreateEmbeddedCheckoutSession(planID, returnURL, u
 				Quantity: stripe.Int64(1),
 			},
 		},
-		CustomerEmail: stripe.String(fmt.Sprintf("user%s@bome.test", userID)), // TODO: Get actual user email from database
+		CustomerEmail: stripe.String(userEmail),
 	}
 
 	// Set UI mode for embedded checkout
