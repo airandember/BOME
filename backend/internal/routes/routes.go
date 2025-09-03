@@ -232,6 +232,70 @@ func SetupRoutes(
 				getSubscriptionPlanPublic(c, subscriptionPlanService)
 			})
 		}
+
+		// Public Stripe routes for regular authenticated users (not admin)
+		publicStripe := v1.Group("/stripe")
+		publicStripe.Use(middleware.AuthRequired()) // Require authentication but not admin
+		{
+			// Get customer portal link for authenticated users
+			publicStripe.GET("/portal-link", func(c *gin.Context) {
+				// Get portal URL from public settings
+				portalURL, err := db.GetPublicSetting("stripe_portal_url")
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve portal link"})
+					return
+				}
+
+				if portalURL == "" {
+					c.JSON(http.StatusNotFound, gin.H{"error": "Portal link not configured"})
+					return
+				}
+
+				c.JSON(http.StatusOK, gin.H{"portal_url": portalURL})
+			})
+
+			// Create checkout session for authenticated users
+			publicStripe.POST("/checkout-session", func(c *gin.Context) {
+				var req struct {
+					PlanID     string `json:"plan_id" binding:"required"`
+					SuccessURL string `json:"success_url" binding:"required"`
+					CancelURL  string `json:"cancel_url" binding:"required"`
+				}
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
+					return
+				}
+
+				// Get user from context (set by AuthRequired middleware)
+				userID, exists := c.Get("user_id")
+				if !exists {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+					return
+				}
+
+				// TODO: Implement Stripe checkout session creation
+				// This would use the Stripe service to create a checkout session
+				// For now, return a placeholder response
+				c.JSON(http.StatusOK, gin.H{
+					"message": "Checkout session creation not yet implemented",
+					"plan_id": req.PlanID,
+					"user_id": userID,
+				})
+			})
+
+			// Get public Stripe configuration (publishable key)
+			publicStripe.GET("/config", func(c *gin.Context) {
+				publishableKey, err := db.GetPublicSetting("stripe_publishable_key")
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve Stripe configuration"})
+					return
+				}
+
+				c.JSON(http.StatusOK, gin.H{
+					"publishable_key": publishableKey,
+				})
+			})
+		}
 	} else {
 		// Provide fallback responses when database is unavailable
 		publicPlans := v1.Group("/subscription-plans")
@@ -252,6 +316,27 @@ func SetupRoutes(
 				})
 			})
 			publicPlans.GET("/:id", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Service temporarily unavailable",
+				})
+			})
+		}
+
+		// Fallback public Stripe routes when database is unavailable
+		publicStripe := v1.Group("/stripe")
+		publicStripe.Use(middleware.AuthRequired())
+		{
+			publicStripe.GET("/portal-link", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Service temporarily unavailable",
+				})
+			})
+			publicStripe.POST("/checkout-session", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Service temporarily unavailable",
+				})
+			})
+			publicStripe.GET("/config", func(c *gin.Context) {
 				c.JSON(http.StatusServiceUnavailable, gin.H{
 					"error": "Service temporarily unavailable",
 				})

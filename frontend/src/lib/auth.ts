@@ -600,11 +600,21 @@ export async function apiRequest(endpoint: string, options: RequestInit & { onPr
 	
 	// Add auth header if we have tokens
 	const tokens = getCurrentTokens();
+	console.log('🔍 Auth debug:', {
+		hasTokens: !!tokens,
+		accessToken: tokens?.access_token ? `${tokens.access_token.substring(0, 20)}...` : 'none',
+		isAuthEndpoint: endpoint.includes('/auth/'),
+		endpoint
+	});
+	
 	if (tokens && !endpoint.includes('/auth/')) {
 		config.headers = {
 			...config.headers,
 			'Authorization': `Bearer ${tokens.access_token}`,
 		};
+		console.log('🔍 Added Authorization header');
+	} else {
+		console.log('🔍 No Authorization header added:', { hasTokens: !!tokens, isAuthEndpoint: endpoint.includes('/auth/') });
 	}
 	
 	// console.log('Auth: Request config:', { method: config.method, headers: config.headers, body: config.body });

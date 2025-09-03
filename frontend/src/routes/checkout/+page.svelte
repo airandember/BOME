@@ -12,7 +12,7 @@ let redirecting = false;
 
 	async function fetchPortalLink() {
 		try {
-			const res = await apiRequest('/admin/streaming/stripe/portal-link');
+			const res = await apiRequest('/stripe/portal-link');
 			if (!res.ok) {
 				throw new Error(`Failed to load portal link (${res.status})`);
 			}
