@@ -168,6 +168,8 @@ func (db *DB) RunMigrations() error {
 		addMissingSubscriptionPlanColumns, // Add missing columns for subscription plans
 		createSubscriberHistoryTable,      // Add subscriber history table
 		createSecureSettingsTable,         // Add secure settings table for encrypted config
+		createPublicSettingsTable,         // Add public settings table for non-sensitive config
+		fixPublicSettingsConstraints,      // Fix public settings table constraints
 	}
 
 	for i, migration := range migrations {
@@ -290,6 +292,103 @@ func (db *DB) GetSecureSetting(key string) (string, error) {
 		return "", err
 	}
 	return value, nil
+}
+
+// Public settings table stores non-sensitive configuration (like public keys, portal URLs)
+const createPublicSettingsTable = `
+-- Drop table if it exists without proper constraints
+DROP TABLE IF EXISTS public_settings;
+
+-- Create table with proper UNIQUE constraint
+CREATE TABLE public_settings (
+    id SERIAL PRIMARY KEY,
+    key VARCHAR(255) UNIQUE NOT NULL,
+    value TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Ensure the unique constraint exists
+CREATE UNIQUE INDEX IF NOT EXISTS idx_public_settings_key ON public_settings(key);
+`
+
+// Fix public settings table constraints
+const fixPublicSettingsConstraints = `
+-- Drop and recreate public_settings table with proper constraints
+DROP TABLE IF EXISTS public_settings;
+
+CREATE TABLE public_settings (
+    id SERIAL PRIMARY KEY,
+    key VARCHAR(255) UNIQUE NOT NULL,
+    value TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Ensure the unique constraint exists
+CREATE UNIQUE INDEX IF NOT EXISTS idx_public_settings_key ON public_settings(key);
+`
+
+// SetPublicSetting stores or updates a public setting value (non-encrypted)
+func (db *DB) SetPublicSetting(key, value string) error {
+	if db == nil || db.DB == nil {
+		return fmt.Errorf("database not initialized")
+	}
+	// Upsert behavior
+	_, err := db.Exec(`
+        INSERT INTO public_settings (key, value) VALUES ($1, $2)
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
+    `, key, value)
+	return err
+}
+
+// GetPublicSetting retrieves a public setting by key
+func (db *DB) GetPublicSetting(key string) (string, error) {
+	if db == nil || db.DB == nil {
+		return "", fmt.Errorf("database not initialized")
+	}
+	var value string
+	err := db.QueryRow(`SELECT value FROM public_settings WHERE key = $1`, key).Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", err
+	}
+	return value, nil
+}
+
+// GetAllPublicSettings retrieves all public settings
+func (db *DB) GetAllPublicSettings() (map[string]string, error) {
+	if db == nil || db.DB == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+
+	rows, err := db.Query(`SELECT key, value FROM public_settings`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	settings := make(map[string]string)
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return nil, err
+		}
+		settings[key] = value
+	}
+
+	return settings, rows.Err()
+}
+
+// DeletePublicSetting removes a public setting by key
+func (db *DB) DeletePublicSetting(key string) error {
+	if db == nil || db.DB == nil {
+		return fmt.Errorf("database not initialized")
+	}
+	_, err := db.Exec(`DELETE FROM public_settings WHERE key = $1`, key)
+	return err
 }
 
 // Migration SQL statements - PostgreSQL compatible

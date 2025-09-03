@@ -13,13 +13,15 @@
 	let showClearModal = $state(false);
 	let clearConfirmText = $state('');
 
-	// Customer portal link state
-	let portalLink = $state('');
-	let savedPortalLink = $state(''); // The saved/persisted value
-	let savingPortal = $state(false);
-	let portalError = $state('');
-	let portalSuccess = $state('');
-	let editingPortal = $state(false); // Whether we're in edit mode
+	// Public settings state
+	let publicSettings = $state<any>(null);
+	let savingPublicSettings = $state(false);
+	let publicSettingsError = $state('');
+	let publicSettingsSuccess = $state('');
+	let editingPublishableKey = $state(false);
+	let editingPortalUrl = $state(false);
+	let publishableKey = $state('');
+	let portalUrl = $state('');
 
 	// Stripe Data Management state
 	let databaseStats = $state<any>(null)
@@ -42,7 +44,7 @@
 			//await fetchSummary();
 			loading = false;
 		}
-		await loadPortalLink();
+		await loadPublicSettings();
 	});
 
 	//async function fetchSummary() {
@@ -93,88 +95,118 @@
 		}
 	}
 
-	// Save customer portal link
-	async function savePortalLink() {
-		if (!portalLink.trim()) return;
-		
-		savingPortal = true;
-		portalError = '';
-		portalSuccess = '';
-		
+
+
+	// === PUBLIC SETTINGS FUNCTIONS ===
+
+	// Load public settings
+	async function loadPublicSettings() {
 		try {
-			const res = await apiRequest('/admin/streaming/stripe/portal-link', {
-				method: 'POST',
-				body: JSON.stringify({ portal_url: portalLink })
-			});
-			
+			const res = await apiRequest('/admin/streaming/stripe/public-settings');
 			if (res.ok) {
 				const data = await res.json();
-				savedPortalLink = portalLink; // Use the local value since backend doesn't return it
-				editingPortal = false;
-				portalSuccess = data.message || 'Customer portal link saved successfully!';
-			} else {
-				const errorData = await res.json();
-				portalError = errorData.error || 'Failed to save portal link';
+				publicSettings = data.settings || {};
 			}
 		} catch (err) {
-			portalError = 'Failed to update portal link';
-			console.error(err);
-		} finally {
-			savingPortal = false;
+			console.error('Failed to load public settings:', err);
 		}
 	}
 
-	// Start editing portal link
-	function startEditingPortal() {
-		editingPortal = true;
-		portalLink = savedPortalLink;
-		portalError = '';
-		portalSuccess = '';
-	}
-
-	// Cancel editing portal link
-	function cancelEditingPortal() {
-		editingPortal = false;
-		portalLink = '';
-		portalError = '';
-		portalSuccess = '';
-	}
-
-	// Clear saved portal link
-	async function clearPortalLink() {
+	// Save publishable key
+	async function savePublishableKey() {
+		if (!publishableKey.trim()) return;
+		
+		savingPublicSettings = true;
+		publicSettingsError = '';
+		publicSettingsSuccess = '';
+		
 		try {
-			const res = await apiRequest('/admin/streaming/stripe/portal-link', {
+			const res = await apiRequest('/admin/streaming/stripe/public-settings', {
+				method: 'POST',
+				body: JSON.stringify({ 
+					key: 'stripe_publishable_key', 
+					value: publishableKey.trim() 
+				})
+			});
+			
+			if (res.ok) {
+				publicSettingsSuccess = 'Publishable key saved successfully!';
+				publishableKey = '';
+				editingPublishableKey = false;
+				await loadPublicSettings(); // Refresh settings
+			} else {
+				const errorData = await res.json();
+				publicSettingsError = errorData.error || 'Failed to save publishable key';
+			}
+		} catch (err) {
+			publicSettingsError = 'Failed to save publishable key';
+			console.error(err);
+		} finally {
+			savingPublicSettings = false;
+		}
+	}
+
+	// Save portal URL
+	async function savePortalUrl() {
+		if (!portalUrl.trim()) return;
+		
+		savingPublicSettings = true;
+		publicSettingsError = '';
+		publicSettingsSuccess = '';
+		
+		try {
+			const res = await apiRequest('/admin/streaming/stripe/public-settings', {
+				method: 'POST',
+				body: JSON.stringify({ 
+					key: 'stripe_portal_url', 
+					value: portalUrl.trim() 
+				})
+			});
+			
+			if (res.ok) {
+				publicSettingsSuccess = 'Portal URL saved successfully!';
+				portalUrl = '';
+				editingPortalUrl = false;
+				await loadPublicSettings(); // Refresh settings
+			} else {
+				const errorData = await res.json();
+				publicSettingsError = errorData.error || 'Failed to save portal URL';
+			}
+		} catch (err) {
+			publicSettingsError = 'Failed to save portal URL';
+			console.error(err);
+		} finally {
+			savingPublicSettings = false;
+		}
+	}
+
+	// Delete public setting
+	async function deletePublicSetting(key: string) {
+		if (!confirm(`Are you sure you want to delete the ${key.replace('stripe_', '')} setting?`)) {
+			return;
+		}
+		
+		savingPublicSettings = true;
+		publicSettingsError = '';
+		publicSettingsSuccess = '';
+		
+		try {
+			const res = await apiRequest(`/admin/streaming/stripe/public-settings/${key}`, {
 				method: 'DELETE'
 			});
 			
 			if (res.ok) {
-				const data = await res.json();
-				savedPortalLink = '';
-				portalLink = '';
-				editingPortal = false;
-				portalSuccess = data.message || 'Customer portal link cleared successfully!';
-				portalError = '';
+				publicSettingsSuccess = 'Setting deleted successfully!';
+				await loadPublicSettings(); // Refresh settings
 			} else {
 				const errorData = await res.json();
-				portalError = errorData.error || 'Failed to clear portal link';
+				publicSettingsError = errorData.error || 'Failed to delete setting';
 			}
 		} catch (err) {
-			portalError = 'Failed to clear portal link';
+			publicSettingsError = 'Failed to delete setting';
 			console.error(err);
-		}
-	}
-
-	async function loadPortalLink() {
-		try {
-			const res = await apiRequest('/admin/streaming/stripe/portal-link');
-			if (res.ok) {
-				const data = await res.json();
-				savedPortalLink = data.portal_url;
-			} else {
-				console.error('Failed to load portal link');
-			}
-		} catch (err) {
-			console.error('Failed to load portal link', err);
+		} finally {
+			savingPublicSettings = false;
 		}
 	}
 
@@ -487,87 +519,145 @@
 					</div>
 				</div>
 
-				<!-- Customer Portal Setup -->
+				<!-- Public Settings Section -->
 				<div class="next-steps-card">
-					<h3>🔗 Customer Portal Setup</h3>
-					<p>Configure your Stripe customer portal link for subscription management</p>
+					<h3>🔑 Public Settings</h3>
+					<p>Configure public Stripe settings (publishable key, portal URL) for user-facing features</p>
 					
-					{#if savedPortalLink && !editingPortal}
-						<!-- Display saved portal link -->
-						<div class="saved-portal">
-							<div class="saved-portal-display">
-								<div class="saved-portal-label">Current Portal URL:</div>
-								<div class="saved-portal-url">
-									<a href={savedPortalLink} target="_blank" rel="noopener">
-										{savedPortalLink}
-									</a>
+					<div class="public-settings-grid">
+						<!-- Stripe Publishable Key -->
+						<div class="setting-item">
+							<div class="setting-header">
+								<h4>Stripe Publishable Key</h4>
+								<span class="setting-type">Public</span>
+							</div>
+							<p class="setting-description">
+								Your Stripe publishable key (pk_test_... or pk_live_...) for frontend checkout forms
+							</p>
+							
+							{#if publicSettings?.stripe_publishable_key && !editingPublishableKey}
+								<div class="saved-setting">
+									<div class="saved-setting-display">
+										<code class="key-display">
+											{publicSettings.stripe_publishable_key.substring(0, 12)}...{publicSettings.stripe_publishable_key.slice(-4)}
+										</code>
+									</div>
+									<div class="saved-setting-actions">
+										<button class="btn btn-outline btn-sm" onclick={() => editingPublishableKey = true}>
+											✏️ Update
+										</button>
+										<button class="btn btn-secondary btn-sm" onclick={() => deletePublicSetting('stripe_publishable_key')}>
+											🗑️ Remove
+										</button>
+									</div>
 								</div>
-							</div>
-							<div class="saved-portal-actions">
-								<button class="btn btn-outline" onclick={startEditingPortal}>
-									✏️ Update Link
-								</button>
-								<button class="btn btn-secondary" onclick={clearPortalLink}>
-									🗑️ Clear Link
-								</button>
-							</div>
+							{:else}
+								<form onsubmit={(e) => { e.preventDefault(); savePublishableKey(); }} class="setting-form">
+									<div class="input-group">
+										<input 
+											class="input" 
+											type="text" 
+											placeholder="pk_test_..." 
+											bind:value={publishableKey}
+										/>
+									</div>
+									<div class="setting-form-actions">
+										<button 
+											type="submit" 
+											class="btn btn-primary btn-sm" 
+											disabled={savingPublicSettings || !publishableKey.trim()}
+										>
+											{savingPublicSettings ? 'Saving...' : 'Save Key'}
+										</button>
+										{#if editingPublishableKey}
+											<button 
+												type="button" 
+												class="btn btn-secondary btn-sm" 
+												onclick={() => { editingPublishableKey = false; publishableKey = ''; }}
+											>
+												Cancel
+											</button>
+										{/if}
+									</div>
+								</form>
+							{/if}
 						</div>
-					{:else}
-						<!-- Edit/Add form -->
-						<form onsubmit={(e) => { e.preventDefault(); savePortalLink(); }} class="portal-form">
-							<div class="input-group">
-								<label for="portal-link" class="input-label">
-									Customer Portal URL
-								</label>
-								<input 
-									id="portal-link"
-									class="input" 
-									type="url" 
-									placeholder="https://billing.stripe.com/p/login/..." 
-									bind:value={portalLink}
-								/>
-								<div class="input-help">
-									Get this URL from your Stripe Dashboard → Settings → Customer Portal
-								</div>
-							</div>
 
-							<div class="portal-form-actions">
-								<button 
-									type="submit" 
-									class="btn btn-primary" 
-									disabled={savingPortal || !portalLink.trim()}
-								>
-									{savingPortal ? 'Saving...' : (savedPortalLink ? 'Update Portal Link' : 'Save Portal Link')}
-								</button>
-								{#if editingPortal}
-									<button 
-										type="button" 
-										class="btn btn-secondary" 
-										onclick={cancelEditingPortal}
-									>
-										Cancel
-									</button>
-								{/if}
+						<!-- Customer Portal URL -->
+						<div class="setting-item">
+							<div class="setting-header">
+								<h4>Customer Portal URL</h4>
+								<span class="setting-type">Public</span>
 							</div>
-						</form>
-					{/if}
-					
-					{#if portalError}
+							<p class="setting-description">
+								Your Stripe customer portal URL for subscription management
+							</p>
+							
+							{#if publicSettings?.stripe_portal_url && !editingPortalUrl}
+								<div class="saved-setting">
+									<div class="saved-setting-display">
+										<a href={publicSettings.stripe_portal_url} target="_blank" rel="noopener" class="portal-link">
+											{publicSettings.stripe_portal_url}
+										</a>
+									</div>
+									<div class="saved-setting-actions">
+										<button class="btn btn-outline btn-sm" onclick={() => editingPortalUrl = true}>
+											✏️ Update
+										</button>
+										<button class="btn btn-secondary btn-sm" onclick={() => deletePublicSetting('stripe_portal_url')}>
+											🗑️ Remove
+										</button>
+									</div>
+								</div>
+							{:else}
+								<form onsubmit={(e) => { e.preventDefault(); savePortalUrl(); }} class="setting-form">
+									<div class="input-group">
+										<input 
+											class="input" 
+											type="url" 
+											placeholder="https://billing.stripe.com/p/login/..." 
+											bind:value={portalUrl}
+										/>
+									</div>
+									<div class="setting-form-actions">
+										<button 
+											type="submit" 
+											class="btn btn-primary btn-sm" 
+											disabled={savingPublicSettings || !portalUrl.trim()}
+										>
+											{savingPublicSettings ? 'Saving...' : 'Save URL'}
+										</button>
+										{#if editingPortalUrl}
+											<button 
+												type="button" 
+												class="btn btn-secondary btn-sm" 
+												onclick={() => { editingPortalUrl = false; portalUrl = ''; }}
+											>
+												Cancel
+											</button>
+										{/if}
+									</div>
+								</form>
+							{/if}
+						</div>
+					</div>
+
+					{#if publicSettingsError}
 						<div class="alert alert-error">
 							<div class="alert-icon">❌</div>
 							<div class="alert-content">
 								<strong>Error</strong>
-								<p>{portalError}</p>
+								<p>{publicSettingsError}</p>
 							</div>
 						</div>
 					{/if}
 					
-					{#if portalSuccess}
+					{#if publicSettingsSuccess}
 						<div class="alert alert-success">
 							<div class="alert-icon">✅</div>
 							<div class="alert-content">
 								<strong>Success!</strong>
-								<p>{portalSuccess}</p>
+								<p>{publicSettingsSuccess}</p>
 							</div>
 						</div>
 					{/if}
@@ -1626,6 +1716,102 @@
 		font-size: 0.875rem;
 		color: var(--text-muted, #6b7280);
 		font-weight: 500;
+	}
+
+	/* Public Settings Styles */
+	.public-settings-grid {
+		display: grid;
+		gap: 1.5rem;
+		margin-top: 1rem;
+	}
+
+	.setting-item {
+		border: 1px solid var(--border-color);
+		border-radius: 12px;
+		padding: 1.5rem;
+		background: var(--bg-secondary);
+	}
+
+	.setting-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.5rem;
+	}
+
+	.setting-header h4 {
+		margin: 0;
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+
+	.setting-type {
+		background: var(--success-bg);
+		color: var(--success-text);
+		padding: 0.25rem 0.75rem;
+		border-radius: 12px;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+	}
+
+	.setting-description {
+		color: var(--text-secondary);
+		font-size: 0.9rem;
+		margin-bottom: 1rem;
+		line-height: 1.4;
+	}
+
+	.saved-setting {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.saved-setting-display {
+		flex: 1;
+	}
+
+	.key-display {
+		background: var(--bg-tertiary);
+		padding: 0.5rem 0.75rem;
+		border-radius: 6px;
+		font-family: 'Courier New', monospace;
+		font-size: 0.9rem;
+		color: var(--text-primary);
+		border: 1px solid var(--border-color);
+	}
+
+	.portal-link {
+		color: var(--primary-color);
+		text-decoration: none;
+		font-size: 0.9rem;
+	}
+
+	.portal-link:hover {
+		text-decoration: underline;
+	}
+
+	.saved-setting-actions {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.setting-form {
+		margin-top: 1rem;
+	}
+
+	.setting-form-actions {
+		display: flex;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+
+	.btn-sm {
+		padding: 0.5rem 1rem;
+		font-size: 0.875rem;
 	}
 
 	@media (max-width: 768px) {

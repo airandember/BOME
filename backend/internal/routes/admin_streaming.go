@@ -300,6 +300,79 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 			c.JSON(http.StatusOK, gin.H{"message": "Portal link cleared successfully"})
 		})
 
+		// Public Settings Management (for non-sensitive data like public keys, portal URLs)
+		streaming.GET("/stripe/public-settings", func(c *gin.Context) {
+			if db == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
+				return
+			}
+
+			settings, err := db.GetAllPublicSettings()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve public settings"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"settings": settings})
+		})
+
+		streaming.POST("/stripe/public-settings", func(c *gin.Context) {
+			log.Printf("🔍 [PUBLIC-SETTINGS] POST request received")
+
+			var req struct {
+				Key   string `json:"key" binding:"required"`
+				Value string `json:"value" binding:"required"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				log.Printf("❌ [PUBLIC-SETTINGS] JSON binding error: %v", err)
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
+				return
+			}
+
+			valuePreview := req.Value
+			if len(valuePreview) > 20 {
+				valuePreview = valuePreview[:20] + "..."
+			}
+			log.Printf("🔍 [PUBLIC-SETTINGS] Request data: key=%s, value=%s", req.Key, valuePreview)
+
+			if db == nil {
+				log.Printf("❌ [PUBLIC-SETTINGS] Database is nil")
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
+				return
+			}
+
+			log.Printf("🔍 [PUBLIC-SETTINGS] Calling db.SetPublicSetting...")
+			// Store public setting (non-encrypted)
+			if err := db.SetPublicSetting(req.Key, req.Value); err != nil {
+				log.Printf("❌ [PUBLIC-SETTINGS] Database error: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store public setting", "details": err.Error()})
+				return
+			}
+
+			log.Printf("✅ [PUBLIC-SETTINGS] Setting saved successfully")
+			c.JSON(http.StatusOK, gin.H{"message": "Public setting saved successfully"})
+		})
+
+		streaming.DELETE("/stripe/public-settings/:key", func(c *gin.Context) {
+			key := c.Param("key")
+			if key == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Key parameter required"})
+				return
+			}
+
+			if db == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
+				return
+			}
+
+			if err := db.DeletePublicSetting(key); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete public setting"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"message": "Public setting deleted successfully"})
+		})
+
 		// Debug endpoint for testing coupon listing
 		streaming.GET("/stripe/debug/coupons", func(c *gin.Context) {
 			if !stripeService.IsEnabled() {
