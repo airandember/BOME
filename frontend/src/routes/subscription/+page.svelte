@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/auth';
+	import { auth, apiRequest } from '$lib/auth';
 	import { publicPlansService, type PublicSubscriptionPlan, type PublicSubscriptionOffer } from '$lib/services/public-plans';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
@@ -15,6 +15,16 @@
 	let selectedOffer: PublicSubscriptionOffer | null = null;
 	let showOfferModal = false;
 	let cart: { plan: PublicSubscriptionPlan; offer?: PublicSubscriptionOffer } | null = null;
+	
+	// Embedded checkout state
+	let showEmbeddedCheckout = false;
+	let checkoutClosing = false;
+	let checkoutPlan: PublicSubscriptionPlan | null = null;
+	let checkoutContainer: HTMLElement;
+	let stripe: any = null;
+	let checkout: any = null;
+	let checkoutLoading = false;
+	let checkoutError = '';
 
 	// Subscribe to auth store
 	auth.subscribe((state: any) => {
@@ -55,7 +65,13 @@
 		}
 	};
 
-	const handleSelectPlan = (plan: PublicSubscriptionPlan) => {
+	const handleSelectPlan = async (plan: PublicSubscriptionPlan) => {
+		if (!isAuthenticated) {
+			showToast('Please sign in to continue', 'warning');
+			goto('/login');
+			return;
+		}
+
 		selectedPlan = plan;
 		
 		// Check if there are any offers for this plan
@@ -68,9 +84,120 @@
 			selectedOffer = planOffers[0];
 			showOfferModal = true;
 		} else {
-			// No offers, add plan directly to cart
-			addToCart(plan);
+			// Start embedded checkout directly
+			await startEmbeddedCheckout(plan);
 		}
+	};
+
+	const startEmbeddedCheckout = async (plan: PublicSubscriptionPlan) => {
+		checkoutPlan = plan;
+		showEmbeddedCheckout = true;
+		checkoutLoading = true;
+		checkoutError = '';
+
+		try {
+			await initializeEmbeddedCheckout(plan);
+		} catch (err) {
+			console.error('Error initializing checkout:', err);
+			checkoutError = 'Failed to initialize checkout';
+			checkoutLoading = false;
+		}
+	};
+
+	const initializeEmbeddedCheckout = async (plan: PublicSubscriptionPlan) => {
+		try {
+			// Load Stripe.js if not already loaded
+			if (!window.Stripe) {
+				await loadStripeJS();
+			}
+
+			// Get publishable key and initialize Stripe using authenticated API request
+			const configResponse = await apiRequest('/stripe/config');
+			if (!configResponse.ok) {
+				throw new Error('Failed to get Stripe configuration');
+			}
+			
+			const { publishable_key } = await configResponse.json();
+			if (!publishable_key) {
+				throw new Error('Stripe publishable key not configured');
+			}
+
+			stripe = window.Stripe(publishable_key);
+			await mountCheckout(plan);
+		} catch (err) {
+			console.error('Error initializing Stripe:', err);
+			throw err;
+		}
+	};
+
+	const loadStripeJS = () => {
+		return new Promise((resolve, reject) => {
+			const script = document.createElement('script');
+			script.src = 'https://js.stripe.com/v3/';
+			script.onload = resolve;
+			script.onerror = reject;
+			document.head.appendChild(script);
+		});
+	};
+
+	const mountCheckout = async (plan: PublicSubscriptionPlan) => {
+		try {
+			const fetchClientSecret = async () => {
+				const response = await apiRequest('/stripe/checkout-session', {
+					method: 'POST',
+					body: JSON.stringify({
+						plan_id: plan.id,
+						return_url: `${window.location.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`
+					})
+				});
+
+				if (!response.ok) {
+					const errorData = await response.json();
+					throw new Error(errorData.error || 'Failed to create checkout session');
+				}
+
+				const { client_secret } = await response.json();
+				return client_secret;
+			};
+
+			// Initialize embedded checkout
+			checkout = await stripe.initEmbeddedCheckout({
+				fetchClientSecret
+			});
+
+			// Wait a moment for DOM to be ready, then mount checkout
+			await new Promise(resolve => setTimeout(resolve, 100));
+			
+			// Mount checkout - ensure container exists
+			if (!checkoutContainer) {
+				throw new Error('Checkout container not found - DOM element may not be rendered yet');
+			}
+			
+			console.log('✅ Found checkout container, mounting Stripe checkout...');
+			checkout.mount(checkoutContainer);
+			checkoutLoading = false;
+		} catch (err: any) {
+			console.error('Error mounting checkout:', err);
+			checkoutError = err.message || 'Failed to load checkout';
+			checkoutLoading = false;
+		}
+	};
+
+	const closeEmbeddedCheckout = () => {
+		// Start closing animation
+		checkoutClosing = true;
+		
+		// Wait for animation to complete before hiding
+		setTimeout(() => {
+			showEmbeddedCheckout = false;
+			checkoutClosing = false;
+			checkoutPlan = null;
+			checkoutError = '';
+			if (checkout) {
+				checkout.destroy();
+				checkout = null;
+			}
+		}, 400); // Match the animation duration
 	};
 
 	const addToCart = (plan: PublicSubscriptionPlan, offer?: PublicSubscriptionOffer) => {
@@ -80,18 +207,19 @@
 		console.log('Cart updated:', cart);
 	};
 
-	const handleAcceptOffer = () => {
+	const handleAcceptOffer = async () => {
 		if (selectedPlan && selectedOffer) {
-			addToCart(selectedPlan, selectedOffer);
 			showOfferModal = false;
+			// TODO: Handle offers in embedded checkout
+			await startEmbeddedCheckout(selectedPlan);
 			selectedOffer = null;
 		}
 	};
 
-	const handleDeclineOffer = () => {
+	const handleDeclineOffer = async () => {
 		if (selectedPlan) {
-			addToCart(selectedPlan);
 			showOfferModal = false;
+			await startEmbeddedCheckout(selectedPlan);
 			selectedOffer = null;
 		}
 	};
@@ -229,12 +357,16 @@
 											</div>
 										{/if}
 
-										<button 
-											class="btn btn-primary btn-full btn-bottom" 
-											on:click={() => handleSelectPlan(plan)}
-										>
-											Select {plan.name}
-										</button>
+																		<button 
+									class="btn btn-primary btn-full btn-bottom" 
+									on:click={() => handleSelectPlan(plan)}
+								>
+									{#if !isAuthenticated}
+										Sign In to Subscribe
+									{:else}
+										Subscribe to {plan.name}
+									{/if}
+								</button>
 									</div>
 								{/each}
 							</div>
@@ -300,7 +432,11 @@
 										class="btn btn-primary btn-full btn-bottom" 
 										on:click={() => handleSelectPlan(plan)}
 									>
-										Select {plan.name}
+										{#if !isAuthenticated}
+											Sign In to Subscribe
+										{:else}
+											Subscribe to {plan.name}
+										{/if}
 									</button>
 								</div>
 							{/each}
@@ -308,89 +444,48 @@
 					</div>
 				</div>
 
-				<!-- Cart Section (Right Side) -->
-				<div class="cart-container" class:expanded={cart !== null}>
-					{#if cart}
-						<div class="cart-content">
-							<div class="cart-header">
-								<h2>Your Selection</h2>
-								<button class="close-cart" on:click={removeFromCart}>
-									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<line x1="18" y1="6" x2="6" y2="18"></line>
-										<line x1="6" y1="6" x2="18" y2="18"></line>
-									</svg>
-								</button>
-							</div>
-							<div class="cart-summary">
-								<div class="cart-item">
-									<div class="cart-plan-cont">
-										
-										<h3>{cart.plan.name}</h3>
-										<p>. . .</p>
-										<p>{formatPrice(cart.plan.price, cart.plan.currency)}/{cart.plan.interval}</p>
-										<button class="close-cart-item" on:click={removeFromCart}>
-											<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-												<line x1="18" y1="6" x2="6" y2="18"></line>
-												<line x1="6" y1="6" x2="18" y2="18"></line>
-											</svg>
-										</button>
-									</div>
-									<p>
-										{cart.plan.description}
-									</p>
-								
-								</div>
-								{#if cart.offer}
-								<h4>Additional Items</h4>
-									<div class="cart-offer">
-										<div class="cart-plan-cont">
-										
-											<h3>{cart.offer.off_name}</h3>
-										
-											<p>{formatDiscount(cart.offer)} - {getItemName(cart.offer.item_id)}</p>
-											<button class="close-cart-offer" on:click={removeOfferFromCart}>
-												<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-													<line x1="18" y1="6" x2="6" y2="18"></line>
-													<line x1="6" y1="6" x2="18" y2="18"></line>
-												</svg>
-											</button>
-										</div>
-									</div>
-								{/if}
-								{#if isAuthenticated}
-									<button class="btn btn-primary btn-full" on:click={() => goto('/checkout')}>
-										Proceed to Checkout
-									</button>
-								{:else}
-									<div class="auth-required">
-										<p>Please sign in to continue with your subscription</p>
-										<div class="auth-buttons">
-											<button class="btn btn-outline" on:click={() => goto('/login')}>
-												Sign In
-											</button>
-											<button class="btn btn-primary" on:click={() => goto('/register')}>
-												Sign Up
-											</button>
-										</div>
-									</div>
-								{/if}
-							</div>
-						</div>
-					{:else}
-						<div class="cart-placeholder">
-							<svg class="cart-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<circle cx="9" cy="21" r="1"></circle>
-								<circle cx="20" cy="21" r="1"></circle>
-								<path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
-							</svg>
-							<p>Select a plan to see your cart</p>
-						</div>
-					{/if}
-				</div>
+
 			</div>
 		{/if}
 	</div>
 </div>
+
+<!-- Embedded Checkout Section (Expands from Bottom) -->
+{#if showEmbeddedCheckout}
+	<div class="checkout-overlay" class:closing={checkoutClosing} on:click={closeEmbeddedCheckout}>
+		<div class="embedded-checkout-container" class:closing={checkoutClosing} on:click|stopPropagation>
+			<div class="embedded_spacer"></div>
+			<button class="close-checkout" on:click={closeEmbeddedCheckout}>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<line x1="18" y1="6" x2="6" y2="18"></line>
+					<line x1="6" y1="6" x2="18" y2="18"></line>
+				</svg>
+			</button>
+			<div class="checkout-content">
+				<!-- Always render the container so it's available for mounting -->
+				<div class="stripe-checkout-wrapper" bind:this={checkoutContainer}>
+					<!-- Stripe Embedded Checkout will be mounted here -->
+				</div>
+				
+				{#if checkoutLoading}
+					<div class="checkout-loading">
+						<LoadingSpinner />
+						<p>Loading secure checkout...</p>
+					</div>
+				{:else if checkoutError}
+					<div class="checkout-error">
+						<div class="error-icon">⚠️</div>
+						<h3>Checkout Error</h3>
+						<p>{checkoutError}</p>
+						<button class="btn btn-primary" on:click={closeEmbeddedCheckout}>
+							Try Again
+						</button>
+					</div>
+				{/if}
+			</div>
+		</div>
+	</div>
+{/if}
 
 <!-- Offer Modal -->
 {#if showOfferModal && selectedOffer && selectedPlan}
@@ -909,6 +1004,186 @@
 		display: flex;
 		justify-content: center;
 		gap: 1rem;
+	}
+
+	.checkout-options {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	/* Embedded Checkout Styles */
+	.checkout-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: #fbbe14;
+		z-index: 1000;
+		display: flex;
+		align-items: flex-end;
+		justify-content: center;
+		animation: fadeIn 0.3s ease-out;
+	}
+
+	.checkout-overlay.closing {
+		animation: fadeOut 0.4s ease-in forwards;
+	}
+
+	.embedded-checkout-container {
+		background: var(--card-bg);
+		border-radius: 20px 20px 0 0;
+		width: 100%;
+		max-width: 100vw;
+		min-height: 100vh;
+		overflow-y: auto;
+		box-shadow: 0 -10px 25px rgba(0, 0, 0, 0.2);
+		border: 1px solid var(--border-color);
+		animation: slideUpFromBottom 0.4s ease-out;
+	}
+
+	.embedded-checkout-container.closing {
+		animation: slideDownToBottom 0.4s ease-in forwards;
+	}
+
+	.checkout-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 2rem 2rem 1rem 2rem;
+		border-bottom: 1px solid var(--border-color);
+		background: var(--bg-secondary);
+		border-radius: 20px 20px 0 0;
+	}
+
+	.checkout-plan-info h2 {
+		font-size: 1.5rem;
+		font-weight: 600;
+		color: var(--text-primary);
+		margin: 0 0 0.5rem 0;
+	}
+
+	.checkout-price {
+		font-size: 1.25rem;
+		font-weight: 700;
+		color: var(--primary-color);
+		margin: 0;
+	}
+
+	.embedded_spacer {
+		position: relative;
+		height: 100px;
+	}
+
+	.close-checkout {
+		position: fixed;
+		top: 2rem;
+		right: 2rem;
+		background: rgba(0, 0, 0, 0.7);
+		border: none;
+		color: white;
+		cursor: pointer;
+		padding: 0.75rem;
+		border-radius: 50%;
+		transition: all 0.3s ease;
+		z-index: 1001;
+		backdrop-filter: blur(10px);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+	}
+
+	.close-checkout:hover {
+		background: rgba(0, 0, 0, 0.9);
+		transform: scale(1.1);
+	}
+
+	.close-checkout svg {
+		width: 24px;
+		height: 24px;
+	}
+
+	.checkout-content {
+		padding: 0;
+		min-height: 400px;
+	}
+
+	.checkout-loading {
+		text-align: center;
+		padding: 3rem 0;
+	}
+
+	.checkout-loading p {
+		margin-top: 1rem;
+		color: var(--text-inverse);
+		font-size: 1.1rem;
+	}
+
+	.checkout-error {
+		text-align: center;
+		padding: 3rem 2rem;
+	}
+
+	.checkout-error .error-icon {
+		font-size: 3rem;
+		margin-bottom: 1rem;
+	}
+
+	.checkout-error h3 {
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: var(--text-inverse);
+		margin-bottom: 1rem;
+	}
+
+	.checkout-error p {
+		color: var(--text-inverse);
+		margin-bottom: 2rem;
+		font-size: 1rem;
+	}
+
+	.stripe-checkout-wrapper {
+		min-height: 400px;
+		/* Stripe will inject the checkout form here */
+	}
+
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	@keyframes slideUpFromBottom {
+		from {
+			opacity: 0;
+			transform: translateY(100%);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@keyframes slideDownToBottom {
+		from {
+			opacity: 1;
+			transform: translateY(0);
+		}
+		to {
+			opacity: 0;
+			transform: translateY(100%);
+		}
+	}
+
+	@keyframes fadeOut {
+		from {
+			opacity: 1;
+		}
+		to {
+			opacity: 0;
+		}
 	}
 
 	.auth-notice {

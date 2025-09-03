@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -95,6 +96,12 @@ func SetupRoutes(
 	// API v1 routes
 	v1 := router.Group("/api/v1")
 	fmt.Printf("Created v1 route group with base path: %s\n", v1.BasePath())
+
+	// Initialize public Stripe service for frontend operations (needs to be accessible in both db and non-db scenarios)
+	var stripePublicService *services.StripePublicService
+	if db != nil {
+		stripePublicService = services.NewStripePublicService(db)
+	}
 
 	// Admin routes - only setup if database is available
 	admin := v1.Group("/admin")
@@ -239,27 +246,45 @@ func SetupRoutes(
 		{
 			// Get customer portal link for authenticated users
 			publicStripe.GET("/portal-link", func(c *gin.Context) {
-				// Get portal URL from public settings
-				portalURL, err := db.GetPublicSetting("stripe_portal_url")
-				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve portal link"})
+				if stripePublicService == nil {
+					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Stripe service not available"})
 					return
 				}
 
-				if portalURL == "" {
-					c.JSON(http.StatusNotFound, gin.H{"error": "Portal link not configured"})
+				// Get user from context
+				userID, exists := c.Get("user_id")
+				if !exists {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+					return
+				}
+
+				// TODO: Get actual customer ID from user
+				customerID := fmt.Sprintf("cus_%v", userID)
+				returnURL := c.Query("return_url")
+				if returnURL == "" {
+					returnURL = "https://bome.com/dashboard"
+				}
+
+				portalURL, err := stripePublicService.GetCustomerPortalURL(customerID, returnURL)
+				if err != nil {
+					log.Printf("❌ [PORTAL] Failed to get portal URL: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve portal link"})
 					return
 				}
 
 				c.JSON(http.StatusOK, gin.H{"portal_url": portalURL})
 			})
 
-			// Create checkout session for authenticated users
+			// Create embedded checkout session for authenticated users
 			publicStripe.POST("/checkout-session", func(c *gin.Context) {
+				if stripePublicService == nil {
+					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Stripe service not available"})
+					return
+				}
+
 				var req struct {
-					PlanID     string `json:"plan_id" binding:"required"`
-					SuccessURL string `json:"success_url" binding:"required"`
-					CancelURL  string `json:"cancel_url" binding:"required"`
+					PlanID    string `json:"plan_id" binding:"required"`
+					ReturnURL string `json:"return_url" binding:"required"`
 				}
 				if err := c.ShouldBindJSON(&req); err != nil {
 					c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
@@ -273,27 +298,37 @@ func SetupRoutes(
 					return
 				}
 
-				// TODO: Implement Stripe checkout session creation
-				// This would use the Stripe service to create a checkout session
-				// For now, return a placeholder response
+				log.Printf("🔍 [CHECKOUT] Creating embedded checkout session for user %v, plan %s", userID, req.PlanID)
+
+				// Create embedded checkout session using public service
+				clientSecret, err := stripePublicService.CreateEmbeddedCheckoutSession(req.PlanID, req.ReturnURL, fmt.Sprintf("%v", userID))
+				if err != nil {
+					log.Printf("❌ [CHECKOUT] Failed to create checkout session: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create checkout session", "details": err.Error()})
+					return
+				}
+
+				log.Printf("✅ [CHECKOUT] Embedded checkout session created successfully")
 				c.JSON(http.StatusOK, gin.H{
-					"message": "Checkout session creation not yet implemented",
-					"plan_id": req.PlanID,
-					"user_id": userID,
+					"client_secret": clientSecret,
 				})
 			})
 
 			// Get public Stripe configuration (publishable key)
 			publicStripe.GET("/config", func(c *gin.Context) {
-				publishableKey, err := db.GetPublicSetting("stripe_publishable_key")
+				if stripePublicService == nil {
+					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Stripe service not available"})
+					return
+				}
+
+				config, err := stripePublicService.GetStripeConfig()
 				if err != nil {
+					log.Printf("❌ [CONFIG] Failed to get Stripe config: %v", err)
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve Stripe configuration"})
 					return
 				}
 
-				c.JSON(http.StatusOK, gin.H{
-					"publishable_key": publishableKey,
-				})
+				c.JSON(http.StatusOK, config)
 			})
 		}
 	} else {
