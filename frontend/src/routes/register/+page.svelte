@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import Navigation from '$lib/components/Navigation.svelte';
+	import OAuth2Login from '$lib/components/OAuth2Login.svelte';
 
 	let email = '';
 	let password = '';
@@ -148,6 +149,11 @@
 					{loading ? 'Creating Account...' : 'Create Account'}
 				</button>
 			</form>
+		{/if}
+
+		<!-- OAuth2 Registration Options -->
+		{#if !success}
+			<OAuth2Login />
 		{/if}
 
 		<div class="auth-footer">

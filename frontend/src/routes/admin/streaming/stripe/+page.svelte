@@ -9,6 +9,7 @@
 	// Import child components
 	import AnalyticsOverview from './overview/AnalyticsOverview.svelte';
 	import Setup from './setup/+page.svelte';
+	import EmailUsagePanel from './components/EmailUsagePanel.svelte';
 
 	// State variables using Svelte 5 runes
 	let summary = $state<any>(null);
@@ -2001,6 +2002,7 @@
 				{#if activeTab === 'analytics'}
 					<AnalyticsOverview {summary} {stripeData} />
 				{:else if activeTab === 'setup'}
+					<EmailUsagePanel />
 					<Setup {summary} onClearKey={() => showClearModal = true} />
 				{/if}
 			</div>

@@ -156,11 +156,14 @@ func RegisterHandler(db *database.DB, emailService *services.EmailService) gin.H
 			// Continue anyway - user can request new verification
 		}
 
-		// Send verification email
+		// Send verification email using new email service
 		if emailService != nil {
-			if err := emailService.SendEmailVerification(user.FirstName, user.Email, verificationToken); err != nil {
+			fullName := user.FirstName + " " + user.LastName
+			if err := emailService.SendVerificationEmail(user.ID, user.Email, fullName); err != nil {
 				log.Printf("Failed to send verification email: %v", err)
 				// Continue anyway - user can request new verification
+			} else {
+				log.Printf("✅ Verification email sent to %s", user.Email)
 			}
 		}
 
