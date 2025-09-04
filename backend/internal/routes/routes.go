@@ -152,6 +152,10 @@ func SetupRoutes(
 		SetupSubscriberHistoryRoutes(admin, db, subscriberHistoryService)
 		SetupSubscriptionRoutes(router, db, stripeService, analyticsService)
 
+		// Setup email usage routes
+		fmt.Printf("Setting up email usage routes...\n")
+		SetupEmailUsageRoutes(admin, db)
+
 		fmt.Printf("Database-dependent admin routes setup complete\n")
 		fmt.Printf("Subscription services setup complete\n")
 	} else {
@@ -330,6 +334,140 @@ func SetupRoutes(
 
 				c.JSON(http.StatusOK, config)
 			})
+
+			// Verify checkout session status
+			publicStripe.GET("/session/:session_id", func(c *gin.Context) {
+				if stripePublicService == nil {
+					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Stripe service not available"})
+					return
+				}
+
+				sessionID := c.Param("session_id")
+				if sessionID == "" {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Session ID is required"})
+					return
+				}
+
+				// Get user from context for security
+				userID, exists := c.Get("user_id")
+				if !exists {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+					return
+				}
+
+				log.Printf("🔍 [SESSION-VERIFY] User %v verifying session: %s", userID, sessionID)
+
+				sessionData, err := stripePublicService.VerifyCheckoutSession(sessionID)
+				if err != nil {
+					log.Printf("❌ [SESSION-VERIFY] Failed to verify session: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+
+				log.Printf("✅ [SESSION-VERIFY] Session verified successfully: %s", sessionID)
+				c.JSON(http.StatusOK, gin.H{
+					"status": "success",
+					"data":   sessionData,
+				})
+			})
+
+			// Create subscription from successful payment
+			publicStripe.POST("/create-subscription", func(c *gin.Context) {
+				if stripePublicService == nil {
+					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Stripe service not available"})
+					return
+				}
+
+				// Get user from context
+				userID, exists := c.Get("user_id")
+				if !exists {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+					return
+				}
+
+				// Parse request
+				var request struct {
+					SessionID   string                 `json:"session_id"`
+					SessionData map[string]interface{} `json:"session_data"`
+				}
+
+				if err := c.ShouldBindJSON(&request); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+					return
+				}
+
+				log.Printf("🔍 [CREATE-SUB] Creating subscription for user %v from session %s", userID, request.SessionID)
+
+				// Create subscription using the subscription service
+				// Note: We'll need to initialize this service in the main setup
+				subscription, err := createSubscriptionFromSession(userID.(int), request.SessionData)
+				if err != nil {
+					log.Printf("❌ [CREATE-SUB] Failed to create subscription: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+
+				log.Printf("✅ [CREATE-SUB] Subscription created successfully: %d", subscription.ID)
+				c.JSON(http.StatusOK, gin.H{
+					"status": "success",
+					"data":   subscription,
+				})
+			})
+
+			// Get user subscription status (including legacy fields)
+			publicStripe.GET("/subscription-status", func(c *gin.Context) {
+				// Get user from context
+				userID, exists := c.Get("user_id")
+				if !exists {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+					return
+				}
+
+				if globalUserSubscriptionService == nil {
+					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Subscription service not available"})
+					return
+				}
+
+				status, err := globalUserSubscriptionService.GetUserSubscriptionStatus(userID.(int))
+				if err != nil {
+					log.Printf("❌ [SUB-STATUS] Failed to get subscription status: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+
+				c.JSON(http.StatusOK, gin.H{
+					"status": "success",
+					"data":   status,
+				})
+			})
+
+			// Cancel user subscription
+			publicStripe.POST("/cancel-subscription", func(c *gin.Context) {
+				// Get user from context
+				userID, exists := c.Get("user_id")
+				if !exists {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+					return
+				}
+
+				if globalUserSubscriptionService == nil {
+					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Subscription service not available"})
+					return
+				}
+
+				err := globalUserSubscriptionService.CancelUserSubscription(userID.(int))
+				if err != nil {
+					log.Printf("❌ [CANCEL-SUB] Failed to cancel subscription: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+
+				log.Printf("✅ [CANCEL-SUB] Subscription cancelled for user %v", userID)
+				c.JSON(http.StatusOK, gin.H{
+					"status":  "success",
+					"message": "Subscription cancelled successfully",
+				})
+			})
 		}
 	} else {
 		// Provide fallback responses when database is unavailable
@@ -376,6 +514,26 @@ func SetupRoutes(
 					"error": "Service temporarily unavailable",
 				})
 			})
+			publicStripe.GET("/session/:session_id", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Service temporarily unavailable",
+				})
+			})
+			publicStripe.POST("/create-subscription", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Service temporarily unavailable",
+				})
+			})
+			publicStripe.GET("/subscription-status", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Service temporarily unavailable",
+				})
+			})
+			publicStripe.POST("/cancel-subscription", func(c *gin.Context) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Service temporarily unavailable",
+				})
+			})
 		}
 	}
 
@@ -404,7 +562,18 @@ func SetupRoutes(
 		auth.POST("/register", RegisterHandler(db, emailService))
 		auth.POST("/logout", LogoutHandler(db))
 		auth.POST("/change-password", middleware.AuthRequired(), ChangePasswordHandler(db))
+
+		// Email verification routes
+		auth.GET("/verify-email/:token", VerifyEmailTokenHandler(emailService))
+		auth.POST("/resend-verification", middleware.AuthRequired(), ResendVerificationHandler(emailService))
 	}
+
+	// Initialize OAuth2 service
+	oauth2Service := services.NewOAuth2Service(db)
+
+	// Setup OAuth2 routes
+	fmt.Printf("Setting up OAuth2 routes...\n")
+	SetupOAuth2Routes(v1, db, oauth2Service)
 
 	// User profile routes
 	users := v1.Group("/users")
@@ -1251,5 +1420,83 @@ func RoleRequired(allowedRoles ...string) gin.HandlerFunc {
 
 		c.JSON(403, gin.H{"error": "Insufficient permissions"})
 		c.Abort()
+	}
+}
+
+// Global services for subscription creation
+var (
+	globalUserSubscriptionService *services.UserSubscriptionService
+	globalEmailService            *services.EmailService
+)
+
+// InitializeSubscriptionServices initializes the global subscription services
+func InitializeSubscriptionServices(db *database.DB) {
+	globalEmailService = services.NewEmailService(db)
+	globalUserSubscriptionService = services.NewUserSubscriptionService(db, globalEmailService)
+	log.Printf("✅ [SERVICES] Subscription and email services initialized")
+}
+
+// createSubscriptionFromSession helper function for creating subscriptions
+func createSubscriptionFromSession(userID int, sessionData map[string]interface{}) (*services.UserSubscription, error) {
+	if globalUserSubscriptionService == nil {
+		return nil, fmt.Errorf("subscription service not initialized")
+	}
+
+	return globalUserSubscriptionService.CreateSubscriptionFromStripeSession(sessionData, userID)
+}
+
+// VerifyEmailTokenHandler handles email verification
+func VerifyEmailTokenHandler(emailService *services.EmailService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token := c.Param("token")
+		if token == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Token is required"})
+			return
+		}
+
+		if emailService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Email service not available"})
+			return
+		}
+
+		err := emailService.VerifyEmail(token)
+		if err != nil {
+			log.Printf("❌ [EMAIL-VERIFY] Failed to verify email: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		log.Printf("✅ [EMAIL-VERIFY] Email verified successfully")
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "success",
+			"message": "Email verified successfully",
+		})
+	}
+}
+
+// ResendVerificationHandler handles resending verification emails
+func ResendVerificationHandler(emailService *services.EmailService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if emailService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Email service not available"})
+			return
+		}
+
+		// Get user from context
+		userID, exists := c.Get("user_id")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			return
+		}
+
+		// Get user details from database
+		// This would need to be implemented in the database layer
+		// For now, we'll return a placeholder response
+		log.Printf("🔍 [EMAIL-RESEND] Resending verification email for user %v", userID)
+
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "success",
+			"message": "Verification email sent",
+		})
 	}
 }

@@ -100,7 +100,20 @@ func main() {
 		log.Println("Continuing without Spaces service for development...")
 		spacesService = nil
 	}
-	emailService := services.NewEmailService()
+	// Initialize email service (new version with database support)
+	var emailService *services.EmailService
+	if db != nil {
+		emailService = services.NewEmailService(db)
+		log.Println("Email service initialized with database support")
+	} else {
+		log.Println("Email service disabled - database not available")
+	}
+
+	// Initialize subscription services
+	if db != nil {
+		routes.InitializeSubscriptionServices(db)
+		log.Println("Subscription services initialized")
+	}
 
 	// Initialize business intelligence service
 	var biService *services.BusinessIntelligenceService

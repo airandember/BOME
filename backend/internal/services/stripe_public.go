@@ -254,6 +254,79 @@ func (s *StripePublicService) IsEnabled() bool {
 	return s.isEnabled
 }
 
+// VerifyCheckoutSession verifies a Stripe checkout session and returns its status
+func (s *StripePublicService) VerifyCheckoutSession(sessionID string) (map[string]interface{}, error) {
+	if !s.isEnabled {
+		return nil, errors.New("Stripe public service is not enabled")
+	}
+
+	log.Printf("🔍 [STRIPE-PUBLIC] Verifying checkout session: %s", sessionID)
+
+	// Get the encrypted secret key for session verification
+	encryptedKey, err := s.db.GetSecureSetting("stripe_secret_key")
+	if err != nil || encryptedKey == "" {
+		return nil, errors.New("stripe secret key not configured")
+	}
+
+	// Decrypt the key
+	log.Printf("🔍 [STRIPE-PUBLIC] Encrypted key length: %d", len(encryptedKey))
+	cryptoService := GetGlobalCryptoService()
+	if cryptoService == nil {
+		log.Printf("❌ [STRIPE-PUBLIC] Crypto service not available")
+		return nil, errors.New("crypto service not available")
+	}
+
+	secretKey, err := cryptoService.DecryptString(encryptedKey)
+	if err != nil {
+		log.Printf("❌ [STRIPE-PUBLIC] Failed to decrypt key: %v", err)
+		return nil, fmt.Errorf("failed to decrypt stripe key: %w", err)
+	}
+
+	log.Printf("✅ [STRIPE-PUBLIC] Successfully decrypted key, length: %d", len(secretKey))
+	log.Printf("🔍 [STRIPE-PUBLIC] Decrypted key starts with: %s", secretKey[:12])
+
+	// Set the Stripe API key
+	stripe.Key = secretKey
+
+	// Retrieve the session from Stripe
+	sess, err := session.Get(sessionID, nil)
+	if err != nil {
+		log.Printf("❌ [STRIPE-PUBLIC] Failed to retrieve session: %v", err)
+		return nil, fmt.Errorf("failed to retrieve session: %w", err)
+	}
+
+	log.Printf("✅ [STRIPE-PUBLIC] Session retrieved: %s, Status: %s", sess.ID, sess.PaymentStatus)
+
+	// Extract session information
+	result := map[string]interface{}{
+		"session_id":     sess.ID,
+		"payment_status": sess.PaymentStatus,
+		"status":         sess.Status,
+		"customer_email": sess.CustomerDetails.Email,
+		"amount_total":   sess.AmountTotal,
+		"currency":       sess.Currency,
+		"created":        sess.Created,
+	}
+
+	// Add customer information if available
+	if sess.Customer != nil {
+		result["customer_id"] = sess.Customer.ID
+	}
+
+	// Add subscription information if this was a subscription checkout
+	if sess.Subscription != nil {
+		result["subscription_id"] = sess.Subscription.ID
+	}
+
+	// Add metadata if available
+	if sess.Metadata != nil {
+		result["metadata"] = sess.Metadata
+	}
+
+	log.Printf("✅ [STRIPE-PUBLIC] Session verification complete: %+v", result)
+	return result, nil
+}
+
 // RefreshSettings reloads the public settings from database
 func (s *StripePublicService) RefreshSettings() error {
 	return s.loadPublicSettings()

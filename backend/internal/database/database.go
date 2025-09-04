@@ -391,6 +391,81 @@ func (db *DB) DeletePublicSetting(key string) error {
 	return err
 }
 
+// Email settings methods
+
+// GetEmailSetting retrieves an email setting by key
+func (db *DB) GetEmailSetting(key string) (string, error) {
+	if db == nil || db.DB == nil {
+		return "", fmt.Errorf("database not initialized")
+	}
+
+	var value string
+	query := `SELECT setting_value FROM email_settings WHERE setting_key = $1`
+	err := db.DB.QueryRow(query, key).Scan(&value)
+	if err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+// SetEmailSetting sets an email setting
+func (db *DB) SetEmailSetting(key, value string) error {
+	if db == nil || db.DB == nil {
+		return fmt.Errorf("database not initialized")
+	}
+
+	query := `
+		INSERT INTO email_settings (setting_key, setting_value, is_encrypted)
+		VALUES ($1, $2, false)
+		ON CONFLICT (setting_key) 
+		DO UPDATE SET 
+			setting_value = EXCLUDED.setting_value,
+			updated_at = CURRENT_TIMESTAMP`
+
+	_, err := db.DB.Exec(query, key, value)
+	return err
+}
+
+// GetAllEmailSettings retrieves all email settings
+func (db *DB) GetAllEmailSettings() (map[string]string, error) {
+	if db == nil || db.DB == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+
+	settings := make(map[string]string)
+	query := `SELECT setting_key, setting_value FROM email_settings`
+
+	rows, err := db.DB.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			continue
+		}
+		settings[key] = value
+	}
+
+	return settings, nil
+}
+
+// LogEmailNotification logs an email notification to the database
+func (db *DB) LogEmailNotification(userID int, recipientEmail, subject, emailType, status, errorMessage string) error {
+	if db == nil || db.DB == nil {
+		return fmt.Errorf("database not initialized")
+	}
+
+	query := `
+		INSERT INTO email_notifications (user_id, recipient_email, subject, email_type, status, error_message)
+		VALUES ($1, $2, $3, $4, $5, $6)`
+
+	_, err := db.DB.Exec(query, userID, recipientEmail, subject, emailType, status, errorMessage)
+	return err
+}
+
 // Migration SQL statements - PostgreSQL compatible
 const createUsersTable = `
 CREATE TABLE IF NOT EXISTS users (
@@ -1796,3 +1871,135 @@ ALTER TABLE subscriber_history
 ADD CONSTRAINT chk_notes_jsonb 
 CHECK (notes IS NULL OR jsonb_typeof(notes) = 'object');
 `
+
+// OAuth2Account represents an OAuth2 account link
+type OAuth2Account struct {
+	ID             int       `json:"id"`
+	UserID         int       `json:"user_id"`
+	Provider       string    `json:"provider"`
+	ProviderUserID string    `json:"provider_user_id"`
+	AccessToken    string    `json:"-"` // Don't expose in JSON
+	RefreshToken   string    `json:"-"` // Don't expose in JSON
+	Expiry         time.Time `json:"expiry"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// GetOAuth2Setting retrieves a single OAuth2 setting (raw value, encryption handled at service layer)
+func (db *DB) GetOAuth2Setting(key string) (string, error) {
+	var value string
+
+	query := `SELECT setting_value FROM oauth2_settings WHERE setting_key = $1`
+	err := db.DB.QueryRow(query, key).Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("setting not found: %s", key)
+		}
+		return "", err
+	}
+
+	return value, nil
+}
+
+// SetOAuth2Setting sets or updates an OAuth2 setting (raw value, encryption handled at service layer)
+func (db *DB) SetOAuth2Setting(key, value string, isEncrypted bool) error {
+	query := `
+		INSERT INTO oauth2_settings (setting_key, setting_value, is_encrypted, updated_at) 
+		VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+		ON CONFLICT (setting_key) 
+		DO UPDATE SET 
+			setting_value = EXCLUDED.setting_value,
+			is_encrypted = EXCLUDED.is_encrypted,
+			updated_at = CURRENT_TIMESTAMP`
+
+	_, err := db.DB.Exec(query, key, value, isEncrypted)
+	return err
+}
+
+// CreateOAuth2Account creates a new OAuth2 account link (tokens should be pre-encrypted)
+func (db *DB) CreateOAuth2Account(userID int, provider, providerUserID, accessToken, refreshToken string, expiry time.Time) error {
+	query := `
+		INSERT INTO oauth2_accounts (user_id, provider, provider_user_id, access_token, refresh_token, expiry, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT (user_id, provider) 
+		DO UPDATE SET 
+			provider_user_id = EXCLUDED.provider_user_id,
+			access_token = EXCLUDED.access_token,
+			refresh_token = EXCLUDED.refresh_token,
+			expiry = EXCLUDED.expiry,
+			updated_at = CURRENT_TIMESTAMP`
+
+	_, err := db.DB.Exec(query, userID, provider, providerUserID, accessToken, refreshToken, expiry)
+	return err
+}
+
+// LinkOAuth2Account links an existing OAuth2 account to a user
+func (db *DB) LinkOAuth2Account(userID int, provider, providerUserID string) error {
+	query := `UPDATE oauth2_accounts SET user_id = $1, updated_at = CURRENT_TIMESTAMP WHERE provider = $2 AND provider_user_id = $3`
+	_, err := db.DB.Exec(query, userID, provider, providerUserID)
+	return err
+}
+
+// GetOAuth2AccountByProviderID retrieves an OAuth2 account by provider and provider user ID (returns encrypted tokens)
+func (db *DB) GetOAuth2AccountByProviderID(provider, providerUserID string) (*OAuth2Account, error) {
+	account := &OAuth2Account{}
+
+	query := `
+		SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, expiry, created_at, updated_at
+		FROM oauth2_accounts 
+		WHERE provider = $1 AND provider_user_id = $2`
+
+	err := db.DB.QueryRow(query, provider, providerUserID).Scan(
+		&account.ID, &account.UserID, &account.Provider, &account.ProviderUserID,
+		&account.AccessToken, &account.RefreshToken, &account.Expiry,
+		&account.CreatedAt, &account.UpdatedAt,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // Not found
+		}
+		return nil, err
+	}
+
+	return account, nil
+}
+
+// GetOAuth2AccountByUserID retrieves OAuth2 accounts for a user (returns encrypted tokens)
+func (db *DB) GetOAuth2AccountByUserID(userID int) ([]*OAuth2Account, error) {
+	query := `
+		SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, expiry, created_at, updated_at
+		FROM oauth2_accounts 
+		WHERE user_id = $1`
+
+	rows, err := db.DB.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var accounts []*OAuth2Account
+	for rows.Next() {
+		account := &OAuth2Account{}
+
+		err := rows.Scan(
+			&account.ID, &account.UserID, &account.Provider, &account.ProviderUserID,
+			&account.AccessToken, &account.RefreshToken, &account.Expiry,
+			&account.CreatedAt, &account.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		accounts = append(accounts, account)
+	}
+
+	return accounts, rows.Err()
+}
+
+// DeleteOAuth2Account removes an OAuth2 account link
+func (db *DB) DeleteOAuth2Account(userID int, provider string) error {
+	query := `DELETE FROM oauth2_accounts WHERE user_id = $1 AND provider = $2`
+	_, err := db.DB.Exec(query, userID, provider)
+	return err
+}

@@ -10,6 +10,9 @@
 	let sessionStatus = '';
 	let customerEmail = '';
 	let error = '';
+	let sessionData: any = null;
+	let paymentAmount = 0;
+	let currency = 'USD';
 
 	// Get session ID from URL params
 	$: sessionId = $page.url.searchParams.get('session_id');
@@ -32,18 +35,74 @@
 
 	async function checkSessionStatus() {
 		try {
-			// TODO: Create an endpoint to check session status
-			// For now, we'll assume success and show a success message
-			sessionStatus = 'complete';
-			customerEmail = $auth.user?.email || 'your email';
+			console.log('🔍 Verifying session:', sessionId);
+			
+			// Call our new session verification endpoint
+			const response = await apiRequest(`/stripe/session/${sessionId}`);
+			
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.error || 'Failed to verify session');
+			}
+
+			const result = await response.json();
+			sessionData = result.data;
+			
+			console.log('✅ Session verification result:', sessionData);
+
+			// Extract session information
+			sessionStatus = sessionData.payment_status || sessionData.status;
+			customerEmail = sessionData.customer_email || $auth.user?.email || 'your email';
+			paymentAmount = sessionData.amount_total ? sessionData.amount_total / 100 : 0; // Convert from cents
+			currency = sessionData.currency?.toUpperCase() || 'USD';
+
 			loading = false;
 
-			if (sessionStatus === 'complete') {
-				showToast('Subscription activated successfully!', 'success');
+			// Show appropriate toast based on payment status
+			if (sessionStatus === 'paid' || sessionStatus === 'complete') {
+				showToast('Payment successful! Your subscription is now active.', 'success');
+				
+				// TODO: Update user subscription in database
+				await updateUserSubscription();
+			} else if (sessionStatus === 'unpaid' || sessionStatus === 'requires_payment_method') {
+				showToast('Payment incomplete. Please try again.', 'warning');
+			} else {
+				showToast(`Payment status: ${sessionStatus}`, 'info');
 			}
-		} catch (err) {
+		} catch (err: any) {
 			console.error('Error checking session status:', err);
+			error = err.message || 'Failed to verify payment status';
+			loading = false;
 			throw err;
+		}
+	}
+
+	async function updateUserSubscription() {
+		try {
+			console.log('🔄 Updating user subscription...');
+			
+			// Call backend endpoint to create subscription record
+			const response = await apiRequest('/stripe/create-subscription', {
+				method: 'POST',
+				body: JSON.stringify({
+					session_id: sessionId,
+					session_data: sessionData
+				})
+			});
+			
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.error || 'Failed to create subscription record');
+			}
+			
+			const result = await response.json();
+			console.log('✅ Subscription created successfully:', result);
+			
+		} catch (err) {
+			console.error('❌ Failed to update subscription:', err);
+			// Don't throw here - payment was successful even if DB update failed
+			// Show a warning toast but don't fail the success page
+			showToast('Payment successful, but there was an issue creating your subscription record. Please contact support.', 'warning');
 		}
 	}
 
@@ -74,17 +133,20 @@
 				<h1>Payment Verification Failed</h1>
 				<p class="error-message">{error}</p>
 				<div class="error-actions">
-					<button class="btn btn-primary" on:click={goToSubscriptions}>
+					<button class="btn btn-primary" style="color: --var(--text-primary)" on:click={goToSubscriptions}>
 						Back to Subscriptions
 					</button>
 				</div>
 			</div>
-		{:else if sessionStatus === 'complete'}
+		{:else if sessionStatus === 'paid' || sessionStatus === 'complete'}
 			<div class="success-container">
 				<div class="success-icon">🎉</div>
 				<h1>Welcome to BOME!</h1>
 				<p class="success-message">
-					Your subscription has been activated successfully. 
+					Your subscription has been activated successfully! 
+					{#if paymentAmount > 0}
+						You've been charged <strong>{new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(paymentAmount)}</strong>.
+					{/if}
 					A confirmation email has been sent to <strong>{customerEmail}</strong>.
 				</p>
 				
@@ -97,7 +159,7 @@
 							</svg>
 							Access exclusive Book of Mormon evidence content
 						</li>
-						<li>
+						<!--<li>
 							<svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<polyline points="20,6 9,17 4,12"></polyline>
 							</svg>
@@ -108,18 +170,18 @@
 								<polyline points="20,6 9,17 4,12"></polyline>
 							</svg>
 							Join our community forum
-						</li>
+						</li>-->
 						<li>
 							<svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<polyline points="20,6 9,17 4,12"></polyline>
 							</svg>
-							Get early access to new research
+							Over 1600 videos!!
 						</li>
 					</ul>
 				</div>
 
 				<div class="success-actions">
-					<button class="btn btn-primary" on:click={goToDashboard}>
+					<button class="btn btn-primary" style="color: --var(--text-primary)" on:click={goToDashboard}>
 						Go to Dashboard
 					</button>
 					<button class="btn btn-outline" on:click={goToSubscriptions}>
@@ -127,16 +189,55 @@
 					</button>
 				</div>
 			</div>
+		{:else if sessionStatus === 'unpaid' || sessionStatus === 'requires_payment_method'}
+			<div class="warning-container">
+				<div class="warning-icon">⚠️</div>
+				<h1>Payment Incomplete</h1>
+				<p class="warning-message">
+					Your payment was not completed successfully. 
+					{#if sessionStatus === 'requires_payment_method'}
+						Please update your payment method and try again.
+					{:else}
+						Please try again or contact support if the issue persists.
+					{/if}
+				</p>
+				<div class="warning-actions">
+					<button class="btn btn-primary" on:click={goToSubscriptions}>
+						Try Again
+					</button>
+				</div>
+			</div>
+		{:else if sessionStatus === 'processing'}
+			<div class="processing-container">
+				<div class="processing-icon">⏳</div>
+				<h1>Payment Processing</h1>
+				<p class="processing-message">
+					Your payment is being processed. This may take a few minutes.
+					You'll receive an email confirmation once it's complete.
+				</p>
+				<div class="processing-actions">
+					<button class="btn btn-outline" on:click={() => window.location.reload()}>
+						Refresh Status
+					</button>
+					<button class="btn btn-primary" on:click={goToDashboard}>
+						Continue to Dashboard
+					</button>
+				</div>
+			</div>
 		{:else}
 			<div class="error-container">
 				<div class="error-icon">❌</div>
-				<h1>Payment Incomplete</h1>
+				<h1>Payment Status Unknown</h1>
 				<p class="error-message">
-					Your payment was not completed successfully. Please try again.
+					We couldn't determine your payment status: <strong>{sessionStatus}</strong>
+					<br>Please contact support for assistance.
 				</p>
 				<div class="error-actions">
+					<button class="btn btn-outline" on:click={() => window.location.reload()}>
+						Refresh Status
+					</button>
 					<button class="btn btn-primary" on:click={goToSubscriptions}>
-						Try Again
+						Back to Subscriptions
 					</button>
 				</div>
 			</div>
@@ -176,7 +277,9 @@
 	}
 
 	.success-container,
-	.error-container {
+	.error-container,
+	.warning-container,
+	.processing-container {
 		text-align: center;
 		padding: 3rem 2rem;
 		background: var(--card-bg);
@@ -185,14 +288,26 @@
 		border: 1px solid var(--border-color);
 	}
 
+	.warning-container {
+		border-color: #f59e0b;
+	}
+
+	.processing-container {
+		border-color: #3b82f6;
+	}
+
 	.success-icon,
-	.error-icon {
+	.error-icon,
+	.warning-icon,
+	.processing-icon {
 		font-size: 4rem;
 		margin-bottom: 1.5rem;
 	}
 
 	.success-container h1,
-	.error-container h1 {
+	.error-container h1,
+	.warning-container h1,
+	.processing-container h1 {
 		font-size: 2.5rem;
 		font-weight: 700;
 		color: var(--text-primary);
@@ -200,7 +315,9 @@
 	}
 
 	.success-message,
-	.error-message {
+	.error-message,
+	.warning-message,
+	.processing-message {
 		font-size: 1.1rem;
 		color: var(--text-secondary);
 		margin-bottom: 2rem;
@@ -247,7 +364,9 @@
 	}
 
 	.success-actions,
-	.error-actions {
+	.error-actions,
+	.warning-actions,
+	.processing-actions {
 		display: flex;
 		justify-content: center;
 		gap: 1rem;
