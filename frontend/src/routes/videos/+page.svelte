@@ -660,7 +660,7 @@
 				<div class="video-hub">
 					<div class="container">
 						<header class="hub-header">
-							<h1>Video Hub</h1>
+							<!--<h1>Video Hub</h1>-->
 							<p>Discover our extensive collection of Book of Mormon evidence videos</p>
 						</header>
 
@@ -1115,6 +1115,7 @@
 	}
 
 	.category-section {
+		
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
 		border-radius: 16px;
@@ -1148,11 +1149,15 @@
 
 	.category-videos-carousel {
 		display: flex;
+		flex-direction: row;
+		flex-wrap: nowrap;
 		gap: 1.5rem;
 		overflow-x: auto;
 		padding: 1rem 0;
 		scroll-behavior: smooth;
+		scroll-horizontal: auto;
 		-webkit-overflow-scrolling: touch;
+		overflow-x: hidden;
 	}
 
 	.category-videos-carousel::-webkit-scrollbar {
@@ -1690,9 +1695,9 @@
 
 	.debug-category {
 		border-radius: 31px;
-background: linear-gradient(145deg, #cacaca, #f0f0f0);
-box-shadow:  11px 11px 18px #676767,
-             -11px -11px 18px #ffffff;
+		background: var(--bg-glass);
+		box-shadow:  11px 11px 18px #676767,
+             -11px -11px 18px var(--color-surface-hover);
 		margin: 0.5rem 0;
 	}
 

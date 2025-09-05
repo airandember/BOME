@@ -27,9 +27,8 @@ const (
 
 // OAuth2Config holds configuration for OAuth2 providers
 type OAuth2Config struct {
-	Google     *oauth2.Config
-	Generic    map[string]*oauth2.Config // For multiple generic providers
-	StateStore map[string]OAuth2State    // In-memory state store (use Redis in production)
+	Google  *oauth2.Config
+	Generic map[string]*oauth2.Config // For multiple generic providers
 }
 
 // OAuth2State represents the state parameter for CSRF protection
@@ -64,8 +63,7 @@ func NewOAuth2Service(db *database.DB) *OAuth2Service {
 	service := &OAuth2Service{
 		db: db,
 		config: &OAuth2Config{
-			StateStore: make(map[string]OAuth2State),
-			Generic:    make(map[string]*oauth2.Config),
+			Generic: make(map[string]*oauth2.Config),
 		},
 	}
 
@@ -93,7 +91,8 @@ func (s *OAuth2Service) initializeGoogleConfig() {
 	// Use environment variable for OAuth2 redirect URL
 	redirectURL := os.Getenv("OAUTH2_REDIRECT_URL")
 	if redirectURL == "" {
-		redirectURL = "http://localhost:5173/auth/oauth2/callback" // Default fallback matching frontend route
+		log.Printf("⚠️ [OAUTH2] OAUTH2_REDIRECT_URL not set! OAuth2 will not work in production!")
+		redirectURL = "http://localhost:5173/auth/oauth2/callback" // Development fallback only
 	}
 
 	// Decrypt client secret if encrypted
@@ -140,7 +139,7 @@ func (s *OAuth2Service) GenerateAuthURL(provider OAuth2Provider, returnURL strin
 		return "", fmt.Errorf("failed to generate state: %w", err)
 	}
 
-	// Store state for validation
+	// Store state for validation in database
 	stateData := OAuth2State{
 		State:     state,
 		Provider:  string(provider),
@@ -148,7 +147,11 @@ func (s *OAuth2Service) GenerateAuthURL(provider OAuth2Provider, returnURL strin
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(10 * time.Minute), // State expires in 10 minutes
 	}
-	s.config.StateStore[state] = stateData
+
+	// Store state in database for persistence across server restarts
+	if err := s.storeOAuth2State(stateData); err != nil {
+		return "", fmt.Errorf("failed to store OAuth2 state: %w", err)
+	}
 
 	// Get appropriate OAuth2 config
 	var config *oauth2.Config
@@ -171,20 +174,22 @@ func (s *OAuth2Service) GenerateAuthURL(provider OAuth2Provider, returnURL strin
 
 // HandleCallback processes OAuth2 callback and exchanges code for tokens
 func (s *OAuth2Service) HandleCallback(code, state string) (*OAuth2UserInfo, error) {
-	// Validate state parameter
-	stateData, exists := s.config.StateStore[state]
-	if !exists {
-		return nil, fmt.Errorf("invalid state parameter")
+	// Validate state parameter from database
+	stateData, err := s.getOAuth2State(state)
+	if err != nil {
+		return nil, fmt.Errorf("invalid state parameter: %w", err)
 	}
 
 	// Check if state has expired
 	if time.Now().After(stateData.ExpiresAt) {
-		delete(s.config.StateStore, state)
+		s.deleteOAuth2State(state) // Clean up expired state
 		return nil, fmt.Errorf("state parameter expired")
 	}
 
 	// Remove state from store (one-time use)
-	delete(s.config.StateStore, state)
+	if err := s.deleteOAuth2State(state); err != nil {
+		log.Printf("Warning: failed to delete OAuth2 state: %v", err)
+	}
 
 	// Get appropriate OAuth2 config
 	var config *oauth2.Config
@@ -353,11 +358,8 @@ func (s *OAuth2Service) generateState() (string, error) {
 
 // CleanupExpiredStates removes expired state parameters (call periodically)
 func (s *OAuth2Service) CleanupExpiredStates() {
-	now := time.Now()
-	for state, stateData := range s.config.StateStore {
-		if now.After(stateData.ExpiresAt) {
-			delete(s.config.StateStore, state)
-		}
+	if err := s.cleanupExpiredOAuth2States(); err != nil {
+		log.Printf("⚠️ [OAUTH2] Failed to cleanup expired states: %v", err)
 	}
 }
 
@@ -384,4 +386,81 @@ func (s *OAuth2Service) GetConfiguredProviders() []string {
 	}
 
 	return providers
+}
+
+// storeOAuth2State stores OAuth2 state in database for persistence
+func (s *OAuth2Service) storeOAuth2State(state OAuth2State) error {
+	stateJSON, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("failed to marshal state: %w", err)
+	}
+
+	query := `
+		INSERT INTO oauth2_states (state, provider, return_url, created_at, expires_at, state_data)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (state) DO UPDATE SET
+			provider = EXCLUDED.provider,
+			return_url = EXCLUDED.return_url,
+			created_at = EXCLUDED.created_at,
+			expires_at = EXCLUDED.expires_at,
+			state_data = EXCLUDED.state_data
+	`
+
+	_, err = s.db.DB.Exec(query, state.State, state.Provider, state.ReturnURL,
+		state.CreatedAt, state.ExpiresAt, string(stateJSON))
+	if err != nil {
+		return fmt.Errorf("failed to store OAuth2 state: %w", err)
+	}
+
+	return nil
+}
+
+// getOAuth2State retrieves OAuth2 state from database
+func (s *OAuth2Service) getOAuth2State(stateParam string) (*OAuth2State, error) {
+	var state OAuth2State
+	var stateJSON string
+
+	query := `
+		SELECT state, provider, return_url, created_at, expires_at, state_data
+		FROM oauth2_states 
+		WHERE state = $1 AND expires_at > NOW()
+	`
+
+	err := s.db.DB.QueryRow(query, stateParam).Scan(
+		&state.State, &state.Provider, &state.ReturnURL,
+		&state.CreatedAt, &state.ExpiresAt, &stateJSON)
+	if err != nil {
+		return nil, fmt.Errorf("OAuth2 state not found or expired: %w", err)
+	}
+
+	return &state, nil
+}
+
+// deleteOAuth2State removes OAuth2 state from database
+func (s *OAuth2Service) deleteOAuth2State(stateParam string) error {
+	query := `DELETE FROM oauth2_states WHERE state = $1`
+
+	_, err := s.db.DB.Exec(query, stateParam)
+	if err != nil {
+		return fmt.Errorf("failed to delete OAuth2 state: %w", err)
+	}
+
+	return nil
+}
+
+// cleanupExpiredOAuth2States removes expired OAuth2 states (should be called periodically)
+func (s *OAuth2Service) cleanupExpiredOAuth2States() error {
+	query := `DELETE FROM oauth2_states WHERE expires_at <= NOW()`
+
+	result, err := s.db.DB.Exec(query)
+	if err != nil {
+		return fmt.Errorf("failed to cleanup expired OAuth2 states: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected > 0 {
+		log.Printf("🧹 [OAUTH2] Cleaned up %d expired OAuth2 states", rowsAffected)
+	}
+
+	return nil
 }
