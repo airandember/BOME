@@ -5,6 +5,8 @@
 	import { publicPlansService, type PublicSubscriptionPlan, type PublicSubscriptionOffer } from '$lib/services/public-plans';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import Navigation from '$lib/components/Navigation.svelte';
+	import Footer from '$lib/components/Footer.svelte';
 
 	let user: any = null;
 	let availablePlans: PublicSubscriptionPlan[] = [];
@@ -274,11 +276,11 @@
 	<title>Choose Your Subscription - BOME</title>
 	<meta name="description" content="Choose from our premium subscription plans and exclusive offers" />
 </svelte:head>
-
+<Navigation />
 <div class="subscription-page">
 	<div class="container"  class:expandedLeft={cart !== null}>
 		<header class="page-header">
-			<button class="back-button" on:click={() => goto('/')}>
+			<!--<button class="back-button" on:click={() => goto('/')}>
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<path d="M19 12H5"></path>
 					<path d="M12 19l-7-7 7-7"></path>
@@ -286,14 +288,14 @@
 				Back to Home
 			</button>
 			<h1>Choose Your Subscription</h1>
-			<p>Browse our premium subscription plans and exclusive offers</p>
-			{#if !isAuthenticated}
-				<div class="auth-notice">
-					<p>💡 <strong>New here?</strong> You can browse plans without signing up. Create an account when you're ready to subscribe!</p>
-				</div>
-			{/if}
+			<p>Browse our premium subscription plans and exclusive offers</p>-->
+			
 		</header>
-
+		{#if !isAuthenticated}
+		<div class="auth-notice">
+			<p>💡 <strong>New here?</strong> You can browse plans without signing up. Create an account when you're ready to subscribe!</p>
+		</div>
+	{/if}
 		{#if loading}
 			<div class="loading-container">
 				<LoadingSpinner />
@@ -543,7 +545,7 @@
 		</div>
 	</div>
 {/if}
-
+<Footer />
 <style>
 
 	.btn-bottom {
@@ -552,19 +554,21 @@
 		left: 10%;
 		width: 80% !important;
 		height: 3rem;
+		background: var(--secondary-gradient);
+		color: var(--text-primary);
 	}
 
 	.subscription-page {
 		min-height: 100vh;
 		max-width: 100vw;
 		padding: 0;
-		background: var(--bg-dark);
+		background: var(--secondary-gradient);
 	}
 
 	.container {
-		max-width: 1200px;
+		max-width: 100vw;
 		margin: 0 auto;
-		padding: 0 1rem;
+		padding: 0 0;
 		transition: max-width 1.75s 500ms ease-out;
 	}
 
@@ -575,12 +579,9 @@
 	.page-header {
 		text-align: center;
 		margin-bottom: 5rem;
-		position: absolute;
-		top: 0;
-		left: 0;
-		height: 5vh;
+		height: 165px;
 		width:  100vw;
-		background: var(--bg-secondary);
+		background: var(--bg-primary);
 	}
 
 	.back-button {
@@ -628,10 +629,9 @@
 	.subscription-layout {
 		display: flex;
 		gap: 2rem;
-		margin-top: 10vh;
 		padding: 2rem;
-		background: var(--bg-dark);
-		min-width: 1300px;
+		background: rgba(var(--primary-color-rgb), 0.0);
+		max-width: 100vw;
 	}
 
 	.plans-container {
@@ -762,7 +762,7 @@
 	}
 
 	.plan-card {
-		border-radius: 20px;
+		border-radius: 15px;
 		padding: 2rem;
 		border: 1px solid var(--border-color);
 		transition: all 0.3s ease;
@@ -770,8 +770,7 @@
 		overflow: hidden;
 		max-width: 350px;
 		min-height: 450px;
-		border-radius: 50px;
-		background: linear-gradient(145deg, #cacaca, #f0f0f0);
+		background: linear-gradient(145deg, var(--primary-bom), var(--primary-bom-dark));
 		box-shadow:  7px 7px 14px #bebebe,
              -7px -7px 14px #ffffff;
 	}
@@ -798,21 +797,21 @@
 	.plan-header h3 {
 		font-size: 2rem;
 		font-weight: 700;
-		color: var(--text-primary);
+		color: var(--primary-gold);
 		margin-bottom: 0.5rem;
 	}
 
 	.plan-price {
 		font-size: 2rem;
 		font-weight: 900;
-		color: var(--primary-color);
+		color: var(--primary-gold);
 		margin-bottom: 0.5rem;
 		text-align: center;
 	}
 
 	.interval {
 		font-size: 1rem;
-		color: var(--text-secondary);
+		color: var(--primary-gold-dark);
 		font-weight: 400;
 	}
 
@@ -838,7 +837,7 @@
 	}
 
 	.plan-description p {
-		color: var(--text-secondary);
+		color: var(--primary-gold-light);
 		font-size: 1rem;
 		line-height: 1.6;
 	}
@@ -1189,12 +1188,13 @@
 	.auth-notice {
 		background: var(--info-color);
 		color: var(--text-primary);
-		padding: 1rem;
+		padding: 0 1rem;
 		border-radius: 12px;
-		margin-top: 2rem;
-		font-size: 0.9rem;
+		margin-top: 0;
+		font-size: 1.5rem;
 		font-weight: 500;
 		line-height: 1.5;
+		text-align: center;
 	}
 
 	/* Modal Styles */

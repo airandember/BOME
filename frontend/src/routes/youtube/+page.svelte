@@ -162,7 +162,7 @@
 	</div>
 
 	<div class="container">
-		<!-- Search and Filter Section -->
+		<!-- Search and Filter Section 
 		<div class="search-section">
 			<div class="search-controls">
 				<div class="search-box">
@@ -216,7 +216,7 @@
 					</button>
 				{/if}
 			</div>
-		</div>
+		</div>-->
 
 		<!-- Loading State -->
 		{#if loading}

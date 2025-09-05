@@ -57,6 +57,10 @@
 			<p>Sign in to your account to continue</p>
 		</div>
 
+		<!-- OAuth2 Login Options -->
+		<OAuth2Login />
+		<hr>
+        <br>
 		<form on:submit|preventDefault={handleLogin} class="auth-form">
 			<div class="form-group">
 				<label for="email">Email</label>
@@ -92,9 +96,7 @@
 			</button>
 		</form>
 
-		<!-- OAuth2 Login Options -->
-		<OAuth2Login />
-
+		
 		<div class="auth-footer">
 			<p>
 				Don't have an account?
@@ -108,6 +110,8 @@
 </div>
 
 <style>
+	
+
 	.auth-container {
 		min-height: 100vh;
 		display: flex;
@@ -124,9 +128,9 @@
 		padding: 2.5rem;
 		background: var(--card-bg);
 	    border-radius: 18px;
-        background: linear-gradient(145deg, var(--bg-quaternary), var(--bg-primary));
-        box-shadow:  26px 26px 36px var(--bg-quaternary),
-             -26px -26px 36px var(--bg-secondary);
+        background: linear-gradient(145deg, var(--primary-gold), var(--primary-gold-dark));
+box-shadow:  20px 20px 60px var(--bg-glass-dark),
+             -20px -20px 60px var(--bg-glass);
 	}
 
 	.auth-header {
@@ -207,6 +211,8 @@
 		box-shadow: 
 			6px 6px 12px var(--shadow-dark),
 			-3px -3px 6px var(--shadow-light);
+		background: var(--secondary-gradient);
+		color: var(--text-primary);
 	}
 
 	.btn-primary:active:not(:disabled) {
@@ -238,7 +244,7 @@
 
 	.auth-footer p {
 		margin: 0.5rem 0;
-		color: var(--text-secondary);
+		color: var(--text-primary);
 		font-size: 0.9rem;
 	}
 

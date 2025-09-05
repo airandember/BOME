@@ -79,6 +79,11 @@
 				<p>Your account has been created. Redirecting to login...</p>
 			</div>
 		{:else}
+			<!-- OAuth2 Registration Options -->
+		{#if !success}
+		<OAuth2Login />
+	    {/if}
+            <hr>
 			<form on:submit|preventDefault={handleRegister} class="auth-form">
 				<div class="form-row">
 					<div class="form-group">
@@ -151,10 +156,7 @@
 			</form>
 		{/if}
 
-		<!-- OAuth2 Registration Options -->
-		{#if !success}
-			<OAuth2Login />
-		{/if}
+		
 
 		<div class="auth-footer">
 			<p>
@@ -181,10 +183,13 @@
 		max-width: 650px;
 		padding: 2.5rem;
 		border-radius: 50px;
-		background: var(--bg-primary);
-		box-shadow:  20px 20px 60px var(--bg-quaternary),
-             -20px -20px 60px var(--bg-secondary);
-		
+		/*box-shadow:  10px 10px 30px var(--primary-gold),
+             -10px -10px 30px var(--primary-gold-dark);*/
+		background: linear-gradient(145deg, var(--primary-gold), var(--primary-gold-dark));
+	}
+
+	.auth-card input {
+		background: white !important;
 	}
 
 	.auth-header {
@@ -200,7 +205,7 @@
 	}
 
 	.auth-header p {
-		color: var(--text-secondary);
+		color: var(--text-primary);
 		font-size: 0.9rem;
 	}
 
@@ -259,7 +264,7 @@
 		border: none;
 		border-radius: 12px;
 		background: var(--bg-glass-dark);
-		color: var(--bg-inverse);
+		color: white;
 		font-size: 1rem;
 		font-weight: 600;
 		cursor: pointer;
@@ -274,6 +279,8 @@
 		box-shadow: 
 			6px 6px 12px var(--shadow-dark),
 			-3px -3px 6px var(--shadow-light);
+		background: var(--secondary-gradient);
+		color: var(--text-primary);
 	}
 
 	.btn-primary:active:not(:disabled) {
@@ -319,7 +326,7 @@
 
 	.auth-footer p {
 		margin: 0.5rem 0;
-		color: var(--text-secondary);
+		color: var(--text-primary);
 		font-size: 0.9rem;
 	}
 
