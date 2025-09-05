@@ -120,16 +120,17 @@
 				<span class="stat">
 					👁️ {videoUtils.formatViewCount(video.viewCount)} views
 				</span>
-				<span class="stat">
+				<!--<span class="stat">
 					❤️ {videoUtils.formatViewCount(video.likeCount)} likes
-				</span>
+				</span>-->
+				<span class="upload-date">
+				    {new Date(video.createdAt).toLocaleDateString()}
+			    </span>
 			</div>
 		{/if}
 
 		<div class="video-meta">
-			<span class="upload-date">
-				{new Date(video.createdAt).toLocaleDateString()}
-			</span>
+			
 		</div>
 	</div>
 </div>
@@ -216,6 +217,8 @@
 
 	.video-info {
 		padding: 1rem;
+		background: var(--bg-tertiary);
+
 	}
 
 	.video-title {
@@ -228,6 +231,7 @@
 		-webkit-line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
+		
 	}
 
 	.video-category {
@@ -243,6 +247,7 @@
 
 	.video-stats {
 		display: flex;
+		justify-content: space-between;
 		gap: 1rem;
 		margin-bottom: 0.5rem;
 	}

@@ -90,6 +90,7 @@
 	});
 
 	onMount(() => {
+		console.log('🔄 Videos page mounted. Initial data loaded:', initialDataLoaded);
 		// Initialize data asynchronously
 		loadInitialData();
 		
@@ -455,8 +456,7 @@
 
 	async function handleCategoryChange() {
 		console.log('Filtering by category:', selectedCategory);
-		// Reset the initial data flag when changing categories
-		initialDataLoaded = false;
+		// Don't reset initialDataLoaded - just reload videos for the selected category
 		await loadVideos(true);
 	}
 
@@ -476,8 +476,7 @@
 		searchQuery = '';
 		selectedCategory = '';
 		clearSearch();
-		// Reset the initial data flag when clearing filters
-		initialDataLoaded = false;
+		// Don't reset initialDataLoaded - just reload videos without filters
 		loadVideos(true);
 	}
 
@@ -624,7 +623,7 @@
 	
 	// Auto-trigger loading for categories when they become available
 	$effect(() => {
-		if (categories.length > 0) {
+		if (categories.length > 0 && activeTab === 'categories') {
 			categories.forEach(category => {
 				const state = getCategoryVideoState(category.id);
 				// Only trigger loading if we haven't started yet
@@ -871,7 +870,7 @@
 										<div class="category-section debug-category" data-category-id={category.id}>
 											<div class="category-header">
 												<h3>{category.name}</h3>
-												<p class="category-description">{category.description}</p>
+												<!--<p class="category-description">{category.description}</p>
 												<div class="category-stats">
 													<span class="tag-count">{(category.tagIds?.length || (category as any).tag_ids?.length || 0)} tags</span>
 													<span class="video-count">
@@ -883,7 +882,7 @@
 															Click to load videos
 														{/if}
 													</span>
-												</div>
+												</div>-->
 											</div>
 											
 											{#if !categoryState.data && !categoryState.loading && !categoryState.error}
@@ -915,26 +914,53 @@
 												</div>
 											{:else if categoryState.data}
 												{#if categoryState.data.videos && categoryState.data.videos.length > 0}
-													<div class="category-videos-carousel">
-														{#each categoryState.data.videos as video (video.id)}
-															<VideoCard {video} />
-														{/each}
+													<div class="carousel-wrapper">
+														<!-- Manual scroll buttons for fallback -->
+														<button 
+															class="scroll-btn scroll-btn-prev"
+															onclick={(e) => {
+																const target = e.target as HTMLElement;
+																const carousel = target?.closest('.carousel-wrapper')?.querySelector('.modern-carousel') as HTMLElement;
+																carousel?.scrollBy({ left: -688, behavior: 'smooth' }); // 2 videos: (320px + 24px gap) * 2
+															}}
+															aria-label="Previous videos"
+														>
+															‹
+														</button>
 														
-														<!-- See More Card -->
-														<div class="see-more-card" 
-															onclick={() => goto(`/videos/categories/${category.id}`)} 
-															onkeydown={(e) => e.key === 'Enter' && goto(`/videos/categories/${category.id}`)} 
-															role="button" 
-															tabindex="0">
-															<div class="see-more-content">
-																<div class="see-more-icon">→</div>
-																<h4>See More</h4>
-																<p>View all videos in {category.name}</p>
-																<span class="total-count">
-																	{categoryState.data.pagination?.total || categoryState.data.videos.length} total videos
-																</span>
+														<div class="modern-carousel">
+															{#each categoryState.data.videos as video (video.id)}
+																<VideoCard {video} />
+															{/each}
+															
+															<!-- See More Card -->
+															<div class="see-more-card" 
+																onclick={() => goto(`/videos/categories/${category.id}`)} 
+																onkeydown={(e) => e.key === 'Enter' && goto(`/videos/categories/${category.id}`)} 
+																role="button" 
+																tabindex="0">
+																<div class="see-more-content">
+																	<div class="see-more-icon">→</div>
+																	<h4>See More</h4>
+																	<p>View all videos in {category.name}</p>
+																	<!--<span class="total-count">
+																		{categoryState.data.pagination?.total || categoryState.data.videos.length} total videos
+																	</span>-->
+																</div>
 															</div>
 														</div>
+														
+														<button 
+															class="scroll-btn scroll-btn-next"
+															onclick={(e) => {
+																const target = e.target as HTMLElement;
+																const carousel = target?.closest('.carousel-wrapper')?.querySelector('.modern-carousel') as HTMLElement;
+																carousel?.scrollBy({ left: 688, behavior: 'smooth' }); // 2 videos: (320px + 24px gap) * 2
+															}}
+															aria-label="Next videos"
+														>
+															›
+														</button>
 													</div>
 												{:else}
 													<div class="no-videos-message">
@@ -959,10 +985,10 @@
 							</div>
 						{/if}
 
-						<!-- Ad Placement -->
+						<!-- Ad Placement 
 						<div class="ad-placement">
 							<AdDisplay placement="videos-footer" />
-						</div>
+						</div>-->
 					</div>
 				</div>
 			{/if}
@@ -979,6 +1005,7 @@
 
 	.video-hub {
 		padding: 2rem 0;
+		background: var(--bg-glass);
 	}
 
 	.hub-header {
@@ -1135,7 +1162,7 @@
 
 	.category-header h3 {
 		font-size: 1.8rem;
-		color: var(--color-text);
+		color: var(--primary-gold-dark) !important;
 		margin-bottom: 0.5rem;
 		font-weight: 600;
 	}
@@ -1147,73 +1174,127 @@
 		line-height: 1.5;
 	}
 
-	.category-videos-carousel {
+	/* Carousel wrapper for positioning scroll buttons */
+	.carousel-wrapper {
+		position: relative;
+		margin: 1rem 0;
+	}
+
+	/* Manual scroll buttons (fallback and always visible) */
+	.scroll-btn {
+		position: absolute;
+		top: 50%;
+		transform: translateY(-50%);
+		width: 44px;
+		height: 44px;
+		border-radius: 50%;
+		border: 2px solid var(--color-border);
+		background: var(--primary-gold-dark);
+		color: var(--white);
+		font-size: 1.5rem;
+		font-weight: bold;
+		cursor: pointer;
+		z-index: 10;
 		display: flex;
-		flex-direction: row;
-		flex-wrap: nowrap;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+		transition: all 0.3s ease;
+		opacity: 0.8;
+	}
+
+	.scroll-btn:hover {
+		background: var(--primary-gold-light);
+		border-color: var(--color-primary);
+		color: var(--text-primary);
+		opacity: 1;
+		transform: translateY(-50%) scale(1.1);
+	}
+
+	.scroll-btn-prev {
+		left: -22px;
+	}
+
+	.scroll-btn-next {
+		right: -22px;
+	}
+
+	/* Modern CSS Carousel Implementation */
+	.modern-carousel {
+		display: grid;
+		grid-auto-flow: column;
+		grid-auto-columns: minmax(320px, 1fr);
 		gap: 1.5rem;
 		overflow-x: auto;
-		padding: 1rem 0;
+		scroll-snap-type: x mandatory;
 		scroll-behavior: smooth;
-		scroll-horizontal: auto;
-		-webkit-overflow-scrolling: touch;
-		overflow-x: hidden;
+		padding: 1rem 0;
+		
+		/* Hide scrollbar for cleaner look */
+		scrollbar-width: none;
+		-ms-overflow-style: none;
 	}
 
-	.category-videos-carousel::-webkit-scrollbar {
-		height: 8px;
+	.modern-carousel::-webkit-scrollbar {
+		display: none;
 	}
 
-	.category-videos-carousel::-webkit-scrollbar-track {
-		background: var(--color-surface);
-		border-radius: 4px;
+	/* Scroll snap for each item */
+	.modern-carousel > :global(*) {
+		scroll-snap-align: start;
+		flex-shrink: 0;
 	}
 
-	.category-videos-carousel::-webkit-scrollbar-thumb {
-		background: var(--color-border);
-		border-radius: 4px;
-	}
-
-	.category-videos-carousel::-webkit-scrollbar-thumb:hover {
-		background: var(--color-primary);
-	}
 
 	.see-more-card {
 		min-width: 320px;
-		height: 240px;
-		background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
+		background: linear-gradient(135deg, var(--color-primary-light), var(--color-primary));
 		border-radius: 12px;
+		padding: 2rem;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		cursor: pointer;
 		transition: all 0.3s ease;
-		color: white;
-		text-align: center;
-		flex-shrink: 0;
+		min-height: 200px;
+		border: 2px dashed var(--color-primary);
+		color: var(--color-primary);
+		scroll-snap-align: start;
 	}
 
 	.see-more-card:hover {
 		transform: translateY(-4px);
-		box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+		box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+		background: var(--color-primary);
+		color: white;
 	}
 
-	.see-more-content h4 {
-		font-size: 1.4rem;
-		margin: 0.5rem 0;
-		font-weight: 600;
-	}
-
-	.see-more-content p {
-		margin: 0;
-		opacity: 0.9;
-		font-size: 0.9rem;
+	.see-more-content {
+		text-align: center;
 	}
 
 	.see-more-icon {
 		font-size: 2rem;
+		margin-bottom: 1rem;
 		font-weight: bold;
-		margin-bottom: 0.5rem;
+		color: var(--primary-gold-dark);
+	}
+
+	.see-more-content h4 {
+		font-size: 1.2rem;
+		margin: 0 0 0.5rem 0;
+		font-weight: 600;
+	}
+
+	.see-more-content p {
+		margin: 0 0 0.5rem 0;
+		opacity: 0.8;
+	}
+
+	.total-count {
+		font-size: 0.8rem;
+		opacity: 0.7;
+		font-weight: 500;
 	}
 
 	.category-loading {
@@ -1543,7 +1624,8 @@
 
 	.category-header {
 		margin-bottom: 2rem;
-		text-align: center;
+		text-align: left;
+
 	}
 
 	.category-header h3 {
@@ -1562,7 +1644,7 @@
 
 	.category-stats {
 		display: flex;
-		justify-content: center;
+		justify-content: left;
 		gap: 1rem;
 		font-size: 0.9rem;
 	}
@@ -1584,25 +1666,59 @@
 		color: var(--color-text-secondary);
 	}
 
-	.category-videos-carousel {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-		gap: 1.5rem;
-		margin-top: 1rem;
+
+	/* Responsive behavior for modern carousel */
+	@media (max-width: 768px) {
+		.modern-carousel {
+			grid-auto-columns: minmax(280px, 1fr);
+			gap: 1rem;
+		}
+		
+		.see-more-card {
+			min-width: 280px;
+			padding: 1.5rem;
+		}
+
+		.scroll-btn {
+			width: 40px;
+			height: 40px;
+			font-size: 1.3rem;
+		}
+
+		.scroll-btn-prev {
+			left: -20px;
+		}
+
+		.scroll-btn-next {
+			right: -20px;
+		}
 	}
 
-	.see-more-card {
-		background: linear-gradient(135deg, var(--color-primary-light), var(--color-primary));
-		border-radius: 12px;
-		padding: 2rem;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-		transition: all 0.3s ease;
-		min-height: 200px;
-		border: 2px dashed var(--color-primary);
-		color: var(--color-primary);
+	@media (max-width: 480px) {
+		.modern-carousel {
+			grid-auto-columns: minmax(250px, 1fr);
+			gap: 0.75rem;
+			padding: 0.5rem 0;
+		}
+		
+		.see-more-card {
+			min-width: 250px;
+			padding: 1rem;
+		}
+
+		.scroll-btn {
+			width: 36px;
+			height: 36px;
+			font-size: 1.2rem;
+		}
+
+		.scroll-btn-prev {
+			left: -18px;
+		}
+
+		.scroll-btn-next {
+			right: -18px;
+		}
 	}
 
 	.see-more-card:hover {
@@ -1702,11 +1818,6 @@
 	}
 
 	@media (max-width: 768px) {
-		.category-videos-carousel {
-			grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-			gap: 1rem;
-		}
-
 		.category-section {
 			padding: 1.5rem;
 		}
