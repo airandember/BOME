@@ -1025,8 +1025,8 @@
 		}
 
 		&.active {
-			background: var(--color-primary);
-			color: white;
+			background: linear-gradient(135deg, var(--primary-bom-light) 0%, var(--primary-bom-dark) 100%);
+			color: var(--primary-gold-light);
 			border-color: var(--color-primary);
 		}
 	}
