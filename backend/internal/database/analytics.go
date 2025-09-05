@@ -116,14 +116,14 @@ type CrossSubsiteStats struct {
 // GetVideoCount returns the total number of videos
 func (db *DB) GetVideoCount() (int, error) {
 	var count int
-	err := db.QueryRow(`SELECT COUNT(*) FROM videos`).Scan(&count)
+	err := db.QueryRow(`SELECT COUNT(*) FROM master_video_list`).Scan(&count)
 	return count, err
 }
 
 // GetTotalViews returns the total view count across all videos
 func (db *DB) GetTotalViews() (int64, error) {
 	var total int64
-	err := db.QueryRow(`SELECT COALESCE(SUM(view_count), 0) FROM videos`).Scan(&total)
+	err := db.QueryRow(`SELECT COALESCE(SUM(views), 0) FROM master_video_list`).Scan(&total)
 	return total, err
 }
 

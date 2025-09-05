@@ -12,8 +12,9 @@
 	$: thumbnailSrc = video.thumbnailUrl || '/16X10_Placeholder_IMG.png';
 
 	function handleClick() {
-		// Navigate to video page
-		window.location.href = `/videos/${video.id}`;
+		// Navigate to video page using bunny_video_id (UUID) for proper routing
+		const videoId = video.bunnyVideoId || video.id;
+		window.location.href = `/videos/${videoId}`;
 	}
 
 	function handleKeyDown(event: KeyboardEvent) {
