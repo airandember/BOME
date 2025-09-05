@@ -542,7 +542,7 @@ function clearAuthData() {
 	authError.set(null);
 }
 
-function storeAuthData(tokens: AuthTokens, user: User) {
+export function storeAuthData(tokens: AuthTokens, user: User) {
 	// console.log('Auth: Storing auth data:', { tokens, user });
 	if (browser) {
 		SecureTokenStorage.storeTokens(tokens.access_token, tokens.refresh_token);

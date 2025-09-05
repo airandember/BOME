@@ -144,6 +144,16 @@
 
 	const mountCheckout = async (plan: PublicSubscriptionPlan) => {
 		try {
+			// Ensure any existing checkout is properly destroyed first
+			if (checkout) {
+				try {
+					checkout.destroy();
+				} catch (e) {
+					console.warn('Error destroying previous checkout:', e);
+				}
+				checkout = null;
+			}
+
 			const fetchClientSecret = async () => {
 				const response = await apiRequest('/stripe/checkout-session', {
 					method: 'POST',
@@ -186,6 +196,16 @@
 	};
 
 	const closeEmbeddedCheckout = () => {
+		// Immediately destroy the checkout to prevent multiple checkout objects
+		if (checkout) {
+			try {
+				checkout.destroy();
+			} catch (e) {
+				console.warn('Error destroying checkout on close:', e);
+			}
+			checkout = null;
+		}
+
 		// Start closing animation
 		checkoutClosing = true;
 		
@@ -195,10 +215,6 @@
 			checkoutClosing = false;
 			checkoutPlan = null;
 			checkoutError = '';
-			if (checkout) {
-				checkout.destroy();
-				checkout = null;
-			}
 		}, 400); // Match the animation duration
 	};
 
