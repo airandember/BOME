@@ -16,42 +16,77 @@
 	let hasMore = true;
 	let loadingMore = false;
 
-	onMount(async () => {
-		const categoryParam = $page.params.name;
-		if (!categoryParam) return;
+	onMount(() => {
+		// Async initialization
+		(async () => {
+			const categoryParam = $page.params.name;
+			if (!categoryParam) return;
 
-		try {
-			// Check if the param is a number (category ID) or a name
-			const isNumeric = /^\d+$/.test(categoryParam);
-			
-			if (isNumeric) {
-				// It's a category ID, load directly
-				const categoryId = parseInt(categoryParam);
+			try {
+				// Check if the param is a number (category ID) or a name
+				const isNumeric = /^\d+$/.test(categoryParam);
 				
-				// Load category details from tag categories
-				const categoriesResponse = await videoService.getTagCategories();
-				category = categoriesResponse.categories.find(c => c.id === categoryId) || null;
-			} else {
-				// It's a category name, find by name (fallback for old URLs)
-				const categoriesResponse = await videoService.getTagCategories();
-				category = categoriesResponse.categories.find(c => c.name === categoryParam) || null;
-			}
-			
-			if (!category) {
-				error = 'Category not found';
-				loading = false;
-				return;
-			}
+				if (isNumeric) {
+					// It's a category ID, load directly
+					const categoryId = parseInt(categoryParam);
+					
+					// Load category details from tag categories
+					const categoriesResponse = await videoService.getTagCategories();
+					category = categoriesResponse.categories.find(c => c.id === categoryId) || null;
+				} else {
+					// It's a category name, find by name (fallback for old URLs)
+					const categoriesResponse = await videoService.getTagCategories();
+					category = categoriesResponse.categories.find(c => c.name === categoryParam) || null;
+				}
+				
+				if (!category) {
+					error = 'Category not found';
+					loading = false;
+					return;
+				}
 
-			// Load videos for this category using tag-based filtering
-			await loadVideos();
-		} catch (err: any) {
-			console.error('Error loading category:', err);
-			error = err.message || 'Failed to load category';
-			toastStore.error(error);
-		} finally {
-			loading = false;
-		}
+				// Load initial batch of videos for this category
+				await loadVideos(true);
+			} catch (err: any) {
+				console.error('Error loading category:', err);
+				error = err.message || 'Failed to load category';
+				toastStore.error(error);
+			} finally {
+				loading = false;
+			}
+		})();
+
+		// Add infinite scroll
+		const handleScroll = () => {
+			if (hasMore && !loadingMore && !loading) {
+				const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+				const windowHeight = window.innerHeight;
+				const documentHeight = document.documentElement.scrollHeight;
+				
+				// Trigger load more when 800px from bottom
+				if (scrollTop + windowHeight >= documentHeight - 800) {
+					loadMore();
+				}
+			}
+		};
+
+		// Throttled scroll listener
+		let scrollTimer: NodeJS.Timeout | null = null;
+		const throttledScroll = () => {
+			if (scrollTimer) return;
+			scrollTimer = setTimeout(() => {
+				handleScroll();
+				scrollTimer = null;
+			}, 100);
+		};
+
+		window.addEventListener('scroll', throttledScroll);
+		
+		// Cleanup
+		return () => {
+			window.removeEventListener('scroll', throttledScroll);
+			if (scrollTimer) clearTimeout(scrollTimer);
+		};
 	});
 
 	async function loadVideos(reset = false) {
@@ -63,8 +98,15 @@
 		}
 
 		try {
-			loadingMore = true;
-			const response = await videoService.getVideosByTagCategory(category.id, currentPage, 20);
+			if (reset) {
+				loading = true;
+			} else {
+				loadingMore = true;
+			}
+			
+			// Use larger page size for category pages (50 vs 10 on main page)
+			const pageSize = 50;
+			const response = await videoService.getVideosByTagCategory(category.id, currentPage, pageSize);
 			
 			if (reset) {
 				videos = response.videos;
@@ -74,10 +116,13 @@
 			
 			hasMore = response.pagination.hasMore;
 			currentPage++;
+			
+			console.log(`✅ Loaded ${response.videos.length} videos for category: ${category.name} (Page ${currentPage - 1})`);
 		} catch (err: any) {
-			console.error('Error loading more videos:', err);
-			toastStore.error('Failed to load more videos');
+			console.error('Error loading videos:', err);
+			toastStore.error('Failed to load category videos');
 		} finally {
+			loading = false;
 			loadingMore = false;
 		}
 	}
@@ -124,7 +169,7 @@
 							<p class="category-description">{category.description}</p>
 						{/if}
 						<div class="category-stats">
-							<span>{category?.videoCount} videos</span>
+							<span>{videos.length} videos</span>
 						</div>
 					</header>
 
@@ -134,7 +179,7 @@
 						{/each}
 					</div>
 
-					{#if videos.length === 0}
+					{#if videos.length === 0 && !loading}
 						<div class="empty-state">
 							<p>No videos found in this category</p>
 						</div>

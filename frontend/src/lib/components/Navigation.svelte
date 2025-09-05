@@ -253,12 +253,14 @@
 
 <style>
 	.navigation {
-		position: fixed;
+		position: sticky;
 		top: 0;
 		left: 0;
 		right: 0;
 		z-index: var(--z-fixed);
 		transition: all var(--transition-normal);
+		align-items: center;
+		height:15px
 	}
 
 	.navigation.scrolled {
@@ -267,6 +269,7 @@
 		-webkit-backdrop-filter: blur(20px);
 		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 		box-shadow: var(--shadow-lg);
+		height: 70px
 	}
 
 	.nav-container {
@@ -276,7 +279,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		height: 80px;
+		height: 65px;
 	}
 
 	.nav-brand {
