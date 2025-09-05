@@ -1077,7 +1077,7 @@
 
 	.close-checkout {
 		position: fixed;
-		top: 2rem;
+		top: 4rem;
 		right: 2rem;
 		background: rgba(0, 0, 0, 0.7);
 		border: none;
@@ -1086,7 +1086,7 @@
 		padding: 0.75rem;
 		border-radius: 50%;
 		transition: all 0.3s ease;
-		z-index: 1001;
+		z-index: 10001;
 		backdrop-filter: blur(10px);
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 	}
