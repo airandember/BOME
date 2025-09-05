@@ -338,7 +338,7 @@
 
 	.dashboard {
 		min-height: 100vh;
-		padding: 2rem 0;
+		padding: 6rem 0 0 0;
 		background: var(--bg-gradient);
 	}
 
@@ -360,8 +360,8 @@
 		padding: 0.75rem 1.5rem;
 		border: none;
 		border-radius: 12px;
-		background: var(--bg-secondary);
-		color: var(--text-secondary);
+		background: var(--primary-gold-light);
+		color: var(--primary-bom-dark);
 		cursor: pointer;
 		transition: all 0.3s ease;
 		font-size: 0.875rem;
@@ -370,13 +370,12 @@
 
 	.tab-button:hover {
 		background: var(--primary-color);
-		color: white;
+		color: var(--primary-bom-dark);
 		transform: translateY(-2px);
 	}
 
 	.tab-button.active {
-		background: var(--primary-color);
-		color: white;
+		color: var(--primary-bom-dark);
 		box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
 	}
 
@@ -550,7 +549,8 @@
 	}
 
 	.btn-secondary:hover {
-		background: var(--border-color);
+		background: var(--primary-gold-light);
+		color: var(--primary-bom-dark);
 		transform: translateY(-2px);
 	}
 
@@ -596,13 +596,13 @@
 	}
 
 	.btn-primary {
-		background: var(--primary-color);
 		color: white;
 	}
 
 	.btn-primary:hover {
-		background: var(--primary-hover);
+		background: var(--secondary-gradient);
 		transform: translateY(-2px);
 		box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
+		color: var(--primary-bom-dark);
 	}
 </style> 

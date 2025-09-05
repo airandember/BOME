@@ -329,6 +329,7 @@
 	.nav-link {
 		text-decoration: none;
 		color: var(--text-primary);
+		font-size: 1rem;
 		font-weight: 500;
 		transition: all var(--transition-normal);
 		position: relative;
