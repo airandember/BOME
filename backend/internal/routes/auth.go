@@ -177,6 +177,68 @@ func RegisterHandler(db *database.DB, emailService *services.EmailService) gin.H
 	}
 }
 
+// ResendVerificationHandler handles resending verification emails
+func ResendVerificationHandler(db *database.DB, emailService *services.EmailService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			Email string `json:"email" binding:"required,email"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+			return
+		}
+
+		// Sanitize email
+		req.Email = strings.ToLower(services.SanitizeString(req.Email))
+
+		// Get user by email
+		user, err := db.GetUserByEmail(req.Email)
+		if err != nil {
+			// Don't reveal if user exists or not for security
+			c.JSON(http.StatusOK, gin.H{
+				"message": "If an account with this email exists and is unverified, a verification email has been sent.",
+			})
+			return
+		}
+
+		// Check if already verified
+		if user.EmailVerified {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Email address is already verified",
+			})
+			return
+		}
+
+		// Generate new verification token
+		verificationToken := services.GenerateSecureToken()
+		if err := db.SetVerificationToken(user.ID, verificationToken); err != nil {
+			log.Printf("Failed to set verification token: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to generate verification token",
+			})
+			return
+		}
+
+		// Send verification email
+		if emailService != nil {
+			fullName := user.FirstName + " " + user.LastName
+			if err := emailService.SendVerificationEmail(user.ID, user.Email, fullName); err != nil {
+				log.Printf("Failed to send verification email: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": "Failed to send verification email",
+				})
+				return
+			}
+		}
+
+		log.Printf("✅ Verification email resent to %s", user.Email)
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Verification email sent successfully. Please check your email.",
+		})
+	}
+}
+
 // LoginHandler handles user login
 func LoginHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {

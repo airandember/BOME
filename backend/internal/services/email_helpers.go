@@ -48,49 +48,111 @@ func (s *EmailService) sendTemplatedEmail(to, subject, templateName string, data
 		log.Printf("⚠️ [EMAIL] Failed to record notification: %v", err)
 	}
 
-	// Select best email provider
-	provider, err := s.selectEmailProvider()
-	if err != nil {
-		log.Printf("❌ [EMAIL] No available providers: %v", err)
-		if notificationID > 0 {
-			s.updateEmailNotificationStatus(notificationID, "failed", err.Error())
-		}
-		return fmt.Errorf("no email providers available: %w", err)
-	}
-
-	// Send via selected provider
-	var sendErr error
-	switch provider {
-	case "resend":
-		sendErr = s.sendResendEmail(to, subject, htmlBody.String())
-	case "mailgun":
-		sendErr = s.sendMailgunEmail(to, subject, htmlBody.String())
-	default:
-		// Fallback to SMTP if provider not recognized
-		log.Printf("⚠️ [EMAIL] Unknown provider %s, falling back to SMTP", provider)
-		sendErr = s.sendSMTPEmail(to, subject, htmlBody.String())
-		provider = "smtp"
-	}
-
-	// Update usage tracking
-	success := sendErr == nil
-	s.incrementUsage(provider, success)
-
+	// Try sending with automatic failover
+	sendErr := s.sendWithFailover(to, subject, htmlBody.String(), notificationID)
 	if sendErr != nil {
-		log.Printf("❌ [EMAIL] Failed to send via %s: %v", provider, sendErr)
+		log.Printf("❌ [EMAIL] All providers failed: %v", sendErr)
 		if notificationID > 0 {
 			s.updateEmailNotificationStatus(notificationID, "failed", sendErr.Error())
 		}
-		return fmt.Errorf("failed to send email via %s: %w", provider, sendErr)
+		return fmt.Errorf("failed to send email: %w", sendErr)
 	}
 
-	// Update notification as sent
-	if notificationID > 0 {
-		s.updateEmailNotificationStatus(notificationID, "sent", fmt.Sprintf("Sent via %s", provider))
-	}
-
-	log.Printf("✅ [EMAIL] Email sent successfully via %s to %s", provider, to)
+	log.Printf("✅ [EMAIL] Email sent successfully to %s", to)
 	return nil
+}
+
+// sendWithFailover attempts to send email with automatic provider failover
+func (s *EmailService) sendWithFailover(to, subject, htmlBody string, notificationID int) error {
+	now := time.Now()
+	today := now.Format("2006-01-02")
+	year := now.Year()
+	month := int(now.Month())
+
+	// Get daily usage for both providers
+	resendDailyUsage, _ := s.getTodayUsage("resend", today)
+	mailgunDailyUsage, _ := s.getTodayUsage("mailgun", today)
+
+	// Get monthly usage for both providers
+	resendMonthlyUsage, _ := s.getMonthlyUsage("resend", year, month)
+	mailgunMonthlyUsage, _ := s.getMonthlyUsage("mailgun", year, month)
+
+	// Get daily limits
+	resendDailyLimit := s.getProviderLimit("resend", 100)
+	mailgunDailyLimit := s.getProviderLimit("mailgun", 100)
+
+	// Get monthly limits
+	resendMonthlyLimit := s.getProviderMonthlyLimit("resend", 3000)
+	mailgunMonthlyLimit := s.getProviderMonthlyLimit("mailgun", 5000)
+
+	// Try providers in order of preference
+	providers := []struct {
+		name         string
+		dailyUsage   int
+		dailyLimit   int
+		monthlyUsage int
+		monthlyLimit int
+	}{
+		{"resend", resendDailyUsage, resendDailyLimit, resendMonthlyUsage, resendMonthlyLimit},
+		{"mailgun", mailgunDailyUsage, mailgunDailyLimit, mailgunMonthlyUsage, mailgunMonthlyLimit},
+	}
+
+	var lastErr error
+	for _, provider := range providers {
+		// Skip if over daily limit
+		if provider.dailyUsage >= provider.dailyLimit {
+			log.Printf("⚠️ [EMAIL-FAILOVER] Skipping %s - over daily limit (%d/%d)", provider.name, provider.dailyUsage, provider.dailyLimit)
+			continue
+		}
+
+		// Skip if over monthly limit
+		if provider.monthlyUsage >= provider.monthlyLimit {
+			log.Printf("⚠️ [EMAIL-FAILOVER] Skipping %s - over monthly limit (%d/%d)", provider.name, provider.monthlyUsage, provider.monthlyLimit)
+			continue
+		}
+
+		log.Printf("📧 [EMAIL-FAILOVER] Trying %s (daily: %d/%d, monthly: %d/%d)",
+			provider.name, provider.dailyUsage, provider.dailyLimit, provider.monthlyUsage, provider.monthlyLimit)
+
+		var sendErr error
+		switch provider.name {
+		case "resend":
+			sendErr = s.sendResendEmail(to, subject, htmlBody)
+		case "mailgun":
+			sendErr = s.sendMailgunEmail(to, subject, htmlBody)
+		}
+
+		// Update usage tracking
+		success := sendErr == nil
+		s.incrementUsage(provider.name, success)
+
+		if sendErr == nil {
+			// Success! Update notification and return
+			if notificationID > 0 {
+				s.updateEmailNotificationStatus(notificationID, "sent", fmt.Sprintf("Sent via %s", provider.name))
+			}
+			log.Printf("✅ [EMAIL-FAILOVER] Email sent successfully via %s to %s", provider.name, to)
+			return nil
+		}
+
+		// Check if this is a domain verification error (403 from Resend)
+		if provider.name == "resend" && strings.Contains(sendErr.Error(), "domain is not verified") {
+			log.Printf("⚠️ [EMAIL-FAILOVER] Resend domain verification failed, trying next provider: %v", sendErr)
+			lastErr = sendErr
+			continue
+		}
+
+		// For other errors, log and try next provider
+		log.Printf("⚠️ [EMAIL-FAILOVER] %s failed: %v", provider.name, sendErr)
+		lastErr = sendErr
+	}
+
+	// All providers failed
+	if lastErr != nil {
+		return fmt.Errorf("all email providers failed, last error: %w", lastErr)
+	}
+
+	return fmt.Errorf("no email providers available (all over daily limits)")
 }
 
 // sendSMTPEmail sends an email via SMTP
@@ -271,8 +333,15 @@ func (s *EmailService) recordEmailNotification(userID int, emailTo, emailType, s
 		VALUES ($1, $2, $3, $4, $5, $6, 'pending')
 		RETURNING id`
 
+	// Convert struct to JSON string for database storage
+	templateDataJSON, err := json.Marshal(templateData)
+	if err != nil {
+		log.Printf("⚠️ [EMAIL] Failed to marshal template data: %v", err)
+		templateDataJSON = []byte("{}")
+	}
+
 	var id int
-	err := s.db.DB.QueryRow(query, userID, emailTo, emailType, subject, templateName, templateData).Scan(&id)
+	err = s.db.DB.QueryRow(query, userID, emailTo, emailType, subject, templateName, string(templateDataJSON)).Scan(&id)
 	return id, err
 }
 
@@ -365,10 +434,49 @@ func (s *EmailService) getProviderLimit(provider string, defaultLimit int) int {
 	return limit
 }
 
+// getProviderMonthlyLimit gets the monthly limit for a provider from settings
+func (s *EmailService) getProviderMonthlyLimit(provider string, defaultLimit int) int {
+	settingKey := fmt.Sprintf("monthly_email_limit_%s", provider)
+	limitStr, err := s.db.GetEmailSetting(settingKey)
+	if err != nil || limitStr == "" {
+		log.Printf("⚠️ [EMAIL-ROUTER] No monthly limit set for %s, using default: %d", provider, defaultLimit)
+		return defaultLimit
+	}
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		log.Printf("⚠️ [EMAIL-ROUTER] Invalid monthly limit for %s: %s, using default: %d", provider, limitStr, defaultLimit)
+		return defaultLimit
+	}
+
+	return limit
+}
+
+// getMonthlyUsage gets monthly email usage for a specific provider
+func (s *EmailService) getMonthlyUsage(provider string, year, month int) (int, error) {
+	var usage int
+	query := `
+		SELECT COALESCE(emails_sent, 0) 
+		FROM monthly_email_usage 
+		WHERE year = $1 AND month = $2 AND provider = $3`
+
+	err := s.db.DB.QueryRow(query, year, month, provider).Scan(&usage)
+	if err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+
+	return usage, nil
+}
+
 // incrementUsage updates usage statistics after sending an email
 func (s *EmailService) incrementUsage(provider string, success bool) error {
-	today := time.Now().Format("2006-01-02")
+	now := time.Now()
+	today := now.Format("2006-01-02")
+	year := now.Year()
+	month := int(now.Month())
 
+	// Update daily usage
+	var dailyErr error
 	if success {
 		query := `
 			INSERT INTO daily_email_usage (date, provider, emails_sent, emails_failed)
@@ -377,13 +485,12 @@ func (s *EmailService) incrementUsage(provider string, success bool) error {
 			DO UPDATE SET 
 				emails_sent = daily_email_usage.emails_sent + 1,
 				last_updated = CURRENT_TIMESTAMP`
-		_, err := s.db.DB.Exec(query, today, provider)
-		if err != nil {
-			log.Printf("❌ [EMAIL-TRACKER] Failed to increment success count for %s: %v", provider, err)
+		_, dailyErr = s.db.DB.Exec(query, today, provider)
+		if dailyErr != nil {
+			log.Printf("❌ [EMAIL-TRACKER] Failed to increment daily success count for %s: %v", provider, dailyErr)
 		} else {
-			log.Printf("📊 [EMAIL-TRACKER] Incremented success count for %s", provider)
+			log.Printf("📊 [EMAIL-TRACKER] Incremented daily success count for %s", provider)
 		}
-		return err
 	} else {
 		query := `
 			INSERT INTO daily_email_usage (date, provider, emails_sent, emails_failed)
@@ -392,14 +499,51 @@ func (s *EmailService) incrementUsage(provider string, success bool) error {
 			DO UPDATE SET 
 				emails_failed = daily_email_usage.emails_failed + 1,
 				last_updated = CURRENT_TIMESTAMP`
-		_, err := s.db.DB.Exec(query, today, provider)
-		if err != nil {
-			log.Printf("❌ [EMAIL-TRACKER] Failed to increment failure count for %s: %v", provider, err)
+		_, dailyErr = s.db.DB.Exec(query, today, provider)
+		if dailyErr != nil {
+			log.Printf("❌ [EMAIL-TRACKER] Failed to increment daily failure count for %s: %v", provider, dailyErr)
 		} else {
-			log.Printf("📊 [EMAIL-TRACKER] Incremented failure count for %s", provider)
+			log.Printf("📊 [EMAIL-TRACKER] Incremented daily failure count for %s", provider)
 		}
-		return err
 	}
+
+	// Update monthly usage
+	var monthlyErr error
+	if success {
+		query := `
+			INSERT INTO monthly_email_usage (year, month, provider, emails_sent, emails_failed)
+			VALUES ($1, $2, $3, 1, 0)
+			ON CONFLICT (year, month, provider) 
+			DO UPDATE SET 
+				emails_sent = monthly_email_usage.emails_sent + 1,
+				last_updated = CURRENT_TIMESTAMP`
+		_, monthlyErr = s.db.DB.Exec(query, year, month, provider)
+		if monthlyErr != nil {
+			log.Printf("❌ [EMAIL-TRACKER] Failed to increment monthly success count for %s: %v", provider, monthlyErr)
+		} else {
+			log.Printf("📊 [EMAIL-TRACKER] Incremented monthly success count for %s", provider)
+		}
+	} else {
+		query := `
+			INSERT INTO monthly_email_usage (year, month, provider, emails_sent, emails_failed)
+			VALUES ($1, $2, $3, 0, 1)
+			ON CONFLICT (year, month, provider) 
+			DO UPDATE SET 
+				emails_failed = monthly_email_usage.emails_failed + 1,
+				last_updated = CURRENT_TIMESTAMP`
+		_, monthlyErr = s.db.DB.Exec(query, year, month, provider)
+		if monthlyErr != nil {
+			log.Printf("❌ [EMAIL-TRACKER] Failed to increment monthly failure count for %s: %v", provider, monthlyErr)
+		} else {
+			log.Printf("📊 [EMAIL-TRACKER] Incremented monthly failure count for %s", provider)
+		}
+	}
+
+	// Return the first error encountered, or nil if both succeeded
+	if dailyErr != nil {
+		return dailyErr
+	}
+	return monthlyErr
 }
 
 // sendResendEmail sends an email via Resend API

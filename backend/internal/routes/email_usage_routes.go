@@ -1,11 +1,14 @@
 package routes
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"time"
 
 	"bome-backend/internal/database"
+	"bome-backend/internal/middleware"
+	"bome-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
 )
@@ -35,6 +38,10 @@ type EmailUsageResponse struct {
 // SetupEmailUsageRoutes sets up email usage tracking routes
 func SetupEmailUsageRoutes(router *gin.RouterGroup, db *database.DB) {
 	email := router.Group("/email")
+	// Add authentication, email verification, and admin requirements for all email routes
+	email.Use(middleware.AuthRequired())
+	email.Use(middleware.RequireEmailVerificationForDashboard())
+	email.Use(middleware.AdminRequired())
 	// Add database middleware
 	email.Use(func(c *gin.Context) {
 		c.Set("db", db)
@@ -352,12 +359,22 @@ func updateEmailSettings(c *gin.Context) {
 func testEmailSending(c *gin.Context) {
 	db := c.MustGet("db").(*database.DB)
 	var request struct {
-		Email string `json:"email" binding:"required"`
+		Email   string `json:"email" binding:"required"`
+		Subject string `json:"subject"`
+		Body    string `json:"body"`
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Email address is required"})
 		return
+	}
+
+	// Set defaults if not provided
+	if request.Subject == "" {
+		request.Subject = "Test Email from BOME Admin"
+	}
+	if request.Body == "" {
+		request.Body = "This is a test email to verify your email configuration is working correctly."
 	}
 
 	// Check if email is enabled
@@ -369,13 +386,47 @@ func testEmailSending(c *gin.Context) {
 		return
 	}
 
-	// TODO: Implement test email sending using the EmailService
-	// This would require access to the EmailService instance
+	// Get global email service from routes context
+	emailService := getGlobalEmailService()
+	if emailService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Email service not available",
+		})
+		return
+	}
 
+	// Get current user ID for notification tracking
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	userIDInt, ok := userID.(int)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	// Send test email
+	err = emailService.SendTestEmail(request.Email, request.Subject, request.Body, userIDInt)
+	if err != nil {
+		log.Printf("❌ [EMAIL-TEST] Failed to send test email: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to send test email: " + err.Error(),
+		})
+		return
+	}
+
+	log.Printf("✅ [EMAIL-TEST] Test email sent successfully to %s", request.Email)
 	c.JSON(http.StatusOK, gin.H{
-		"status":        "success",
-		"message":       "Test email functionality ready (implementation pending)",
-		"email":         request.Email,
-		"email_enabled": enabled,
+		"status":  "success",
+		"message": "Test email sent successfully!",
+		"email":   request.Email,
 	})
+}
+
+// getGlobalEmailService returns the global email service instance
+func getGlobalEmailService() *services.EmailService {
+	return globalEmailService
 }
