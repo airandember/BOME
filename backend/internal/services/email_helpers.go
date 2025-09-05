@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"net/smtp"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -254,7 +255,18 @@ func (s *EmailService) storeVerificationToken(userID int, token, email string, e
 }
 
 func (s *EmailService) getBaseURL() string {
-	// TODO: Get from settings or environment
+	// Get from environment variable first
+	if baseURL := os.Getenv("PUBLIC_APP_URL"); baseURL != "" {
+		return baseURL
+	}
+
+	// Try to get from database settings
+	if baseURL, err := s.db.GetEmailSetting("app_base_url"); err == nil && baseURL != "" {
+		return baseURL
+	}
+
+	// Development fallback with warning
+	log.Printf("⚠️ [EMAIL] PUBLIC_APP_URL not set! Email links will use localhost!")
 	return "http://localhost:5173"
 }
 
