@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { apiRequest, auth } from '$lib/auth';
+	import { apiRequest, auth, storeAuthData } from '$lib/auth';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 
@@ -68,19 +68,8 @@
 				email_verified: data.user.email_verified
 			};
 
-			// Update auth store
-			auth.update(state => ({
-				...state,
-				isAuthenticated: true,
-				user: user,
-				token: tokens.access_token,
-				loading: false,
-				error: null
-			}));
-
-			// Store tokens securely
-			localStorage.setItem('bome_auth_tokens', JSON.stringify(tokens));
-			localStorage.setItem('bome_user', JSON.stringify(user));
+			// Store authentication data using the same system as regular login
+			storeAuthData(tokens, user);
 
 			processing = 'Redirecting...';
 
