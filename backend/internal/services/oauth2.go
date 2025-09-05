@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"bome-backend/internal/database"
@@ -89,9 +90,10 @@ func (s *OAuth2Service) initializeGoogleConfig() {
 		return
 	}
 
-	redirectURL, err := s.db.GetEmailSetting("google_oauth_redirect_url")
-	if err != nil || redirectURL == "" {
-		redirectURL = "http://localhost:5173/auth/callback/google" // Default fallback
+	// Use environment variable for OAuth2 redirect URL
+	redirectURL := os.Getenv("OAUTH2_REDIRECT_URL")
+	if redirectURL == "" {
+		redirectURL = "http://localhost:5173/auth/oauth2/callback" // Default fallback matching frontend route
 	}
 
 	// Decrypt client secret if encrypted
