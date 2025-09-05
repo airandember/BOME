@@ -9,29 +9,29 @@ import (
 
 // Video represents a video in the system
 type Video struct {
-	ID                   int
-	Title                string
-	Description          string
-	BunnyVideoID         string
-	ThumbnailURL         string
-	Duration             int
-	FileSize             int64
-	Status               string
-	Category             string
-	Tags                 []string
-	ViewCount            int
-	LikeCount            int
-	CreatedBy            int
-	ScheduledPublishDate *time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-	Vid_Status           bool
+	ID                   int        `json:"id"`
+	Title                string     `json:"title"`
+	Description          string     `json:"description"`
+	BunnyVideoID         string     `json:"bunnyVideoId"`
+	ThumbnailURL         string     `json:"thumbnailUrl"`
+	Duration             int        `json:"duration"`
+	FileSize             int64      `json:"fileSize"`
+	Status               string     `json:"status"`
+	Category             string     `json:"category"`
+	Tags                 []string   `json:"tags"`
+	ViewCount            int        `json:"viewCount"`
+	LikeCount            int        `json:"likeCount"`
+	CreatedBy            int        `json:"createdBy"`
+	ScheduledPublishDate *time.Time `json:"scheduledPublishDate,omitempty"`
+	CreatedAt            time.Time  `json:"createdAt"`
+	UpdatedAt            time.Time  `json:"updatedAt"`
+	Vid_Status           bool       `json:"vidStatus"`
 
 	// Bunny.net play data
-	PlayData      map[string]interface{} `json:"play_data,omitempty"`
-	IframeSrc     string                 `json:"iframe_src,omitempty"`
-	DirectPlayURL string                 `json:"direct_play_url,omitempty"`
-	PlaybackURL   string                 `json:"playback_url,omitempty"`
+	PlayData      map[string]interface{} `json:"playData,omitempty"`
+	IframeSrc     string                 `json:"iframeSrc,omitempty"`
+	DirectPlayURL string                 `json:"directPlayUrl,omitempty"`
+	PlaybackURL   string                 `json:"playbackUrl,omitempty"`
 	Resolutions   []string               `json:"resolutions,omitempty"`
 }
 
@@ -59,14 +59,14 @@ func (db *DB) GetVideoByID(id int) (*Video, error) {
 	video := &Video{}
 	var tagsStr string
 	err := db.QueryRow(
-		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at, vid_status FROM videos WHERE id = $1`,
+		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, views, likes, created_by, created_at, updated_at FROM master_video_list WHERE id = $1`,
 		id,
-	).Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
+	).Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse tags from JSON string
+	// Parse tags from JSON string (master_video_list uses JSONB for tags)
 	if tagsStr != "" {
 		if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
@@ -100,7 +100,7 @@ func (db *DB) GetVideoByBunnyID(bunnyVideoID string) (*Video, error) {
 
 // GetVideos retrieves videos with pagination and filtering
 func (db *DB) GetVideos(limit, offset int, category, status string) ([]*Video, error) {
-	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at, vid_status FROM videos WHERE 1=1`
+	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, views, likes, created_by, created_at, updated_at FROM master_video_list WHERE 1=1`
 	args := []interface{}{}
 	argCount := 0
 
@@ -134,11 +134,11 @@ func (db *DB) GetVideos(limit, offset int, category, status string) ([]*Video, e
 	for rows.Next() {
 		video := &Video{}
 		var tagsStr string
-		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
+		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
-		// Parse tags from JSON string
+		// Parse tags from JSONB (master_video_list uses JSONB for tags)
 		if tagsStr != "" {
 			if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal tags: %v", err)

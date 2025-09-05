@@ -81,7 +81,8 @@
 
 	function selectSuggestedVideo(selectedVideo: Video) {
 		showSuggestedVideos = false;
-		goto(`/videos/${selectedVideo.id}`);
+		const videoId = selectedVideo.bunnyVideoId || selectedVideo.id;
+		goto(`/videos/${videoId}`);
 	}
 
 	function handleAuthLoadingChange(data: {loading: boolean}) {
