@@ -565,7 +565,7 @@ func SetupRoutes(
 
 		// Email verification routes
 		auth.GET("/verify-email/:token", VerifyEmailTokenHandler(emailService))
-		auth.POST("/resend-verification", middleware.AuthRequired(), ResendVerificationHandler(emailService))
+		auth.POST("/resend-verification", middleware.AuthRequired(), ResendVerificationHandler(db, emailService))
 	}
 
 	// Initialize OAuth2 service
@@ -575,13 +575,13 @@ func SetupRoutes(
 	fmt.Printf("Setting up OAuth2 routes...\n")
 	SetupOAuth2Routes(v1, db, oauth2Service)
 
-	// User profile routes
+	// User profile routes (require email verification)
 	users := v1.Group("/users")
 	{
-		users.GET("/me", middleware.AuthRequired(), GetCurrentUserHandler(db))
-		users.PUT("/me", middleware.AuthRequired(), UpdateCurrentUserHandler(db))
-		users.GET("/profile", middleware.AuthRequired(), GetCurrentUserHandler(db))    // Alias for /me
-		users.PUT("/profile", middleware.AuthRequired(), UpdateCurrentUserHandler(db)) // Alias for /me
+		users.GET("/me", middleware.AuthRequired(), middleware.RequireEmailVerification(), GetCurrentUserHandler(db))
+		users.PUT("/me", middleware.AuthRequired(), middleware.RequireEmailVerification(), UpdateCurrentUserHandler(db))
+		users.GET("/profile", middleware.AuthRequired(), middleware.RequireEmailVerification(), GetCurrentUserHandler(db))    // Alias for /me
+		users.PUT("/profile", middleware.AuthRequired(), middleware.RequireEmailVerification(), UpdateCurrentUserHandler(db)) // Alias for /me
 	}
 
 	// Video routes using database handlers with bunny.net integration
@@ -1470,33 +1470,6 @@ func VerifyEmailTokenHandler(emailService *services.EmailService) gin.HandlerFun
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "success",
 			"message": "Email verified successfully",
-		})
-	}
-}
-
-// ResendVerificationHandler handles resending verification emails
-func ResendVerificationHandler(emailService *services.EmailService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if emailService == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Email service not available"})
-			return
-		}
-
-		// Get user from context
-		userID, exists := c.Get("user_id")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-			return
-		}
-
-		// Get user details from database
-		// This would need to be implemented in the database layer
-		// For now, we'll return a placeholder response
-		log.Printf("🔍 [EMAIL-RESEND] Resending verification email for user %v", userID)
-
-		c.JSON(http.StatusOK, gin.H{
-			"status":  "success",
-			"message": "Verification email sent",
 		})
 	}
 }

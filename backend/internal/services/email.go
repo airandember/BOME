@@ -199,6 +199,71 @@ func (s *EmailService) SendVerificationEmail(userID int, email, name string) err
 	)
 }
 
+// SendTestEmail sends a test email to verify email configuration
+func (s *EmailService) SendTestEmail(to, subject, body string, userID int) error {
+	log.Printf("🔍 [EMAIL] Sending test email to: %s", to)
+
+	// Check if email is enabled
+	enabled, err := s.isEmailEnabled()
+	if err != nil {
+		return fmt.Errorf("failed to check email settings: %w", err)
+	}
+	if !enabled {
+		return fmt.Errorf("email sending is disabled")
+	}
+
+	// Create simple HTML body if plain text provided
+	htmlBody := body
+	if !strings.Contains(body, "<html>") && !strings.Contains(body, "<p>") {
+		htmlBody = fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>%s</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #3b82f6; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 8px 8px; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 14px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📧 Test Email</h1>
+    </div>
+    <div class="content">
+        <p>%s</p>
+        <p><strong>Sent at:</strong> %s</p>
+    </div>
+    <div class="footer">
+        <p>This is a test email from BOME Admin Dashboard.</p>
+        <p>If you received this email, your email configuration is working correctly!</p>
+    </div>
+</body>
+</html>`, subject, strings.ReplaceAll(body, "\n", "<br>"), time.Now().Format("2006-01-02 15:04:05 MST"))
+	}
+
+	// Record email notification (use the authenticated user's ID)
+	notificationID, err := s.recordEmailNotification(userID, to, "test", subject, "test_email", EmailData{
+		UserEmail:   to,
+		CompanyName: "BOME",
+		BaseURL:     s.getBaseURL(),
+	})
+	if err != nil {
+		log.Printf("⚠️ [EMAIL] Failed to record test notification: %v", err)
+	}
+
+	// Try sending with automatic failover
+	sendErr := s.sendWithFailover(to, subject, htmlBody, notificationID)
+	if sendErr != nil {
+		log.Printf("❌ [EMAIL] All providers failed for test email: %v", sendErr)
+		return fmt.Errorf("failed to send test email: %w", sendErr)
+	}
+
+	log.Printf("✅ [EMAIL] Test email sent successfully to %s", to)
+	return nil
+}
+
 // SendSubscriptionConfirmation sends a subscription confirmation email
 func (s *EmailService) SendSubscriptionConfirmation(userID int, email, name, subscriptionName string, amount float64, currency, periodEnd string) error {
 	log.Printf("🔍 [EMAIL] Sending subscription confirmation to: %s", email)

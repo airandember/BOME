@@ -1500,15 +1500,15 @@ func UpdateAdPlacementHandler(db *database.DB) gin.HandlerFunc {
 
 // SetupAdminRoutes configures admin-related routes
 func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
-	// Users
-	router.GET("/users", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUsersHandler(db))
-	router.POST("/users", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), CreateUserHandler(db))
-	router.POST("/users/bulk", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), CreateBulkUsersHandler(db))
-	router.GET("/users/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUserHandler(db))
-	router.PUT("/users/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), UpdateUserHandler(db))
-	router.DELETE("/users/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), DeleteUserHandler(db))
-	router.GET("/users/stats", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUserStatsHandler(db))
-	router.GET("/users/roles", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAvailableRolesHandler(db))
+	// Users (require email verification for admin access)
+	router.GET("/users", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUsersHandler(db))
+	router.POST("/users", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), CreateUserHandler(db))
+	router.POST("/users/bulk", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), CreateBulkUsersHandler(db))
+	router.GET("/users/:id", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUserHandler(db))
+	router.PUT("/users/:id", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), UpdateUserHandler(db))
+	router.DELETE("/users/:id", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), DeleteUserHandler(db))
+	router.GET("/users/stats", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUserStatsHandler(db))
+	router.GET("/users/roles", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAvailableRolesHandler(db))
 
 	// Roles and Departments
 	router.GET("/roles", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetRolesWithDepartmentsHandler(db))
