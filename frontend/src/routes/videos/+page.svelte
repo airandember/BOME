@@ -29,6 +29,20 @@
 	let authChecking = $state(true);
 	let initialDataLoaded = $state(false);
 	let activeTab = $state<'latest' | 'collections' | 'categories' | 'allVideos'>('categories');
+
+	// Add reactive logging for state changes
+	$effect(() => {
+		console.log('🔄 Loading state changed:', loading, 'at', new Date().toISOString());
+	});
+
+	$effect(() => {
+		console.log('📊 InitialDataLoaded state changed:', initialDataLoaded, 'at', new Date().toISOString());
+	});
+
+	// Test effect to see if reactivity is working at all
+	$effect(() => {
+		console.log('🧪 Test effect running - categories length:', categories.length);
+	});
 	let scrollThreshold = 800; // pixels from bottom to trigger auto-load (accounts for footer height)
 	let searchTimeout: NodeJS.Timeout | null = null;
 	let isSearching = $state(false);
@@ -90,9 +104,25 @@
 	});
 
 	onMount(() => {
-		console.log('🔄 Videos page mounted. Initial data loaded:', initialDataLoaded);
-		// Initialize data asynchronously
-		loadInitialData();
+		console.log('🔄 Videos page mounted');
+		console.log('📊 Cache check on mount:', {
+			categoriesLength: categories.length,
+			videosLength: videos.length,
+			initialDataLoaded,
+			loading
+		});
+		
+		// Simple: If we have cached data, show it immediately
+		if (categories.length > 0 || videos.length > 0) {
+			console.log('✅ Using cached data on mount - setting loading=false, initialDataLoaded=true');
+			console.log('🔍 BEFORE: loading =', loading, 'initialDataLoaded =', initialDataLoaded);
+			console.trace('📍 STACK TRACE: onMount setting loading=false (cached data)');
+			loading = false;
+			initialDataLoaded = true;
+			console.log('🔍 AFTER: loading =', loading, 'initialDataLoaded =', initialDataLoaded);
+		} else {
+			console.log('❌ No cached data on mount - waiting for auth');
+		}
 		
 		// Add global debug function to window for console access
 		if (typeof window !== 'undefined') {
@@ -172,9 +202,23 @@
 	});
 
 	async function loadInitialData() {
-		if (initialDataLoaded || loading) return;
+		console.log('🔄 loadInitialData called');
+		console.log('📊 loadInitialData state check:', {
+			initialDataLoaded,
+			loading,
+			categoriesLength: categories.length,
+			videosLength: videos.length
+		});
+		
+		// Simple check: if we already have data, don't reload
+		if (initialDataLoaded) {
+			console.log('✅ Data already loaded - early return');
+			return;
+		}
 
 		try {
+			console.log('🚀 Starting loadInitialData - setting loading=true');
+			console.trace('📍 STACK TRACE: loadInitialData setting loading=true');
 			loading = true;
 			error = '';
 
@@ -187,19 +231,13 @@
 				collections = [];
 			}
 
-			// Load tag categories from streaming admin system (no fallback to mock data)
+			// Load tag categories
 			try {
-				console.log('🔍 Loading tag categories from /api/v1/tag-categories');
 				const categoriesResponse = await videoService.getTagCategories();
 				categories = categoriesResponse.categories || [];
-				console.log('🗃️ Raw categoriesResponse:', categoriesResponse);
-				console.log('✅ Loaded tag categories:', categories);
-				console.log('📊 Categories count:', categories.length);
-				if (categories.length > 0) {
-					console.log('🔍 First category structure:', categories[0]);
-				}
+				console.log('✅ Loaded categories:', categories.length);
 			} catch (err) {
-				console.error('❌ Failed to load tag categories:', err);
+				console.error('❌ Failed to load categories:', err);
 				categories = [];
 			}
 
@@ -215,9 +253,13 @@
 			// Load regular videos
 			await loadVideos();
 			initialDataLoaded = true;
+			console.log('✅ loadInitialData completed successfully');
 		} catch (err: any) {
+			console.error('❌ loadInitialData failed:', err);
 			handleError(err);
 		} finally {
+			console.log('🏁 loadInitialData finished, setting loading=false');
+			console.trace('📍 STACK TRACE: loadInitialData finally block setting loading=false');
 			loading = false;
 		}
 	}
@@ -481,12 +523,29 @@
 	}
 
 	function handleAuthLoadingChange(data: {loading: boolean}) {
+		console.log('🔐 Auth loading change:', data.loading);
 		authChecking = data.loading;
 	}
 
 	function handleAccessGranted() {
-		// Only reload if we haven't already loaded data
-		if (!initialDataLoaded && !loading) {
+		console.log('✅ Access granted!');
+		console.log('📊 Cache check on access granted:', {
+			categoriesLength: categories.length,
+			videosLength: videos.length,
+			initialDataLoaded,
+			loading
+		});
+		
+		// Simple: Check cache first, then load if needed
+		if (categories.length > 0 || videos.length > 0) {
+			console.log('✅ Using cached data - setting loading=false, initialDataLoaded=true');
+			console.log('🔍 BEFORE: loading =', loading, 'initialDataLoaded =', initialDataLoaded);
+			console.trace('📍 STACK TRACE: handleAccessGranted setting loading=false (cached data)');
+			loading = false;
+			initialDataLoaded = true;
+			console.log('🔍 AFTER: loading =', loading, 'initialDataLoaded =', initialDataLoaded);
+		} else {
+			console.log('🔄 No cache, loading data');
 			loadInitialData();
 		}
 	}
@@ -522,6 +581,7 @@
 
 	// Category section state for lazy loading - using Svelte 5 reactive approach
 	let categoryVideoStates = $state(new Map());
+	let categoryStateVersion = $state(0); // Force reactivity trigger
 	
 	function getCategoryVideoState(categoryId: number) {
 		if (!categoryVideoStates.has(categoryId)) {
@@ -556,6 +616,8 @@
 		console.log(`🏷️ Raw tag_ids (if exists):`, (category as any).tag_ids);
 		
 		// Set loading state
+		console.log(`🔄 Setting state.loading=true for category: ${category.name}`);
+		console.trace('📍 STACK TRACE: loadCategoryVideos setting state.loading=true');
 		state.loading = true;
 		state.error = null;
 		
@@ -593,8 +655,11 @@
 				state.data = response;
 				state.promise = null;
 				
-				// Force reactivity by creating new Map reference
+				// Force reactivity by creating new Map reference and incrementing version
 				categoryVideoStates = new Map(categoryVideoStates);
+				categoryStateVersion++;
+				
+				console.log(`🔄 Updated state for ${category.name}, forcing reactivity (version: ${categoryStateVersion})`);
 				
 				return response;
 			})
@@ -606,8 +671,9 @@
 				state.error = error;
 				state.promise = null;
 				
-				// Force reactivity by creating new Map reference
+				// Force reactivity by creating new Map reference and incrementing version
 				categoryVideoStates = new Map(categoryVideoStates);
+				categoryStateVersion++;
 				
 				throw error;
 			});
@@ -621,13 +687,12 @@
 		return loadingPromise;
 	}
 	
-	// Auto-trigger loading for categories when they become available
+	// Simple category loading when tab becomes active
 	$effect(() => {
 		if (categories.length > 0 && activeTab === 'categories') {
 			categories.forEach(category => {
 				const state = getCategoryVideoState(category.id);
-				// Only trigger loading if we haven't started yet
-				if (!state.data && !state.loading && !state.error && !state.promise) {
+				if (!state.data && !state.loading) {
 					loadCategoryVideos(category);
 				}
 			});
@@ -866,7 +931,17 @@
 								</div>-->
 								<div class="categories-container">
 									{#each categories as category (category.id)}
-										{@const categoryState = getCategoryVideoState(category.id)}
+										{@const categoryState = categoryVideoStates.get(category.id) || { loading: false, data: null, error: null, promise: null }}
+										<!-- Debug: Log what template sees -->
+										{console.log(`🎭 Template sees for ${category.name}:`, {
+											hasData: !!categoryState.data,
+											isLoading: categoryState.loading,
+											hasError: !!categoryState.error,
+											condition1: !categoryState.data && !categoryState.loading && !categoryState.error,
+											condition2: categoryState.loading,
+											condition3: categoryState.error,
+											condition4: categoryState.data
+										})}
 										<div class="category-section debug-category" data-category-id={category.id}>
 											<div class="category-header">
 												<h3>{category.name}</h3>
@@ -921,7 +996,7 @@
 															onclick={(e) => {
 																const target = e.target as HTMLElement;
 																const carousel = target?.closest('.carousel-wrapper')?.querySelector('.modern-carousel') as HTMLElement;
-																carousel?.scrollBy({ left: -688, behavior: 'smooth' }); // 2 videos: (320px + 24px gap) * 2
+																carousel?.scrollBy({ left: -748, behavior: 'smooth' }); // 2 videos: (700px + 24px gap) * 2
 															}}
 															aria-label="Previous videos"
 														>
@@ -1223,7 +1298,7 @@
 	.modern-carousel {
 		display: grid;
 		grid-auto-flow: column;
-		grid-auto-columns: minmax(320px, 1fr);
+		grid-auto-columns: minmax(700px, 1fr);
 		gap: 1.5rem;
 		overflow-x: auto;
 		scroll-snap-type: x mandatory;
@@ -1827,4 +1902,5 @@
 		}
 	}
 </style> 
+
 

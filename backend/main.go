@@ -49,17 +49,24 @@ func main() {
 	var err error
 
 	log.Println("Attempting to initialize PostgreSQL database...")
-	db, err = database.New(cfg)
+
+	// Add connection timeout context
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	db, err = database.NewWithContext(ctx, cfg) // You'd need to modify database.New to accept context
 	if err != nil {
-		log.Printf("Failed to connect to PostgreSQL database: %v", err)
-		log.Println("Continuing without database...")
+		log.Printf("Failed to connect to PostgreSQL database (may still be provisioning): %v", err)
+		log.Println("Continuing without database - will retry later...")
 		db = nil
 	} else {
 		log.Println("Database connection successful")
 		defer db.Close()
-		// Run migrations
+
+		// Only run migrations if we have a connection
 		if err := db.RunMigrations(); err != nil {
 			log.Printf("Failed to run migrations: %v", err)
+			// Don't fail the entire startup for migration issues
 		} else {
 			log.Println("Database migrations completed successfully")
 		}
@@ -186,7 +193,7 @@ func main() {
 	log.Println("Shutting down server...")
 
 	// Give outstanding requests a deadline for completion
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {

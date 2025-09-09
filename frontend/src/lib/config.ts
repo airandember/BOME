@@ -9,11 +9,18 @@ interface AppConfig {
 	environment: 'development' | 'production' | 'staging';
 }
 
-// Get environment variables with fallbacks
+// Get environment variables with fallbacks - SSR compatible
 const getEnvVar = (key: string, fallback: string): string => {
-	if (typeof import.meta !== 'undefined' && import.meta.env) {
-		return import.meta.env[key] || fallback;
+	// Try import.meta.env first (client-side and build-time)
+	if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
+		return import.meta.env[key];
 	}
+	
+	// Try process.env (server-side and build-time)
+	if (typeof process !== 'undefined' && process.env && process.env[key]) {
+		return process.env[key];
+	}
+	
 	return fallback;
 };
 
@@ -25,19 +32,28 @@ const getEnvironment = (): 'development' | 'production' | 'staging' => {
 	return 'development';
 };
 
-// Validate required environment variables
+// Validate required environment variables - SSR safe
 const validateConfig = () => {
 	const apiBaseUrl = getEnvVar('VITE_API_BASE_URL', '');
 	if (!apiBaseUrl) {
-		console.error('❌ VITE_API_BASE_URL environment variable is required but not set');
-		throw new Error('Missing required environment variable: VITE_API_BASE_URL');
+		// During SSR build, we might not have access to env vars
+		// Check if we're in a build context
+		const isBuild = typeof process !== 'undefined' && process.env.NODE_ENV === 'production';
+		
+		if (isBuild) {
+			console.warn('⚠️ VITE_API_BASE_URL not available during build - using placeholder');
+			return 'https://placeholder-api.example.com/api/v1';
+		} else {
+			console.error('❌ VITE_API_BASE_URL environment variable is required but not set');
+			throw new Error('Missing required environment variable: VITE_API_BASE_URL');
+		}
 	}
 	return apiBaseUrl;
 };
 
 // Configuration object - relies on environment variables
 export const config: AppConfig = {
-	// Use environment variable - no hardcoded fallbacks
+	// Use environment variable - with build-time fallback
 	apiBaseUrl: validateConfig(),
 	wsUrl: getEnvVar('VITE_WS_URL', ''),
 	appName: getEnvVar('VITE_APP_NAME', 'Book of Mormon Evidences'),

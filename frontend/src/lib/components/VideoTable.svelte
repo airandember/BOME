@@ -305,7 +305,6 @@
 
 	.video-row {
 		border-radius: 13px;
-		background: #ebebeb;
 		box-shadow: inset 5px 5px 10px var(--bg-quaternary),
             inset -5px -5px 10px var(--bg-primary);
 		transition: all 0.3s ease;
