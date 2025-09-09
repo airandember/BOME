@@ -7,6 +7,7 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
+
 # Install ALL dependencies (including dev dependencies needed for build)
 RUN npm ci
 
@@ -40,6 +41,7 @@ COPY --from=builder --chown=bome:bome /app/package-lock.json ./package-lock.json
 # Debug: Check what was copied
 RUN echo "=== COPIED BUILD CONTENTS ===" && ls -la build/ && echo "=== END COPIED CONTENTS ==="
 
+
 # Install only production dependencies
 RUN npm ci --only=production && npm cache clean --force
 
@@ -62,4 +64,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # Start the application
 ENTRYPOINT ["dumb-init", "--"]
+
 CMD ["node", "build/index.js"] 
+
