@@ -465,8 +465,9 @@
 	/* Layout Content */
 	.layout-content {
 		display: flex;
-		gap: var(--space-xl);
-		margin-top: var(--space-xl);
+		gap: var(--space-md);
+		margin-top: var(--space-md);
+		margin-left: var(--space-md);
 	}
 
 	/* Sidebar */
@@ -479,7 +480,6 @@
 		background: var(--bg-primary);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-sm);
-		border: 1px solid var(--gray-200);
 		padding: var(--space-lg);
 		margin-bottom: var(--space-lg);
 	}
@@ -578,7 +578,6 @@
 		background: var(--bg-primary);
 		border-radius: var(--radius-lg);
 		box-shadow: var(--shadow-sm);
-		border: 1px solid var(--gray-200);
 		padding: var(--space-xl);
 	}
 

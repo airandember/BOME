@@ -144,7 +144,7 @@
 		transition: all 0.3s ease;
 		box-shadow: 
 			4px 4px 8px var(--shadow-dark),
-			-2px -2px 4px var(--shadow-light);
+			-2px -2px 4px var(--shadow-light);		
 	}
 
 	.video-card:hover {

@@ -157,6 +157,13 @@
 
 /* Dark Mode Variables */
 [data-theme="dark"] {
+	--primary-bom-light: #6374be;
+    --primary-bom: #213072;
+	--primary-bom-dark: #061352;
+	--primary-gold: #f1dfac;
+    --primary-gold-dark: #fbbe14;
+	--primary-gold-light: #977446;
+
 	--text-primary: var(--white);
 	--text-secondary: var(--gray-300);
 	--text-muted: var(--gray-400);
