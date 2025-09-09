@@ -87,5 +87,3 @@ if (isDevelopment() && typeof console !== 'undefined') {
 		environment: config.environment
 	});
 }
-
-import { apiBaseUrl } from './config';
