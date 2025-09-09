@@ -32,6 +32,7 @@ WORKDIR /app
 # Copy built application from builder stage
 COPY --from=builder --chown=bome:bome /app/build ./build
 COPY --from=builder --chown=bome:bome /app/package.json ./package.json
+COPY --from=builder --chown=bome:bome /app/package-lock.json ./package-lock.json
 
 # Install only production dependencies
 RUN npm ci --only=production && npm cache clean --force
