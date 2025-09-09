@@ -50,25 +50,41 @@ func main() {
 
 	log.Println("Attempting to initialize PostgreSQL database...")
 
-	// Add connection timeout context
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	// Check if we're in bootstrap mode
+	bootstrapMode := os.Getenv("BOOTSTRAP_MODE") == "true"
+	skipMigrations := os.Getenv("SKIP_MIGRATIONS") == "true"
+	gracefulDbFailure := os.Getenv("GRACEFUL_DB_FAILURE") == "true"
 
-	db, err = database.NewWithContext(ctx, cfg) // You'd need to modify database.New to accept context
+	if bootstrapMode {
+		log.Println("🚀 Running in BOOTSTRAP MODE - optimized for initial deployment")
+	}
+
+	db, err = database.New(cfg)
 	if err != nil {
 		log.Printf("Failed to connect to PostgreSQL database (may still be provisioning): %v", err)
-		log.Println("Continuing without database - will retry later...")
-		db = nil
+
+		if gracefulDbFailure || bootstrapMode {
+			log.Println("Continuing without database - will retry later...")
+			db = nil
+		} else {
+			log.Fatalf("Database connection required in production mode")
+		}
 	} else {
 		log.Println("Database connection successful")
 		defer db.Close()
 
-		// Only run migrations if we have a connection
-		if err := db.RunMigrations(); err != nil {
-			log.Printf("Failed to run migrations: %v", err)
-			// Don't fail the entire startup for migration issues
+		// Run migrations based on configuration
+		if !skipMigrations && !bootstrapMode {
+			if err := db.RunMigrations(); err != nil {
+				log.Printf("Failed to run migrations: %v", err)
+				if !gracefulDbFailure {
+					log.Fatalf("Migration failure not allowed in production mode")
+				}
+			} else {
+				log.Println("Database migrations completed successfully")
+			}
 		} else {
-			log.Println("Database migrations completed successfully")
+			log.Println("Skipping migrations (bootstrap mode or SKIP_MIGRATIONS=true)")
 		}
 	}
 
@@ -193,10 +209,10 @@ func main() {
 	log.Println("Shutting down server...")
 
 	// Give outstanding requests a deadline for completion
-	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if err := server.Shutdown(ctx); err != nil {
+	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Fatal("Server forced to shutdown:", err)
 	}
 
