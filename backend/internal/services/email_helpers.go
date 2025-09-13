@@ -578,7 +578,7 @@ func (s *EmailService) sendResendEmail(to, subject, htmlBody string) error {
 	// Get sender email
 	fromEmail, err := s.db.GetEmailSetting("smtp_from_email")
 	if err != nil || fromEmail == "" {
-		fromEmail = "support@yourdomain.com" // fallback
+		fromEmail = "noreply@bookofmormonevidence.org" // fallback
 	}
 
 	fromName, _ := s.db.GetEmailSetting("smtp_from_name")
