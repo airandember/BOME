@@ -171,6 +171,7 @@ func (db *DB) RunMigrations() error {
 		createPublicSettingsTable,         // Add public settings table for non-sensitive config
 		fixPublicSettingsConstraints,      // Fix public settings table constraints
 		createMonthlyEmailUsageTable,      // Add monthly email usage tracking table
+		createOAuth2StatesTable,           // Add OAuth2 states table migration
 	}
 
 	for i, migration := range migrations {
@@ -2020,17 +2021,21 @@ CREATE TABLE IF NOT EXISTS monthly_email_usage (
     UNIQUE(year, month, provider)
 );
 
--- Add indexes for better performance
+-- Add indexes for better performance (simplified to avoid IMMUTABLE function issues)
 CREATE INDEX IF NOT EXISTS idx_monthly_email_usage_year_month ON monthly_email_usage(year, month);
 CREATE INDEX IF NOT EXISTS idx_monthly_email_usage_provider ON monthly_email_usage(provider);
-CREATE INDEX IF NOT EXISTS idx_monthly_email_usage_year_month_provider ON monthly_email_usage(year, month, provider);
 
--- Add monthly limits to email_settings
-INSERT INTO email_settings (setting_key, setting_value, created_at) 
-VALUES 
-    ('monthly_email_limit_resend', '3000', CURRENT_TIMESTAMP),
-    ('monthly_email_limit_mailgun', '5000', CURRENT_TIMESTAMP)
-ON CONFLICT (setting_key) DO NOTHING;
+-- Add monthly limits to email_settings (only if table exists)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'email_settings') THEN
+        INSERT INTO email_settings (setting_key, setting_value, created_at) 
+        VALUES 
+            ('monthly_email_limit_resend', '3000', CURRENT_TIMESTAMP),
+            ('monthly_email_limit_mailgun', '5000', CURRENT_TIMESTAMP)
+        ON CONFLICT (setting_key) DO NOTHING;
+    END IF;
+END $$;
 
 -- Add trigger to update last_updated timestamp
 CREATE OR REPLACE FUNCTION update_monthly_email_usage_timestamp()
@@ -2045,4 +2050,22 @@ CREATE TRIGGER trigger_update_monthly_email_usage_timestamp
     BEFORE UPDATE ON monthly_email_usage
     FOR EACH ROW
     EXECUTE FUNCTION update_monthly_email_usage_timestamp();
+`
+
+// Add this constant somewhere in your database.go file with the other migration constants
+const createOAuth2StatesTable = `
+-- Create OAuth2 states table for persistent state storage
+CREATE TABLE IF NOT EXISTS oauth2_states (
+    id SERIAL PRIMARY KEY,
+    state VARCHAR(255) UNIQUE NOT NULL,
+    provider VARCHAR(50) NOT NULL,
+    return_url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    state_data JSONB
+);
+
+-- Add indexes for performance
+CREATE INDEX IF NOT EXISTS idx_oauth2_states_state ON oauth2_states(state);
+CREATE INDEX IF NOT EXISTS idx_oauth2_states_expires_at ON oauth2_states(expires_at);
 `

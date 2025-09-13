@@ -29,7 +29,7 @@ func main() {
 	fmt.Println("🔧 Setting up Mailgun configuration...")
 
 	// Set Mailgun domain (sandbox domain from your setup)
-	mailgunDomain := "sandbox9424b46275f342fa8b926ec7099c9d55.mailgun.org"
+	mailgunDomain := "sandbox80d84284a9f74981af26b3094f966897.mailgun.org"
 	err = db.SetEmailSetting("mailgun_domain", mailgunDomain)
 	if err != nil {
 		log.Fatalf("Failed to set Mailgun domain: %v", err)
