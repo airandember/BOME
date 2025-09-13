@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -641,15 +642,21 @@ func (s *EmailService) sendMailgunEmail(to, subject, htmlBody string) error {
 		}
 	}
 
-	// Get sender email
-	fromEmail, err := s.db.GetEmailSetting("smtp_from_email")
+	// Get sender email (try Mailgun-specific first, then fall back to SMTP settings)
+	fromEmail, err := s.db.GetEmailSetting("mailgun_from_email")
 	if err != nil || fromEmail == "" {
-		fromEmail = "support@yourdomain.com" // fallback
+		fromEmail, err = s.db.GetEmailSetting("smtp_from_email")
+		if err != nil || fromEmail == "" {
+			fromEmail = fmt.Sprintf("postmaster@%s", domain) // Use postmaster for sandbox
+		}
 	}
 
-	fromName, _ := s.db.GetEmailSetting("smtp_from_name")
+	fromName, _ := s.db.GetEmailSetting("mailgun_from_name")
 	if fromName == "" {
-		fromName = "BOME Support"
+		fromName, _ = s.db.GetEmailSetting("smtp_from_name")
+		if fromName == "" {
+			fromName = "BOME Support"
+		}
 	}
 
 	// Prepare form data for Mailgun
@@ -664,7 +671,9 @@ func (s *EmailService) sendMailgunEmail(to, subject, htmlBody string) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Basic "+apiKey) // Mailgun uses basic auth with api:key
+	// Mailgun uses Basic Auth with "api:your-api-key"
+	auth := base64.StdEncoding.EncodeToString([]byte("api:" + apiKey))
+	req.Header.Set("Authorization", "Basic "+auth)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	client := &http.Client{Timeout: 30 * time.Second}
