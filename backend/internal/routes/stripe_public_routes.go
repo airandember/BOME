@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"bome-backend/internal/middleware"
 	"bome-backend/internal/services"
@@ -71,7 +72,12 @@ func SetupAuthenticatedStripeRoutes(v1 *gin.RouterGroup, stripePublicService *se
 			customerID := fmt.Sprintf("cus_%v", userID)
 			returnURL := c.Query("return_url")
 			if returnURL == "" {
-				returnURL = "https://bome.com/dashboard"
+				// Use environment variable for base URL
+				baseURL := os.Getenv("PUBLIC_APP_URL")
+				if baseURL == "" {
+					baseURL = "https://watch.bookofmormonevidence.org" // production fallback
+				}
+				returnURL = baseURL + "/dashboard"
 			}
 
 			portalURL, err := stripePublicService.GetCustomerPortalURL(customerID, returnURL)

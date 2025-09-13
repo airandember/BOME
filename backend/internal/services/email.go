@@ -179,12 +179,18 @@ func (s *EmailService) SendVerificationEmail(userID int, email, name string) err
 	verificationURL := fmt.Sprintf("%s/verify-email?token=%s", baseURL, token)
 
 	// Prepare email data
+	// Get support email from database
+	supportEmail, err := s.db.GetEmailSetting("support_email")
+	if err != nil || supportEmail == "" {
+		supportEmail = "support@bookofmormonevidence.org" // fallback
+	}
+
 	emailData := EmailData{
 		UserName:        name,
 		UserEmail:       email,
 		VerificationURL: verificationURL,
 		CompanyName:     "BOME",
-		SupportEmail:    "support@bome.test",
+		SupportEmail:    supportEmail,
 		BaseURL:         baseURL,
 	}
 
@@ -272,6 +278,12 @@ func (s *EmailService) SendSubscriptionConfirmation(userID int, email, name, sub
 	amountStr := fmt.Sprintf("%.2f", amount)
 
 	// Prepare email data
+	// Get support email from database
+	supportEmail, err := s.db.GetEmailSetting("support_email")
+	if err != nil || supportEmail == "" {
+		supportEmail = "support@bookofmormonevidence.org" // fallback
+	}
+
 	emailData := EmailData{
 		UserName:         name,
 		UserEmail:        email,
@@ -280,7 +292,7 @@ func (s *EmailService) SendSubscriptionConfirmation(userID int, email, name, sub
 		Currency:         strings.ToUpper(currency),
 		PeriodEnd:        periodEnd,
 		CompanyName:      "BOME",
-		SupportEmail:     "support@bome.test",
+		SupportEmail:     supportEmail,
 		BaseURL:          s.getBaseURL(),
 	}
 
