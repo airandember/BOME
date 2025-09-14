@@ -135,13 +135,14 @@
 
 	async function updateSettings() {
 		try {
-			// Transform frontend settings to backend format
-			const backendSettings = {
-				daily_email_limit_resend: emailSettings.resend_daily_limit.toString(),
-				daily_email_limit_mailgun: emailSettings.mailgun_daily_limit.toString(),
-				auto_failover_enabled: emailSettings.failover_enabled.toString(),
-				email_enabled: 'true'
-			};
+		// Transform frontend settings to backend format
+		const backendSettings = {
+			daily_email_limit_resend: emailSettings.resend_daily_limit.toString(),
+			daily_email_limit_mailgun: emailSettings.mailgun_daily_limit.toString(),
+			email_provider_primary: emailSettings.primary_provider,
+			auto_failover_enabled: emailSettings.failover_enabled.toString(),
+			email_enabled: 'true'
+		};
 
 			const response = await apiRequest('/admin/email/settings', {
 				method: 'PUT',
