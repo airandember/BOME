@@ -334,7 +334,7 @@ func updateEmailSettings(c *gin.Context) {
 	// Update allowed settings
 	allowedSettings := []string{
 		"daily_email_limit_resend", "daily_email_limit_mailgun",
-		"auto_failover_enabled", "email_enabled",
+		"email_provider_primary", "auto_failover_enabled", "email_enabled",
 	}
 
 	for _, key := range allowedSettings {
