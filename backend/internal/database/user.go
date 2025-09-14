@@ -121,19 +121,19 @@ func (db *DB) CreateUserWithDetails(userData map[string]interface{}) (*User, err
 
 	// Optional fields
 	optionalFields := map[string]string{
-		"role":               "role",
-		"role_id":            "role_id",
-		"email_verified":     "email_verified",
-		"stripe_customer_id": "stripe_customer_id", // Legacy single ID
-		"bio":                "bio",
-		"location":           "location",
-		"website":            "website",
-		"phone":              "phone",
-		"avatar_url":         "avatar_url",
-		"is_active":          "is_active",
-		"sub_id":             "sub_id",
-		"has_subbed":         "has_subbed",
-		"password_changed":   "password_changed",
+		"role":           "role",
+		"role_id":        "role_id",
+		"email_verified": "email_verified",
+		// "stripe_customer_id" removed - handled specially below to avoid duplication
+		"bio":              "bio",
+		"location":         "location",
+		"website":          "website",
+		"phone":            "phone",
+		"avatar_url":       "avatar_url",
+		"is_active":        "is_active",
+		"sub_id":           "sub_id",
+		"has_subbed":       "has_subbed",
+		"password_changed": "password_changed",
 	}
 
 	for field, dbField := range optionalFields {

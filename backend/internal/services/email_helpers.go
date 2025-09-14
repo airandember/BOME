@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"net/smtp"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -659,14 +660,16 @@ func (s *EmailService) sendMailgunEmail(to, subject, htmlBody string) error {
 		}
 	}
 
-	// Prepare form data for Mailgun
-	formData := fmt.Sprintf(
-		"from=%s <%s>&to=%s&subject=%s&html=%s",
-		fromName, fromEmail, to, subject, htmlBody)
+	// Prepare form data for Mailgun (properly URL encoded)
+	formData := url.Values{}
+	formData.Set("from", fmt.Sprintf("%s <%s>", fromName, fromEmail))
+	formData.Set("to", to)
+	formData.Set("subject", subject)
+	formData.Set("html", htmlBody)
 
 	// Make HTTP request to Mailgun API
-	url := fmt.Sprintf("https://api.mailgun.net/v3/%s/messages", domain)
-	req, err := http.NewRequest("POST", url, strings.NewReader(formData))
+	apiURL := fmt.Sprintf("https://api.mailgun.net/v3/%s/messages", domain)
+	req, err := http.NewRequest("POST", apiURL, strings.NewReader(formData.Encode()))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
