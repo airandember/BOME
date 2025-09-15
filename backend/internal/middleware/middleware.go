@@ -562,43 +562,33 @@ func SubscriptionValidation(db *database.DB) gin.HandlerFunc {
 			return
 		}
 
-		// For non-admin users, validate subscription
-		if db != nil {
-			subscription, err := db.GetSubscriptionByUserID(userID)
-			if err != nil || subscription == nil {
-				c.JSON(http.StatusForbidden, gin.H{
-					"error": "Active subscription required",
-					"code":  "SUBSCRIPTION_REQUIRED",
-				})
-				c.Abort()
-				return
-			}
-
-			// Check if subscription is active
-			if subscription.Status != "active" {
-				c.JSON(http.StatusForbidden, gin.H{
-					"error":  "Subscription is not active",
-					"code":   "SUBSCRIPTION_INACTIVE",
-					"status": subscription.Status,
-				})
-				c.Abort()
-				return
-			}
-
-			// Check if subscription has expired
-			if subscription.CurrentPeriodEnd != nil && time.Now().After(*subscription.CurrentPeriodEnd) {
-				c.JSON(http.StatusForbidden, gin.H{
-					"error":      "Subscription has expired",
-					"code":       "SUBSCRIPTION_EXPIRED",
-					"expired_at": subscription.CurrentPeriodEnd,
-				})
-				c.Abort()
-				return
-			}
-
-			// Store subscription info in context for later use
-			c.Set("user_subscription", subscription)
+	// For non-admin users, validate subscription using Stripe sync data
+	if db != nil {
+		hasActiveSub, subInfo, err := db.HasActiveStripeSubscription(userID)
+		if err != nil {
+			log.Printf("Error checking subscription for user %d: %v", userID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Subscription check failed",
+				"code":  "SUBSCRIPTION_CHECK_ERROR",
+			})
+			c.Abort()
+			return
 		}
+		
+		if !hasActiveSub {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "Active subscription required",
+				"code":  "SUBSCRIPTION_REQUIRED",
+				"message": "You need an active subscription to access this content",
+			})
+			c.Abort()
+			return
+		}
+		
+		// Store subscription info in context for later use
+		c.Set("stripe_subscription", subInfo)
+		log.Printf("✅ User %d has active subscription: %s", userID, subInfo.SubscriptionID)
+	}
 
 		c.Next()
 	}

@@ -8,6 +8,7 @@
 
 	// Import child components
 	import AnalyticsOverview from './overview/AnalyticsOverview.svelte';
+	import MetadataHealth from './metadata/MetadataHealth.svelte';
 	import Setup from './setup/+page.svelte';
 	import EmailUsagePanel from './components/EmailUsagePanel.svelte';
 
@@ -105,6 +106,7 @@
 	// Tab configuration - dynamically filtered based on capabilities
 	const allTabs = [
 		{ id: 'analytics', name: 'Analytics', icon: '📈', component: AnalyticsOverview, capability: null },
+		{ id: 'metadata', name: 'Metadata Health', icon: '🏥', component: MetadataHealth, capability: null },
 		{ id: 'setup', name: 'Setup', icon: '⚙️', component: Setup, capability: null }
 	];
 	
@@ -2001,6 +2003,8 @@
 			<div class="tab-content">
 				{#if activeTab === 'analytics'}
 					<AnalyticsOverview {summary} {stripeData} />
+				{:else if activeTab === 'metadata'}
+					<MetadataHealth />
 				{:else if activeTab === 'setup'}
 					<EmailUsagePanel />
 					<Setup {summary} onClearKey={() => showClearModal = true} />

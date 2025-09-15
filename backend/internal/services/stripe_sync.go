@@ -778,7 +778,9 @@ func (s *StripeSyncService) upsertProduct(prod *stripe.Product) error {
 }
 
 func (s *StripeSyncService) upsertCustomer(cust *stripe.Customer) error {
-	metadataJSON, _ := json.Marshal(cust.Metadata)
+	// Validate and fix metadata before storing
+	validatedMetadata := s.validateAndFixCustomerMetadata(cust)
+	metadataJSON, _ := json.Marshal(validatedMetadata)
 
 	query := `
 		INSERT INTO stripe_customers (stripe_id, email, name, created_at, updated_at, metadata)
@@ -799,7 +801,51 @@ func (s *StripeSyncService) upsertCustomer(cust *stripe.Customer) error {
 		time.Now(),
 		metadataJSON,
 	)
+
+	if err != nil {
+		log.Printf("❌ Failed to upsert customer %s: %v", cust.ID, err)
+	} else {
+		log.Printf("✅ Upserted customer: %s (%s) with validated metadata", cust.ID, cust.Email)
+	}
+
 	return err
+}
+
+// validateAndFixCustomerMetadata ensures customer metadata has correct local_customer_id
+func (s *StripeSyncService) validateAndFixCustomerMetadata(cust *stripe.Customer) map[string]interface{} {
+	// Start with existing metadata
+	validatedMetadata := make(map[string]interface{})
+	for k, v := range cust.Metadata {
+		validatedMetadata[k] = v
+	}
+
+	// Find the correct user ID for this Stripe customer
+	var userID int
+	err := s.db.QueryRow(`
+		SELECT id FROM users 
+		WHERE stripe_customer_id = $1 OR $1 = ANY(COALESCE(stripe_customer_ids, '{}'))
+	`, cust.ID).Scan(&userID)
+
+	if err == nil {
+		// User found - ensure metadata has correct local_customer_id
+		currentLocalCustomerID, exists := validatedMetadata["local_customer_id"]
+
+		if !exists || currentLocalCustomerID != fmt.Sprintf("%d", userID) {
+			log.Printf("🔧 Fixing metadata for customer %s: setting local_customer_id to %d", cust.ID, userID)
+			validatedMetadata["local_customer_id"] = fmt.Sprintf("%d", userID)
+		}
+	} else {
+		// User not found - this might be a new customer or orphaned record
+		log.Printf("⚠️ No user found for Stripe customer %s (%s)", cust.ID, cust.Email)
+
+		// Keep existing metadata but don't add incorrect local_customer_id
+		if _, exists := validatedMetadata["local_customer_id"]; exists {
+			log.Printf("🔧 Removing potentially incorrect local_customer_id from orphaned customer %s", cust.ID)
+			delete(validatedMetadata, "local_customer_id")
+		}
+	}
+
+	return validatedMetadata
 }
 
 func (s *StripeSyncService) upsertPrice(pr *stripe.Price) error {

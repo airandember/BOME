@@ -462,7 +462,7 @@ func SetupRoutes(
 		})
 
 		videos.GET("/categories", GetMockCategoriesHandler) // Must come before /:id
-		videos.GET("/:id", middleware.AuthRequired(), middleware.SessionActivityTracker(db), func(c *gin.Context) {
+		videos.GET("/:id", middleware.AuthRequired(), middleware.SessionActivityTracker(db), middleware.SubscriptionValidation(db), func(c *gin.Context) {
 			videoID := c.Param("id")
 			if videoID == "" {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Video ID is required"})
@@ -612,7 +612,7 @@ func SetupRoutes(
 		})
 
 		// Add blob URL endpoint for direct video data access
-		videos.GET("/:id/blob", middleware.AuthRequired(), func(c *gin.Context) {
+		videos.GET("/:id/blob", middleware.AuthRequired(), middleware.SubscriptionValidation(db), func(c *gin.Context) {
 			videoID := c.Param("id")
 
 			// Get user info from context
