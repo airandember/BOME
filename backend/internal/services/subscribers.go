@@ -75,17 +75,29 @@ func NewSubscriberService(db *database.DB) *SubscriberService {
 
 // GetSubscribers retrieves all subscribers with optional filters
 func (s *SubscriberService) GetSubscribers(limit, offset int, filters *SubscriberFilters) ([]*Subscriber, error) {
-	// First, let's try a simpler query that doesn't rely on subscription_plans table
-	// We'll focus on users who have has_subbed = true or sub_id is not null
+	// Updated query to use Stripe sync tables for accurate subscription and plan information
 	query := `
 		SELECT 
 			u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified,
 			u.stripe_customer_id, u.last_login, u.created_at, u.updated_at,
-			u.sub_id as subscription_id, 
-			NULL as plan_id, NULL as plan_name, NULL as plan_price, NULL as plan_currency,
-			NULL as interval, NULL as interval_count, true as plan_active
+			ss.id as subscription_id,
+			sp.id as plan_id, sp.name as plan_name, 
+			COALESCE(sp.price::float / 100.0, 0) as plan_price, 
+			COALESCE(sp.currency, 'usd') as plan_currency,
+			COALESCE(sp.interval, 'month') as interval, 
+			COALESCE(sp.interval_count, 1) as interval_count,
+			ss.status as subscription_status,
+			ss.current_period_start, ss.current_period_end,
+			ss.stripe_id as stripe_subscription_id
 		FROM users u
-		WHERE (u.has_subbed = true OR u.sub_id IS NOT NULL)
+		INNER JOIN stripe_customers sc ON (
+			u.stripe_customer_id = sc.stripe_id OR 
+			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
+		)
+		INNER JOIN stripe_subscriptions ss ON sc.id = ss.customer_id
+		LEFT JOIN stripe_prices sp ON ss.price_id = sp.stripe_id
+		WHERE ss.status IN ('active', 'trialing')
+		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
 	`
 
 	args := []interface{}{}
@@ -101,10 +113,8 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 
 		if filters.Status != nil {
 			argCount++
-			query += fmt.Sprintf(" AND sp.is_active = $%d", argCount)
-			// Convert status to boolean for plan active status
-			isActive := *filters.Status == "active"
-			args = append(args, isActive)
+			query += fmt.Sprintf(" AND ss.status = $%d", argCount)
+			args = append(args, *filters.Status)
 		}
 
 		if filters.Search != "" {
@@ -189,14 +199,15 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 		subscriber := &Subscriber{}
 		var interval sql.NullString
 		var intervalCount sql.NullInt64
-		var planActive sql.NullBool
 
 		err := rows.Scan(
 			&subscriber.ID, &subscriber.Email, &subscriber.FirstName, &subscriber.LastName,
 			&subscriber.Role, &subscriber.EmailVerified, &subscriber.StripeCustomerID,
 			&subscriber.LastLogin, &subscriber.CreatedAt, &subscriber.UpdatedAt,
 			&subscriber.SubscriptionID, &subscriber.PlanID, &subscriber.PlanName,
-			&subscriber.PlanPrice, &subscriber.PlanCurrency, &interval, &intervalCount, &planActive,
+			&subscriber.PlanPrice, &subscriber.PlanCurrency, &interval, &intervalCount,
+			&subscriber.SubscriptionStatus, &subscriber.CurrentPeriodStart, &subscriber.CurrentPeriodEnd,
+			&subscriber.StripeSubscriptionID,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan subscriber: %w", err)
@@ -213,10 +224,6 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 			count := int(intervalCount.Int64)
 			subscriber.PlanIntervalCount = &count
 		}
-
-		// Set subscription status - for now, assume active if they have a subscription
-		status := "active"
-		subscriber.SubscriptionStatus = &status
 
 		subscribers = append(subscribers, subscriber)
 	}
@@ -271,9 +278,16 @@ func (s *SubscriberService) GetSubscriberByID(userID int) (*Subscriber, error) {
 // GetSubscriberCount returns the total count of subscribers
 func (s *SubscriberService) GetSubscriberCount(filters *SubscriberFilters) (int, error) {
 	query := `
-		SELECT COUNT(*)
+		SELECT COUNT(DISTINCT u.id)
 		FROM users u
-		WHERE (u.has_subbed = true OR u.sub_id IS NOT NULL)
+		INNER JOIN stripe_customers sc ON (
+			u.stripe_customer_id = sc.stripe_id OR 
+			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
+		)
+		INNER JOIN stripe_subscriptions ss ON sc.id = ss.customer_id
+		LEFT JOIN stripe_prices sp ON ss.price_id = sp.stripe_id
+		WHERE ss.status IN ('active', 'trialing')
+		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
 	`
 
 	args := []interface{}{}
@@ -282,19 +296,15 @@ func (s *SubscriberService) GetSubscriberCount(filters *SubscriberFilters) (int,
 	// Add filters
 	if filters != nil {
 		if filters.PlanID != nil {
-			// Skip plan ID filter for now since we're not using subscription_plans table
+			argCount++
+			query += fmt.Sprintf(" AND sp.id = $%d", argCount)
+			args = append(args, *filters.PlanID)
 		}
 
 		if filters.Status != nil {
-			// For now, we'll just filter based on has_subbed status
-			if *filters.Status == "active" {
-				// Already filtered by has_subbed = true in base query
-			} else {
-				// Add filter for inactive
-				argCount++
-				query += fmt.Sprintf(" AND u.has_subbed = $%d", argCount)
-				args = append(args, false)
-			}
+			argCount++
+			query += fmt.Sprintf(" AND ss.status = $%d", argCount)
+			args = append(args, *filters.Status)
 		}
 
 		if filters.Search != "" {
