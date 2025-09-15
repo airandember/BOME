@@ -482,6 +482,203 @@ func (db *DB) UpdateUserSubscriptionInfo(userID int, subID string, hasSubbed boo
 	return err
 }
 
+// HasActiveStripeSubscription checks if user has active subscription using Stripe sync tables
+func (db *DB) HasActiveStripeSubscription(userID int) (bool, *StripeSubscriptionInfo, error) {
+	query := `
+		SELECT 
+			ss.stripe_id, ss.status, ss.current_period_start, ss.current_period_end,
+			sc.stripe_id as customer_id, sc.email
+		FROM users u
+		INNER JOIN stripe_customers sc ON (
+			u.stripe_customer_id = sc.stripe_id OR 
+			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
+		)
+		INNER JOIN stripe_subscriptions ss ON sc.id = ss.customer_id
+		WHERE u.id = $1 
+		AND ss.status IN ('active', 'trialing')
+		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+		ORDER BY ss.created_at DESC
+		LIMIT 1
+	`
+
+	var info StripeSubscriptionInfo
+	err := db.QueryRow(query, userID).Scan(
+		&info.SubscriptionID, &info.Status, &info.CurrentPeriodStart,
+		&info.CurrentPeriodEnd, &info.CustomerID, &info.Email,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil, nil // No active subscription
+		}
+		return false, nil, err
+	}
+
+	return true, &info, nil
+}
+
+// StripeSubscriptionInfo contains subscription information from Stripe sync tables
+type StripeSubscriptionInfo struct {
+	SubscriptionID     string     `json:"subscription_id"`
+	Status             string     `json:"status"`
+	CurrentPeriodStart time.Time  `json:"current_period_start"`
+	CurrentPeriodEnd   *time.Time `json:"current_period_end"`
+	CustomerID         string     `json:"customer_id"`
+	Email              string     `json:"email"`
+}
+
+// FixStripeCustomerMetadata fixes incorrect metadata in stripe_customers table
+func (db *DB) FixStripeCustomerMetadata() error {
+	// Update metadata to have correct local_customer_id (user ID, not stripe_customers.id)
+	query := `
+		UPDATE stripe_customers sc
+		SET metadata = jsonb_set(
+			COALESCE(metadata, '{}'), 
+			'{local_customer_id}', 
+			to_jsonb(u.id::text)
+		)
+		FROM users u
+		WHERE (
+			u.stripe_customer_id = sc.stripe_id OR 
+			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
+		)
+		AND (
+			metadata->>'local_customer_id' != u.id::text OR
+			metadata->>'local_customer_id' IS NULL
+		)
+	`
+
+	result, err := db.Exec(query)
+	if err != nil {
+		return fmt.Errorf("failed to fix stripe customer metadata: %v", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	log.Printf("✅ Fixed metadata for %d Stripe customers", rowsAffected)
+
+	return nil
+}
+
+// FixUserStripeCustomerID fixes a specific user's Stripe customer ID linkage
+func (db *DB) FixUserStripeCustomerID(userID int, correctStripeCustomerID string) error {
+	// Update user's primary Stripe customer ID
+	_, err := db.Exec(`
+		UPDATE users 
+		SET stripe_customer_id = $1, updated_at = NOW() 
+		WHERE id = $2
+	`, correctStripeCustomerID, userID)
+
+	if err != nil {
+		return fmt.Errorf("failed to update user stripe customer ID: %v", err)
+	}
+
+	// Fix the metadata for this specific customer
+	_, err = db.Exec(`
+		UPDATE stripe_customers 
+		SET metadata = jsonb_set(
+			COALESCE(metadata, '{}'), 
+			'{local_customer_id}', 
+			to_jsonb($2::text)
+		)
+		WHERE stripe_id = $1
+	`, correctStripeCustomerID, userID)
+
+	if err != nil {
+		return fmt.Errorf("failed to fix stripe customer metadata: %v", err)
+	}
+
+	log.Printf("✅ Fixed user %d linkage to Stripe customer %s", userID, correctStripeCustomerID)
+	return nil
+}
+
+// GetStripeMetadataHealthCheck returns metadata health statistics
+func (db *DB) GetStripeMetadataHealthCheck() (*StripeMetadataHealth, error) {
+	health := &StripeMetadataHealth{}
+
+	// Count total customers
+	err := db.QueryRow("SELECT COUNT(*) FROM stripe_customers").Scan(&health.TotalCustomers)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count total customers: %v", err)
+	}
+
+	// Count customers with users
+	err = db.QueryRow(`
+		SELECT COUNT(DISTINCT sc.id)
+		FROM stripe_customers sc
+		INNER JOIN users u ON (
+			u.stripe_customer_id = sc.stripe_id OR 
+			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
+		)
+	`).Scan(&health.CustomersWithUsers)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count customers with users: %v", err)
+	}
+
+	// Count customers with correct metadata
+	err = db.QueryRow(`
+		SELECT COUNT(*)
+		FROM stripe_customers sc
+		INNER JOIN users u ON (
+			u.stripe_customer_id = sc.stripe_id OR 
+			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
+		)
+		WHERE sc.metadata->>'local_customer_id' = u.id::text
+	`).Scan(&health.CorrectMetadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count correct metadata: %v", err)
+	}
+
+	// Count customers with missing metadata
+	err = db.QueryRow(`
+		SELECT COUNT(*)
+		FROM stripe_customers sc
+		INNER JOIN users u ON (
+			u.stripe_customer_id = sc.stripe_id OR 
+			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
+		)
+		WHERE sc.metadata->>'local_customer_id' IS NULL
+	`).Scan(&health.MissingMetadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count missing metadata: %v", err)
+	}
+
+	// Count customers with incorrect metadata
+	err = db.QueryRow(`
+		SELECT COUNT(*)
+		FROM stripe_customers sc
+		INNER JOIN users u ON (
+			u.stripe_customer_id = sc.stripe_id OR 
+			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
+		)
+		WHERE sc.metadata->>'local_customer_id' IS NOT NULL
+		AND sc.metadata->>'local_customer_id' != u.id::text
+	`).Scan(&health.IncorrectMetadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count incorrect metadata: %v", err)
+	}
+
+	// Count orphaned customers (no matching user)
+	health.OrphanedCustomers = health.TotalCustomers - health.CustomersWithUsers
+
+	// Calculate health percentage
+	if health.CustomersWithUsers > 0 {
+		health.HealthPercentage = float64(health.CorrectMetadata) / float64(health.CustomersWithUsers) * 100
+	}
+
+	return health, nil
+}
+
+// StripeMetadataHealth represents metadata health statistics
+type StripeMetadataHealth struct {
+	TotalCustomers     int     `json:"total_customers"`
+	CustomersWithUsers int     `json:"customers_with_users"`
+	OrphanedCustomers  int     `json:"orphaned_customers"`
+	CorrectMetadata    int     `json:"correct_metadata"`
+	MissingMetadata    int     `json:"missing_metadata"`
+	IncorrectMetadata  int     `json:"incorrect_metadata"`
+	HealthPercentage   float64 `json:"health_percentage"`
+}
+
 // UpdateUserRoleID updates a user's role ID (separate from the legacy role field)
 func (db *DB) UpdateUserRoleID(userID int, roleID string) error {
 	_, err := db.Exec(`UPDATE users SET role_id = $1, updated_at = NOW() WHERE id = $2`, roleID, userID)

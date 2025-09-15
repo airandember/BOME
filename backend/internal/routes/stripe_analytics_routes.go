@@ -79,6 +79,10 @@ func RegisterStripeAnalyticsRoutes(router *gin.RouterGroup, stripeService *servi
 		stripe.GET("/database/customers", func(c *gin.Context) { getDatabaseCustomers(c, db) })
 		stripe.GET("/database/subscriptions", func(c *gin.Context) { getDatabaseSubscriptions(c, db) })
 
+		// Metadata health endpoints
+		stripe.GET("/metadata/health", func(c *gin.Context) { getMetadataHealth(c, db) })
+		stripe.POST("/metadata/fix", func(c *gin.Context) { fixMetadataCorruption(c, db) })
+
 		// Stripe products management endpoints
 		stripe.GET("/products/available", func(c *gin.Context) { getAvailableStripeProducts(c, db) })
 		stripe.GET("/products/all", func(c *gin.Context) { getAllStripeProducts(c, db) })
@@ -1585,4 +1589,128 @@ func debugStripeProductsData(c *gin.Context, db *database.DB) {
 		},
 		"timestamp": time.Now().Unix(),
 	})
+}
+
+// getMetadataHealth returns Stripe customer metadata health statistics
+func getMetadataHealth(c *gin.Context, db *database.DB) {
+	log.Printf("🏥 [METADATA-HEALTH] Checking metadata health from IP: %s", c.ClientIP())
+
+	health, err := db.GetStripeMetadataHealthCheck()
+	if err != nil {
+		log.Printf("❌ [METADATA-HEALTH] Failed to get health check: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to get metadata health",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Determine health status
+	var status string
+	var severity string
+
+	if health.HealthPercentage >= 95 {
+		status = "healthy"
+		severity = "low"
+	} else if health.HealthPercentage >= 80 {
+		status = "warning"
+		severity = "medium"
+	} else {
+		status = "critical"
+		severity = "high"
+	}
+
+	log.Printf("✅ [METADATA-HEALTH] Health check completed: %.1f%% healthy", health.HealthPercentage)
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":          status,
+		"severity":        severity,
+		"health":          health,
+		"recommendations": getHealthRecommendations(health),
+		"timestamp":       time.Now().Unix(),
+	})
+}
+
+// fixMetadataCorruption fixes corrupted Stripe customer metadata
+func fixMetadataCorruption(c *gin.Context, db *database.DB) {
+	log.Printf("🔧 [METADATA-FIX] Fix initiated from IP: %s", c.ClientIP())
+
+	// Check if this is a dry run
+	dryRun := c.Query("dry_run") == "true"
+
+	if dryRun {
+		// Get health check to show what would be fixed
+		health, err := db.GetStripeMetadataHealthCheck()
+		if err != nil {
+			log.Printf("❌ [METADATA-FIX] Failed to get health check for dry run: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to analyze metadata for dry run",
+			})
+			return
+		}
+
+		recordsToFix := health.MissingMetadata + health.IncorrectMetadata
+
+		c.JSON(http.StatusOK, gin.H{
+			"message":        "Dry run completed",
+			"records_to_fix": recordsToFix,
+			"current_health": health,
+			"dry_run":        true,
+		})
+		return
+	}
+
+	// Actually fix the metadata
+	err := db.FixStripeCustomerMetadata()
+	if err != nil {
+		log.Printf("❌ [METADATA-FIX] Failed to fix metadata: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to fix metadata corruption",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Get updated health check
+	health, err := db.GetStripeMetadataHealthCheck()
+	if err != nil {
+		log.Printf("⚠️ [METADATA-FIX] Fix completed but failed to get updated health: %v", err)
+		health = nil
+	}
+
+	log.Printf("✅ [METADATA-FIX] Metadata fix completed successfully")
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":        "Metadata corruption fixed successfully",
+		"success":        true,
+		"updated_health": health,
+		"timestamp":      time.Now().Unix(),
+	})
+}
+
+// getHealthRecommendations provides recommendations based on health status
+func getHealthRecommendations(health *database.StripeMetadataHealth) []string {
+	var recommendations []string
+
+	if health.MissingMetadata > 0 {
+		recommendations = append(recommendations, fmt.Sprintf("Fix %d customers with missing metadata", health.MissingMetadata))
+	}
+
+	if health.IncorrectMetadata > 0 {
+		recommendations = append(recommendations, fmt.Sprintf("Fix %d customers with incorrect metadata", health.IncorrectMetadata))
+	}
+
+	if health.OrphanedCustomers > 0 {
+		recommendations = append(recommendations, fmt.Sprintf("Review %d orphaned customers (no matching users)", health.OrphanedCustomers))
+	}
+
+	if health.HealthPercentage < 95 {
+		recommendations = append(recommendations, "Run metadata fix to improve system health")
+	}
+
+	if len(recommendations) == 0 {
+		recommendations = append(recommendations, "Metadata is healthy - no action needed")
+	}
+
+	return recommendations
 }

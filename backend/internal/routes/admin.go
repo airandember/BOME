@@ -1642,6 +1642,7 @@ func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
 
 	// Database Management
 	router.GET("/database/export", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), DatabaseExportHandler(db))
+	router.POST("/database/fix-stripe-metadata", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), FixStripeMetadataHandler(db))
 
 	// Design System Routes
 	// Temporarily disabled for debugging
@@ -2977,6 +2978,72 @@ func processSingleUserCreation(db *database.DB, userReq CreateUserRequest, respo
 	})
 
 	return nil
+}
+
+// FixStripeMetadataHandler handles fixing corrupted Stripe customer metadata
+func FixStripeMetadataHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		log.Printf("🔧 Admin initiated Stripe metadata fix")
+
+		// Check if this is a dry run
+		dryRun := c.Query("dry_run") == "true"
+
+		if dryRun {
+			// Count how many records would be fixed
+			query := `
+				SELECT COUNT(*)
+				FROM stripe_customers sc
+				INNER JOIN users u ON (
+					u.stripe_customer_id = sc.stripe_id OR 
+					sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
+				)
+				WHERE (
+					sc.metadata->>'local_customer_id' != u.id::text OR
+					sc.metadata->>'local_customer_id' IS NULL
+				)
+			`
+
+			var count int
+			err := db.QueryRow(query).Scan(&count)
+			if err != nil {
+				log.Printf("❌ Failed to count corrupted metadata: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": "Failed to analyze metadata corruption",
+				})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"message":        "Dry run completed",
+				"records_to_fix": count,
+				"dry_run":        true,
+			})
+			return
+		}
+
+		// Actually fix the metadata
+		err := db.FixStripeCustomerMetadata()
+		if err != nil {
+			log.Printf("❌ Failed to fix Stripe metadata: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to fix Stripe metadata",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		// Log admin action
+		adminID := c.GetInt("user_id")
+		go db.CreateAdminLog(&adminID, "stripe_metadata_fix", "system", nil, map[string]interface{}{
+			"action": "fix_stripe_metadata",
+			"type":   "maintenance",
+		}, c.ClientIP(), c.GetHeader("User-Agent"))
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Stripe metadata fixed successfully",
+			"success": true,
+		})
+	}
 }
 
 // cleanNameForStripeImport cleans names from Stripe data to be more database-friendly
