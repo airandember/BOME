@@ -37,6 +37,24 @@ func SetupSubscriberRoutes(router *gin.RouterGroup, db *database.DB, subscriberS
 			getSubscriberStats(c, subscriberService)
 		})
 
+		// Get subscribers by email verification status
+		admin.GET("/verified", func(c *gin.Context) {
+			getSubscribersByEmailVerification(c, subscriberService, true)
+		})
+
+		admin.GET("/unverified", func(c *gin.Context) {
+			getSubscribersByEmailVerification(c, subscriberService, false)
+		})
+
+		// Get subscriber counts by email verification status
+		admin.GET("/verified/count", func(c *gin.Context) {
+			getSubscriberCountByEmailVerification(c, subscriberService, true)
+		})
+
+		admin.GET("/unverified/count", func(c *gin.Context) {
+			getSubscriberCountByEmailVerification(c, subscriberService, false)
+		})
+
 		// Export subscribers (must come before parameterized routes)
 		admin.GET("/export", func(c *gin.Context) {
 			exportSubscribers(c, subscriberService)
@@ -936,4 +954,87 @@ func exportNonSubscribers(c *gin.Context, service *services.SubscriberService) {
 
 	log.Println("exportNonSubscribers: Sending CSV data response")
 	c.Data(http.StatusOK, "text/csv", []byte(csvData))
+}
+
+// getSubscribersByEmailVerification handles GET /api/admin/subscribers/verified and /api/admin/subscribers/unverified
+func getSubscribersByEmailVerification(c *gin.Context, service *services.SubscriberService, emailVerified bool) {
+	// Parse pagination parameters
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+
+	// Parse filters (inline for now)
+	filters := &services.SubscriberFilters{}
+
+	if statusStr := c.Query("status"); statusStr != "" {
+		filters.Status = &statusStr
+	}
+
+	if searchStr := c.Query("search"); searchStr != "" {
+		filters.Search = searchStr
+	}
+
+	if roleStr := c.Query("role"); roleStr != "" {
+		filters.Role = &roleStr
+	}
+
+	// Get subscribers by email verification status
+	subscribers, err := service.GetSubscribersByEmailVerification(emailVerified, limit, offset, filters)
+	if err != nil {
+		log.Printf("Error getting subscribers by email verification (%t): %v", emailVerified, err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get subscribers",
+		})
+		return
+	}
+
+	// Get total count for pagination
+	totalCount, err := service.GetSubscriberCountByEmailVerification(emailVerified, filters)
+	if err != nil {
+		log.Printf("Error getting subscriber count by email verification (%t): %v", emailVerified, err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get subscriber count",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"subscribers":    subscribers,
+		"total_count":    totalCount,
+		"limit":          limit,
+		"offset":         offset,
+		"email_verified": emailVerified,
+	})
+}
+
+// getSubscriberCountByEmailVerification handles GET /api/admin/subscribers/verified/count and /api/admin/subscribers/unverified/count
+func getSubscriberCountByEmailVerification(c *gin.Context, service *services.SubscriberService, emailVerified bool) {
+	// Parse filters (inline for now)
+	filters := &services.SubscriberFilters{}
+
+	if statusStr := c.Query("status"); statusStr != "" {
+		filters.Status = &statusStr
+	}
+
+	if searchStr := c.Query("search"); searchStr != "" {
+		filters.Search = searchStr
+	}
+
+	if roleStr := c.Query("role"); roleStr != "" {
+		filters.Role = &roleStr
+	}
+
+	// Get count by email verification status
+	count, err := service.GetSubscriberCountByEmailVerification(emailVerified, filters)
+	if err != nil {
+		log.Printf("Error getting subscriber count by email verification (%t): %v", emailVerified, err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get subscriber count",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"count":          count,
+		"email_verified": emailVerified,
+	})
 }

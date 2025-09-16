@@ -8,6 +8,7 @@
 	import NonSubscriberTable from './NonSubscriberTable.svelte';
 	import SubscriberPagination from './SubscriberPagination.svelte';
 	import SubscriberEditModal from './SubscriberEditModal.svelte';
+	import EnhancedSubscribersPage from './EnhancedSubscribersPage.svelte';
 	import { auth } from '$lib/auth';
 	import SendOfferModal from './SendOfferModal.svelte';
 	import type { SubscriptionOffer } from '$lib/services/subscription-offers';
@@ -1284,84 +1285,9 @@ async function loadStripeSubsData() {
 
 	<!-- Tab Content -->
 	<div class="tab-content">
-		{#if activeTab === 'subscribers'}
-			<!-- Subscribers Tab -->
-			<div class="subscribers-section">
-				<!-- Filters -->
-				<SubscriberFiltersComponent 
-					bind:searchTerm={subscriberSearchTerm}
-					bind:emailVerifiedFilter={subscriberEmailVerifiedFilter}
-					bind:roleFilter={subscriberRoleFilter}
-					bind:planFilter={subscriberPlanFilter}
-					bind:lastLoginFilter={subscriberLastLoginFilter}
-					bind:createdDateFilter={subscriberCreatedDateFilter}
-					subscribers={allSubscribers}
-					nonSubscribers={[]}
-					{activeTab}
-					{roles}
-					onSearch={handleSearch}
-					onFilterChange={handleFilterChange}
-					onClearAll={handleClearAllFilters}
-				/>
-
-				<!-- Remove the entire selection-controls div -->
-				<!-- Just show the action buttons when items are selected -->
-				{#if currentSelectedCount > 0}
-					<div class="selection-actions">
-						<span class="selected-count">{currentSelectedCount} selected</span>
-						<div class="selected-buttons-container">
-							<button class="selection-button btn btn-primary" onclick={handleSendOffer}>
-								📧 Send Offer
-							</button>
-							<button class="selection-button btn btn-warning" onclick={handleBulkSuspend}>
-								⏸️ Suspend
-							</button>
-							<button class="selection-button btn btn-success" onclick={handleBulkActivate}>
-								▶️ Activate
-							</button>
-							<button class="selection-button btn btn-info" onclick={handleBulkChangePlan}>
-								📊 Change Plan
-							</button>
-							<button class="selection-button btn btn-secondary" onclick={clearSelection}>
-								Clear Selection
-							</button>
-						</div>
-					</div>
-				{/if}
-
-				<!-- Export button -->
-				<div class="export-section">
-					<button class="btn btn-outline" onclick={handleExport}>
-						📥 Export Subscribers
-					</button>
-				</div>
-
-				{#if subscribersLoading}
-					<div class="loading-container">
-						<LoadingSpinner />
-						<p>Loading subscribers...</p>
-					</div>
-				{:else}
-					<SubscriberTable 
-						subscribers={paginatedSubscribers}
-						{animationDirection}
-						{isAnimating}
-						{isTransitioning}
-						{roles}
-						{selectedSubscribers}
-						{selectAllSubscribers}
-						on:selectItem={handleSelectItemDirect}
-						on:editSubscriber={handleEditSubscriber}
-					/>
-
-					<!-- Pagination -->
-					<SubscriberPagination 
-						{currentPage}
-						{totalPages}
-						on:pageChange={handlePageChange}
-					/>
-				{/if}
-			</div>
+	{#if activeTab === 'subscribers'}
+		<!-- Enhanced Subscribers Tab with Email Verification Accordions -->
+		<EnhancedSubscribersPage />
 		{:else if activeTab === 'non-subscribers'}
 			<!-- Non-Subscribers Tab -->
 			<div class="non-subscribers-section">
