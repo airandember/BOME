@@ -765,6 +765,13 @@
 								>
 									{syncInProgress ? '🔄 Syncing...' : '💰 Sync Prices'}
 								</button>
+								<button 
+									class="btn btn-primary" 
+									onclick={(e) => { e.preventDefault(); e.stopPropagation(); triggerManualSync('subscriptions'); }}
+									disabled={syncInProgress}
+								>
+									{syncInProgress ? '🔄 Syncing...' : '💳 Sync Subscriptions'}
+								</button>
 							</div>
 						</div>
 

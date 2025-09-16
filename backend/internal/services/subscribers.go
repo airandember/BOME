@@ -3,6 +3,7 @@ package services
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -75,29 +76,40 @@ func NewSubscriberService(db *database.DB) *SubscriberService {
 
 // GetSubscribers retrieves all subscribers with optional filters
 func (s *SubscriberService) GetSubscribers(limit, offset int, filters *SubscriberFilters) ([]*Subscriber, error) {
-	// Updated query to use Stripe sync tables for accurate subscription and plan information
+	// SIMPLIFIED: Use direct Stripe data from stripe_subscriptions table
 	query := `
 		SELECT 
 			u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified,
 			u.stripe_customer_id, u.last_login, u.created_at, u.updated_at,
-			ss.id as subscription_id,
-			sp.id as plan_id, sp.name as plan_name, 
-			COALESCE(sp.price::float / 100.0, 0) as plan_price, 
-			COALESCE(sp.currency, 'usd') as plan_currency,
+			COALESCE(u.sub_id, ss.id) as subscription_id,
+			COALESCE(sp.id, 0) as plan_id, 
+			COALESCE(
+				sp.name, 
+				ss.product_name,
+				CASE 
+					WHEN ss.status = 'active' THEN 'Active Subscription'
+					WHEN ss.status = 'trialing' THEN 'Trial Subscription'
+					ELSE 'Subscription'
+				END
+			) as plan_name,
+			COALESCE(sp.price, ss.unit_amount::float / 100.0, 0.0) as plan_price, 
+			COALESCE(sp.currency, ss.currency, 'USD') as plan_currency,
 			COALESCE(sp.interval, 'month') as interval, 
 			COALESCE(sp.interval_count, 1) as interval_count,
-			ss.status as subscription_status,
-			ss.current_period_start, ss.current_period_end,
-			ss.stripe_id as stripe_subscription_id
+			COALESCE(ss.status, 'active') as subscription_status,
+			ss.current_period_start, 
+			ss.current_period_end,
+			COALESCE(ss.stripe_id, u.stripe_customer_id) as stripe_subscription_id
 		FROM users u
-		INNER JOIN stripe_customers sc ON (
+		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id AND sp.is_active = true AND sp.deleted_at IS NULL
+		LEFT JOIN stripe_customers sc ON (
 			u.stripe_customer_id = sc.stripe_id OR 
 			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
-		INNER JOIN stripe_subscriptions ss ON sc.id = ss.customer_id
-		LEFT JOIN stripe_prices sp ON ss.price_id = sp.stripe_id
-		WHERE ss.status IN ('active', 'trialing')
-		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing')
+		WHERE (u.sub_id IS NOT NULL OR ss.id IS NOT NULL)
+		AND u.is_active = true
+		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW() OR ss.id IS NULL)
 	`
 
 	args := []interface{}{}
@@ -105,11 +117,7 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 
 	// Add filters
 	if filters != nil {
-		if filters.PlanID != nil {
-			argCount++
-			query += fmt.Sprintf(" AND sp.id = $%d", argCount)
-			args = append(args, *filters.PlanID)
-		}
+		// Note: PlanID filter removed since we don't have stripe_prices table join
 
 		if filters.Status != nil {
 			argCount++
@@ -169,7 +177,8 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 		}
 	}
 
-	query += " ORDER BY u.created_at DESC"
+	// Default ordering by user name (first_name, last_name, then email)
+	query += " ORDER BY u.first_name ASC, u.last_name ASC, u.email ASC"
 
 	if limit > 0 {
 		argCount++
@@ -183,10 +192,7 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 		args = append(args, offset)
 	}
 
-	// Debug logging
-	fmt.Printf("DEBUG: GetSubscribers query: %s\n", query)
-	fmt.Printf("DEBUG: GetSubscribers args: %+v\n", args)
-	fmt.Printf("DEBUG: GetSubscribers filters received: %+v\n", filters)
+	log.Printf("getSubscribers: Executing query with %d args", len(args))
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -200,17 +206,57 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 		var interval sql.NullString
 		var intervalCount sql.NullInt64
 
+		// Temporary variables for nullable fields
+		var planID sql.NullInt64
+		var planName sql.NullString
+		var planPrice sql.NullFloat64
+		var planCurrency sql.NullString
+		var subscriptionID sql.NullInt64
+		var subscriptionStatus sql.NullString
+		var stripeCustomerID sql.NullString
+		var stripeSubscriptionID sql.NullString
+
 		err := rows.Scan(
 			&subscriber.ID, &subscriber.Email, &subscriber.FirstName, &subscriber.LastName,
-			&subscriber.Role, &subscriber.EmailVerified, &subscriber.StripeCustomerID,
+			&subscriber.Role, &subscriber.EmailVerified, &stripeCustomerID,
 			&subscriber.LastLogin, &subscriber.CreatedAt, &subscriber.UpdatedAt,
-			&subscriber.SubscriptionID, &subscriber.PlanID, &subscriber.PlanName,
-			&subscriber.PlanPrice, &subscriber.PlanCurrency, &interval, &intervalCount,
-			&subscriber.SubscriptionStatus, &subscriber.CurrentPeriodStart, &subscriber.CurrentPeriodEnd,
-			&subscriber.StripeSubscriptionID,
+			&subscriptionID, &planID, &planName,
+			&planPrice, &planCurrency, &interval, &intervalCount,
+			&subscriptionStatus, &subscriber.CurrentPeriodStart, &subscriber.CurrentPeriodEnd,
+			&stripeSubscriptionID,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan subscriber: %w", err)
+		}
+
+		// Debug: Diagnostic logging removed - using direct Stripe data now
+
+		// Assign nullable fields to pointers
+		if planID.Valid {
+			id := int(planID.Int64)
+			subscriber.PlanID = &id
+		}
+		if planName.Valid {
+			subscriber.PlanName = &planName.String
+		}
+		if planPrice.Valid {
+			subscriber.PlanPrice = &planPrice.Float64
+		}
+		if planCurrency.Valid {
+			subscriber.PlanCurrency = &planCurrency.String
+		}
+		if subscriptionID.Valid {
+			id := int(subscriptionID.Int64)
+			subscriber.SubscriptionID = &id
+		}
+		if subscriptionStatus.Valid {
+			subscriber.SubscriptionStatus = &subscriptionStatus.String
+		}
+		if stripeCustomerID.Valid {
+			subscriber.StripeCustomerID = &stripeCustomerID.String
+		}
+		if stripeSubscriptionID.Valid {
+			subscriber.StripeSubscriptionID = &stripeSubscriptionID.String
 		}
 
 		// Set SubID to the same value as SubscriptionID
@@ -228,13 +274,7 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 		subscribers = append(subscribers, subscriber)
 	}
 
-	fmt.Printf("DEBUG: GetSubscribers found %d subscribers\n", len(subscribers))
-
-	// Debug: Log plan data for each subscriber
-	for i, subscriber := range subscribers {
-		fmt.Printf("DEBUG: Subscriber %d - ID: %d, Email: %s, PlanName: %v, PlanPrice: %v, PlanID: %v\n",
-			i+1, subscriber.ID, subscriber.Email, subscriber.PlanName, subscriber.PlanPrice, subscriber.PlanID)
-	}
+	log.Printf("getSubscribers: Retrieved %d subscribers", len(subscribers))
 
 	return subscribers, nil
 }
@@ -280,14 +320,15 @@ func (s *SubscriberService) GetSubscriberCount(filters *SubscriberFilters) (int,
 	query := `
 		SELECT COUNT(DISTINCT u.id)
 		FROM users u
-		INNER JOIN stripe_customers sc ON (
+		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id AND sp.is_active = true AND sp.deleted_at IS NULL
+		LEFT JOIN stripe_customers sc ON (
 			u.stripe_customer_id = sc.stripe_id OR 
 			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
-		INNER JOIN stripe_subscriptions ss ON sc.id = ss.customer_id
-		LEFT JOIN stripe_prices sp ON ss.price_id = sp.stripe_id
-		WHERE ss.status IN ('active', 'trialing')
-		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing')
+		WHERE (u.sub_id IS NOT NULL OR ss.id IS NOT NULL)
+		AND u.is_active = true
+		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW() OR ss.id IS NULL)
 	`
 
 	args := []interface{}{}
@@ -295,11 +336,7 @@ func (s *SubscriberService) GetSubscriberCount(filters *SubscriberFilters) (int,
 
 	// Add filters
 	if filters != nil {
-		if filters.PlanID != nil {
-			argCount++
-			query += fmt.Sprintf(" AND sp.id = $%d", argCount)
-			args = append(args, *filters.PlanID)
-		}
+		// Note: PlanID filter removed since we don't have stripe_prices table join
 
 		if filters.Status != nil {
 			argCount++
@@ -354,6 +391,46 @@ func (s *SubscriberService) GetSubscriberCount(filters *SubscriberFilters) (int,
 	}
 
 	return count, nil
+}
+
+// GetSubscribersByEmailVerification retrieves subscribers filtered by email verification status
+func (s *SubscriberService) GetSubscribersByEmailVerification(emailVerified bool, limit, offset int, filters *SubscriberFilters) ([]*Subscriber, error) {
+	// Create a new filter set that includes email verification status
+	emailFilters := &SubscriberFilters{
+		EmailVerified: &emailVerified,
+	}
+
+	// Copy other filters if provided
+	if filters != nil {
+		emailFilters.Status = filters.Status
+		emailFilters.Search = filters.Search
+		emailFilters.Role = filters.Role
+		emailFilters.LastLogin = filters.LastLogin
+		emailFilters.CreatedDate = filters.CreatedDate
+		emailFilters.DateRange = filters.DateRange
+	}
+
+	return s.GetSubscribers(limit, offset, emailFilters)
+}
+
+// GetSubscriberCountByEmailVerification returns count of subscribers by email verification status
+func (s *SubscriberService) GetSubscriberCountByEmailVerification(emailVerified bool, filters *SubscriberFilters) (int, error) {
+	// Create a new filter set that includes email verification status
+	emailFilters := &SubscriberFilters{
+		EmailVerified: &emailVerified,
+	}
+
+	// Copy other filters if provided
+	if filters != nil {
+		emailFilters.Status = filters.Status
+		emailFilters.Search = filters.Search
+		emailFilters.Role = filters.Role
+		emailFilters.LastLogin = filters.LastLogin
+		emailFilters.CreatedDate = filters.CreatedDate
+		emailFilters.DateRange = filters.DateRange
+	}
+
+	return s.GetSubscriberCount(emailFilters)
 }
 
 // GetSubscriberStats returns subscriber statistics

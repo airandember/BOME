@@ -253,6 +253,36 @@ func (s *StripeSyncService) SyncPricesManual(ctx context.Context) error {
 	return nil
 }
 
+// SyncSubscriptionsManual performs manual subscription sync (all subscriptions)
+func (s *StripeSyncService) SyncSubscriptionsManual(ctx context.Context) error {
+	if !s.stripeService.IsEnabled() {
+		return fmt.Errorf("stripe service is not enabled")
+	}
+
+	log.Println("💳 Manual subscription sync - pulling ALL subscriptions...")
+
+	// Create sync job
+	jobID, err := s.createSyncJob("manual_sync", "subscription", 1)
+	if err != nil {
+		return fmt.Errorf("failed to create sync job: %w", err)
+	}
+
+	// Ensure job completion is tracked
+	defer func() {
+		s.completeSyncJob(jobID, err)
+	}()
+
+	// Sync all subscriptions (no time limit)
+	allTime := time.Time{} // Zero time means all subscriptions
+	err = s.syncSubscriptions(ctx, allTime, jobID)
+	if err != nil {
+		return fmt.Errorf("failed to sync subscriptions: %w", err)
+	}
+
+	log.Println("✅ Manual subscription sync completed successfully")
+	return nil
+}
+
 // InitialDataSync performs the initial 1.5-year historical data sync
 func (s *StripeSyncService) InitialDataSync(ctx context.Context) error {
 	if !s.stripeService.IsEnabled() {
@@ -891,25 +921,77 @@ func (s *StripeSyncService) upsertSubscription(sub *stripe.Subscription) error {
 		return err
 	}
 
+	// Extract price and product information directly from Stripe API
+	var priceID sql.NullInt64
+	var stripePriceID sql.NullString
+	var unitAmount sql.NullInt64
+	var currency sql.NullString
+	var stripeProductID sql.NullString
+	var productName sql.NullString
+
+	if len(sub.Items.Data) > 0 {
+		firstItem := sub.Items.Data[0]
+		if firstItem.Price != nil {
+			// Store Stripe price ID directly
+			stripePriceID = sql.NullString{String: firstItem.Price.ID, Valid: true}
+			unitAmount = sql.NullInt64{Int64: firstItem.Price.UnitAmount, Valid: true}
+			currency = sql.NullString{String: string(firstItem.Price.Currency), Valid: true}
+
+			// Try to get our local price ID (for backward compatibility)
+			s.db.QueryRow("SELECT id FROM stripe_prices WHERE stripe_id = $1", firstItem.Price.ID).Scan(&priceID)
+
+			// Get product information
+			if firstItem.Price.Product != nil {
+				stripeProductID = sql.NullString{String: firstItem.Price.Product.ID, Valid: true}
+				productName = sql.NullString{String: firstItem.Price.Product.Name, Valid: true}
+			}
+		}
+	}
+
 	query := `
-		INSERT INTO stripe_subscriptions (stripe_id, customer_id, status, current_period_start, current_period_end, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO stripe_subscriptions (
+			stripe_id, customer_id, price_id, status, current_period_start, current_period_end, created_at,
+			stripe_price_id, unit_amount, currency, stripe_product_id, product_name
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (stripe_id) 
 		DO UPDATE SET 
 			customer_id = EXCLUDED.customer_id,
+			price_id = EXCLUDED.price_id,
 			status = EXCLUDED.status,
 			current_period_start = EXCLUDED.current_period_start,
-			current_period_end = EXCLUDED.current_period_end
+			current_period_end = EXCLUDED.current_period_end,
+			stripe_price_id = EXCLUDED.stripe_price_id,
+			unit_amount = EXCLUDED.unit_amount,
+			currency = EXCLUDED.currency,
+			stripe_product_id = EXCLUDED.stripe_product_id,
+			product_name = EXCLUDED.product_name
 	`
 
 	_, err = s.db.Exec(query,
 		sub.ID,
 		customerID,
+		priceID,
 		string(sub.Status),
 		time.Unix(sub.CurrentPeriodStart, 0),
 		time.Unix(sub.CurrentPeriodEnd, 0),
 		time.Unix(sub.Created, 0),
+		stripePriceID,
+		unitAmount,
+		currency,
+		stripeProductID,
+		productName,
 	)
+
+	if err != nil {
+		log.Printf("❌ Failed to upsert subscription %s: %v", sub.ID, err)
+	} else {
+		log.Printf("✅ Upserted subscription %s with product: %s ($%.2f)",
+			sub.ID,
+			productName.String,
+			float64(unitAmount.Int64)/100.0)
+	}
+
 	return err
 }
 

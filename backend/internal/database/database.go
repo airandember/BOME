@@ -172,6 +172,8 @@ func (db *DB) RunMigrations() error {
 		fixPublicSettingsConstraints,      // Fix public settings table constraints
 		createMonthlyEmailUsageTable,      // Add monthly email usage tracking table
 		createOAuth2StatesTable,           // Add OAuth2 states table migration
+		addPriceIdToStripeSubscriptions,   // Add price_id to stripe_subscriptions table
+		enhanceStripeSubscriptionsTable,   // Add direct Stripe data columns to stripe_subscriptions
 	}
 
 	for i, migration := range migrations {
@@ -2068,4 +2070,87 @@ CREATE TABLE IF NOT EXISTS oauth2_states (
 -- Add indexes for performance
 CREATE INDEX IF NOT EXISTS idx_oauth2_states_state ON oauth2_states(state);
 CREATE INDEX IF NOT EXISTS idx_oauth2_states_expires_at ON oauth2_states(expires_at);
+`
+
+const addPriceIdToStripeSubscriptions = `
+-- Migration: Add price information to stripe_subscriptions table
+-- This allows us to link subscriptions directly to their pricing information
+
+-- Add price_id column to stripe_subscriptions if table exists
+DO $$ 
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stripe_subscriptions') THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'stripe_subscriptions' AND column_name = 'price_id'
+        ) THEN
+            ALTER TABLE stripe_subscriptions 
+            ADD COLUMN price_id INTEGER;
+            
+            -- Add foreign key constraint if stripe_prices table exists
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stripe_prices') THEN
+                ALTER TABLE stripe_subscriptions 
+                ADD CONSTRAINT fk_stripe_subscriptions_price_id 
+                FOREIGN KEY (price_id) REFERENCES stripe_prices(id);
+            END IF;
+            
+            -- Add index for better performance
+            CREATE INDEX IF NOT EXISTS idx_stripe_subscriptions_price_id ON stripe_subscriptions(price_id);
+        END IF;
+    END IF;
+END $$;
+`
+
+const enhanceStripeSubscriptionsTable = `
+-- Migration: Enhance stripe_subscriptions table with direct Stripe data
+-- This stores price and product information directly from Stripe API to avoid complex JOINs
+
+DO $$ 
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stripe_subscriptions') THEN
+        -- Add stripe_price_id column
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'stripe_subscriptions' AND column_name = 'stripe_price_id'
+        ) THEN
+            ALTER TABLE stripe_subscriptions ADD COLUMN stripe_price_id VARCHAR(255);
+        END IF;
+        
+        -- Add unit_amount column
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'stripe_subscriptions' AND column_name = 'unit_amount'
+        ) THEN
+            ALTER TABLE stripe_subscriptions ADD COLUMN unit_amount BIGINT;
+        END IF;
+        
+        -- Add currency column
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'stripe_subscriptions' AND column_name = 'currency'
+        ) THEN
+            ALTER TABLE stripe_subscriptions ADD COLUMN currency VARCHAR(3);
+        END IF;
+        
+        -- Add stripe_product_id column
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'stripe_subscriptions' AND column_name = 'stripe_product_id'
+        ) THEN
+            ALTER TABLE stripe_subscriptions ADD COLUMN stripe_product_id VARCHAR(255);
+        END IF;
+        
+        -- Add product_name column
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'stripe_subscriptions' AND column_name = 'product_name'
+        ) THEN
+            ALTER TABLE stripe_subscriptions ADD COLUMN product_name TEXT;
+        END IF;
+        
+        -- Add indexes for better performance
+        CREATE INDEX IF NOT EXISTS idx_stripe_subscriptions_stripe_price_id ON stripe_subscriptions(stripe_price_id);
+        CREATE INDEX IF NOT EXISTS idx_stripe_subscriptions_stripe_product_id ON stripe_subscriptions(stripe_product_id);
+    END IF;
+END $$;
 `

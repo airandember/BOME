@@ -177,6 +177,93 @@ export class StreamingSubscriberService {
 	}
 
 	/**
+	 * Get subscribers by email verification status
+	 */
+	static async getSubscribersByEmailVerification(emailVerified: boolean, params?: {
+		limit?: number;
+		offset?: number;
+		filters?: SubscriberFilters;
+	}): Promise<SubscribersResponse> {
+		try {
+			console.log('StreamingSubscriberService.getSubscribersByEmailVerification called with:', { emailVerified, params });
+			
+			const queryParams = new URLSearchParams();
+			
+			if (params?.limit) queryParams.append('limit', params.limit.toString());
+			if (params?.offset) queryParams.append('offset', params.offset.toString());
+			
+			if (params?.filters) {
+				if (params.filters.status) queryParams.append('status', params.filters.status);
+				if (params.filters.search) queryParams.append('search', params.filters.search);
+				if (params.filters.role) queryParams.append('role', params.filters.role);
+				if (params.filters.last_login) queryParams.append('last_login', params.filters.last_login);
+				if (params.filters.created_date) queryParams.append('created_date', params.filters.created_date);
+				if (params.filters.date_range) {
+					queryParams.append('start_date', params.filters.date_range.start);
+					queryParams.append('end_date', params.filters.date_range.end);
+				}
+			}
+
+			const endpoint = emailVerified ? '/admin/subscribers/verified' : '/admin/subscribers/unverified';
+			const url = `${endpoint}?${queryParams}`;
+			console.log('Making API request to:', url);
+			
+			const response = await api.get(url);
+			
+			console.log('API response received:', response);
+			
+			if (response.data) {
+				// Transform the response to match expected format
+				return {
+					subscribers: response.data.subscribers || [],
+					pagination: {
+						limit: response.data.limit || params?.limit || 50,
+						offset: response.data.offset || params?.offset || 0,
+						total: response.data.total_count || 0
+					}
+				};
+			} else {
+				console.error('No data in response:', response);
+				throw new Error(response.error || 'Failed to load subscribers');
+			}
+		} catch (error) {
+			console.error('Error fetching subscribers by email verification:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Get subscriber count by email verification status
+	 */
+	static async getSubscriberCountByEmailVerification(emailVerified: boolean, filters?: SubscriberFilters): Promise<number> {
+		try {
+			const queryParams = new URLSearchParams();
+			
+			if (filters?.status) queryParams.append('status', filters.status);
+			if (filters?.search) queryParams.append('search', filters.search);
+			if (filters?.role) queryParams.append('role', filters.role);
+			if (filters?.last_login) queryParams.append('last_login', filters.last_login);
+			if (filters?.created_date) queryParams.append('created_date', filters.created_date);
+			if (filters?.date_range) {
+				queryParams.append('start_date', filters.date_range.start);
+				queryParams.append('end_date', filters.date_range.end);
+			}
+
+			const endpoint = emailVerified ? '/admin/subscribers/verified/count' : '/admin/subscribers/unverified/count';
+			const response = await api.get(`${endpoint}?${queryParams}`);
+			
+			if (response.data) {
+				return response.data.count || 0;
+			} else {
+				throw new Error(response.error || 'Failed to get subscriber count');
+			}
+		} catch (error) {
+			console.error('Error fetching subscriber count by email verification:', error);
+			throw error;
+		}
+	}
+
+	/**
 	 * Get subscriber count with optional filters
 	 */
 	static async getSubscriberCount(filters?: SubscriberFilters): Promise<number> {
