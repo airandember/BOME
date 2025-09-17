@@ -108,6 +108,9 @@ func SetupRoutes(
 	if db != nil {
 		SetupAdminRoutes(admin, db)
 
+		// Database monitoring routes (for connection pool health)
+		RegisterDatabaseMonitoringRoutes(admin, db)
+
 		// Create plan history service for analytics
 		planHistoryService := services.NewPlanHistoryService(db)
 		SetupAnalyticsRoutes(admin, db, planHistoryService)
