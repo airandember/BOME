@@ -21,6 +21,72 @@ type DB struct {
 	Redis  *Redis   // Add Redis client for caching and session management
 }
 
+// ConnectionPoolStats represents database connection pool statistics
+type ConnectionPoolStats struct {
+	MaxOpenConnections    int           `json:"max_open_connections"`
+	OpenConnections       int           `json:"open_connections"`
+	InUse                 int           `json:"in_use"`
+	Idle                  int           `json:"idle"`
+	WaitCount             int64         `json:"wait_count"`
+	WaitDuration          time.Duration `json:"wait_duration"`
+	MaxIdleClosed         int64         `json:"max_idle_closed"`
+	MaxIdleTimeClosed     int64         `json:"max_idle_time_closed"`
+	MaxLifetimeClosed     int64         `json:"max_lifetime_closed"`
+	UtilizationPercentage float64       `json:"utilization_percentage"`
+	HealthStatus          string        `json:"health_status"`
+}
+
+// GetConnectionPoolStats returns current connection pool statistics with health assessment
+func (db *DB) GetConnectionPoolStats() *ConnectionPoolStats {
+	stats := db.Stats()
+
+	// Calculate utilization percentage
+	utilizationPercentage := float64(stats.InUse) / float64(stats.MaxOpenConnections) * 100
+
+	// Determine health status based on utilization and wait metrics
+	var healthStatus string
+	switch {
+	case utilizationPercentage > 90:
+		healthStatus = "🔴 CRITICAL - Very High Utilization"
+	case utilizationPercentage > 75:
+		healthStatus = "🟡 WARNING - High Utilization"
+	case stats.WaitCount > 100:
+		healthStatus = "🟡 WARNING - High Wait Count"
+	case utilizationPercentage > 50:
+		healthStatus = "🟠 CAUTION - Moderate Utilization"
+	default:
+		healthStatus = "🟢 HEALTHY - Normal Operation"
+	}
+
+	return &ConnectionPoolStats{
+		MaxOpenConnections:    stats.MaxOpenConnections,
+		OpenConnections:       stats.OpenConnections,
+		InUse:                 stats.InUse,
+		Idle:                  stats.Idle,
+		WaitCount:             stats.WaitCount,
+		WaitDuration:          stats.WaitDuration,
+		MaxIdleClosed:         stats.MaxIdleClosed,
+		MaxIdleTimeClosed:     stats.MaxIdleTimeClosed,
+		MaxLifetimeClosed:     stats.MaxLifetimeClosed,
+		UtilizationPercentage: utilizationPercentage,
+		HealthStatus:          healthStatus,
+	}
+}
+
+// LogConnectionPoolStats logs current connection pool statistics
+func (db *DB) LogConnectionPoolStats() {
+	stats := db.GetConnectionPoolStats()
+	log.Printf("📊 DB Pool Stats: %s | Open: %d/%d (%.1f%%) | InUse: %d | Idle: %d | Waits: %d",
+		stats.HealthStatus,
+		stats.OpenConnections,
+		stats.MaxOpenConnections,
+		stats.UtilizationPercentage,
+		stats.InUse,
+		stats.Idle,
+		stats.WaitCount,
+	)
+}
+
 func (db *DB) UpdateTagCategories(tagID int, categoryIDs []int) error {
 	// Start a transaction for atomicity
 	tx, err := db.Begin()
@@ -75,15 +141,15 @@ func New(cfg *config.Config) (*DB, error) {
 	}
 
 	// Configure connection pool for high-traffic production load
-	// Optimized for 3,000-5,000 concurrent users
-	db.SetMaxOpenConns(200)                 // Increased from 50 to 200 for high concurrency
-	db.SetMaxIdleConns(50)                  // Increased from 10 to 50 for better reuse
-	db.SetConnMaxLifetime(30 * time.Minute) // Increased from 10 to 30 minutes
-	db.SetConnMaxIdleTime(10 * time.Minute) // Increased from 5 to 10 minutes
+	// Optimized for 10,000+ concurrent users with proper resource management
+	db.SetMaxOpenConns(50)                 // Conservative limit to prevent connection exhaustion
+	db.SetMaxIdleConns(10)                 // Keep minimal idle connections
+	db.SetConnMaxLifetime(5 * time.Minute) // Recycle connections frequently
+	db.SetConnMaxIdleTime(2 * time.Minute) // Close idle connections quickly
 
 	// Add connection pool monitoring
-	log.Printf("Database pool configured: MaxOpen=%d, MaxIdle=%d, MaxLifetime=%v, MaxIdleTime=%v",
-		200, 50, 30*time.Minute, 10*time.Minute)
+	log.Printf("🔧 Database pool configured: MaxOpen=%d, MaxIdle=%d, MaxLifetime=%v, MaxIdleTime=%v",
+		25, 5, 5*time.Minute, 2*time.Minute)
 
 	// Test the connection
 	if err := db.Ping(); err != nil {

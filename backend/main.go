@@ -194,9 +194,22 @@ func main() {
 		MaxHeaderBytes: 1 << 20,           // 1MB max header size
 	}
 
+	// Start periodic connection pool monitoring (if database is available)
+	if db != nil {
+		go func() {
+			ticker := time.NewTicker(30 * time.Second) // Log stats every 30 seconds
+			defer ticker.Stop()
+
+			for range ticker.C {
+				db.LogConnectionPoolStats()
+			}
+		}()
+		log.Println("📊 Connection pool monitoring started (30s intervals)")
+	}
+
 	// Start server in a goroutine
 	go func() {
-		log.Printf("Server starting on port %s", cfg.ServerPort)
+		log.Printf("🚀 Server starting on port %s", cfg.ServerPort)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start server: %v", err)
 		}
