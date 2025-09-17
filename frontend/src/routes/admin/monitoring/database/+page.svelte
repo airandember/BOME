@@ -1,12 +1,45 @@
-<script>
+<script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { apiClient } from '$lib/api';
+	import { api as apiClient } from '$lib/api';
 
-	let connectionPoolStats = null;
-	let databaseHealth = null;
-	let loading = true;
-	let error = null;
-	let refreshInterval = null;
+	interface ConnectionPoolStats {
+		max_open_connections: number;
+		open_connections: number;
+		in_use: number;
+		idle: number;
+		wait_count: number;
+		wait_duration: number;
+		max_idle_closed: number;
+		max_idle_time_closed: number;
+		max_lifetime_closed: number;
+		utilization_percentage: number;
+		health_status: string;
+	}
+
+	interface DatabaseHealth {
+		status: string;
+		message: string;
+		details: ConnectionPoolStats;
+		postgresql_health?: {
+			status: string;
+			response_time: number;
+			active_connections?: number;
+			max_connections?: number;
+			database_size?: string;
+		};
+		recommendations?: string[];
+	}
+
+	interface ApiResponse<T> {
+		data: T;
+		timestamp?: string;
+	}
+
+	let connectionPoolStats: ApiResponse<ConnectionPoolStats> | null = null;
+	let databaseHealth: ApiResponse<DatabaseHealth> | null = null;
+	let loading: boolean = true;
+	let error: string | null = null;
+	let refreshInterval: NodeJS.Timeout | null = null;
 
 	// Auto-refresh every 10 seconds
 	const REFRESH_INTERVAL = 10000;
@@ -28,7 +61,7 @@
 		}, REFRESH_INTERVAL);
 	}
 
-	async function loadMonitoringData() {
+	async function loadMonitoringData(): Promise<void> {
 		try {
 			// Load both connection pool stats and full health check
 			const [poolResponse, healthResponse] = await Promise.all([
@@ -36,10 +69,10 @@
 				apiClient.get('/admin/monitoring/db/health')
 			]);
 
-			connectionPoolStats = poolResponse.data;
-			databaseHealth = healthResponse.data;
+			connectionPoolStats = poolResponse as ApiResponse<ConnectionPoolStats>;
+			databaseHealth = healthResponse as ApiResponse<DatabaseHealth>;
 			error = null;
-		} catch (err) {
+		} catch (err: any) {
 			console.error('Failed to load monitoring data:', err);
 			error = err.message || 'Failed to load monitoring data';
 		} finally {
@@ -47,7 +80,7 @@
 		}
 	}
 
-	function getHealthStatusColor(status) {
+	function getHealthStatusColor(status: string | undefined): string {
 		if (status?.includes('🟢')) return 'text-green-600';
 		if (status?.includes('🟡')) return 'text-yellow-600';
 		if (status?.includes('🟠')) return 'text-orange-600';
@@ -55,14 +88,14 @@
 		return 'text-gray-600';
 	}
 
-	function getUtilizationColor(percentage) {
+	function getUtilizationColor(percentage: number): string {
 		if (percentage > 90) return 'bg-red-500';
 		if (percentage > 75) return 'bg-yellow-500';
 		if (percentage > 50) return 'bg-orange-500';
 		return 'bg-green-500';
 	}
 
-	function formatDuration(duration) {
+	function formatDuration(duration: number | undefined): string {
 		if (!duration) return 'N/A';
 		if (duration < 1000000) return `${Math.round(duration / 1000)}μs`;
 		if (duration < 1000000000) return `${Math.round(duration / 1000000)}ms`;
@@ -102,7 +135,7 @@
 					<div class="flex items-center justify-between mb-4">
 						<h2 class="text-xl font-semibold text-gray-900">Connection Pool</h2>
 						<span class="text-sm text-gray-500">
-							Updated: {new Date(connectionPoolStats.timestamp).toLocaleTimeString()}
+							Updated: {connectionPoolStats.timestamp ? new Date(connectionPoolStats.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString()}
 						</span>
 					</div>
 
@@ -175,7 +208,7 @@
 					<div class="flex items-center justify-between mb-4">
 						<h2 class="text-xl font-semibold text-gray-900">PostgreSQL Health</h2>
 						<span class="text-sm text-gray-500">
-							Response: {formatDuration(databaseHealth.data.postgresql_health.response_time)}
+							Response: {databaseHealth.data.postgresql_health?.response_time ? formatDuration(databaseHealth.data.postgresql_health.response_time) : 'N/A'}
 						</span>
 					</div>
 
@@ -183,19 +216,19 @@
 						<!-- Server Status -->
 						<div class="flex items-center justify-between">
 							<span class="text-sm font-medium text-gray-700">Server Status</span>
-							<span class="text-sm font-medium {databaseHealth.data.postgresql_health.status === 'healthy' ? 'text-green-600' : 'text-red-600'}">
-								{databaseHealth.data.postgresql_health.status.toUpperCase()}
+							<span class="text-sm font-medium {databaseHealth.data.postgresql_health?.status === 'healthy' ? 'text-green-600' : 'text-red-600'}">
+								{databaseHealth.data.postgresql_health?.status?.toUpperCase() || 'UNKNOWN'}
 							</span>
 						</div>
 
 						<!-- Server Stats -->
-						{#if databaseHealth.data.postgresql_health.active_connections !== undefined}
+						{#if databaseHealth.data.postgresql_health?.active_connections !== undefined}
 							<div class="grid grid-cols-2 gap-4">
 								<div class="bg-gray-50 rounded-lg p-3">
 									<div class="text-2xl font-bold text-blue-600">{databaseHealth.data.postgresql_health.active_connections}</div>
 									<div class="text-sm text-gray-600">Active Connections</div>
 								</div>
-								{#if databaseHealth.data.postgresql_health.max_connections}
+								{#if databaseHealth.data.postgresql_health?.max_connections}
 									<div class="bg-gray-50 rounded-lg p-3">
 										<div class="text-2xl font-bold text-purple-600">{databaseHealth.data.postgresql_health.max_connections}</div>
 										<div class="text-sm text-gray-600">Max Connections</div>
@@ -204,7 +237,7 @@
 							</div>
 						{/if}
 
-						{#if databaseHealth.data.postgresql_health.database_size}
+						{#if databaseHealth.data.postgresql_health?.database_size}
 							<div class="flex justify-between text-sm">
 								<span class="text-gray-600">Database Size</span>
 								<span class="font-medium">{databaseHealth.data.postgresql_health.database_size}</span>
