@@ -151,6 +151,12 @@ func SetupRoutes(
 		SetupSubscriptionOfferRoutes(router, db, subscriptionOffersService)
 		fmt.Printf("Setting up subscriber routes...\n")
 		SetupSubscriberRoutes(admin, db, subscriberService)
+
+		// Setup enhanced subscriber routes immediately after regular subscriber routes
+		fmt.Printf("Setting up enhanced subscriber routes...\n")
+		SetupEnhancedSubscriberRoutes(admin, db)
+		fmt.Printf("Enhanced subscriber routes setup completed\n")
+
 		fmt.Printf("Setting up subscriber history routes...\n")
 		SetupSubscriberHistoryRoutes(admin, db, subscriberHistoryService)
 		SetupSubscriptionRoutes(router, db, stripeService, analyticsService)

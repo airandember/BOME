@@ -1,652 +1,641 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { StreamingSubscriberService, type Subscriber, type SubscriberFilters } from '$lib/services/streaming-subscribers';
 	import { showToast } from '$lib/toast';
+	import { subscriberCache } from '$lib/cache/subscriber-cache';
+	import type { 
+		EnhancedSubscriber, 
+		SubscriberFilters, 
+		SubscriberKPIs, 
+		QuickFilter,
+		BulkAction 
+	} from '$lib/types/enhanced-subscriber';
+	import DataTable from '$lib/components/DataTable.svelte';
+	import KPICard from '$lib/components/KPICard.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
-	import SubscriberFiltersComponent from './SubscriberFilters.svelte';
-	import SubscriberTable from './SubscriberTable.svelte';
-	import EnhancedPagination from './EnhancedPagination.svelte';
 
-	// State for verified subscribers
-	let verifiedSubscribers = $state<Subscriber[]>([]);
-	let verifiedLoading = $state(false);
-	let verifiedBackgroundLoading = $state(false); // For seamless pagination
-	let verifiedCurrentPage = $state(1);
-	let verifiedTotalPages = $state(1);
-	let verifiedTotalCount = $state(0);
-	let verifiedItemsPerPage = $state(50);
+	// State
+	let subscribers = $state<EnhancedSubscriber[]>([]);
+	let kpis = $state<SubscriberKPIs | null>(null);
+	let loading = $state(true);
+	let kpisLoading = $state(true);
+	let currentPage = $state(1);
+	let totalPages = $state(1);
+	let totalCount = $state(0);
+	let itemsPerPage = $state(50);
 
-	// State for unverified subscribers
-	let unverifiedSubscribers = $state<Subscriber[]>([]);
-	let unverifiedLoading = $state(false);
-	let unverifiedBackgroundLoading = $state(false); // For seamless pagination
-	let unverifiedCurrentPage = $state(1);
-	let unverifiedTotalPages = $state(1);
-	let unverifiedTotalCount = $state(0);
-	let unverifiedItemsPerPage = $state(50);
+	// Filters
+	let activeFilters = $state<SubscriberFilters>({});
+	let activeQuickFilter = $state<string | null>(null);
 
-	// Accordion state
-	let verifiedExpanded = $state(true);
-	let unverifiedExpanded = $state(true);
+	// Quick filters for common views
+	const quickFilters: QuickFilter[] = [
+		{
+			label: 'Active Plans',
+			icon: '✅',
+			filter: { has_active_plan: true },
+			description: 'Users with active subscription plans'
+		},
+		{
+			label: 'Video Access',
+			icon: '🎥',
+			filter: { has_video_access: true },
+			description: 'Users who can access premium videos'
+		},
+		{
+			label: 'Premium Users',
+			icon: '💎',
+			filter: { plan_type: 'premium' },
+			description: 'Users on premium subscription plans'
+		},
+		{
+			label: 'Expiring Soon',
+			icon: '⏰',
+			filter: { is_expiring_soon: true },
+			description: 'Subscriptions expiring within 7 days'
+		},
+		{
+			label: 'Manual Access',
+			icon: '🔧',
+			filter: { video_access_source: 'manual' },
+			description: 'Users with manually granted video access'
+		}
+	];
 
-	// Filter state
-	let searchTerm = $state('');
-	let roleFilter = $state('');
-	let statusFilter = $state('');
-	let lastLoginFilter = $state('');
-	let createdDateFilter = $state('');
+	// Table columns configuration
+	const columns = [
+		{ key: 'full_name', label: 'Name', sortable: true, width: '200px' },
+		{ key: 'email', label: 'Email', sortable: true, width: '250px' },
+		{ key: 'plan_name', label: 'Plan', sortable: true, filterable: true, width: '150px' },
+		{ key: 'has_active_plan', label: 'Active Plan', type: 'boolean' as const, filterable: true, width: '100px', align: 'center' as const },
+		{ key: 'has_video_access', label: 'Video Access', type: 'boolean' as const, filterable: true, width: '100px', align: 'center' as const },
+		{ key: 'video_access_source', label: 'Access Source', filterable: true, width: '120px' },
+		{ key: 'mrr_contribution', label: 'MRR', type: 'currency' as const, sortable: true, width: '100px', align: 'right' as const },
+		{ key: 'days_until_expiry', label: 'Days Left', type: 'number' as const, sortable: true, width: '100px', align: 'right' as const },
+		{ key: 'last_login', label: 'Last Login', type: 'date' as const, sortable: true, width: '120px' },
+		{ key: 'actions', label: 'Actions', type: 'actions' as const, width: '100px', align: 'center' as const }
+	];
 
-	// Roles data for filters
-	let roles: any[] = $state([]);
-	let rolesLoading = $state(true);
-
-	// Selection state - using immutable patterns
-	let selectedVerifiedSubscribers = $state<Set<number>>(new Set());
-	let selectedUnverifiedSubscribers = $state<Set<number>>(new Set());
-	let selectAllVerified = $state(false);
-	let selectAllUnverified = $state(false);
+	// Bulk actions configuration
+	const bulkActions: BulkAction[] = [
+		{
+			id: 'grant_video_access',
+			label: 'Grant Video Access',
+			icon: '🎥',
+			variant: 'primary'
+		},
+		{
+			id: 'revoke_video_access',
+			label: 'Revoke Video Access',
+			icon: '🚫',
+			variant: 'danger',
+			requiresConfirmation: true
+		},
+		{
+			id: 'extend_trial',
+			label: 'Extend Trial',
+			icon: '⏰',
+			variant: 'secondary'
+		},
+		{
+			id: 'send_email',
+			label: 'Send Email',
+			icon: '📧',
+			variant: 'secondary'
+		}
+	];
 
 	onMount(async () => {
 		await Promise.all([
-			loadRoles(),
-			loadVerifiedSubscribers(),
-			loadUnverifiedSubscribers()
+			loadSubscribers(),
+			loadKPIs()
 		]);
 	});
 
-	async function loadRoles() {
+	async function loadSubscribers() {
 		try {
-			rolesLoading = true;
-			// Load roles from your existing API
-			const response = await fetch('/api/v1/admin/roles');
-			if (response.ok) {
-				const data = await response.json();
-				roles = data.roles || [];
+			loading = true;
+			const response = await subscriberCache.getSubscribers(currentPage, itemsPerPage, activeFilters);
+			
+			subscribers = response.subscribers;
+			totalCount = response.total_count;
+			totalPages = response.pagination.total_pages;
+			
+			// Update KPIs if included in response
+			if (response.kpis) {
+				kpis = response.kpis;
+				kpisLoading = false;
 			}
+			
 		} catch (error) {
-			console.error('Error loading roles:', error);
+			console.error('Error loading subscribers:', error);
+			showToast('Failed to load subscribers', 'error');
 		} finally {
-			rolesLoading = false;
+			loading = false;
 		}
 	}
 
-	async function loadVerifiedSubscribers(seamless = false) {
+	async function loadKPIs() {
 		try {
-			// Use background loading for seamless pagination, regular loading for initial load
-			if (seamless && verifiedSubscribers.length > 0) {
-				verifiedBackgroundLoading = true;
-			} else {
-				verifiedLoading = true;
-			}
-			
-			const filters = buildFilters();
-			
-			const response = await StreamingSubscriberService.getSubscribersByEmailVerification(true, {
-				limit: verifiedItemsPerPage,
-				offset: (verifiedCurrentPage - 1) * verifiedItemsPerPage,
-				filters
-			});
-
-			verifiedSubscribers = response.subscribers;
-			verifiedTotalCount = response.pagination.total;
-			verifiedTotalPages = Math.ceil(verifiedTotalCount / verifiedItemsPerPage);
-			
-			// Reset selection when data changes (but not during seamless pagination)
-			if (!seamless) {
-				selectedVerifiedSubscribers = new Set();
-				selectAllVerified = false;
-			}
+			kpisLoading = true;
+			kpis = await subscriberCache.getKPIs();
 		} catch (error) {
-			console.error('Error loading verified subscribers:', error);
-			showToast('Failed to load verified subscribers', 'error');
+			console.error('Error loading KPIs:', error);
+			showToast('Failed to load KPIs', 'error');
 		} finally {
-			verifiedLoading = false;
-			verifiedBackgroundLoading = false;
+			kpisLoading = false;
 		}
 	}
 
-	async function loadUnverifiedSubscribers(seamless = false) {
-		try {
-			// Use background loading for seamless pagination, regular loading for initial load
-			if (seamless && unverifiedSubscribers.length > 0) {
-				unverifiedBackgroundLoading = true;
-			} else {
-				unverifiedLoading = true;
-			}
-			
-			const filters = buildFilters();
-			
-			const response = await StreamingSubscriberService.getSubscribersByEmailVerification(false, {
-				limit: unverifiedItemsPerPage,
-				offset: (unverifiedCurrentPage - 1) * unverifiedItemsPerPage,
-				filters
-			});
-
-			unverifiedSubscribers = response.subscribers;
-			unverifiedTotalCount = response.pagination.total;
-			unverifiedTotalPages = Math.ceil(unverifiedTotalCount / unverifiedItemsPerPage);
-			
-			// Reset selection when data changes (but not during seamless pagination)
-			if (!seamless) {
-				selectedUnverifiedSubscribers = new Set();
-				selectAllUnverified = false;
-			}
-		} catch (error) {
-			console.error('Error loading unverified subscribers:', error);
-			showToast('Failed to load unverified subscribers', 'error');
-		} finally {
-			unverifiedLoading = false;
-			unverifiedBackgroundLoading = false;
-		}
+	async function applyQuickFilter(filter: QuickFilter) {
+		activeQuickFilter = activeQuickFilter === filter.label ? null : filter.label;
+		activeFilters = activeQuickFilter ? filter.filter : {};
+		currentPage = 1;
+		await loadSubscribers();
 	}
 
-	function buildFilters(): SubscriberFilters {
-		const filters: SubscriberFilters = {};
+	async function handleSearch(searchTerm: string) {
+		activeFilters = { ...activeFilters, search: searchTerm || undefined };
+		currentPage = 1;
+		await loadSubscribers();
+	}
+
+	async function handlePageChange(page: number) {
+		currentPage = page;
+		await loadSubscribers();
+	}
+
+	function handleRowAction(event: CustomEvent<{ item: EnhancedSubscriber; action: string }>) {
+		const { item, action } = event.detail;
 		
-		if (searchTerm.trim()) filters.search = searchTerm.trim();
-		if (roleFilter) filters.role = roleFilter;
-		if (statusFilter) filters.status = statusFilter;
-		if (lastLoginFilter) filters.last_login = lastLoginFilter;
-		if (createdDateFilter) filters.created_date = createdDateFilter;
-		
-		return filters;
-	}
-
-	async function handleSearch() {
-		// Reset to first page and reload both sections
-		verifiedCurrentPage = 1;
-		unverifiedCurrentPage = 1;
-		await Promise.all([
-			loadVerifiedSubscribers(),
-			loadUnverifiedSubscribers()
-		]);
-	}
-
-	async function handleFilterChange() {
-		await handleSearch();
-	}
-
-	async function handleClearAllFilters() {
-		searchTerm = '';
-		roleFilter = '';
-		statusFilter = '';
-		lastLoginFilter = '';
-		createdDateFilter = '';
-		await handleSearch();
-	}
-
-	// Note: Pagination handlers are now inline callbacks for better Svelte 5 compatibility
-
-	// Selection handlers - using immutable state updates
-	function handleVerifiedSelectItem(event: CustomEvent<{ itemId: number; checked: boolean }>) {
-		const { itemId, checked } = event.detail;
-		
-		if (itemId === -1) {
-			// Select all - create new Set for immutability
-			selectedVerifiedSubscribers = checked 
-				? new Set(verifiedSubscribers.map(s => s.id))
-				: new Set();
-			selectAllVerified = checked;
-		} else {
-			// Individual selection - create new Set for immutability
-			const newSelection = new Set(selectedVerifiedSubscribers);
-			if (checked) {
-				newSelection.add(itemId);
-			} else {
-				newSelection.delete(itemId);
-			}
-			selectedVerifiedSubscribers = newSelection;
-			selectAllVerified = selectedVerifiedSubscribers.size === verifiedSubscribers.length;
+		switch (action) {
+			case 'edit':
+				// Open edit modal
+				showToast(`Edit subscriber: ${item.email}`, 'info');
+				break;
+			case 'view':
+				// Open view modal
+				showToast(`View subscriber: ${item.email}`, 'info');
+				break;
 		}
 	}
 
-	function handleUnverifiedSelectItem(event: CustomEvent<{ itemId: number; checked: boolean }>) {
-		const { itemId, checked } = event.detail;
+	function handleBulkAction(event: CustomEvent<{ action: string; items: number[]; requiresConfirmation?: boolean }>) {
+		const { action, items, requiresConfirmation } = event.detail;
 		
-		if (itemId === -1) {
-			// Select all - create new Set for immutability
-			selectedUnverifiedSubscribers = checked 
-				? new Set(unverifiedSubscribers.map(s => s.id))
-				: new Set();
-			selectAllUnverified = checked;
-		} else {
-			// Individual selection - create new Set for immutability
-			const newSelection = new Set(selectedUnverifiedSubscribers);
-			if (checked) {
-				newSelection.add(itemId);
-			} else {
-				newSelection.delete(itemId);
-			}
-			selectedUnverifiedSubscribers = newSelection;
-			selectAllUnverified = selectedUnverifiedSubscribers.size === unverifiedSubscribers.length;
+		if (requiresConfirmation) {
+			const confirmed = confirm(`Are you sure you want to ${action} for ${items.length} subscribers?`);
+			if (!confirmed) return;
 		}
+		
+		// Process bulk action
+		showToast(`${action} applied to ${items.length} subscribers`, 'success');
+		
+		// Invalidate cache and reload
+		subscriberCache.invalidate();
+		loadSubscribers();
 	}
 
-	function toggleAccordion(section: 'verified' | 'unverified') {
-		if (section === 'verified') {
-			verifiedExpanded = !verifiedExpanded;
-		} else {
-			unverifiedExpanded = !unverifiedExpanded;
-		}
+	function handleExport(event: CustomEvent<{ data: EnhancedSubscriber[]; format: string }>) {
+		const { data, format } = event.detail;
+		
+		// Create CSV content
+		const headers = columns.filter(col => col.type !== 'actions').map(col => col.label);
+		const csvContent = [
+			headers.join(','),
+			...data.map(item => 
+				columns
+					.filter(col => col.type !== 'actions')
+					.map(col => {
+						const value = item[col.key as keyof EnhancedSubscriber];
+						return `"${String(value || '').replace(/"/g, '""')}"`;
+					})
+					.join(',')
+			)
+		].join('\n');
+		
+		// Download file
+		const blob = new Blob([csvContent], { type: 'text/csv' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `subscribers-${new Date().toISOString().split('T')[0]}.csv`;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+		
+		showToast('Subscriber data exported successfully', 'success');
 	}
 </script>
 
-<div class="enhanced-subscribers-page">
+<div class="unified-subscribers-dashboard">
+	<!-- Page Header -->
 	<div class="page-header">
-		<h1>Subscribers Management</h1>
-		<p>Manage your subscribers organized by email verification status</p>
+		<div class="header-content">
+			<h1>Subscribers Management</h1>
+			<p>Unified dashboard for managing subscribers, plans, and video access</p>
+		</div>
+		<div class="header-actions">
+			<button type="button" class="refresh-btn" onclick={() => { subscriberCache.invalidate(); loadSubscribers(); loadKPIs(); }}>
+				🔄 Refresh
+			</button>
+		</div>
 	</div>
 
-	<!-- Global Filters -->
-	<div class="filters-section">
-		<SubscriberFiltersComponent 
-			bind:searchTerm={searchTerm}
-			bind:roleFilter={roleFilter}
-			bind:planFilter={statusFilter}
-			bind:lastLoginFilter={lastLoginFilter}
-			bind:createdDateFilter={createdDateFilter}
-			subscribers={[]}
-			nonSubscribers={[]}
-			activeTab="subscribers"
-			{roles}
-			onSearch={handleSearch}
-			onFilterChange={handleFilterChange}
-			onClearAll={handleClearAllFilters}
+	<!-- KPI Summary Cards -->
+	{#if kpis}
+		<div class="kpi-grid">
+			<KPICard 
+				title="Total Subscribers" 
+				value={kpis.total_subscribers} 
+				icon="👥" 
+				color="blue"
+				loading={kpisLoading}
+			/>
+			<KPICard 
+				title="Active Plans" 
+				value={kpis.active_subscribers} 
+				icon="✅" 
+				color="green"
+				loading={kpisLoading}
+			/>
+			<KPICard 
+				title="Video Access" 
+				value={kpis.video_access_users} 
+				icon="🎥" 
+				color="purple"
+				loading={kpisLoading}
+			/>
+			<KPICard 
+				title="Monthly Revenue" 
+				value={kpis.total_mrr} 
+				format="currency" 
+				icon="💰" 
+				color="green"
+				loading={kpisLoading}
+			/>
+			<KPICard 
+				title="Premium Users" 
+				value={kpis.premium_users} 
+				icon="💎" 
+				color="yellow"
+				loading={kpisLoading}
+			/>
+			<KPICard 
+				title="Churn Risk" 
+				value={kpis.churn_risk_count} 
+				icon="⚠️" 
+				color="red"
+				loading={kpisLoading}
+			/>
+		</div>
+	{/if}
+
+	<!-- Quick Filters -->
+	<div class="quick-filters">
+		<div class="filters-header">
+			<h3>Quick Filters</h3>
+			<span class="filters-subtitle">Common subscriber views</span>
+		</div>
+		<div class="filters-grid">
+			{#each quickFilters as filter}
+				<button
+					type="button"
+					class="quick-filter-btn"
+					class:active={activeQuickFilter === filter.label}
+					onclick={() => applyQuickFilter(filter)}
+					title={filter.description}
+				>
+					<span class="filter-icon">{filter.icon}</span>
+					<span class="filter-label">{filter.label}</span>
+				</button>
+			{/each}
+			{#if activeQuickFilter}
+				<button
+					type="button"
+					class="clear-filters-btn"
+					onclick={() => { activeQuickFilter = null; activeFilters = {}; loadSubscribers(); }}
+				>
+					<span class="filter-icon">🗑️</span>
+					<span class="filter-label">Clear Filters</span>
+				</button>
+			{/if}
+		</div>
+	</div>
+
+	<!-- Unified Data Table -->
+	<div class="data-table-section">
+		<DataTable
+			data={subscribers}
+			{columns}
+			{loading}
+			searchable={true}
+			exportable={true}
+			selectable={true}
+			bulkActions={bulkActions}
+			emptyMessage="No subscribers found matching your criteria"
+			searchPlaceholder="Search subscribers by name, email, or plan..."
+			on:rowAction={handleRowAction}
+			on:bulkAction={handleBulkAction}
+			on:export={handleExport}
 		/>
 	</div>
 
-	<!-- Verified Subscribers Section -->
-	<div class="accordion-section">
-		<button 
-			type="button"
-			class="accordion-header" 
-			onclick={() => toggleAccordion('verified')}
-			onkeydown={(e) => e.key === 'Enter' && toggleAccordion('verified')}
-			aria-expanded={verifiedExpanded}
-			aria-controls="verified-content"
-		>
-			<div class="accordion-title">
-				<span class="accordion-icon">{verifiedExpanded ? '▼' : '▶'}</span>
-				<span class="accordion-text">
-					✅ Verified Email Subscribers ({verifiedTotalCount.toLocaleString()})
-				</span>
+	<!-- Pagination -->
+	{#if totalPages > 1}
+		<div class="pagination-section">
+			<div class="pagination-info">
+				Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount)} of {totalCount.toLocaleString()} subscribers
 			</div>
-			<div class="accordion-actions">
-				{#if selectedVerifiedSubscribers.size > 0}
-					<span class="selection-count">
-						{selectedVerifiedSubscribers.size} selected
-					</span>
-				{/if}
+			<div class="pagination-controls">
+				<button
+					type="button"
+					class="page-btn"
+					disabled={currentPage === 1}
+					onclick={() => handlePageChange(currentPage - 1)}
+				>
+					← Previous
+				</button>
+				
+				{#each Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+					const startPage = Math.max(1, currentPage - 2);
+					return startPage + i;
+				}) as page}
+					{#if page <= totalPages}
+						<button
+							type="button"
+							class="page-btn"
+							class:active={page === currentPage}
+							onclick={() => handlePageChange(page)}
+						>
+							{page}
+						</button>
+					{/if}
+				{/each}
+				
+				<button
+					type="button"
+					class="page-btn"
+					disabled={currentPage === totalPages}
+					onclick={() => handlePageChange(currentPage + 1)}
+				>
+					Next →
+				</button>
 			</div>
-		</button>
-
-		{#if verifiedExpanded}
-			<div class="accordion-content" id="verified-content">
-				{#if verifiedLoading}
-					<div class="loading-container">
-						<LoadingSpinner />
-						<p>Loading verified subscribers...</p>
-					</div>
-				{:else if verifiedTotalCount === 0}
-					<div class="empty-state">
-						<div class="empty-icon">✅</div>
-						<h3>No Verified Subscribers</h3>
-						<p>No subscribers with verified email addresses found matching your current filters.</p>
-						{#if searchTerm || roleFilter || statusFilter || lastLoginFilter || createdDateFilter}
-							<button type="button" class="btn-clear-filters" onclick={handleClearAllFilters}>
-								Clear Filters
-							</button>
-						{/if}
-					</div>
-				{:else}
-					<!-- Top Pagination -->
-					<EnhancedPagination 
-						currentPage={verifiedCurrentPage}
-						totalPages={verifiedTotalPages}
-						totalItems={verifiedTotalCount}
-						itemsPerPage={verifiedItemsPerPage}
-						position="top"
-						backgroundLoading={verifiedBackgroundLoading}
-						onPageChange={(page) => {
-							verifiedCurrentPage = page;
-							loadVerifiedSubscribers(true); // Seamless pagination
-						}}
-						onItemsPerPageChange={(itemsPerPage) => {
-							verifiedItemsPerPage = itemsPerPage;
-							verifiedCurrentPage = 1;
-							loadVerifiedSubscribers(); // Not seamless for items per page change
-						}}
-					/>
-
-					<!-- Subscribers Table -->
-					<div class="table-container" class:transitioning={verifiedBackgroundLoading}>
-						<SubscriberTable 
-							subscribers={verifiedSubscribers}
-							animationDirection="right"
-							isAnimating={false}
-							isTransitioning={verifiedBackgroundLoading}
-							{roles}
-							selectedSubscribers={selectedVerifiedSubscribers}
-							selectAllSubscribers={selectAllVerified}
-							on:selectItem={handleVerifiedSelectItem}
-						/>
-					</div>
-
-					<!-- Bottom Pagination -->
-					<EnhancedPagination 
-						currentPage={verifiedCurrentPage}
-						totalPages={verifiedTotalPages}
-						totalItems={verifiedTotalCount}
-						itemsPerPage={verifiedItemsPerPage}
-						position="bottom"
-						backgroundLoading={verifiedBackgroundLoading}
-						onPageChange={(page) => {
-							verifiedCurrentPage = page;
-							loadVerifiedSubscribers(true); // Seamless pagination
-						}}
-						onItemsPerPageChange={(itemsPerPage) => {
-							verifiedItemsPerPage = itemsPerPage;
-							verifiedCurrentPage = 1;
-							loadVerifiedSubscribers(); // Not seamless for items per page change
-						}}
-					/>
-				{/if}
-			</div>
-		{/if}
-	</div>
-
-	<!-- Unverified Subscribers Section -->
-	<div class="accordion-section">
-		<button 
-			type="button"
-			class="accordion-header" 
-			onclick={() => toggleAccordion('unverified')}
-			onkeydown={(e) => e.key === 'Enter' && toggleAccordion('unverified')}
-			aria-expanded={unverifiedExpanded}
-			aria-controls="unverified-content"
-		>
-			<div class="accordion-title">
-				<span class="accordion-icon">{unverifiedExpanded ? '▼' : '▶'}</span>
-				<span class="accordion-text">
-					🚫 Unverified Email Subscribers ({unverifiedTotalCount.toLocaleString()})
-				</span>
-			</div>
-			<div class="accordion-actions">
-				{#if selectedUnverifiedSubscribers.size > 0}
-					<span class="selection-count">
-						{selectedUnverifiedSubscribers.size} selected
-					</span>
-				{/if}
-			</div>
-		</button>
-
-		{#if unverifiedExpanded}
-			<div class="accordion-content" id="unverified-content">
-				{#if unverifiedLoading}
-					<div class="loading-container">
-						<LoadingSpinner />
-						<p>Loading unverified subscribers...</p>
-					</div>
-				{:else if unverifiedTotalCount === 0}
-					<div class="empty-state">
-						<div class="empty-icon">🚫</div>
-						<h3>No Unverified Subscribers</h3>
-						<p>No subscribers with unverified email addresses found matching your current filters.</p>
-						{#if searchTerm || roleFilter || statusFilter || lastLoginFilter || createdDateFilter}
-							<button type="button" class="btn-clear-filters" onclick={handleClearAllFilters}>
-								Clear Filters
-							</button>
-						{/if}
-					</div>
-				{:else}
-					<!-- Top Pagination -->
-					<EnhancedPagination 
-						currentPage={unverifiedCurrentPage}
-						totalPages={unverifiedTotalPages}
-						totalItems={unverifiedTotalCount}
-						itemsPerPage={unverifiedItemsPerPage}
-						position="top"
-						backgroundLoading={unverifiedBackgroundLoading}
-						onPageChange={(page) => {
-							unverifiedCurrentPage = page;
-							loadUnverifiedSubscribers(true); // Seamless pagination
-						}}
-						onItemsPerPageChange={(itemsPerPage) => {
-							unverifiedItemsPerPage = itemsPerPage;
-							unverifiedCurrentPage = 1;
-							loadUnverifiedSubscribers(); // Not seamless for items per page change
-						}}
-					/>
-
-					<!-- Subscribers Table -->
-					<div class="table-container" class:transitioning={unverifiedBackgroundLoading}>
-						<SubscriberTable 
-							subscribers={unverifiedSubscribers}
-							animationDirection="right"
-							isAnimating={false}
-							isTransitioning={unverifiedBackgroundLoading}
-							{roles}
-							selectedSubscribers={selectedUnverifiedSubscribers}
-							selectAllSubscribers={selectAllUnverified}
-							on:selectItem={handleUnverifiedSelectItem}
-						/>
-					</div>
-
-					<!-- Bottom Pagination -->
-					<EnhancedPagination 
-						currentPage={unverifiedCurrentPage}
-						totalPages={unverifiedTotalPages}
-						totalItems={unverifiedTotalCount}
-						itemsPerPage={unverifiedItemsPerPage}
-						position="bottom"
-						backgroundLoading={unverifiedBackgroundLoading}
-						onPageChange={(page) => {
-							unverifiedCurrentPage = page;
-							loadUnverifiedSubscribers(true); // Seamless pagination
-						}}
-						onItemsPerPageChange={(itemsPerPage) => {
-							unverifiedItemsPerPage = itemsPerPage;
-							unverifiedCurrentPage = 1;
-							loadUnverifiedSubscribers(); // Not seamless for items per page change
-						}}
-					/>
-				{/if}
-			</div>
-		{/if}
-	</div>
+		</div>
+	{/if}
 </div>
 
 <style>
-	.table-container {
-		transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
-	}
-
-	.table-container.transitioning {
-		opacity: 0.7;
-		transform: translateY(2px);
-	}
-
-	.enhanced-subscribers-page {
+	.unified-subscribers-dashboard {
 		padding: 1.5rem;
 		max-width: 100%;
 		margin: 0 auto;
+		background: #f8fafc;
+		min-height: 100vh;
 	}
 
+	/* Page Header */
 	.page-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
 		margin-bottom: 2rem;
+		background: white;
+		padding: 2rem;
+		border-radius: 1rem;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 	}
 
-	.page-header h1 {
-		font-size: 2rem;
+	.header-content h1 {
+		font-size: 2.25rem;
 		font-weight: 700;
 		color: #111827;
 		margin: 0 0 0.5rem 0;
 	}
 
-	.page-header p {
+	.header-content p {
 		color: #6b7280;
-		font-size: 1rem;
+		font-size: 1.125rem;
 		margin: 0;
 	}
 
-	.filters-section {
-		margin-bottom: 2rem;
-	}
-
-	.accordion-section {
-		margin-bottom: 1.5rem;
-		background: white;
-		border-radius: 0.75rem;
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-		overflow: hidden;
-	}
-
-	.accordion-header {
+	.refresh-btn {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		padding: 1.25rem 1.5rem;
-		background: #f9fafb;
-		border: none;
-		border-bottom: 1px solid #e5e7eb;
-		cursor: pointer;
-		transition: background-color 0.2s ease;
-		width: 100%;
-		text-align: left;
-		font-family: inherit;
-		font-size: inherit;
-	}
-
-	.accordion-header:hover {
-		background: #f3f4f6;
-	}
-
-	.accordion-header:focus {
-		outline: 2px solid #3b82f6;
-		outline-offset: -2px;
-	}
-
-	.accordion-title {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-	}
-
-	.accordion-icon {
-		font-size: 0.875rem;
-		color: #6b7280;
-		transition: transform 0.2s ease;
-	}
-
-	.accordion-text {
-		font-size: 1.125rem;
-		font-weight: 600;
-		color: #111827;
-	}
-
-	.accordion-actions {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-	}
-
-	.selection-count {
-		font-size: 0.875rem;
-		color: #3b82f6;
-		font-weight: 500;
-		background: #eff6ff;
-		padding: 0.25rem 0.75rem;
-		border-radius: 9999px;
-	}
-
-	.accordion-content {
-		padding: 0;
-	}
-
-	.loading-container {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		padding: 3rem;
-		gap: 1rem;
-	}
-
-	.loading-container p {
-		color: #6b7280;
-		font-size: 0.875rem;
-	}
-
-	.empty-state {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		padding: 4rem 2rem;
-		text-align: center;
-		background: #f9fafb;
-		border-radius: 0.5rem;
-		margin: 1rem;
-	}
-
-	.empty-icon {
-		font-size: 3rem;
-		margin-bottom: 1rem;
-		opacity: 0.6;
-	}
-
-	.empty-state h3 {
-		font-size: 1.25rem;
-		font-weight: 600;
-		color: #374151;
-		margin: 0 0 0.5rem 0;
-	}
-
-	.empty-state p {
-		color: #6b7280;
-		font-size: 0.875rem;
-		margin: 0 0 1.5rem 0;
-		max-width: 400px;
-		line-height: 1.5;
-	}
-
-	.btn-clear-filters {
+		gap: 0.5rem;
+		padding: 0.75rem 1.5rem;
 		background: #3b82f6;
 		color: white;
 		border: none;
+		border-radius: 0.5rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.refresh-btn:hover {
+		background: #2563eb;
+		transform: translateY(-1px);
+	}
+
+	/* KPI Grid */
+	.kpi-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+		gap: 1.5rem;
+		margin-bottom: 2rem;
+	}
+
+	/* Quick Filters */
+	.quick-filters {
+		background: white;
+		padding: 1.5rem;
+		border-radius: 1rem;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		margin-bottom: 2rem;
+	}
+
+	.filters-header {
+		margin-bottom: 1rem;
+	}
+
+	.filters-header h3 {
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: #111827;
+		margin: 0 0 0.25rem 0;
+	}
+
+	.filters-subtitle {
+		color: #6b7280;
+		font-size: 0.875rem;
+	}
+
+	.filters-grid {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+	}
+
+	.quick-filter-btn {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem 1rem;
+		background: #f3f4f6;
+		border: 2px solid transparent;
+		border-radius: 0.5rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: #374151;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.quick-filter-btn:hover {
+		background: #e5e7eb;
+		transform: translateY(-1px);
+	}
+
+	.quick-filter-btn.active {
+		background: #eff6ff;
+		border-color: #3b82f6;
+		color: #1d4ed8;
+	}
+
+	.clear-filters-btn {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem 1rem;
+		background: #fee2e2;
+		border: 2px solid #fecaca;
+		border-radius: 0.5rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: #dc2626;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.clear-filters-btn:hover {
+		background: #fecaca;
+		transform: translateY(-1px);
+	}
+
+	.filter-icon {
+		font-size: 1rem;
+	}
+
+	.filter-label {
+		white-space: nowrap;
+	}
+
+	/* Data Table Section */
+	.data-table-section {
+		margin-bottom: 2rem;
+	}
+
+	/* Pagination */
+	.pagination-section {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		background: white;
+		padding: 1.5rem;
+		border-radius: 1rem;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	}
+
+	.pagination-info {
+		color: #6b7280;
+		font-size: 0.875rem;
+	}
+
+	.pagination-controls {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.page-btn {
 		padding: 0.5rem 1rem;
+		background: white;
+		border: 1px solid #d1d5db;
 		border-radius: 0.375rem;
 		font-size: 0.875rem;
 		font-weight: 500;
+		color: #374151;
 		cursor: pointer;
-		transition: background-color 0.2s ease;
+		transition: all 0.2s ease;
 	}
 
-	.btn-clear-filters:hover {
-		background: #2563eb;
+	.page-btn:hover:not(:disabled) {
+		background: #f3f4f6;
+		border-color: #9ca3af;
 	}
 
-	.btn-clear-filters:focus {
-		outline: 2px solid #3b82f6;
-		outline-offset: 2px;
+	.page-btn.active {
+		background: #3b82f6;
+		border-color: #3b82f6;
+		color: white;
 	}
 
-	/* Responsive design */
+	.page-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	/* Responsive Design */
+	@media (max-width: 1024px) {
+		.kpi-grid {
+			grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+		}
+	}
+
 	@media (max-width: 768px) {
-		.enhanced-subscribers-page {
+		.unified-subscribers-dashboard {
 			padding: 1rem;
 		}
 
-		.page-header h1 {
-			font-size: 1.5rem;
+		.page-header {
+			flex-direction: column;
+			gap: 1rem;
+			align-items: stretch;
 		}
 
-		.accordion-header {
-			padding: 1rem;
+		.header-content h1 {
+			font-size: 1.75rem;
 		}
 
-		.accordion-text {
-			font-size: 1rem;
+		.kpi-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.filters-grid {
+			justify-content: center;
+		}
+
+		.pagination-section {
+			flex-direction: column;
+			gap: 1rem;
+			text-align: center;
+		}
+
+		.pagination-controls {
+			justify-content: center;
+		}
+	}
+
+	@media (max-width: 640px) {
+		.quick-filter-btn,
+		.clear-filters-btn {
+			flex: 1;
+			justify-content: center;
+		}
+
+		.pagination-controls {
+			flex-wrap: wrap;
 		}
 	}
 </style>

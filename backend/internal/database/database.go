@@ -240,6 +240,7 @@ func (db *DB) RunMigrations() error {
 		createOAuth2StatesTable,           // Add OAuth2 states table migration
 		addPriceIdToStripeSubscriptions,   // Add price_id to stripe_subscriptions table
 		enhanceStripeSubscriptionsTable,   // Add direct Stripe data columns to stripe_subscriptions
+		addManualVideoAccessColumn,        // Add manual_video_access column to users table
 	}
 
 	for i, migration := range migrations {
@@ -2217,6 +2218,30 @@ BEGIN
         -- Add indexes for better performance
         CREATE INDEX IF NOT EXISTS idx_stripe_subscriptions_stripe_price_id ON stripe_subscriptions(stripe_price_id);
         CREATE INDEX IF NOT EXISTS idx_stripe_subscriptions_stripe_product_id ON stripe_subscriptions(stripe_product_id);
+    END IF;
+END $$;
+`
+
+const addManualVideoAccessColumn = `
+-- Migration: Add manual_video_access column to users table
+-- This allows admins to manually grant video access to users regardless of subscription status
+
+DO $$ 
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
+        -- Add manual_video_access column
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'users' AND column_name = 'manual_video_access'
+        ) THEN
+            ALTER TABLE users ADD COLUMN manual_video_access BOOLEAN DEFAULT FALSE;
+            
+            -- Add index for better performance on video access queries
+            CREATE INDEX IF NOT EXISTS idx_users_manual_video_access ON users(manual_video_access) WHERE manual_video_access = TRUE;
+            
+            -- Log the migration
+            RAISE NOTICE 'Added manual_video_access column to users table';
+        END IF;
     END IF;
 END $$;
 `
