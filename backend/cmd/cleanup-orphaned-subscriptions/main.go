@@ -32,10 +32,10 @@ type OrphanedSubscription struct {
 
 func main() {
 	// Load configuration
-	cfg := config.Load()
+	cfg := config.New()
 
 	// Connect to database
-	db, err := database.Connect(cfg.DatabaseURL)
+	db, err := database.New(cfg)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -140,8 +140,7 @@ func cleanupOrphanedSubscriptions(db *database.DB) {
 	query := `
 		UPDATE stripe_subscriptions 
 		SET 
-			status = 'canceled',
-			updated_at = NOW()
+			status = 'canceled'
 		WHERE id IN (
 			SELECT ss.id
 			FROM stripe_subscriptions ss
