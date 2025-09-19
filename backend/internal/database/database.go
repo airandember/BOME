@@ -154,8 +154,8 @@ func New(cfg *config.Config) (*DB, error) {
 
 	// Configure connection pool for high-traffic production load
 	// Optimized for 10,000+ concurrent users with proper resource management
-	db.SetMaxOpenConns(50)                 // Conservative limit to prevent connection exhaustion
-	db.SetMaxIdleConns(10)                 // Keep minimal idle connections
+	db.SetMaxOpenConns(25)                 // Conservative limit to prevent connection exhaustion
+	db.SetMaxIdleConns(8)                  // Keep minimal idle connections
 	db.SetConnMaxLifetime(5 * time.Minute) // Recycle connections frequently
 	db.SetConnMaxIdleTime(2 * time.Minute) // Close idle connections quickly
 
