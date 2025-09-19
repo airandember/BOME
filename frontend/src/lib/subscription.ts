@@ -1,5 +1,26 @@
 import { apiRequest } from './auth';
 
+// Helper function to build subscription URLs using dedicated customer base URL
+function buildSubscriptionUrl(path: string): string {
+	const customerBaseUrl = import.meta.env.VITE_CUS_BASE_URL || 'http://localhost:8080/api';
+	return `${customerBaseUrl}${path}`;
+}
+
+// Helper function to get OAuth2 token from bome_auth_data
+function getAuthToken(): string {
+	const stored = localStorage.getItem('bome_auth_data');
+	if (stored) {
+		try {
+			const tokenData = JSON.parse(stored);
+			return tokenData.access_token || '';
+		} catch (e) {
+			console.error('Failed to parse bome_auth_data:', e);
+		}
+	}
+	// Fallback to old token storage
+	return localStorage.getItem('token') || '';
+}
+
 export interface SubscriptionPlan {
 	id: string;
 	name: string;
@@ -93,14 +114,29 @@ export const subscriptionService = {
 
 	// Get current user's subscription
 	getCurrentSubscription: async () => {
-		const response = await apiRequest('/api/subscriptions/');
+		// Note: subscription routes are at /api/subscriptions/ (not /api/v1/subscriptions/)
+		console.log('🔧 DEBUG: getCurrentSubscription called - using buildSubscriptionUrl helper');
+		const url = buildSubscriptionUrl('/subscriptions/');
+		console.log('🔧 DEBUG: Full URL being called:', url);
+		const response = await fetch(url, {
+			method: 'GET',
+			headers: {
+				'Content-Type': 'application/json',
+				'Authorization': `Bearer ${getAuthToken()}`
+			}
+		});
 		return response.json();
 	},
 
 	// Create a new subscription
 	createSubscription: async (planId: string, paymentMethodId: string) => {
-		const response = await apiRequest('/api/subscriptions/', {
+		// Note: subscription routes are at /api/subscriptions/ (not /api/v1/subscriptions/)
+		const response = await fetch(buildSubscriptionUrl('/subscriptions/'), {
 			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'Authorization': `Bearer ${getAuthToken()}`
+			},
 			body: JSON.stringify({
 				planId,
 				paymentMethodId
@@ -111,8 +147,12 @@ export const subscriptionService = {
 
 	// Cancel subscription
 	cancelSubscription: async (subscriptionId: string, cancelAtPeriodEnd: boolean = true) => {
-		const response = await apiRequest('/api/subscriptions/', {
+		const response = await fetch(buildSubscriptionUrl('/subscriptions/'), {
 			method: 'DELETE',
+			headers: {
+				'Content-Type': 'application/json',
+				'Authorization': `Bearer ${getAuthToken()}`
+			},
 			body: JSON.stringify({
 				at_period_end: cancelAtPeriodEnd
 			})
@@ -122,8 +162,12 @@ export const subscriptionService = {
 
 	// Reactivate subscription
 	reactivateSubscription: async (subscriptionId: string) => {
-		const response = await apiRequest(`/subscriptions/${subscriptionId}/reactivate`, {
+		const response = await fetch(buildSubscriptionUrl(`/subscriptions/${subscriptionId}/reactivate`), {
 			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'Authorization': `Bearer ${getAuthToken()}`
+			},
 			body: JSON.stringify({})
 		});
 		return response.json();
@@ -131,8 +175,12 @@ export const subscriptionService = {
 
 	// Update subscription (change plan)
 	updateSubscription: async (subscriptionId: string, planId: string) => {
-		const response = await apiRequest('/api/subscriptions/', {
+		const response = await fetch(buildSubscriptionUrl('/subscriptions/'), {
 			method: 'PUT',
+			headers: {
+				'Content-Type': 'application/json',
+				'Authorization': `Bearer ${getAuthToken()}`
+			},
 			body: JSON.stringify({
 				plan_id: planId
 			})
@@ -210,8 +258,12 @@ export const subscriptionService = {
 
 	// Create customer portal session
 	createCustomerPortalSession: async (returnUrl: string) => {
-		const response = await apiRequest('/subscriptions/portal', {
+		const response = await fetch(buildSubscriptionUrl('/subscriptions/portal'), {
 			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'Authorization': `Bearer ${getAuthToken()}`
+			},
 			body: JSON.stringify({
 				returnUrl
 			})

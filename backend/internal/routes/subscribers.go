@@ -110,6 +110,11 @@ func SetupSubscriberRoutes(router *gin.RouterGroup, db *database.DB, subscriberS
 			activateSubscriber(c, subscriberService)
 		})
 
+		// Toggle manual video access
+		admin.POST("/:id/manual-access", func(c *gin.Context) {
+			toggleManualAccess(c, subscriberService)
+		})
+
 		// Get subscriber history
 		admin.GET("/:id/history", func(c *gin.Context) {
 			getSubscriberHistory(c, subscriberService)
@@ -157,9 +162,10 @@ func getSubscribers(c *gin.Context, service *services.SubscriberService) {
 	createdDateStr := c.Query("created_date")
 	startDateStr := c.Query("start_date")
 	endDateStr := c.Query("end_date")
+	subscriptionHistoryStr := c.Query("has_subscription_history")
 
-	log.Printf("getSubscribers: Query params - limit=%s, offset=%s, plan_id=%s, status=%s, search=%s, email_verified=%s, role=%s, last_login=%s, created_date=%s",
-		limitStr, offsetStr, planIDStr, statusStr, searchStr, emailVerifiedStr, roleStr, lastLoginStr, createdDateStr)
+	log.Printf("getSubscribers: Query params - limit=%s, offset=%s, plan_id=%s, status=%s, search=%s, email_verified=%s, role=%s, last_login=%s, created_date=%s, has_subscription_history=%s",
+		limitStr, offsetStr, planIDStr, statusStr, searchStr, emailVerifiedStr, roleStr, lastLoginStr, createdDateStr, subscriptionHistoryStr)
 
 	// Debug: Print all query parameters
 	log.Printf("getSubscribers: All query parameters: %+v", c.Request.URL.Query())
@@ -280,6 +286,12 @@ func getSubscribers(c *gin.Context, service *services.SubscriberService) {
 				}
 			}
 		}
+	}
+
+	if subscriptionHistoryStr != "" {
+		subscriptionHistory := subscriptionHistoryStr == "true"
+		filters.HasSubscriptionHistory = &subscriptionHistory
+		log.Printf("getSubscribers: Subscription history filter set to: %v", *filters.HasSubscriptionHistory)
 	}
 
 	log.Printf("getSubscribers: Calling service with limit=%d, offset=%d, filters=%+v", limit, offset, filters)
@@ -744,28 +756,36 @@ func getNonSubscriberCount(c *gin.Context, service *services.SubscriberService) 
 
 // updateSubscriber handles PUT /api/admin/subscribers/:id
 func updateSubscriber(c *gin.Context, service *services.SubscriberService) {
+	log.Printf("🔧 updateSubscriber called for ID: %s", c.Param("id"))
+
 	idStr := c.Param("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
+		log.Printf("❌ Invalid subscriber ID: %s", idStr)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid subscriber ID"})
 		return
 	}
 
 	var req struct {
-		FirstName     string `json:"first_name"`
-		LastName      string `json:"last_name"`
-		Email         string `json:"email"`
-		EmailVerified bool   `json:"email_verified"`
-		PlanID        *int   `json:"plan_id"`
-		SubID         *int   `json:"sub_id"`
-		Status        string `json:"status"`
-		Notes         string `json:"notes"`
+		FirstName         string `json:"first_name"`
+		LastName          string `json:"last_name"`
+		Email             string `json:"email"`
+		EmailVerified     bool   `json:"email_verified"`
+		Role              string `json:"role"`
+		ManualVideoAccess *bool  `json:"manual_video_access"`
+		PlanID            *int   `json:"plan_id"`
+		SubID             *int   `json:"sub_id"`
+		Status            string `json:"status"`
+		Notes             string `json:"notes"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("❌ Failed to bind JSON: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
+
+	log.Printf("🔧 Request data: %+v", req)
 
 	// Update subscriber
 	updates := map[string]interface{}{
@@ -776,6 +796,16 @@ func updateSubscriber(c *gin.Context, service *services.SubscriberService) {
 		"notes":          req.Notes,
 	}
 
+	// Add role if provided
+	if req.Role != "" {
+		updates["role"] = req.Role
+	}
+
+	// Add manual video access if provided
+	if req.ManualVideoAccess != nil {
+		updates["manual_video_access"] = *req.ManualVideoAccess
+	}
+
 	// Handle plan_id or sub_id (they both map to the same database field)
 	if req.PlanID != nil {
 		updates["sub_id"] = *req.PlanID
@@ -784,15 +814,21 @@ func updateSubscriber(c *gin.Context, service *services.SubscriberService) {
 	}
 
 	if req.Status != "" {
-		updates["status"] = req.Status
+		// Map status to is_active boolean
+		// "active" -> true, "suspended"/"inactive" -> false
+		updates["is_active"] = (req.Status == "active")
 	}
+
+	log.Printf("🔧 Updates to apply: %+v", updates)
 
 	subscriber, err := service.UpdateSubscriber(id, updates)
 	if err != nil {
+		log.Printf("❌ UpdateSubscriber failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	log.Printf("✅ Subscriber updated successfully: %+v", subscriber)
 	c.JSON(http.StatusOK, subscriber)
 }
 
@@ -1036,5 +1072,41 @@ func getSubscriberCountByEmailVerification(c *gin.Context, service *services.Sub
 	c.JSON(http.StatusOK, gin.H{
 		"count":          count,
 		"email_verified": emailVerified,
+	})
+}
+
+// toggleManualAccess handles POST /api/admin/subscribers/:id/manual-access
+func toggleManualAccess(c *gin.Context, service *services.SubscriberService) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid subscriber ID"})
+		return
+	}
+
+	var req struct {
+		ManualAccess bool `json:"manual_access"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	// Update manual video access
+	updates := map[string]interface{}{
+		"manual_video_access": req.ManualAccess,
+	}
+
+	subscriber, err := service.UpdateSubscriber(id, updates)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":       true,
+		"manual_access": req.ManualAccess,
+		"subscriber":    subscriber,
 	})
 }

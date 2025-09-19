@@ -283,6 +283,141 @@ func (s *StripeSyncService) SyncSubscriptionsManual(ctx context.Context) error {
 	return nil
 }
 
+// CleanupOrphanedSubscriptions cleans up subscriptions with invalid product references
+func (s *StripeSyncService) CleanupOrphanedSubscriptions(ctx context.Context) error {
+	log.Println("🧹 Starting invalid product subscription cleanup...")
+
+	// Create sync job for tracking
+	jobID, err := s.createSyncJob("cleanup", "subscription", 1)
+	if err != nil {
+		return fmt.Errorf("failed to create cleanup job: %w", err)
+	}
+
+	// Ensure job completion is tracked
+	defer func() {
+		s.completeSyncJob(jobID, err)
+	}()
+
+	// First, get statistics about orphaned subscriptions
+	stats, err := s.getOrphanedSubscriptionStats()
+	if err != nil {
+		return fmt.Errorf("failed to get orphaned subscription stats: %w", err)
+	}
+
+	log.Printf("📊 Orphaned subscription analysis:")
+	log.Printf("   Total active subscriptions: %d", stats.TotalActive)
+	log.Printf("   Missing product names: %d", stats.MissingProductNames)
+	log.Printf("   Orphaned product IDs: %d", stats.OrphanedProductIDs)
+	log.Printf("   Total problematic: %d", stats.TotalProblematic)
+
+	if stats.TotalProblematic == 0 {
+		log.Println("✅ No invalid product subscriptions found - database is clean!")
+		return nil
+	}
+
+	// Perform cleanup - mark problematic subscriptions as having invalid products
+	query := `
+		UPDATE stripe_subscriptions 
+		SET 
+			status = 'invalid_product'
+		WHERE id IN (
+			SELECT ss.id
+			FROM stripe_subscriptions ss
+			LEFT JOIN stripe_products sp ON ss.stripe_product_id = sp.stripe_id
+			WHERE ss.status IN ('active', 'trialing') 
+				AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+				AND (
+					-- Missing product name
+					(ss.product_name IS NULL OR ss.product_name = '')
+					OR 
+					-- Orphaned product ID
+					(ss.stripe_product_id IS NOT NULL AND sp.stripe_id IS NULL)
+				)
+		)
+	`
+
+	result, err := s.db.Exec(query)
+	if err != nil {
+		return fmt.Errorf("failed to cleanup orphaned subscriptions: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	log.Printf("✅ Successfully marked %d orphaned subscriptions as 'invalid_product'", rowsAffected)
+
+	// Verify cleanup
+	verifyStats, err := s.getOrphanedSubscriptionStats()
+	if err != nil {
+		log.Printf("⚠️ Failed to verify cleanup: %v", err)
+	} else {
+		log.Printf("🔍 Post-cleanup verification:")
+		log.Printf("   Total active subscriptions: %d", verifyStats.TotalActive)
+		log.Printf("   Remaining problematic: %d", verifyStats.TotalProblematic)
+		if verifyStats.TotalProblematic == 0 {
+			log.Println("✅ Cleanup successful - no more invalid product subscriptions!")
+		} else {
+			log.Printf("⚠️ Still found %d problematic subscriptions after cleanup", verifyStats.TotalProblematic)
+		}
+	}
+
+	log.Println("✅ Invalid product subscription cleanup completed")
+	return nil
+}
+
+// OrphanedSubscriptionStats holds statistics about orphaned subscriptions
+type OrphanedSubscriptionStats struct {
+	TotalActive         int
+	MissingProductNames int
+	OrphanedProductIDs  int
+	TotalProblematic    int
+}
+
+// getOrphanedSubscriptionStats returns statistics about orphaned subscriptions
+func (s *StripeSyncService) getOrphanedSubscriptionStats() (*OrphanedSubscriptionStats, error) {
+	stats := &OrphanedSubscriptionStats{}
+
+	// Total active subscriptions
+	err := s.db.QueryRow(`
+		SELECT COUNT(*) 
+		FROM stripe_subscriptions 
+		WHERE status IN ('active', 'trialing') 
+			AND (current_period_end IS NULL OR current_period_end > NOW())
+	`).Scan(&stats.TotalActive)
+	if err != nil {
+		return nil, err
+	}
+
+	// Missing product names
+	err = s.db.QueryRow(`
+		SELECT COUNT(*) 
+		FROM stripe_subscriptions 
+		WHERE status IN ('active', 'trialing') 
+			AND (current_period_end IS NULL OR current_period_end > NOW())
+			AND (product_name IS NULL OR product_name = '')
+	`).Scan(&stats.MissingProductNames)
+	if err != nil {
+		return nil, err
+	}
+
+	// Orphaned product IDs
+	err = s.db.QueryRow(`
+		SELECT COUNT(*) 
+		FROM stripe_subscriptions ss
+		LEFT JOIN stripe_products sp ON ss.stripe_product_id = sp.stripe_id
+		WHERE ss.status IN ('active', 'trialing') 
+			AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+			AND ss.stripe_product_id IS NOT NULL
+			AND sp.stripe_id IS NULL
+	`).Scan(&stats.OrphanedProductIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Total problematic
+	stats.TotalProblematic = stats.MissingProductNames + stats.OrphanedProductIDs
+
+	return stats, nil
+}
+
 // InitialDataSync performs the initial 1.5-year historical data sync
 func (s *StripeSyncService) InitialDataSync(ctx context.Context) error {
 	if !s.stripeService.IsEnabled() {

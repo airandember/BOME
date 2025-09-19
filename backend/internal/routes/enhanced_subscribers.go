@@ -93,9 +93,7 @@ func getEnhancedSubscribers(c *gin.Context, service *services.EnhancedSubscriber
 		}
 	}
 
-	if videoAccessSource := c.Query("video_access_source"); videoAccessSource != "" {
-		filters.VideoAccessSource = &videoAccessSource
-	}
+	// VideoAccessSource filter removed - plans are now the only source
 
 	if isExpiringSoon := c.Query("is_expiring_soon"); isExpiringSoon != "" {
 		if val, err := strconv.ParseBool(isExpiringSoon); err == nil {

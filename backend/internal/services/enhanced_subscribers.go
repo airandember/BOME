@@ -25,18 +25,20 @@ type EnhancedSubscriber struct {
 	Role          string `json:"role"`
 
 	// Subscription Status (Key Goals)
-	HasActivePlan     bool   `json:"has_active_plan"`
-	HasVideoAccess    bool   `json:"has_video_access"`
-	VideoAccessSource string `json:"video_access_source"` // 'plan', 'manual', 'none'
+	HasActivePlan  bool `json:"has_active_plan"`
+	HasVideoAccess bool `json:"has_video_access"`
+	// VideoAccessSource removed - plans are now the only source
 
 	// Plan Information
-	PlanName      string     `json:"plan_name"`
-	PlanType      string     `json:"plan_type"` // 'premium', 'basic', 'none'
-	PlanStartDate *time.Time `json:"plan_start_date"`
-	PlanEndDate   *time.Time `json:"plan_end_date"`
-	PlanStatus    string     `json:"plan_status"` // 'active', 'expired', 'trial', 'cancelled', 'none'
-	PlanPrice     float64    `json:"plan_price"`
-	PlanCurrency  string     `json:"plan_currency"`
+	PlanName           string     `json:"plan_name"`
+	PlanLegacyStatus   string     `json:"plan_legacy_status"` // 'Legacy', 'Current', 'Unknown'
+	PlanType           string     `json:"plan_type"`          // 'premium', 'basic', 'none'
+	PlanStartDate      *time.Time `json:"plan_start_date"`
+	BillingPeriodStart *time.Time `json:"billing_period_start"`
+	BillingPeriodEnd   *time.Time `json:"billing_period_end"`
+	PlanStatus         string     `json:"plan_status"` // 'active', 'expired', 'trial', 'cancelled', 'none'
+	PlanPrice          float64    `json:"plan_price"`
+	PlanCurrency       string     `json:"plan_currency"`
 
 	// Business Intelligence
 	MRRContribution          float64 `json:"mrr_contribution"`
@@ -59,20 +61,20 @@ type EnhancedSubscriber struct {
 
 // EnhancedSubscriberFilters represents filters for enhanced subscriber queries
 type EnhancedSubscriberFilters struct {
-	Search            string     `json:"search"`
-	PlanType          *string    `json:"plan_type"` // 'premium', 'basic', 'none'
-	HasActivePlan     *bool      `json:"has_active_plan"`
-	HasVideoAccess    *bool      `json:"has_video_access"`
-	VideoAccessSource *string    `json:"video_access_source"` // 'plan', 'manual', 'none'
-	IsExpiringSoon    *bool      `json:"is_expiring_soon"`
-	EmailVerified     *bool      `json:"email_verified"`
-	Role              *string    `json:"role"`
-	CreatedDateFrom   *time.Time `json:"created_date_from"`
-	CreatedDateTo     *time.Time `json:"created_date_to"`
-	LastLoginFrom     *time.Time `json:"last_login_from"`
-	LastLoginTo       *time.Time `json:"last_login_to"`
-	MinMRR            *float64   `json:"min_mrr"`
-	MaxMRR            *float64   `json:"max_mrr"`
+	Search         string  `json:"search"`
+	PlanType       *string `json:"plan_type"` // 'premium', 'basic', 'none'
+	HasActivePlan  *bool   `json:"has_active_plan"`
+	HasVideoAccess *bool   `json:"has_video_access"`
+	// VideoAccessSource removed - plans are now the only source
+	IsExpiringSoon  *bool      `json:"is_expiring_soon"`
+	EmailVerified   *bool      `json:"email_verified"`
+	Role            *string    `json:"role"`
+	CreatedDateFrom *time.Time `json:"created_date_from"`
+	CreatedDateTo   *time.Time `json:"created_date_to"`
+	LastLoginFrom   *time.Time `json:"last_login_from"`
+	LastLoginTo     *time.Time `json:"last_login_to"`
+	MinMRR          *float64   `json:"min_mrr"`
+	MaxMRR          *float64   `json:"max_mrr"`
 }
 
 // SubscriberKPIs represents key performance indicators for subscribers
@@ -125,26 +127,18 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 			-- Subscription Status (Key Goals)
 			CASE 
 				WHEN (u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) 
-					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()) 
+					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true) 
 				THEN true 
 				ELSE false 
 			END as has_active_plan,
 			
 			CASE 
 				WHEN (u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) 
-					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW())
+					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true)
 					OR u.manual_video_access = true
 				THEN true 
 				ELSE false 
 			END as has_video_access,
-			
-			CASE 
-				WHEN u.manual_video_access = true THEN 'manual'
-				WHEN (u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) 
-					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()) 
-				THEN 'plan'
-				ELSE 'none'
-			END as video_access_source,
 			
 			-- Plan Information
 			COALESCE(
@@ -158,6 +152,12 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 			) as plan_name,
 			
 			CASE 
+				WHEN spr.legacy_product = true THEN 'Legacy'
+				WHEN spr.legacy_product = false THEN 'Current'
+				ELSE 'Unknown'
+			END as plan_legacy_status,
+			
+			CASE 
 				WHEN LOWER(COALESCE(sp.name, ss.product_name, '')) LIKE '%premium%' 
 					OR LOWER(COALESCE(sp.name, ss.product_name, '')) LIKE '%yearly%' 
 				THEN 'premium'
@@ -166,8 +166,9 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 				ELSE 'none'
 			END as plan_type,
 			
-			ss.current_period_start as plan_start_date,
-			ss.current_period_end as plan_end_date,
+			ss.created_at as plan_start_date,
+			ss.current_period_start as billing_period_start,
+			ss.current_period_end as billing_period_end,
 			
 			CASE 
 				WHEN ss.status = 'active' AND ss.current_period_end > NOW() THEN 'active'
@@ -234,7 +235,9 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 			u.stripe_customer_id = sc.stripe_id OR 
 			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
-		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing', 'canceled')
+		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing') AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+		LEFT JOIN stripe_prices sp_price ON ss.price_id = sp_price.id
+		LEFT JOIN stripe_products spr ON sp_price.product_id = spr.id
 		WHERE u.is_active = true
 	`
 
@@ -251,30 +254,21 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 
 		if filters.HasActivePlan != nil {
 			if *filters.HasActivePlan {
-				query += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()))"
+				query += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true))"
 			} else {
-				query += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()))"
+				query += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true))"
 			}
 		}
 
 		if filters.HasVideoAccess != nil {
 			if *filters.HasVideoAccess {
-				query += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()) OR u.manual_video_access = true)"
+				query += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true) OR u.manual_video_access = true)"
 			} else {
-				query += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()) OR u.manual_video_access = true)"
+				query += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true) OR u.manual_video_access = true)"
 			}
 		}
 
-		if filters.VideoAccessSource != nil {
-			switch *filters.VideoAccessSource {
-			case "manual":
-				query += " AND u.manual_video_access = true"
-			case "plan":
-				query += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW())) AND COALESCE(u.manual_video_access, false) = false"
-			case "none":
-				query += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()) OR u.manual_video_access = true)"
-			}
-		}
+		// VideoAccessSource filter removed - plans are now the only source
 
 		if filters.PlanType != nil {
 			switch *filters.PlanType {
@@ -337,7 +331,9 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 			u.stripe_customer_id = sc.stripe_id OR 
 			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
-		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing', 'canceled')
+		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing') AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+		LEFT JOIN stripe_prices sp_price ON ss.price_id = sp_price.id
+		LEFT JOIN stripe_products spr ON sp_price.product_id = spr.id
 		WHERE u.is_active = true
 	`
 
@@ -354,30 +350,30 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 
 		if filters.HasActivePlan != nil {
 			if *filters.HasActivePlan {
-				countQuery += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()))"
+				countQuery += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true))"
 			} else {
-				countQuery += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()))"
+				countQuery += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true))"
 			}
 		}
 
 		if filters.HasVideoAccess != nil {
 			if *filters.HasVideoAccess {
-				countQuery += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()) OR u.manual_video_access = true)"
+				countQuery += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true) OR u.manual_video_access = true)"
 			} else {
-				countQuery += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()) OR u.manual_video_access = true)"
+				countQuery += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true) OR u.manual_video_access = true)"
 			}
 		}
 
-		if filters.VideoAccessSource != nil {
-			switch *filters.VideoAccessSource {
-			case "manual":
-				countQuery += " AND u.manual_video_access = true"
-			case "plan":
-				countQuery += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW())) AND COALESCE(u.manual_video_access, false) = false"
-			case "none":
-				countQuery += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()) OR u.manual_video_access = true)"
-			}
-		}
+		//if filters.VideoAccessSource != nil {
+		//	switch *filters.VideoAccessSource {
+		//	case "manual":
+		//		countQuery += " AND u.manual_video_access = true"
+		//	case "plan":
+		//		countQuery += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true)) AND COALESCE(u.manual_video_access, false) = false"
+		//	case "none":
+		//		countQuery += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true) OR u.manual_video_access = true)"
+		//	}
+		//}
 
 		if filters.PlanType != nil {
 			switch *filters.PlanType {
@@ -464,11 +460,12 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 			&sub.Role,
 			&sub.HasActivePlan,
 			&sub.HasVideoAccess,
-			&sub.VideoAccessSource,
 			&sub.PlanName,
+			&sub.PlanLegacyStatus,
 			&sub.PlanType,
 			&sub.PlanStartDate,
-			&sub.PlanEndDate,
+			&sub.BillingPeriodStart,
+			&sub.BillingPeriodEnd,
 			&sub.PlanStatus,
 			&sub.PlanPrice,
 			&sub.PlanCurrency,
@@ -537,12 +534,12 @@ func (s *EnhancedSubscriberService) GetKPIs() (*SubscriberKPIs, error) {
 			COUNT(DISTINCT u.id) as total_subscribers,
 			COUNT(DISTINCT CASE 
 				WHEN (u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) 
-					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()) 
+					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true) 
 				THEN u.id 
 			END) as active_subscribers,
 			COUNT(DISTINCT CASE 
 				WHEN (u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) 
-					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW())
+					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true)
 					OR u.manual_video_access = true
 				THEN u.id 
 			END) as video_access_users,
@@ -587,7 +584,9 @@ func (s *EnhancedSubscriberService) GetKPIs() (*SubscriberKPIs, error) {
 			u.stripe_customer_id = sc.stripe_id OR 
 			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
-		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing', 'canceled')
+		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing') AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+		LEFT JOIN stripe_prices sp_price ON ss.price_id = sp_price.id
+		LEFT JOIN stripe_products spr ON sp_price.product_id = spr.id
 		WHERE u.is_active = true
 	`
 

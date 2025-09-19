@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"bome-backend/internal/config"
@@ -73,18 +74,29 @@ func (db *DB) GetConnectionPoolStats() *ConnectionPoolStats {
 	}
 }
 
-// LogConnectionPoolStats logs current connection pool statistics
+// LogConnectionPoolStats logs current connection pool statistics only when there are issues
 func (db *DB) LogConnectionPoolStats() {
 	stats := db.GetConnectionPoolStats()
-	log.Printf("📊 DB Pool Stats: %s | Open: %d/%d (%.1f%%) | InUse: %d | Idle: %d | Waits: %d",
-		stats.HealthStatus,
-		stats.OpenConnections,
-		stats.MaxOpenConnections,
-		stats.UtilizationPercentage,
-		stats.InUse,
-		stats.Idle,
-		stats.WaitCount,
-	)
+
+	// Only log when there are potential issues:
+	// - High utilization (>80%)
+	// - Wait counts (connections waiting)
+	// - Health status is not HEALTHY
+	shouldLog := stats.UtilizationPercentage > 80.0 ||
+		stats.WaitCount > 0 ||
+		!strings.Contains(stats.HealthStatus, "HEALTHY")
+
+	if shouldLog {
+		log.Printf("📊 DB Pool Stats: %s | Open: %d/%d (%.1f%%) | InUse: %d | Idle: %d | Waits: %d",
+			stats.HealthStatus,
+			stats.OpenConnections,
+			stats.MaxOpenConnections,
+			stats.UtilizationPercentage,
+			stats.InUse,
+			stats.Idle,
+			stats.WaitCount,
+		)
+	}
 }
 
 func (db *DB) UpdateTagCategories(tagID int, categoryIDs []int) error {

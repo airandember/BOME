@@ -64,6 +64,7 @@ export interface SubscriberFilters {
 		end: string;
 	};
 	sub_id?: number;
+	has_subscription_history?: boolean; // true = has history, false = no history, undefined = all
 }
 
 export interface NonSubscriberFilters {
@@ -131,13 +132,16 @@ export class StreamingSubscriberService {
 					console.log('Adding created_date filter:', params.filters.created_date);
 					queryParams.append('created_date', params.filters.created_date);
 				}
-				if (params.filters.date_range) {
-					queryParams.append('start_date', params.filters.date_range.start);
-					queryParams.append('end_date', params.filters.date_range.end);
-				}
+			if (params.filters.date_range) {
+				queryParams.append('start_date', params.filters.date_range.start);
+				queryParams.append('end_date', params.filters.date_range.end);
 			}
+			if (params.filters.has_subscription_history !== undefined) {
+				queryParams.append('has_subscription_history', params.filters.has_subscription_history.toString());
+			}
+		}
 
-			const url = `/admin/subscribers/?${queryParams}`;
+		const url = `/admin/subscribers/?${queryParams}`;
 			console.log('Making API request to:', url);
 			console.log('Query parameters being sent:', queryParams.toString());
 			
@@ -213,13 +217,14 @@ export class StreamingSubscriberService {
 			console.log('API response received:', response);
 			
 			if (response.data) {
+				const data = response.data as any; // Type assertion to fix TypeScript error
 				// Transform the response to match expected format
 				return {
-					subscribers: response.data.subscribers || [],
+					subscribers: data.subscribers || [],
 					pagination: {
-						limit: response.data.limit || params?.limit || 50,
-						offset: response.data.offset || params?.offset || 0,
-						total: response.data.total_count || 0
+						limit: data.limit || params?.limit || 50,
+						offset: data.offset || params?.offset || 0,
+						total: data.total_count || 0
 					}
 				};
 			} else {
@@ -253,7 +258,8 @@ export class StreamingSubscriberService {
 			const response = await api.get(`${endpoint}?${queryParams}`);
 			
 			if (response.data) {
-				return response.data.count || 0;
+				const data = response.data as any; // Type assertion to fix TypeScript error
+				return data.count || 0;
 			} else {
 				throw new Error(response.error || 'Failed to get subscriber count');
 			}
@@ -277,6 +283,9 @@ export class StreamingSubscriberService {
 			if (filters?.date_range) {
 				queryParams.append('start_date', filters.date_range.start);
 				queryParams.append('end_date', filters.date_range.end);
+			}
+			if (filters?.has_subscription_history !== undefined) {
+				queryParams.append('has_subscription_history', filters.has_subscription_history.toString());
 			}
 
 			const response = await api.get(`/admin/subscribers/count?${queryParams}`);

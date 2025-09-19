@@ -67,6 +67,7 @@ type SubscriberFilters struct {
 		Start time.Time `json:"start"`
 		End   time.Time `json:"end"`
 	} `json:"date_range"`
+	HasSubscriptionHistory *bool `json:"has_subscription_history"` // true, false, or nil for all
 }
 
 // NewSubscriberService creates a new subscriber service
@@ -174,6 +175,18 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 			query += fmt.Sprintf(" AND u.created_at BETWEEN $%d AND $%d", argCount, argCount+1)
 			args = append(args, filters.DateRange.Start, filters.DateRange.End)
 			argCount++
+		}
+
+		if filters.HasSubscriptionHistory != nil {
+			fmt.Printf("DEBUG: Processing subscription history filter: %v\n", *filters.HasSubscriptionHistory)
+			if *filters.HasSubscriptionHistory {
+				// Users who have subscription history (has_subbed = true)
+				query += " AND COALESCE(u.has_subbed, false) = true"
+			} else {
+				// Users who have no subscription history (has_subbed = false or NULL)
+				query += " AND COALESCE(u.has_subbed, false) = false"
+			}
+			fmt.Printf("DEBUG: Subscription history filter added\n")
 		}
 	}
 
@@ -315,6 +328,42 @@ func (s *SubscriberService) GetSubscriberByID(userID int) (*Subscriber, error) {
 	return subscriber, nil
 }
 
+// GetUserAsSubscriber gets any user as a subscriber (doesn't require active subscription)
+func (s *SubscriberService) GetUserAsSubscriber(userID int) (*Subscriber, error) {
+	query := `
+		SELECT 
+			u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified,
+			u.stripe_customer_id, u.last_login, u.created_at, u.updated_at,
+			COALESCE(s.id, 0) as subscription_id, 
+			COALESCE(s.status, '') as subscription_status,
+			s.current_period_start, s.current_period_end, s.stripe_subscription_id,
+			COALESCE(sp.id, 0) as plan_id, 
+			COALESCE(sp.name, '') as plan_name, 
+			COALESCE(sp.price, 0) as plan_price, 
+			COALESCE(sp.currency, '') as plan_currency
+		FROM users u
+		LEFT JOIN subscriptions s ON u.id = s.user_id AND s.deleted_at IS NULL
+		LEFT JOIN subscription_plans sp ON s.plan_id = sp.id
+		WHERE u.id = $1
+	`
+
+	subscriber := &Subscriber{}
+	err := s.db.QueryRow(query, userID).Scan(
+		&subscriber.ID, &subscriber.Email, &subscriber.FirstName, &subscriber.LastName,
+		&subscriber.Role, &subscriber.EmailVerified, &subscriber.StripeCustomerID,
+		&subscriber.LastLogin, &subscriber.CreatedAt, &subscriber.UpdatedAt,
+		&subscriber.SubscriptionID, &subscriber.SubscriptionStatus,
+		&subscriber.CurrentPeriodStart, &subscriber.CurrentPeriodEnd,
+		&subscriber.StripeSubscriptionID, &subscriber.PlanID, &subscriber.PlanName,
+		&subscriber.PlanPrice, &subscriber.PlanCurrency,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user as subscriber: %w", err)
+	}
+
+	return subscriber, nil
+}
+
 // GetSubscriberCount returns the total count of subscribers
 func (s *SubscriberService) GetSubscriberCount(filters *SubscriberFilters) (int, error) {
 	query := `
@@ -382,6 +431,16 @@ func (s *SubscriberService) GetSubscriberCount(filters *SubscriberFilters) (int,
 			args = append(args, filters.DateRange.Start, filters.DateRange.End)
 			argCount++
 		}
+
+		if filters.HasSubscriptionHistory != nil {
+			if *filters.HasSubscriptionHistory {
+				// Users who have subscription history (has_subbed = true)
+				query += " AND COALESCE(u.has_subbed, false) = true"
+			} else {
+				// Users who have no subscription history (has_subbed = false or NULL)
+				query += " AND COALESCE(u.has_subbed, false) = false"
+			}
+		}
 	}
 
 	var count int
@@ -408,6 +467,7 @@ func (s *SubscriberService) GetSubscribersByEmailVerification(emailVerified bool
 		emailFilters.LastLogin = filters.LastLogin
 		emailFilters.CreatedDate = filters.CreatedDate
 		emailFilters.DateRange = filters.DateRange
+		emailFilters.HasSubscriptionHistory = filters.HasSubscriptionHistory
 	}
 
 	return s.GetSubscribers(limit, offset, emailFilters)
@@ -428,6 +488,7 @@ func (s *SubscriberService) GetSubscriberCountByEmailVerification(emailVerified 
 		emailFilters.LastLogin = filters.LastLogin
 		emailFilters.CreatedDate = filters.CreatedDate
 		emailFilters.DateRange = filters.DateRange
+		emailFilters.HasSubscriptionHistory = filters.HasSubscriptionHistory
 	}
 
 	return s.GetSubscriberCount(emailFilters)
@@ -852,6 +913,16 @@ func (s *SubscriberService) DebugSubscriptions() error {
 
 // UpdateSubscriber updates a subscriber's information
 func (s *SubscriberService) UpdateSubscriber(userID int, updates map[string]interface{}) (*Subscriber, error) {
+	// First check if user exists
+	var exists bool
+	err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)", userID).Scan(&exists)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check if user exists: %w", err)
+	}
+	if !exists {
+		return nil, fmt.Errorf("user with ID %d does not exist", userID)
+	}
+
 	// Build update query dynamically
 	query := "UPDATE users SET "
 	args := []interface{}{}
@@ -869,13 +940,22 @@ func (s *SubscriberService) UpdateSubscriber(userID int, updates map[string]inte
 	query += fmt.Sprintf(", updated_at = NOW() WHERE id = $%d", argCount+1)
 	args = append(args, userID)
 
-	_, err := s.db.Exec(query, args...)
+	result, err := s.db.Exec(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update subscriber: %w", err)
 	}
 
-	// Return the updated subscriber
-	return s.GetSubscriberByID(userID)
+	// Check if any rows were affected
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return nil, fmt.Errorf("no rows were updated for user ID %d", userID)
+	}
+
+	// Return the updated subscriber - use a simpler query that doesn't require subscriptions
+	return s.GetUserAsSubscriber(userID)
 }
 
 // SuspendSubscriber suspends a subscriber's account

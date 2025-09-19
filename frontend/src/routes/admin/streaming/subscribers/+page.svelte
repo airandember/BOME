@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { StreamingSubscriberService, type Subscriber, type NonSubscriber, type SubscriberFilters, type NonSubscriberFilters } from '$lib/services/streaming-subscribers';
+	import { subscriberCache } from '$lib/cache/subscriber-cache';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import SubscriberFiltersComponent from './SubscriberFilters.svelte';
@@ -17,7 +18,7 @@
 	import StripeCustomers from './customers/+page.svelte';
 
 	// State
-	let activeTab: 'subscribers' | 'non-subscribers' | 'stripe-subs' = $state('subscribers');
+	let activeTab: 'subscribers' | 'stripe-subs' = $state('subscribers');
 	let loading = $state(false);
 	
 	// Separate loading states for each tab
@@ -250,12 +251,9 @@ async function loadSubscribersData() {
 	try {
 		console.log('🔄 Loading subscribers...');
 		
-		const subscribersResponse = await StreamingSubscriberService.getSubscribers({
-			limit: 0, // Get all subscribers (no limit)
-			offset: 0
-		});
+		const subscribersResponse = await subscriberCache.getSubscribers(1, 0, {}); // Get all subscribers
 		allSubscribers = subscribersResponse.subscribers || [];
-		subscriberCount = allSubscribers.length;
+		subscriberCount = subscribersResponse.total_count || allSubscribers.length;
 		
 		console.log('✅ Loaded subscribers:', allSubscribers.length);
 		
@@ -1267,14 +1265,6 @@ async function loadStripeSubsData() {
 		</button>
 		<button 
 			class="tab-button" 
-			class:active={activeTab === 'non-subscribers'}
-			onclick={() => changeTab('non-subscribers')}
-		>
-			<span class="tab-icon">👤</span>
-			Non-Subscribers ({displayedNonSubscribers.length})
-		</button>
-		<button 
-			class="tab-button" 
 			class:active={activeTab === 'stripe-subs'}
 			onclick={() => changeTab('stripe-subs')}
 		>
@@ -1288,77 +1278,6 @@ async function loadStripeSubsData() {
 	{#if activeTab === 'subscribers'}
 		<!-- Enhanced Subscribers Tab with Email Verification Accordions -->
 		<EnhancedSubscribersPage />
-		{:else if activeTab === 'non-subscribers'}
-			<!-- Non-Subscribers Tab -->
-			<div class="non-subscribers-section">
-				<!-- Filters -->
-				<SubscriberFiltersComponent 
-					bind:searchTerm={nonSubscriberSearchTerm}
-					bind:emailVerifiedFilter={nonSubscriberEmailVerifiedFilter}
-					bind:roleFilter={nonSubscriberRoleFilter}
-					bind:lastLoginFilter={nonSubscriberLastLoginFilter}
-					bind:createdDateFilter={nonSubscriberCreatedDateFilter}
-					bind:hasSubbedFilter={nonSubscriberHasSubbedFilter}
-					subscribers={[]}
-					nonSubscribers={allNonSubscribers}
-					{activeTab}
-					{roles}
-					onSearch={handleSearch}
-					onFilterChange={handleFilterChange}
-					onClearAll={handleClearAllFilters}
-				/>
-
-				<!-- Remove the entire selection-controls div -->
-				<!-- Just show the action buttons when items are selected -->
-				{#if selectedNonSubscribers.size > 0}
-					<div class="selection-actions">
-						<span class="selected-count">{selectedNonSubscribers.size} selected</span>
-						<div class="selected-buttons-container">
-
-							<button class="selection-button btn btn-primary" onclick={handleSendOffer}>
-								📧 Send Offer
-							</button>
-							<button class="selection-button btn btn-secondary " onclick={clearSelection}>
-								Clear Selection
-							</button>
-						</div>
-					</div>
-				{/if}
-
-				<!-- Export button -->
-				<div class="export-section">
-					<button class="btn btn-outline" onclick={handleExport}>
-						📥 Export Non-Subscribers
-					</button>
-				</div>
-
-				{#if nonSubscribersLoading}
-					<div class="loading-container">
-						<LoadingSpinner />
-						<p>Loading non-subscribers...</p>
-					</div>
-				{:else}
-					<NonSubscriberTable 
-						nonSubscribers={paginatedNonSubscribers}
-						{animationDirection}
-						{isAnimating}
-						{isTransitioning}
-						{roles}
-						{selectedNonSubscribers}
-						{selectAllNonSubscribers}
-						{subscriptionPlans}
-						onSelectItem={handleNonSubscriberSelectItem}
-						onNonSubscriberUpdate={handleNonSubscriberUpdate}
-					/>
-
-					<!-- Pagination -->
-					<SubscriberPagination 
-						{currentPage}
-						{totalPages}
-						on:pageChange={handlePageChange}
-					/>
-				{/if}
-			</div>
 		{:else if activeTab === 'stripe-subs'}
 			<!-- Stripe Subscribers Tab -->
 			<div class="stripe-subs-section">
@@ -1504,7 +1423,6 @@ async function loadStripeSubsData() {
 	}
 
 	.subscribers-section,
-	.non-subscribers-section,
 	.stripe-subs-section {
 		padding: 1.5rem;
 	}
