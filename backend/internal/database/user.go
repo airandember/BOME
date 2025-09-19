@@ -494,9 +494,12 @@ func (db *DB) HasActiveStripeSubscription(userID int) (bool, *StripeSubscription
 			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
 		INNER JOIN stripe_subscriptions ss ON sc.id = ss.customer_id
+		INNER JOIN stripe_prices sp_price ON ss.price_id = sp_price.id
+		INNER JOIN stripe_products sp ON sp_price.product_id = sp.id
 		WHERE u.id = $1 
 		AND ss.status IN ('active', 'trialing')
 		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+		AND sp.video_approved = true
 		ORDER BY ss.created_at DESC
 		LIMIT 1
 	`

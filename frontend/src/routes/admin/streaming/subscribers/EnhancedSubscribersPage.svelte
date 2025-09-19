@@ -12,6 +12,8 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import KPICard from '$lib/components/KPICard.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import EnhancedSubscriberViewModal from './EnhancedSubscriberViewModal.svelte';
+	import EnhancedSubscriberEditModal from './EnhancedSubscriberEditModal.svelte';
 
 	// State
 	let subscribers = $state<EnhancedSubscriber[]>([]);
@@ -26,6 +28,13 @@
 	// Filters
 	let activeFilters = $state<SubscriberFilters>({});
 	let activeQuickFilter = $state<string | null>(null);
+	let searchTerm = $state('');
+	let searchTimeout: ReturnType<typeof setTimeout>;
+
+	// Modal state
+	let viewModalOpen = $state(false);
+	let editModalOpen = $state(false);
+	let selectedSubscriber = $state<EnhancedSubscriber | null>(null);
 
 	// Quick filters for common views
 	const quickFilters: QuickFilter[] = [
@@ -54,10 +63,16 @@
 			description: 'Subscriptions expiring within 7 days'
 		},
 		{
-			label: 'Manual Access',
-			icon: '🔧',
-			filter: { video_access_source: 'manual' },
-			description: 'Users with manually granted video access'
+			label: 'Recent Starts',
+			icon: '🆕',
+			filter: { created_date_from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] },
+			description: 'Plans started within the last 7 days'
+		},
+		{
+			label: 'No Video Access',
+			icon: '⚠️',
+			filter: { has_video_access: false },
+			description: 'Users without video access (for cleanup)'
 		}
 	];
 
@@ -66,9 +81,12 @@
 		{ key: 'full_name', label: 'Name', sortable: true, width: '200px' },
 		{ key: 'email', label: 'Email', sortable: true, width: '250px' },
 		{ key: 'plan_name', label: 'Plan', sortable: true, filterable: true, width: '150px' },
+		{ key: 'plan_legacy_status', label: 'Legacy/Current', filterable: true, width: '110px', align: 'center' as const },
 		{ key: 'has_active_plan', label: 'Active Plan', type: 'boolean' as const, filterable: true, width: '100px', align: 'center' as const },
 		{ key: 'has_video_access', label: 'Video Access', type: 'boolean' as const, filterable: true, width: '100px', align: 'center' as const },
-		{ key: 'video_access_source', label: 'Access Source', filterable: true, width: '120px' },
+		{ key: 'plan_start_date', label: 'Plan Start', type: 'date' as const, sortable: true, width: '120px' },
+		{ key: 'billing_period_start', label: 'Billing Start', type: 'date' as const, sortable: true, width: '120px' },
+		{ key: 'billing_period_end', label: 'Billing End', type: 'date' as const, sortable: true, width: '120px' },
 		{ key: 'mrr_contribution', label: 'MRR', type: 'currency' as const, sortable: true, width: '100px', align: 'right' as const },
 		{ key: 'days_until_expiry', label: 'Days Left', type: 'number' as const, sortable: true, width: '100px', align: 'right' as const },
 		{ key: 'last_login', label: 'Last Login', type: 'date' as const, sortable: true, width: '120px' },
@@ -159,6 +177,23 @@
 		await loadSubscribers();
 	}
 
+	async function handleSearchEvent(event: CustomEvent<{ searchTerm: string }>) {
+		const { searchTerm } = event.detail;
+		await handleSearch(searchTerm);
+	}
+
+	function handleSearchInput() {
+		// Clear existing timeout
+		if (searchTimeout) {
+			clearTimeout(searchTimeout);
+		}
+		
+		// Debounce search for 300ms
+		searchTimeout = setTimeout(() => {
+			handleSearch(searchTerm);
+		}, 300);
+	}
+
 	async function handlePageChange(page: number) {
 		currentPage = page;
 		await loadSubscribers();
@@ -169,14 +204,40 @@
 		
 		switch (action) {
 			case 'edit':
-				// Open edit modal
-				showToast(`Edit subscriber: ${item.email}`, 'info');
+				selectedSubscriber = item;
+				editModalOpen = true;
 				break;
 			case 'view':
-				// Open view modal
-				showToast(`View subscriber: ${item.email}`, 'info');
+				selectedSubscriber = item;
+				viewModalOpen = true;
 				break;
 		}
+	}
+
+	// Modal handlers
+	function handleViewModalClose() {
+		viewModalOpen = false;
+		selectedSubscriber = null;
+	}
+
+	function handleEditModalClose() {
+		editModalOpen = false;
+		selectedSubscriber = null;
+	}
+
+	function handleEditModalSave(updatedSubscriber: EnhancedSubscriber) {
+		// Update the subscriber in the list
+		const index = subscribers.findIndex(s => s.id === updatedSubscriber.id);
+		if (index !== -1) {
+			subscribers[index] = updatedSubscriber;
+		}
+		
+		// Close modal
+		editModalOpen = false;
+		selectedSubscriber = null;
+		
+		// Invalidate cache to ensure fresh data on next load
+		subscriberCache.invalidate();
 	}
 
 	function handleBulkAction(event: CustomEvent<{ action: string; items: number[]; requiresConfirmation?: boolean }>) {
@@ -323,18 +384,52 @@
 		</div>
 	</div>
 
+	<!-- Search Input -->
+	<div class="search-section">
+		<div class="search-container">
+			<div class="search-input-wrapper">
+				<input
+					type="text"
+					bind:value={searchTerm}
+					placeholder="Search subscribers by name, email, or plan..."
+					class="search-input"
+					oninput={handleSearchInput}
+				/>
+				<span class="search-icon">🔍</span>
+			</div>
+			{#if searchTerm}
+				<button
+					type="button"
+					class="clear-search-btn"
+					onclick={() => { searchTerm = ''; handleSearch(''); }}
+					title="Clear search"
+				>
+					✕
+				</button>
+			{/if}
+		</div>
+		<div class="search-info">
+			<span class="search-results-count">
+				{#if searchTerm}
+					Found {totalCount.toLocaleString()} results for "{searchTerm}"
+				{:else}
+					Showing {totalCount.toLocaleString()} total subscribers
+				{/if}
+			</span>
+		</div>
+	</div>
+
 	<!-- Unified Data Table -->
 	<div class="data-table-section">
 		<DataTable
 			data={subscribers}
 			{columns}
 			{loading}
-			searchable={true}
+			searchable={false}
 			exportable={true}
 			selectable={true}
 			bulkActions={bulkActions}
 			emptyMessage="No subscribers found matching your criteria"
-			searchPlaceholder="Search subscribers by name, email, or plan..."
 			on:rowAction={handleRowAction}
 			on:bulkAction={handleBulkAction}
 			on:export={handleExport}
@@ -385,6 +480,20 @@
 		</div>
 	{/if}
 </div>
+
+<!-- Modals -->
+<EnhancedSubscriberViewModal
+	isOpen={viewModalOpen}
+	subscriber={selectedSubscriber}
+	onClose={handleViewModalClose}
+/>
+
+<EnhancedSubscriberEditModal
+	isOpen={editModalOpen}
+	subscriber={selectedSubscriber}
+	onSave={handleEditModalSave}
+	onCancel={handleEditModalClose}
+/>
 
 <style>
 	.unified-subscribers-dashboard {
@@ -530,6 +639,90 @@
 
 	.filter-label {
 		white-space: nowrap;
+	}
+
+	/* Search Section */
+	.search-section {
+		background: white;
+		padding: 1.5rem;
+		border-radius: 1rem;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		margin-bottom: 1.5rem;
+	}
+
+	.search-container {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		margin-bottom: 1rem;
+	}
+
+	.search-input-wrapper {
+		position: relative;
+		flex: 1;
+		max-width: 500px;
+	}
+
+	.search-input {
+		width: 100%;
+		padding: 0.75rem 3rem 0.75rem 1rem;
+		border: 2px solid #e5e7eb;
+		border-radius: 0.5rem;
+		font-size: 1rem;
+		color: #111827;
+		background: #f9fafb;
+		transition: all 0.2s ease;
+	}
+
+	.search-input:focus {
+		outline: none;
+		border-color: #3b82f6;
+		background: white;
+		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+	}
+
+	.search-icon {
+		position: absolute;
+		right: 1rem;
+		top: 50%;
+		transform: translateY(-50%);
+		color: #6b7280;
+		font-size: 1.25rem;
+		pointer-events: none;
+	}
+
+	.clear-search-btn {
+		padding: 0.5rem;
+		background: #f3f4f6;
+		border: 1px solid #d1d5db;
+		border-radius: 0.375rem;
+		color: #6b7280;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		font-size: 1rem;
+		width: 2.5rem;
+		height: 2.5rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.clear-search-btn:hover {
+		background: #e5e7eb;
+		border-color: #9ca3af;
+		color: #374151;
+	}
+
+	.search-info {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.search-results-count {
+		color: #6b7280;
+		font-size: 0.875rem;
+		font-weight: 500;
 	}
 
 	/* Data Table Section */

@@ -46,10 +46,11 @@
 	$: filteredData = filterData(data, searchTerm);
 	$: sortedData = sortData(filteredData, sortColumn, sortDirection);
 	$: selectedCount = selectedItems.size;
-	$: allSelected = selectedCount > 0 && selectedCount === sortedData.length;
-	$: someSelected = selectedCount > 0 && selectedCount < sortedData.length;
+	$: allSelected = selectedCount > 0 && sortedData && selectedCount === sortedData.length;
+	$: someSelected = selectedCount > 0 && sortedData && selectedCount < sortedData.length;
 	
 	function filterData(items: any[], search: string): any[] {
+		if (!items || !Array.isArray(items)) return [];
 		if (!search.trim()) return items;
 		
 		const searchLower = search.toLowerCase();
@@ -61,6 +62,7 @@
 	}
 	
 	function sortData(items: any[], column: string, direction: 'asc' | 'desc'): any[] {
+		if (!items || !Array.isArray(items)) return [];
 		if (!column) return items;
 		
 		return [...items].sort((a, b) => {
@@ -95,7 +97,7 @@
 			selectedItems = new Set();
 			selectAll = false;
 		} else {
-			selectedItems = new Set(sortedData.map(item => item.id));
+			selectedItems = new Set(sortedData?.map(item => item.id) || []);
 			selectAll = true;
 		}
 	}
@@ -108,7 +110,7 @@
 			newSelection.add(item.id);
 		}
 		selectedItems = newSelection;
-		selectAll = selectedItems.size === sortedData.length;
+		selectAll = sortedData && selectedItems.size === sortedData.length;
 	}
 	
 	function handleBulkAction(action: BulkAction) {
@@ -222,7 +224,7 @@
 				<LoadingSpinner />
 				<p>Loading data...</p>
 			</div>
-		{:else if sortedData.length === 0}
+		{:else if !sortedData || sortedData.length === 0}
 			<div class="empty-state">
 				<div class="empty-icon">📋</div>
 				<h3>No Data Found</h3>
@@ -272,7 +274,7 @@
 				</thead>
 				
 				<tbody>
-					{#each sortedData as item, index (`${item.id}-${index}`)}
+					{#each (sortedData || []) as item, index (`${item.id}-${index}`)}
 						<tr class="table-row">
 							{#if selectable}
 								<td class="select-cell">
@@ -321,7 +323,7 @@
 	<!-- Table Footer -->
 	<div class="table-footer">
 		<div class="footer-info">
-			Showing {sortedData.length} of {data.length} entries
+			Showing {sortedData?.length || 0} of {data?.length || 0} entries
 			{#if searchTerm}
 				(filtered from {data.length} total)
 			{/if}

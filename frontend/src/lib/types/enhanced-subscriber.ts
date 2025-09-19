@@ -12,13 +12,14 @@ export interface EnhancedSubscriber {
   // Subscription Status (Key Goals)
   has_active_plan: boolean;           // Goal #1: Active plan within date range
   has_video_access: boolean;          // Goal #2: Access to premium videos
-  video_access_source: 'plan' | 'manual' | 'none'; // Goal #3: How they got access
   
   // Plan Information
   plan_name: string;
+  plan_legacy_status: 'Legacy' | 'Current' | 'Unknown';
   plan_type: 'premium' | 'basic' | 'none';
   plan_start_date: string | null;
-  plan_end_date: string | null;
+  billing_period_start: string | null;
+  billing_period_end: string | null;
   plan_status: 'active' | 'expired' | 'trial' | 'cancelled' | 'none';
   plan_price: number;
   plan_currency: string;
@@ -40,6 +41,11 @@ export interface EnhancedSubscriber {
   is_expiring_soon: boolean; // Within 7 days
   is_high_value: boolean;    // Above average MRR
   account_age_days: number;
+  billing_cycle_length: number | null;
+  
+  // Additional fields for management
+  account_status: string;
+  stripe_subscription_id: string | null;
 }
 
 export interface SubscriberFilters {
@@ -47,7 +53,7 @@ export interface SubscriberFilters {
   plan_type?: 'premium' | 'basic' | 'none' | '';
   has_active_plan?: boolean | null;
   has_video_access?: boolean | null;
-  video_access_source?: 'plan' | 'manual' | 'none' | '';
+  // video_access_source removed - plans are now the only source
   is_expiring_soon?: boolean | null;
   email_verified?: boolean | null;
   role?: string;

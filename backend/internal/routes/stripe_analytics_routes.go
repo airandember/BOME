@@ -853,10 +853,12 @@ func triggerManualSync(c *gin.Context, syncService *services.StripeSyncService) 
 		err = syncService.SyncPricesManual(ctx)
 	case "subscriptions":
 		err = syncService.SyncSubscriptionsManual(ctx)
+	case "cleanup_orphaned":
+		err = syncService.CleanupOrphanedSubscriptions(ctx)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":           "Invalid sync type. Use 'customers', 'initial', 'coupons', 'monthly_metrics', 'products', 'prices', or 'subscriptions'",
-			"available_types": []string{"customers", "initial", "coupons", "monthly_metrics", "products", "prices", "subscriptions"},
+			"error":           "Invalid sync type. Use 'customers', 'initial', 'coupons', 'monthly_metrics', 'products', 'prices', 'subscriptions', or 'cleanup_orphaned'",
+			"available_types": []string{"customers", "initial", "coupons", "monthly_metrics", "products", "prices", "subscriptions", "cleanup_orphaned"},
 		})
 		return
 	}

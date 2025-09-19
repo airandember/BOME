@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"database/sql"
 	"net/http"
 	"strconv"
 	"time"
@@ -183,7 +184,25 @@ func GetSubscriptionHandler(db *database.DB) gin.HandlerFunc {
 
 		subscription, err := db.GetSubscriptionByUserID(userID)
 		if err != nil {
-			// User has no subscription
+			// Check if user has manual video access as fallback
+			var manualVideoAccess sql.NullBool
+			err := db.QueryRow("SELECT manual_video_access FROM users WHERE id = $1", userID).Scan(&manualVideoAccess)
+			if err == nil && manualVideoAccess.Valid && manualVideoAccess.Bool {
+				// User has manual video access, return mock subscription
+				c.JSON(http.StatusOK, gin.H{
+					"subscription": map[string]interface{}{
+						"id":                 "manual_video_access",
+						"user_id":            userID,
+						"plan_id":            "manual_access",
+						"status":             "active",
+						"tier":               "premium", // Grant premium access for manual override
+						"created_at":         "2024-01-01T00:00:00Z",
+						"current_period_end": "2099-12-31T23:59:59Z",
+					},
+				})
+				return
+			}
+			// User has no subscription and no manual access
 			c.JSON(http.StatusOK, gin.H{"subscription": nil})
 			return
 		}

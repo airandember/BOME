@@ -274,7 +274,11 @@
 			console.log(`🔍 [MANUAL-SYNC] Manual sync API response:`, data)
 			
 			if (response.ok) {
-				syncStatus = `✅ ${syncType} sync completed successfully!`
+			if (syncType === 'cleanup_orphaned') {
+				syncStatus = `🧹 Invalid product subscriptions marked successfully!`
+				} else {
+					syncStatus = `✅ ${syncType} sync completed successfully!`
+				}
 				console.log("✅ Manual sync completed:", data)
 				
 				// Reload database stats to show updated counts
@@ -765,13 +769,21 @@
 								>
 									{syncInProgress ? '🔄 Syncing...' : '💰 Sync Prices'}
 								</button>
-								<button 
-									class="btn btn-primary" 
-									onclick={(e) => { e.preventDefault(); e.stopPropagation(); triggerManualSync('subscriptions'); }}
-									disabled={syncInProgress}
-								>
-									{syncInProgress ? '🔄 Syncing...' : '💳 Sync Subscriptions'}
-								</button>
+							<button 
+								class="btn btn-primary" 
+								onclick={(e) => { e.preventDefault(); e.stopPropagation(); triggerManualSync('subscriptions'); }}
+								disabled={syncInProgress}
+							>
+								{syncInProgress ? '🔄 Syncing...' : '💳 Sync Subscriptions'}
+							</button>
+							<button 
+								class="btn btn-warning" 
+								onclick={(e) => { e.preventDefault(); e.stopPropagation(); triggerManualSync('cleanup_orphaned'); }}
+								disabled={syncInProgress}
+								title="Mark subscriptions with invalid product references as 'invalid_product'"
+							>
+								{syncInProgress ? '🔄 Cleaning...' : '🧹 Ensure Active Plans'}
+							</button>
 							</div>
 						</div>
 
@@ -1010,6 +1022,54 @@
 	}
 
 	.btn-danger:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none;
+	}
+
+	.btn-warning {
+		background: #f59e0b;
+		color: white;
+	}
+
+	.btn-warning:hover:not(:disabled) {
+		background: #d97706;
+		transform: translateY(-2px);
+	}
+
+	.btn-warning:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none;
+	}
+
+	.btn-info {
+		background: #0ea5e9;
+		color: white;
+	}
+
+	.btn-info:hover:not(:disabled) {
+		background: #0284c7;
+		transform: translateY(-2px);
+	}
+
+	.btn-info:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none;
+	}
+
+	.btn-success {
+		background: #10b981;
+		color: white;
+	}
+
+	.btn-success:hover:not(:disabled) {
+		background: #059669;
+		transform: translateY(-2px);
+	}
+
+	.btn-success:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
 		transform: none;
