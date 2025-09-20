@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -222,8 +223,8 @@ func AuthRequired() gin.HandlerFunc {
 		c.Set("email_verified", claims.EmailVerified)
 		c.Set("token_id", claims.TokenID) // Store token ID for session tracking
 
-		// Log successful authentication
-		log.Printf("Authenticated user: %s (ID: %d, Role: %s)", claims.Email, claims.UserID, claims.Role)
+		// Enhanced authentication logging with security considerations
+		logEnhancedAuth(claims, c)
 
 		c.Next()
 	}
@@ -1041,4 +1042,92 @@ func VideoUploadRequired() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// Enhanced authentication logging with security considerations
+func logEnhancedAuth(claims *services.Claims, c *gin.Context) {
+	// Sanitize user input to prevent log injection
+	sanitizedEmail := sanitizeForLogs(claims.Email)
+
+	// Basic authentication log (always logged for security audit)
+	log.Printf("AUTH_SUCCESS: user=%s, id=%d, role=%s, ip=%s",
+		sanitizedEmail, claims.UserID, claims.Role, sanitizeIP(c.ClientIP()))
+
+	// Admin users - simple logging (no need for detailed access checks)
+	if isAdminRole(claims.Role) {
+		log.Printf("ADMIN_ACCESS: user_id=%d, role=%s", claims.UserID, claims.Role)
+		return
+	}
+
+	// Detailed video access logging only when appropriate
+	if shouldLogVideoAccessDetails(claims, c) {
+		logVideoAccessDetails(claims.UserID, c)
+	}
+}
+
+// isAdminRole checks if the role is an admin role
+func isAdminRole(role string) bool {
+	adminRoles := []string{
+		"super_admin", "system_admin", "content_manager", "articles_manager",
+		"youtube_manager", "streaming_manager", "events_manager",
+		"advertisement_manager", "user_manager", "analytics_manager",
+		"financial_admin", "admin",
+	}
+
+	for _, adminRole := range adminRoles {
+		if role == adminRole {
+			return true
+		}
+	}
+	return false
+}
+
+// shouldLogVideoAccessDetails determines when to log detailed access info
+func shouldLogVideoAccessDetails(claims *services.Claims, c *gin.Context) bool {
+	// Log detailed access info when:
+	// 1. DEBUG mode is enabled
+	// 2. Request is for video-related endpoints
+	// 3. User has had recent access issues (future enhancement)
+
+	debugMode := os.Getenv("LOG_LEVEL") == "DEBUG"
+	isVideoEndpoint := strings.Contains(c.Request.URL.Path, "/videos") ||
+		strings.Contains(c.Request.URL.Path, "/bunny-videos")
+
+	return debugMode || isVideoEndpoint
+}
+
+// logVideoAccessDetails logs detailed video access information
+func logVideoAccessDetails(userID int, c *gin.Context) {
+	// For now, just log that video access check was requested
+	// In the future, this could be enhanced to access the database
+	// when a global database instance is available
+	log.Printf("VIDEO_ACCESS_CHECK_REQUESTED: user_id=%d, endpoint=%s",
+		userID, c.Request.URL.Path)
+}
+
+// sanitizeForLogs removes potential log injection characters
+func sanitizeForLogs(input string) string {
+	// Remove newlines, carriage returns, and tabs to prevent log injection
+	sanitized := strings.ReplaceAll(input, "\n", "")
+	sanitized = strings.ReplaceAll(sanitized, "\r", "")
+	sanitized = strings.ReplaceAll(sanitized, "\t", "")
+	return sanitized
+}
+
+// sanitizeIP sanitizes IP addresses for logging
+func sanitizeIP(ip string) string {
+	// Basic IP validation and sanitization
+	if ip == "" {
+		return "unknown"
+	}
+	// Remove any potential injection characters
+	return sanitizeForLogs(ip)
+}
+
+// boolToIcon converts boolean to visual icon for logs
+func boolToIcon(value bool) string {
+	if value {
+		return "✅"
+	}
+	return "❌"
 }
