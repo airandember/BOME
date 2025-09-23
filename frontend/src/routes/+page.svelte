@@ -169,7 +169,8 @@
 			
 			<!-- Main Title Outside Glass Container -->
 			<div class="main-title-container">
-				<h1 class="hero-title"><span class="hero-title-book">BOOK OF MORMON</span><br> <span class="hero-title-evidence">EVIDENCE</span></h1>
+				<h1 class="hero-title"><span class="hero-title-book">BOOK OF MORMON</span><br> <span class="hero-title-evidence">EVIDENCE</span><br>
+					<span class="hero-title-beta text_animated">BETA</span></h1>
 				<blockquote class="hero-quote">
 					"The Book of Mormon was the most correct of any book on earth, and the keystone of our religion, and a man would get nearer to God by abiding by its precepts, than by any other book."
 					<cite>– Joseph Smith</cite>
@@ -1199,6 +1200,34 @@
 	.hero-title-evidence {
 		font-size: 13.5rem;
 	}
+
+	
+
+	.hero-title-beta {
+		font-size: 5.5rem;
+		background: linear-gradient(to right, #ffffff, #ffed4e);
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
+		background-clip: text;
+		text-shadow: none;
+		transition: all 0.5s ease;
+		animation: grow-text 4s ease;
+	}
+
+	@keyframes grow-text {
+		0% {
+			font-size: 0rem;
+		}
+        50% {
+			font-size: 6.5rem;
+		}
+
+		100% {
+			font-size: 5.5rem;
+		}
+	}
+
+	
 
 	.hero-quote {
 		font-size: 1.4rem;

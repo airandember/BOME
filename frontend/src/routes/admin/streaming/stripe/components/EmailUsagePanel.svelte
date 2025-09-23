@@ -20,7 +20,9 @@
 		total_remaining: number;
 		total_limit: number;
 		overall_percent: number;
-		failover_count: number;
+		monthly_sent: number;
+		monthly_limit: number;
+		monthly_percent: number;
 	}
 
 	let usageData: EmailUsageResponse | null = null;
@@ -60,8 +62,7 @@
 
 	function getProviderIcon(provider: string): string {
 		switch (provider) {
-			case 'resend': return '📧';
-			case 'mailgun': return '🔫';
+			case 'resend': return '🚀';
 			case 'smtp': return '📮';
 			default: return '📨';
 		}
@@ -84,7 +85,7 @@
 
 <div class="email-usage-panel">
 	<div class="panel-header">
-		<h3>📊 Email Usage Tracking</h3>
+		<h3>🚀 Resend Usage Tracking</h3>
 		<button 
 			class="btn btn-sm btn-outline"
 			onclick={refreshUsage}
@@ -126,15 +127,15 @@
 				<div class="stat-icon">📈</div>
 				<div class="stat-content">
 					<div class="stat-value {getUsageColor(usageData.overall_percent)}">{usageData.overall_percent}%</div>
-					<div class="stat-label">Overall Usage</div>
+					<div class="stat-label">Daily Usage</div>
 				</div>
 			</div>
 			
 			<div class="stat-card">
-				<div class="stat-icon">🔄</div>
+				<div class="stat-icon">📊</div>
 				<div class="stat-content">
-					<div class="stat-value">{usageData.failover_count}</div>
-					<div class="stat-label">Failover Emails</div>
+					<div class="stat-value {getUsageColor(usageData.monthly_percent || 0)}">{usageData.monthly_percent || 0}%</div>
+					<div class="stat-label">Monthly Usage</div>
 				</div>
 			</div>
 			
@@ -147,15 +148,15 @@
 			</div>
 		</div>
 
-		<!-- Provider Breakdown -->
+		<!-- Resend Provider Details -->
 		<div class="providers-section">
-			<h4>Provider Breakdown</h4>
+			<h4>Resend Provider Details</h4>
 			<div class="providers-grid">
-				{#each usageData.providers as provider}
+				{#each usageData.providers.filter(p => p.provider === 'resend') as provider}
 					<div class="provider-card">
 						<div class="provider-header">
 							<span class="provider-icon">{getProviderIcon(provider.provider)}</span>
-							<span class="provider-name">{provider.provider.toUpperCase()}</span>
+							<span class="provider-name">RESEND</span>
 							<span class="provider-status {getUsageColor(provider.usage_percent)}">
 								{provider.usage_percent}%
 							</span>
@@ -170,7 +171,7 @@
 						
 						<div class="provider-stats">
 							<div class="provider-stat">
-								<span class="stat-label">Sent:</span>
+								<span class="stat-label">Sent Today:</span>
 								<span class="stat-value">{provider.emails_sent}</span>
 							</div>
 							<div class="provider-stat">
@@ -182,12 +183,49 @@
 								<span class="stat-value">{provider.remaining}</span>
 							</div>
 							<div class="provider-stat">
-								<span class="stat-label">Limit:</span>
+								<span class="stat-label">Daily Limit:</span>
 								<span class="stat-value">{provider.daily_limit}</span>
 							</div>
 						</div>
 					</div>
 				{/each}
+				
+				<!-- Monthly Usage Card -->
+				<div class="provider-card">
+					<div class="provider-header">
+						<span class="provider-icon">📊</span>
+						<span class="provider-name">MONTHLY USAGE</span>
+						<span class="provider-status {getUsageColor(usageData.monthly_percent || 0)}">
+							{usageData.monthly_percent || 0}%
+						</span>
+					</div>
+					
+					<div class="usage-bar">
+						<div 
+							class="usage-fill {getProgressBarColor(usageData.monthly_percent || 0)}"
+							style="width: {usageData.monthly_percent || 0}%"
+						></div>
+					</div>
+					
+					<div class="provider-stats">
+						<div class="provider-stat">
+							<span class="stat-label">Sent This Month:</span>
+							<span class="stat-value">{usageData.monthly_sent || 0}</span>
+						</div>
+						<div class="provider-stat">
+							<span class="stat-label">Monthly Limit:</span>
+							<span class="stat-value">{usageData.monthly_limit || 3000}</span>
+						</div>
+						<div class="provider-stat">
+							<span class="stat-label">Remaining:</span>
+							<span class="stat-value">{(usageData.monthly_limit || 3000) - (usageData.monthly_sent || 0)}</span>
+						</div>
+						<div class="provider-stat">
+							<span class="stat-label">Resets:</span>
+							<span class="stat-value">Monthly</span>
+						</div>
+					</div>
+				</div>
 			</div>
 		</div>
 
@@ -200,16 +238,16 @@
 					<span class="status-value">{usageData.date}</span>
 				</div>
 				<div class="status-item">
-					<span class="status-label">Primary Provider:</span>
-					<span class="status-value">Resend</span>
+					<span class="status-label">Email Provider:</span>
+					<span class="status-value text-green-600">🚀 Resend</span>
 				</div>
 				<div class="status-item">
-					<span class="status-label">Secondary Provider:</span>
-					<span class="status-value">Mailgun</span>
+					<span class="status-label">Service Status:</span>
+					<span class="status-value text-green-600">✅ Active</span>
 				</div>
 				<div class="status-item">
-					<span class="status-label">Auto-Failover:</span>
-					<span class="status-value text-green-600">✅ Enabled</span>
+					<span class="status-label">Free Tier:</span>
+					<span class="status-value text-blue-600">💎 3K/month</span>
 				</div>
 			</div>
 		</div>

@@ -259,10 +259,10 @@ func (s *EmailService) SendTestEmail(to, subject, body string, userID int) error
 		log.Printf("⚠️ [EMAIL] Failed to record test notification: %v", err)
 	}
 
-	// Try sending with automatic failover
-	sendErr := s.sendWithFailover(to, subject, htmlBody, notificationID)
+	// Send with Resend
+	sendErr := s.sendWithResend(to, subject, htmlBody, notificationID)
 	if sendErr != nil {
-		log.Printf("❌ [EMAIL] All providers failed for test email: %v", sendErr)
+		log.Printf("❌ [EMAIL] Resend failed for test email: %v", sendErr)
 		return fmt.Errorf("failed to send test email: %w", sendErr)
 	}
 
