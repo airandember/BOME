@@ -1205,23 +1205,19 @@
 
 	.hero-title-beta {
 		font-size: 5.5rem;
-		background: linear-gradient(to right, #ffffff, #ffed4e);
+		background: linear-gradient(to right,#ffed4e, #ffffff, #ffed4e);
 		-webkit-background-clip: text;
 		-webkit-text-fill-color: transparent;
 		background-clip: text;
 		text-shadow: none;
 		transition: all 0.5s ease;
-		animation: grow-text 4s ease;
+		animation: grow-text 2s ease;
 	}
 
 	@keyframes grow-text {
 		0% {
 			font-size: 0rem;
 		}
-        50% {
-			font-size: 6.5rem;
-		}
-
 		100% {
 			font-size: 5.5rem;
 		}
@@ -1277,7 +1273,7 @@
 					inset 0 0 10px rgba(255, 255, 255, 0.5),
 					inset 0 0 10px rgba(0, 0, 0, 0.2);
 		width: 400px;
-		min-height: 400px;
+		min-height: 300px;
 		display: flex;
 		flex-direction: column;
 		justify-content: flex-start;

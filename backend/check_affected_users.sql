@@ -1,0 +1,1 @@
+SELECT u.id, u.email, u.manual_video_access, ss.status, sp.name, sp.video_approved FROM users u JOIN stripe_subscriptions ss ON u.stripe_customer_id = ss.customer_id JOIN stripe_prices spr ON ss.price_id = spr.id JOIN stripe_products sp ON spr.product_id = sp.id WHERE ss.status IN ('active', 'trialing') AND sp.video_approved = true ORDER BY u.email LIMIT 10;
