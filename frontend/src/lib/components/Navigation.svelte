@@ -124,7 +124,7 @@
 			<a href="/contact" class="nav-link" on:click={closeMenu}>
 				<span>Contact</span>
 			</a>-->
-			<a href="/admin" class="admin-link" title="Admin Panel" aria-label="Admin Login" style="height: 36px; width: 36px; padding: 0.5rem; border-radius: 50px;">
+			<a href="/admin" class="admin-link-dash" title="Admin Panel" aria-label="Admin Login" style="height: 36px; width: 36px; padding: 0.5rem; border-radius: 50px;">
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
 					<rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
 					<line x1="8" y1="21" x2="16" y2="21"></line>
@@ -486,6 +486,14 @@
 
 	.admin-link {
 		position: relative;
+		background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%);
+		border: 1px solid rgba(99, 102, 241, 0.2);
+	}
+
+	.admin-link-dash {
+		position: fixed;
+		right:5px;
+		top:20px;
 		background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%);
 		border: 1px solid rgba(99, 102, 241, 0.2);
 	}
