@@ -32,7 +32,9 @@ type EmailUsageResponse struct {
 	TotalRemaining int               `json:"total_remaining"`
 	TotalLimit     int               `json:"total_limit"`
 	OverallPercent int               `json:"overall_percent"`
-	FailoverCount  int               `json:"failover_count"`
+	MonthlySent    int               `json:"monthly_sent"`
+	MonthlyLimit   int               `json:"monthly_limit"`
+	MonthlyPercent int               `json:"monthly_percent"`
 }
 
 // SetupEmailUsageRoutes sets up email usage tracking routes
@@ -158,25 +160,22 @@ func getEmailUsageStatsForDateInternal(c *gin.Context, date string) {
 		totalLimit += limit
 	}
 
-	// Ensure we have entries for both resend and mailgun (even if 0 usage)
-	defaultProviders := []string{"resend", "mailgun"}
-	for _, provider := range defaultProviders {
-		if stat, exists := existingProviders[provider]; exists {
-			providers = append(providers, stat)
-		} else {
-			// Create empty entry for provider with no usage yet
-			limit := getProviderLimitFromDB(db, provider, 100)
-			stat := EmailUsageStats{
-				Provider:     provider,
-				EmailsSent:   0,
-				EmailsFailed: 0,
-				DailyLimit:   limit,
-				Remaining:    limit,
-				UsagePercent: 0,
-			}
-			providers = append(providers, stat)
-			totalLimit += limit
+	// Ensure we have entry for resend (even if 0 usage)
+	if stat, exists := existingProviders["resend"]; exists {
+		providers = append(providers, stat)
+	} else {
+		// Create empty entry for resend with no usage yet
+		limit := getProviderLimitFromDB(db, "resend", 100)
+		stat := EmailUsageStats{
+			Provider:     "resend",
+			EmailsSent:   0,
+			EmailsFailed: 0,
+			DailyLimit:   limit,
+			Remaining:    limit,
+			UsagePercent: 0,
 		}
+		providers = append(providers, stat)
+		totalLimit += limit
 	}
 
 	totalRemaining := totalLimit - totalSent
@@ -189,14 +188,17 @@ func getEmailUsageStatsForDateInternal(c *gin.Context, date string) {
 		overallPercent = (totalSent * 100) / totalLimit
 	}
 
-	// Calculate failover count (when resend is at/near limit but mailgun has usage)
-	failoverCount := 0
-	if len(providers) >= 2 {
-		resendUsage := providers[0].UsagePercent
-		mailgunSent := providers[1].EmailsSent
-		if resendUsage >= 90 && mailgunSent > 0 {
-			failoverCount = mailgunSent
-		}
+	// Get monthly usage for Resend
+	now := time.Now()
+	year := now.Year()
+	month := int(now.Month())
+
+	monthlySent := getMonthlyUsageForProvider(db, "resend", year, month)
+	monthlyLimit := getMonthlyLimitFromDB(db, "resend", 3000)
+
+	monthlyPercent := 0
+	if monthlyLimit > 0 {
+		monthlyPercent = (monthlySent * 100) / monthlyLimit
 	}
 
 	response := EmailUsageResponse{
@@ -207,7 +209,9 @@ func getEmailUsageStatsForDateInternal(c *gin.Context, date string) {
 		TotalRemaining: totalRemaining,
 		TotalLimit:     totalLimit,
 		OverallPercent: overallPercent,
-		FailoverCount:  failoverCount,
+		MonthlySent:    monthlySent,
+		MonthlyLimit:   monthlyLimit,
+		MonthlyPercent: monthlyPercent,
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -215,18 +219,79 @@ func getEmailUsageStatsForDateInternal(c *gin.Context, date string) {
 
 // getProviderLimitFromDB gets the daily limit for a provider from database settings
 func getProviderLimitFromDB(db *database.DB, provider string, defaultLimit int) int {
-	settingKey := "daily_email_limit_" + provider
+	// For Resend, use the new setting key format
+	var settingKey string
+	if provider == "resend" {
+		settingKey = "resend_daily_limit"
+	} else {
+		settingKey = "daily_email_limit_" + provider
+	}
+
 	limitStr, err := db.GetEmailSetting(settingKey)
 	if err != nil || limitStr == "" {
+		// Return appropriate defaults based on provider
+		if provider == "resend" {
+			return 100 // Resend free tier default
+		}
 		return defaultLimit
 	}
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
+		if provider == "resend" {
+			return 100 // Resend free tier default
+		}
 		return defaultLimit
 	}
 
 	return limit
+}
+
+// getMonthlyLimitFromDB gets the monthly limit for a provider from database settings
+func getMonthlyLimitFromDB(db *database.DB, provider string, defaultLimit int) int {
+	var settingKey string
+	if provider == "resend" {
+		settingKey = "resend_monthly_limit"
+	} else {
+		settingKey = "monthly_email_limit_" + provider
+	}
+
+	limitStr, err := db.GetEmailSetting(settingKey)
+	if err != nil || limitStr == "" {
+		if provider == "resend" {
+			return 3000 // Resend free tier default
+		}
+		return defaultLimit
+	}
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		if provider == "resend" {
+			return 3000 // Resend free tier default
+		}
+		return defaultLimit
+	}
+
+	return limit
+}
+
+// getMonthlyUsageForProvider gets monthly usage for a specific provider
+func getMonthlyUsageForProvider(db *database.DB, provider string, year, month int) int {
+	query := `
+		SELECT COALESCE(SUM(emails_sent), 0) 
+		FROM daily_email_usage 
+		WHERE provider = $1 
+		AND EXTRACT(YEAR FROM date) = $2 
+		AND EXTRACT(MONTH FROM date) = $3`
+
+	var usage int
+	err := db.DB.QueryRow(query, provider, year, month).Scan(&usage)
+	if err != nil {
+		log.Printf("Failed to get monthly usage for %s: %v", provider, err)
+		return 0
+	}
+
+	return usage
 }
 
 // getEmailUsageHistory gets email usage for the last 7 days

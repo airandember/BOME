@@ -8,14 +8,16 @@
 	interface EmailHistoryDay {
 		date: string;
 		resend: number;
-		mailgun: number;
 		success_rate: number;
 	}
 
 	interface EmailStats {
 		today: {
 			resend: number;
-			mailgun: number;
+			total: number;
+		};
+		monthly: {
+			resend: number;
 			total: number;
 		};
 		history: EmailHistoryDay[];
@@ -23,22 +25,23 @@
 
 	interface EmailSettings {
 		resend_daily_limit: number;
-		mailgun_daily_limit: number;
-		primary_provider: string;
-		failover_enabled: boolean;
+		resend_monthly_limit: number;
+		email_enabled: boolean;
+		domain_verified: boolean;
 	}
 
 	let loading = true;
 	let error = '';
 	let emailStats: EmailStats = {
-		today: { resend: 0, mailgun: 0, total: 0 },
+		today: { resend: 0, total: 0 },
+		monthly: { resend: 0, total: 0 },
 		history: []
 	};
 	let emailSettings: EmailSettings = {
 		resend_daily_limit: 100,
-		mailgun_daily_limit: 100,
-		primary_provider: 'resend',
-		failover_enabled: true
+		resend_monthly_limit: 3000,
+		email_enabled: true,
+		domain_verified: false
 	};
 
 	// Test email form
@@ -65,13 +68,15 @@
 				const statsData = await statsResponse.json();
 				// Transform backend response to match frontend expectations
 				const resendProvider = statsData.providers?.find((p: any) => p.provider === 'resend');
-				const mailgunProvider = statsData.providers?.find((p: any) => p.provider === 'mailgun');
 				
 				emailStats = {
 					today: {
 						resend: resendProvider?.emails_sent || 0,
-						mailgun: mailgunProvider?.emails_sent || 0,
 						total: statsData.total_sent || 0
+					},
+					monthly: {
+						resend: resendProvider?.monthly_sent || 0,
+						total: statsData.monthly_total || 0
 					},
 					history: [] as EmailHistoryDay[] // TODO: Implement history endpoint
 				};
@@ -82,10 +87,10 @@
 				// Transform backend response to match frontend expectations
 				const settings = settingsData.settings || {};
 				emailSettings = {
-					resend_daily_limit: parseInt(settings.daily_email_limit_resend) || 100,
-					mailgun_daily_limit: parseInt(settings.daily_email_limit_mailgun) || 100,
-					primary_provider: settings.email_provider_primary || 'resend',
-					failover_enabled: settings.auto_failover_enabled === 'true'
+					resend_daily_limit: parseInt(settings.resend_daily_limit) || 100,
+					resend_monthly_limit: parseInt(settings.resend_monthly_limit) || 3000,
+					email_enabled: settings.email_enabled === 'true',
+					domain_verified: settings.domain_verified === 'true'
 				};
 			}
 
@@ -137,11 +142,9 @@
 		try {
 		// Transform frontend settings to backend format
 		const backendSettings = {
-			daily_email_limit_resend: emailSettings.resend_daily_limit.toString(),
-			daily_email_limit_mailgun: emailSettings.mailgun_daily_limit.toString(),
-			email_provider_primary: emailSettings.primary_provider,
-			auto_failover_enabled: emailSettings.failover_enabled.toString(),
-			email_enabled: 'true'
+			resend_daily_limit: emailSettings.resend_daily_limit.toString(),
+			resend_monthly_limit: emailSettings.resend_monthly_limit.toString(),
+			email_enabled: emailSettings.email_enabled.toString()
 		};
 
 			const response = await apiRequest('/admin/email/settings', {
@@ -183,7 +186,7 @@
 </script>
 
 <svelte:head>
-	<title>Email Usage - Streaming Admin</title>
+	<title>Resend Email Dashboard - Streaming Admin</title>
 </svelte:head>
 
 {#if loading}
@@ -206,30 +209,15 @@
 		<div class="overview-grid">
 			<div class="stat-card">
 				<div class="stat-header">
-					<h3>Today's Usage</h3>
+					<h3>Daily Usage</h3>
 					<div class="stat-icon">📧</div>
-				</div>
-				<div class="stat-content">
-					<div class="stat-number">{emailStats.today.total}</div>
-					<div class="stat-label">Emails Sent</div>
-					<div class="stat-breakdown">
-						<span>Resend: {emailStats.today.resend}</span>
-						<span>Mailgun: {emailStats.today.mailgun}</span>
-					</div>
-				</div>
-			</div>
-
-			<div class="stat-card">
-				<div class="stat-header">
-					<h3>Resend Usage</h3>
-					<div class="stat-icon">🚀</div>
 				</div>
 				<div class="stat-content">
 					<div class="stat-number {getUsageColor(getUsagePercentage(emailStats.today.resend, emailSettings.resend_daily_limit))}">
 						{emailStats.today.resend}/{emailSettings.resend_daily_limit}
 					</div>
 					<div class="stat-label">
-						{getUsagePercentage(emailStats.today.resend, emailSettings.resend_daily_limit)}% Used
+						{getUsagePercentage(emailStats.today.resend, emailSettings.resend_daily_limit)}% Used Today
 					</div>
 					<div class="progress-bar">
 						<div 
@@ -242,20 +230,20 @@
 
 			<div class="stat-card">
 				<div class="stat-header">
-					<h3>Mailgun Usage</h3>
-					<div class="stat-icon">📮</div>
+					<h3>Monthly Usage</h3>
+					<div class="stat-icon">📊</div>
 				</div>
 				<div class="stat-content">
-					<div class="stat-number {getUsageColor(getUsagePercentage(emailStats.today.mailgun, emailSettings.mailgun_daily_limit))}">
-						{emailStats.today.mailgun}/{emailSettings.mailgun_daily_limit}
+					<div class="stat-number {getUsageColor(getUsagePercentage(emailStats.monthly.resend, emailSettings.resend_monthly_limit))}">
+						{emailStats.monthly.resend}/{emailSettings.resend_monthly_limit}
 					</div>
 					<div class="stat-label">
-						{getUsagePercentage(emailStats.today.mailgun, emailSettings.mailgun_daily_limit)}% Used
+						{getUsagePercentage(emailStats.monthly.resend, emailSettings.resend_monthly_limit)}% Used This Month
 					</div>
 					<div class="progress-bar">
 						<div 
-							class="progress-fill {getUsageColor(getUsagePercentage(emailStats.today.mailgun, emailSettings.mailgun_daily_limit))}"
-							style="width: {Math.min(getUsagePercentage(emailStats.today.mailgun, emailSettings.mailgun_daily_limit), 100)}%"
+							class="progress-fill {getUsageColor(getUsagePercentage(emailStats.monthly.resend, emailSettings.resend_monthly_limit))}"
+							style="width: {Math.min(getUsagePercentage(emailStats.monthly.resend, emailSettings.resend_monthly_limit), 100)}%"
 						></div>
 					</div>
 				</div>
@@ -263,20 +251,49 @@
 
 			<div class="stat-card">
 				<div class="stat-header">
-					<h3>Provider Status</h3>
-					<div class="stat-icon">⚙️</div>
+					<h3>Resend Status</h3>
+					<div class="stat-icon">🚀</div>
 				</div>
 				<div class="stat-content">
 					<div class="provider-status">
 						<div class="provider-item">
-							<span class="provider-name">Primary:</span>
-							<span class="provider-value">{emailSettings.primary_provider}</span>
+							<span class="provider-name">Service:</span>
+							<span class="provider-value text-green-600">Active</span>
 						</div>
 						<div class="provider-item">
-							<span class="provider-name">Failover:</span>
-							<span class="provider-value {emailSettings.failover_enabled ? 'text-green-600' : 'text-red-600'}">
-								{emailSettings.failover_enabled ? 'Enabled' : 'Disabled'}
+							<span class="provider-name">Domain:</span>
+							<span class="provider-value {emailSettings.domain_verified ? 'text-green-600' : 'text-yellow-600'}">
+								{emailSettings.domain_verified ? 'Verified' : 'Pending'}
 							</span>
+						</div>
+						<div class="provider-item">
+							<span class="provider-name">Emails:</span>
+							<span class="provider-value {emailSettings.email_enabled ? 'text-green-600' : 'text-red-600'}">
+								{emailSettings.email_enabled ? 'Enabled' : 'Disabled'}
+							</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="stat-card">
+				<div class="stat-header">
+					<h3>Free Tier Limits</h3>
+					<div class="stat-icon">💎</div>
+				</div>
+				<div class="stat-content">
+					<div class="provider-status">
+						<div class="provider-item">
+							<span class="provider-name">Daily:</span>
+							<span class="provider-value">100 emails</span>
+						</div>
+						<div class="provider-item">
+							<span class="provider-name">Monthly:</span>
+							<span class="provider-value">3,000 emails</span>
+						</div>
+						<div class="provider-item">
+							<span class="provider-name">Contacts:</span>
+							<span class="provider-value text-green-600">Unlimited ✨</span>
 						</div>
 					</div>
 				</div>
@@ -292,10 +309,9 @@
 						<thead>
 							<tr>
 								<th>Date</th>
-								<th>Resend</th>
-								<th>Mailgun</th>
-								<th>Total</th>
+								<th>Emails Sent</th>
 								<th>Success Rate</th>
+								<th>Status</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -303,12 +319,13 @@
 								<tr>
 									<td>{formatDate(day.date)}</td>
 									<td>{day.resend || 0}</td>
-									<td>{day.mailgun || 0}</td>
-									<td>{(day.resend || 0) + (day.mailgun || 0)}</td>
 									<td>
 										<span class="success-rate {day.success_rate >= 95 ? 'text-green-600' : day.success_rate >= 90 ? 'text-yellow-600' : 'text-red-600'}">
 											{day.success_rate || 100}%
 										</span>
+									</td>
+									<td>
+										<span class="text-green-600">✅ Delivered</span>
 									</td>
 								</tr>
 							{/each}
@@ -369,61 +386,81 @@
 
 		<!-- Settings Section -->
 		<div class="settings-section">
-			<h2>Email Settings</h2>
+			<h2>Resend Configuration</h2>
 			<div class="settings-form">
 				<div class="form-row">
 					<div class="form-group">
-						<label for="resend-limit">Resend Daily Limit</label>
+						<label for="daily-limit">Daily Email Limit</label>
 						<input
-							id="resend-limit"
+							id="daily-limit"
 							type="number"
 							bind:value={emailSettings.resend_daily_limit}
 							min="1"
-							max="10000"
+							max="100"
 							class="form-input"
 						/>
+						<small class="form-help">Maximum: 100 emails per day (Resend free tier)</small>
 					</div>
 					<div class="form-group">
-						<label for="mailgun-limit">Mailgun Daily Limit</label>
+						<label for="monthly-limit">Monthly Email Limit</label>
 						<input
-							id="mailgun-limit"
+							id="monthly-limit"
 							type="number"
-							bind:value={emailSettings.mailgun_daily_limit}
+							bind:value={emailSettings.resend_monthly_limit}
 							min="1"
-							max="10000"
+							max="3000"
 							class="form-input"
 						/>
+						<small class="form-help">Maximum: 3,000 emails per month (Resend free tier)</small>
 					</div>
 				</div>
 				<div class="form-row">
-					<div class="form-group">
-						<label for="primary-provider">Primary Provider</label>
-						<select
-							id="primary-provider"
-							bind:value={emailSettings.primary_provider}
-							class="form-select"
-						>
-							<option value="resend">Resend</option>
-							<option value="mailgun">Mailgun</option>
-						</select>
-					</div>
 					<div class="form-group">
 						<label class="checkbox-label">
 							<input
 								type="checkbox"
-								bind:checked={emailSettings.failover_enabled}
+								bind:checked={emailSettings.email_enabled}
 								class="form-checkbox"
 							/>
-							Enable Automatic Failover
+							Enable Email Sending
 						</label>
+						<small class="form-help">Turn off to disable all outgoing emails</small>
+					</div>
+					<div class="form-group">
+						<div class="domain-status">
+							<span class="status-label">Domain Verification Status</span>
+							<div class="status-indicator {emailSettings.domain_verified ? 'verified' : 'pending'}">
+								{#if emailSettings.domain_verified}
+									✅ Domain Verified
+								{:else}
+									⏳ Verification Pending
+								{/if}
+							</div>
+							<small class="form-help">
+								{#if emailSettings.domain_verified}
+									Your domain is verified and ready to send emails
+								{:else}
+									Please verify your domain in the Resend dashboard
+								{/if}
+							</small>
+						</div>
 					</div>
 				</div>
-				<button 
-					class="btn btn-success"
-					onclick={updateSettings}
-				>
-					Update Settings
-				</button>
+				<div class="settings-actions">
+					<button 
+						class="btn btn-success"
+						onclick={updateSettings}
+					>
+						Update Settings
+					</button>
+					<a 
+						href="https://resend.com/domains" 
+						target="_blank" 
+						class="btn btn-outline"
+					>
+						Manage Domain in Resend
+					</a>
+				</div>
 			</div>
 		</div>
 
@@ -654,6 +691,61 @@
 		width: 1rem;
 		height: 1rem;
 		accent-color: #3b82f6;
+	}
+
+	.form-help {
+		font-size: 0.75rem;
+		color: #6b7280;
+		margin-top: 0.25rem;
+	}
+
+	.domain-status {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.status-label {
+		font-weight: 500;
+		color: #374151;
+		font-size: 0.875rem;
+	}
+
+	.status-indicator {
+		padding: 0.5rem;
+		border-radius: 0.375rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		text-align: center;
+	}
+
+	.status-indicator.verified {
+		background: #d1fae5;
+		color: #065f46;
+		border: 1px solid #10b981;
+	}
+
+	.status-indicator.pending {
+		background: #fef3c7;
+		color: #92400e;
+		border: 1px solid #f59e0b;
+	}
+
+	.settings-actions {
+		display: flex;
+		gap: 1rem;
+		margin-top: 1rem;
+	}
+
+	.btn-outline {
+		background: white;
+		color: #374151;
+		border: 1px solid #d1d5db;
+	}
+
+	.btn-outline:hover {
+		background: #f9fafb;
+		border-color: #9ca3af;
 	}
 
 	.btn {

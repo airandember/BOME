@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"database/sql"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"log"
 	"net/http"
 	"net/smtp"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -51,111 +49,69 @@ func (s *EmailService) sendTemplatedEmail(to, subject, templateName string, data
 		log.Printf("⚠️ [EMAIL] Failed to record notification: %v", err)
 	}
 
-	// Try sending with automatic failover
-	sendErr := s.sendWithFailover(to, subject, htmlBody.String(), notificationID)
+	// Send with Resend (simplified - no more failover)
+	sendErr := s.sendWithResend(to, subject, htmlBody.String(), notificationID)
 	if sendErr != nil {
-		log.Printf("❌ [EMAIL] All providers failed: %v", sendErr)
+		log.Printf("❌ [EMAIL] Resend failed: %v", sendErr)
 		if notificationID > 0 {
 			s.updateEmailNotificationStatus(notificationID, "failed", sendErr.Error())
 		}
-		return fmt.Errorf("failed to send email: %w", sendErr)
+		return fmt.Errorf("failed to send email via Resend: %w", sendErr)
 	}
 
 	log.Printf("✅ [EMAIL] Email sent successfully to %s", to)
 	return nil
 }
 
-// sendWithFailover attempts to send email with automatic provider failover
-func (s *EmailService) sendWithFailover(to, subject, htmlBody string, notificationID int) error {
+// sendWithResend sends email using Resend API with usage tracking
+func (s *EmailService) sendWithResend(to, subject, htmlBody string, notificationID int) error {
 	now := time.Now()
 	today := now.Format("2006-01-02")
 	year := now.Year()
 	month := int(now.Month())
 
-	// Get daily usage for both providers
-	resendDailyUsage, _ := s.getTodayUsage("resend", today)
-	mailgunDailyUsage, _ := s.getTodayUsage("mailgun", today)
+	// Get current usage
+	dailyUsage, _ := s.getTodayUsage("resend", today)
+	monthlyUsage, _ := s.getMonthlyUsage("resend", year, month)
 
-	// Get monthly usage for both providers
-	resendMonthlyUsage, _ := s.getMonthlyUsage("resend", year, month)
-	mailgunMonthlyUsage, _ := s.getMonthlyUsage("mailgun", year, month)
+	// Get limits (Resend free tier: 3000/month, 100/day)
+	dailyLimit := s.getProviderLimit("resend", 100)
+	monthlyLimit := s.getProviderMonthlyLimit("resend", 3000)
 
-	// Get daily limits
-	resendDailyLimit := s.getProviderLimit("resend", 100)
-	mailgunDailyLimit := s.getProviderLimit("mailgun", 100)
-
-	// Get monthly limits
-	resendMonthlyLimit := s.getProviderMonthlyLimit("resend", 3000)
-	mailgunMonthlyLimit := s.getProviderMonthlyLimit("mailgun", 5000)
-
-	// Try providers in order of preference
-	providers := []struct {
-		name         string
-		dailyUsage   int
-		dailyLimit   int
-		monthlyUsage int
-		monthlyLimit int
-	}{
-		{"resend", resendDailyUsage, resendDailyLimit, resendMonthlyUsage, resendMonthlyLimit},
-		{"mailgun", mailgunDailyUsage, mailgunDailyLimit, mailgunMonthlyUsage, mailgunMonthlyLimit},
+	// Check limits
+	if dailyUsage >= dailyLimit {
+		return fmt.Errorf("daily email limit reached for Resend (%d/%d)", dailyUsage, dailyLimit)
 	}
 
-	var lastErr error
-	for _, provider := range providers {
-		// Skip if over daily limit
-		if provider.dailyUsage >= provider.dailyLimit {
-			log.Printf("⚠️ [EMAIL-FAILOVER] Skipping %s - over daily limit (%d/%d)", provider.name, provider.dailyUsage, provider.dailyLimit)
-			continue
-		}
-
-		// Skip if over monthly limit
-		if provider.monthlyUsage >= provider.monthlyLimit {
-			log.Printf("⚠️ [EMAIL-FAILOVER] Skipping %s - over monthly limit (%d/%d)", provider.name, provider.monthlyUsage, provider.monthlyLimit)
-			continue
-		}
-
-		log.Printf("📧 [EMAIL-FAILOVER] Trying %s (daily: %d/%d, monthly: %d/%d)",
-			provider.name, provider.dailyUsage, provider.dailyLimit, provider.monthlyUsage, provider.monthlyLimit)
-
-		var sendErr error
-		switch provider.name {
-		case "resend":
-			sendErr = s.sendResendEmail(to, subject, htmlBody)
-		case "mailgun":
-			sendErr = s.sendMailgunEmail(to, subject, htmlBody)
-		}
-
-		// Update usage tracking
-		success := sendErr == nil
-		s.incrementUsage(provider.name, success)
-
-		if sendErr == nil {
-			// Success! Update notification and return
-			if notificationID > 0 {
-				s.updateEmailNotificationStatus(notificationID, "sent", fmt.Sprintf("Sent via %s", provider.name))
-			}
-			log.Printf("✅ [EMAIL-FAILOVER] Email sent successfully via %s to %s", provider.name, to)
-			return nil
-		}
-
-		// Check if this is a domain verification error (403 from Resend)
-		if provider.name == "resend" && strings.Contains(sendErr.Error(), "domain is not verified") {
-			log.Printf("⚠️ [EMAIL-FAILOVER] Resend domain verification failed, trying next provider: %v", sendErr)
-			lastErr = sendErr
-			continue
-		}
-
-		// For other errors, log and try next provider
-		log.Printf("⚠️ [EMAIL-FAILOVER] %s failed: %v", provider.name, sendErr)
-		lastErr = sendErr
+	if monthlyUsage >= monthlyLimit {
+		return fmt.Errorf("monthly email limit reached for Resend (%d/%d)", monthlyUsage, monthlyLimit)
 	}
 
-	// All providers failed
-	if lastErr != nil {
-		return fmt.Errorf("all email providers failed, last error: %w", lastErr)
+	log.Printf("📧 [RESEND] Sending email (daily: %d/%d, monthly: %d/%d)",
+		dailyUsage, dailyLimit, monthlyUsage, monthlyLimit)
+
+	// Send via Resend
+	sendErr := s.sendResendEmail(to, subject, htmlBody)
+
+	// Update usage tracking
+	success := sendErr == nil
+	s.incrementUsage("resend", success)
+
+	if sendErr == nil {
+		// Success! Update notification and return
+		if notificationID > 0 {
+			s.updateEmailNotificationStatus(notificationID, "sent", "Sent via Resend")
+		}
+		log.Printf("✅ [RESEND] Email sent successfully to %s", to)
+		return nil
 	}
 
-	return fmt.Errorf("no email providers available (all over daily limits)")
+	// Handle specific Resend errors
+	if strings.Contains(sendErr.Error(), "domain is not verified") {
+		return fmt.Errorf("resend domain verification required: %w", sendErr)
+	}
+
+	return fmt.Errorf("resend email failed: %w", sendErr)
 }
 
 // sendSMTPEmail sends an email via SMTP
@@ -377,42 +333,42 @@ type EmailProvider struct {
 	IsAvailable bool
 }
 
-// selectEmailProvider chooses the best available email provider
-func (s *EmailService) selectEmailProvider() (string, error) {
+// checkResendAvailability checks if Resend is available for sending
+func (s *EmailService) checkResendAvailability() error {
 	today := time.Now().Format("2006-01-02")
+	year := time.Now().Year()
+	month := int(time.Now().Month())
 
-	// Get today's usage for both providers
-	resendUsage, err := s.getTodayUsage("resend", today)
+	// Get current usage
+	dailyUsage, err := s.getTodayUsage("resend", today)
 	if err != nil {
-		log.Printf("⚠️ [EMAIL-ROUTER] Failed to get resend usage: %v", err)
-		resendUsage = 0 // Continue with 0 if we can't get usage
+		log.Printf("⚠️ [EMAIL] Failed to get resend daily usage: %v", err)
+		dailyUsage = 0 // Continue with 0 if we can't get usage
 	}
 
-	mailgunUsage, err := s.getTodayUsage("mailgun", today)
+	monthlyUsage, err := s.getMonthlyUsage("resend", year, month)
 	if err != nil {
-		log.Printf("⚠️ [EMAIL-ROUTER] Failed to get mailgun usage: %v", err)
-		mailgunUsage = 0 // Continue with 0 if we can't get usage
+		log.Printf("⚠️ [EMAIL] Failed to get resend monthly usage: %v", err)
+		monthlyUsage = 0 // Continue with 0 if we can't get usage
 	}
 
-	// Get limits from settings (default to 100 if not set)
-	resendLimit := s.getProviderLimit("resend", 100)
-	mailgunLimit := s.getProviderLimit("mailgun", 100)
+	// Get limits from settings
+	dailyLimit := s.getProviderLimit("resend", 100)
+	monthlyLimit := s.getProviderMonthlyLimit("resend", 3000)
 
-	// Primary: Use Resend if under limit
-	if resendUsage < resendLimit {
-		log.Printf("📧 [EMAIL-ROUTER] Using Resend (%d/%d used)", resendUsage, resendLimit)
-		return "resend", nil
+	// Check daily limit
+	if dailyUsage >= dailyLimit {
+		return fmt.Errorf("daily email limit reached for Resend (%d/%d)", dailyUsage, dailyLimit)
 	}
 
-	// Secondary: Use Mailgun if under limit
-	if mailgunUsage < mailgunLimit {
-		log.Printf("📧 [EMAIL-ROUTER] Resend limit reached, switching to Mailgun (%d/%d used)", mailgunUsage, mailgunLimit)
-		return "mailgun", nil
+	// Check monthly limit
+	if monthlyUsage >= monthlyLimit {
+		return fmt.Errorf("monthly email limit reached for Resend (%d/%d)", monthlyUsage, monthlyLimit)
 	}
 
-	// Both limits reached
-	return "", fmt.Errorf("daily email limit reached for both providers (Resend: %d/%d, Mailgun: %d/%d)",
-		resendUsage, resendLimit, mailgunUsage, mailgunLimit)
+	log.Printf("📧 [EMAIL] Resend available (daily: %d/%d, monthly: %d/%d)",
+		dailyUsage, dailyLimit, monthlyUsage, monthlyLimit)
+	return nil
 }
 
 // getTodayUsage gets today's email usage for a specific provider
@@ -619,78 +575,5 @@ func (s *EmailService) sendResendEmail(to, subject, htmlBody string) error {
 	}
 
 	log.Printf("✅ [RESEND] Email sent successfully to %s", to)
-	return nil
-}
-
-// sendMailgunEmail sends an email via Mailgun API
-func (s *EmailService) sendMailgunEmail(to, subject, htmlBody string) error {
-	// Get Mailgun settings
-	apiKey, err := s.db.GetEmailSetting("mailgun_api_key")
-	if err != nil || apiKey == "" {
-		return fmt.Errorf("mailgun API key not configured")
-	}
-
-	domain, err := s.db.GetEmailSetting("mailgun_domain")
-	if err != nil || domain == "" {
-		return fmt.Errorf("mailgun domain not configured")
-	}
-
-	// Decrypt API key if encrypted
-	if s.cryptoService != nil {
-		decryptedKey, err := s.cryptoService.DecryptString(apiKey)
-		if err == nil {
-			apiKey = decryptedKey
-		}
-	}
-
-	// Get sender email (try Mailgun-specific first, then fall back to SMTP settings)
-	fromEmail, err := s.db.GetEmailSetting("mailgun_from_email")
-	if err != nil || fromEmail == "" {
-		fromEmail, err = s.db.GetEmailSetting("smtp_from_email")
-		if err != nil || fromEmail == "" {
-			fromEmail = fmt.Sprintf("postmaster@%s", domain) // Use postmaster for sandbox
-		}
-	}
-
-	fromName, _ := s.db.GetEmailSetting("mailgun_from_name")
-	if fromName == "" {
-		fromName, _ = s.db.GetEmailSetting("smtp_from_name")
-		if fromName == "" {
-			fromName = "BOME Support"
-		}
-	}
-
-	// Prepare form data for Mailgun (properly URL encoded)
-	formData := url.Values{}
-	formData.Set("from", fmt.Sprintf("%s <%s>", fromName, fromEmail))
-	formData.Set("to", to)
-	formData.Set("subject", subject)
-	formData.Set("html", htmlBody)
-
-	// Make HTTP request to Mailgun API
-	apiURL := fmt.Sprintf("https://api.mailgun.net/v3/%s/messages", domain)
-	req, err := http.NewRequest("POST", apiURL, strings.NewReader(formData.Encode()))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Mailgun uses Basic Auth with "api:your-api-key"
-	auth := base64.StdEncoding.EncodeToString([]byte("api:" + apiKey))
-	req.Header.Set("Authorization", "Basic "+auth)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("mailgun API error (%d): %s", resp.StatusCode, string(body))
-	}
-
-	log.Printf("✅ [MAILGUN] Email sent successfully to %s", to)
 	return nil
 }
