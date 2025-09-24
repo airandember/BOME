@@ -274,7 +274,13 @@ function createAuthStore() {
 					throw new Error(error.error || 'Registration failed');
 				}
 				
-				return { success: true };
+				const responseData = await response.json();
+				return { 
+					success: true, 
+					user_id: responseData.user_id,
+					email: responseData.email,
+					verification_required: responseData.verification_required
+				};
 			} catch (error) {
 				console.error('Registration error:', error);
 				const errorMessage = error instanceof Error ? error.message : 'Registration failed';
