@@ -71,7 +71,7 @@ func (s *EmailService) sendMockVerificationEmail(userID int, email, name string)
 	}
 
 	// Store token in database
-	expiresAt := time.Now().Add(24 * time.Hour)
+	expiresAt := time.Now().Add(3 * time.Hour)
 	err = s.storeVerificationToken(userID, token, email, expiresAt)
 	if err != nil {
 		return fmt.Errorf("failed to store token: %w", err)
@@ -98,7 +98,7 @@ func (s *EmailService) sendMockVerificationEmail(userID int, email, name string)
 	log.Printf("📧 [MOCK-EMAIL] 🔗 VERIFICATION LINK:")
 	log.Printf("📧 [MOCK-EMAIL] %s", verificationURL)
 	log.Printf("📧 [MOCK-EMAIL] ")
-	log.Printf("📧 [MOCK-EMAIL] ⏰ This verification link will expire in 24 hours.")
+	log.Printf("📧 [MOCK-EMAIL] ⏰ This verification link will expire in 3 hours.")
 	log.Printf("📧 [MOCK-EMAIL] ")
 	log.Printf("📧 [MOCK-EMAIL] Once verified, you'll have access to:")
 	log.Printf("📧 [MOCK-EMAIL] 📚 Exclusive research articles and studies")
@@ -363,7 +363,7 @@ func (s *EmailService) loadTemplates() {
             </div>
             
             <div class="security-notice">
-                <p>⏰ <strong>Security Notice:</strong> This verification link will expire in 24 hours for your account security.</p>
+                <p>⏰ <strong>Security Notice:</strong> This verification link will expire in 3 hours for your account security.</p>
             </div>
             
             <p>Once verified, you'll have access to:</p>
@@ -473,7 +473,7 @@ func (s *EmailService) SendVerificationEmail(userID int, email, name string) err
 	}
 
 	// Store token in database
-	expiresAt := time.Now().Add(24 * time.Hour)
+	expiresAt := time.Now().Add(3 * time.Hour)
 	err = s.storeVerificationToken(userID, token, email, expiresAt)
 	if err != nil {
 		return fmt.Errorf("failed to store token: %w", err)

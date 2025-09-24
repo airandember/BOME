@@ -382,7 +382,7 @@ func (db *DB) SetVerificationToken(userID int, token string) error {
 func (db *DB) GetUserByVerificationToken(token string) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
-		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed FROM users WHERE verification_token = $1 AND updated_at > NOW() - INTERVAL '24 hours'`,
+		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed FROM users WHERE verification_token = $1 AND updated_at > NOW() - INTERVAL '3 hours'`,
 		token,
 	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified, &user.StripeCustomerID, &user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed)
 	if err != nil {
@@ -853,8 +853,8 @@ func (db *DB) CheckSessionLimit(userID int, maxSessions int) (bool, error) {
 
 // CleanupExpiredTokens removes expired verification and reset tokens
 func (db *DB) CleanupExpiredTokens() error {
-	// Clean up expired verification tokens (older than 24 hours)
-	_, err := db.Exec(`UPDATE users SET verification_token = NULL WHERE updated_at < NOW() - INTERVAL '24 hours' AND verification_token IS NOT NULL`)
+	// Clean up expired verification tokens (older than 3 hours)
+	_, err := db.Exec(`UPDATE users SET verification_token = NULL WHERE updated_at < NOW() - INTERVAL '3 hours' AND verification_token IS NOT NULL`)
 	if err != nil {
 		return err
 	}
