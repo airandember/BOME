@@ -86,6 +86,7 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 			COALESCE(sp.id, 0) as plan_id, 
 			COALESCE(
 				sp.name, 
+				stripe_prod.name,
 				ss.product_name,
 				CASE 
 					WHEN ss.status = 'active' THEN 'Active Subscription'
@@ -93,9 +94,9 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 					ELSE 'Subscription'
 				END
 			) as plan_name,
-			COALESCE(sp.price, ss.unit_amount::float / 100.0, 0.0) as plan_price, 
-			COALESCE(sp.currency, ss.currency, 'USD') as plan_currency,
-			COALESCE(sp.interval, 'month') as interval, 
+			COALESCE(sp.price, stripe_price.unit_amount::float / 100.0, ss.unit_amount::float / 100.0, 0.0) as plan_price, 
+			COALESCE(sp.currency, stripe_price.currency, ss.currency, 'USD') as plan_currency,
+			COALESCE(sp.interval, stripe_price.recurring_interval, 'month') as interval, 
 			COALESCE(sp.interval_count, 1) as interval_count,
 			COALESCE(ss.status, 'active') as subscription_status,
 			ss.current_period_start, 
@@ -108,6 +109,8 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
 		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing')
+		LEFT JOIN stripe_products stripe_prod ON ss.product_id = stripe_prod.id
+		LEFT JOIN stripe_prices stripe_price ON stripe_prod.id = stripe_price.product_id
 		WHERE (u.sub_id IS NOT NULL OR ss.id IS NOT NULL)
 		AND u.is_active = true
 		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW() OR ss.id IS NULL)
