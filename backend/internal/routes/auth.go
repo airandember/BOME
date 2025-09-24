@@ -177,8 +177,10 @@ func RegisterHandler(db *database.DB, emailService *services.EmailService) gin.H
 		log.Printf("User registered successfully: %s (ID: %d) from %s", user.Email, user.ID, clientIP)
 
 		c.JSON(http.StatusCreated, gin.H{
-			"message": "Registration successful. Please check your email to verify your account.",
-			"user_id": user.ID,
+			"message":               "Registration successful. Please check your email to verify your account.",
+			"user_id":               user.ID,
+			"email":                 user.Email,
+			"verification_required": true,
 		})
 	}
 }
@@ -806,11 +808,32 @@ func VerifyEmailLinkHandler(db *database.DB) gin.HandlerFunc {
 			log.Printf("Failed to clear verification token: %v", err)
 		}
 
+		// Update last login to complete the verification process
+		if err := db.UpdateLastLogin(user.ID); err != nil {
+			log.Printf("Failed to update last login: %v", err)
+		}
+
 		log.Printf("✅ Email verified via link for: %s (ID: %d)", user.Email, user.ID)
 
-		// Redirect to frontend success page
-		successURL := fmt.Sprintf("%s/auth/verify-email?success=true", getFrontendURL(c))
-		log.Printf("🔄 [VERIFY-LINK] Redirecting to frontend: %s", successURL)
+		// Generate login tokens for auto-login
+		accessToken, refreshToken, err := services.GenerateTokens(user.ID, user.Email, user.Role)
+		if err != nil {
+			log.Printf("Failed to generate tokens after verification: %v", err)
+			// Fall back to success page without auto-login
+			successURL := fmt.Sprintf("%s/auth/verify-email?success=true", getFrontendURL(c))
+			c.Redirect(http.StatusTemporaryRedirect, successURL)
+			return
+		}
+
+		// Store refresh token in database
+		if err := db.StoreRefreshToken(user.ID, refreshToken); err != nil {
+			log.Printf("Failed to store refresh token: %v", err)
+		}
+
+		// Redirect to frontend with auto-login tokens
+		successURL := fmt.Sprintf("%s/auth/verify-email?success=true&access_token=%s&refresh_token=%s&user_id=%d",
+			getFrontendURL(c), accessToken, refreshToken, user.ID)
+		log.Printf("🔄 [VERIFY-LINK] Redirecting to frontend with auto-login: %s", successURL)
 		c.Redirect(http.StatusTemporaryRedirect, successURL)
 	}
 }

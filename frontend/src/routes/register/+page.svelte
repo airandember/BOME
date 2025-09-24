@@ -51,8 +51,10 @@
 		
 		if (result.success) {
 			success = true;
+			// Redirect to email verification page instead of login
 			setTimeout(() => {
-				goto('/login');
+				const verifyUrl = `/auth/verify-email?email=${encodeURIComponent(email)}&user_id=${result.user_id || ''}`;
+				goto(verifyUrl);
 			}, 2000);
 		} else {
 			error = result.error || 'Registration failed';
@@ -76,7 +78,7 @@
 		{#if success}
 			<div class="success-message">
 				<h3>Registration Successful!</h3>
-				<p>Your account has been created. Redirecting to login...</p>
+				<p>Your account has been created. Please check your email to verify your account...</p>
 			</div>
 		{:else}
 			<!-- OAuth2 Registration Options -->

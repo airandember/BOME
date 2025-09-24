@@ -12,14 +12,74 @@
 	let isResending = false;
 	let resendSuccess = false;
 	let resendCooldown = 0;
+	let autoRedirectTimer = 20; // 20 second countdown
+	let showManualRedirect = false;
 
-	onMount(() => {
+	onMount(async () => {
 		// Get parameters from URL
 		const urlParams = $page.url.searchParams;
 		userEmail = urlParams.get('email') || '';
 		userId = urlParams.get('user_id') || '';
 		success = urlParams.get('success') === 'true';
 		error = urlParams.get('error') || '';
+
+		// Check for auto-login tokens
+		const accessToken = urlParams.get('access_token');
+		const refreshToken = urlParams.get('refresh_token');
+		const userIdFromToken = urlParams.get('user_id');
+
+		if (success && accessToken && refreshToken && userIdFromToken) {
+			// Auto-login the user after successful verification
+			try {
+				console.log('🔄 Attempting auto-login with tokens...');
+				
+				// Get user data from backend
+				const userResponse = await fetch(`http://localhost:8080/api/v1/users/me`, {
+					headers: {
+						'Authorization': `Bearer ${accessToken}`,
+						'Content-Type': 'application/json'
+					}
+				});
+
+				if (userResponse.ok) {
+					const userData = await userResponse.json();
+					console.log('✅ User data fetched successfully:', userData);
+					
+					// Store auth data
+					const tokens = {
+						access_token: accessToken,
+						refresh_token: refreshToken,
+						expires_in: 3600, // 1 hour default
+						token_type: 'Bearer'
+					};
+
+					// Import storeAuthData function
+					const { storeAuthData } = await import('$lib/auth');
+					storeAuthData(tokens, userData);
+					console.log('✅ Auth data stored successfully');
+
+					// Start countdown timer for redirect
+					startAutoRedirectTimer();
+					return;
+				} else {
+					console.error('❌ Failed to fetch user data:', userResponse.status);
+				}
+			} catch (err) {
+				console.error('❌ Auto-login failed:', err);
+				// Continue with normal success flow and show manual redirect
+				showManualRedirect = true;
+			}
+		}
+
+		// If we reach here and it's a success, start the timer anyway
+		if (success) {
+			// If no auto-login tokens, show manual redirect immediately
+			if (!accessToken || !refreshToken) {
+				showManualRedirect = true;
+				autoRedirectTimer = 10; // Shorter timer for manual redirect
+			}
+			startAutoRedirectTimer();
+		}
 
 		// If no email provided, redirect to login
 		if (!userEmail && !success && !error) {
@@ -48,6 +108,28 @@
 				}
 			}, 1000);
 		}
+	}
+
+	function startAutoRedirectTimer() {
+		console.log('🕐 Starting auto-redirect timer (20 seconds)');
+		const timer = setInterval(() => {
+			autoRedirectTimer--;
+			console.log(`⏰ Auto-redirect in ${autoRedirectTimer} seconds`);
+			
+			if (autoRedirectTimer <= 0) {
+				clearInterval(timer);
+				console.log('🚀 Auto-redirecting to home page');
+				goto('/');
+			} else if (autoRedirectTimer <= 15) {
+				// Show manual redirect button after 5 seconds
+				showManualRedirect = true;
+			}
+		}, 1000);
+	}
+
+	function goToHomepage() {
+		console.log('🏠 Manual redirect to home page');
+		goto('/');
 	}
 
 	async function resendVerification() {
@@ -106,9 +188,26 @@
 				<div class="success-state">
 					<div class="icon success-icon">✅</div>
 					<h1>Email Verified Successfully!</h1>
-					<p>Your email address has been verified. You can now log in to your account.</p>
-					<div class="actions">
-						<a href="/login" class="btn btn-primary">Continue to Login</a>
+					<p>Welcome to BOME! Your email has been verified and you're being logged in automatically...</p>
+					
+					<div class="loading-spinner spinner">
+					</div>
+					
+					<div class="redirect-info">
+						{#if $page.url.searchParams.get('access_token')}
+							<p>Redirecting to your dashboard in <strong>{autoRedirectTimer}</strong> seconds...</p>
+						{:else}
+							<p>Redirecting to homepage in <strong>{autoRedirectTimer}</strong> seconds...</p>
+						{/if}
+						
+						{#if showManualRedirect}
+							<div class="manual-redirect">
+								<p>Taking too long?</p>
+								<button class="btn btn-primary" on:click={goToHomepage}>
+									🏠 Go to Homepage
+								</button>
+							</div>
+						{/if}
 					</div>
 				</div>
 			{:else if error}
@@ -348,6 +447,68 @@
 	.btn:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
+	}
+
+	/* Loading spinner styles */
+	.loading-spinner {
+		text-align: center;
+		margin: 2rem 0;
+	}
+
+	.spinner {
+		border: 3px solid #f3f3f3;
+		border-top: 3px solid #667eea;
+		border-radius: 50%;
+		width: 40px;
+		height: 40px;
+		animation: spin 1s linear infinite;
+		margin: 0 auto 1rem;
+	}
+
+	@keyframes spin {
+		0% { transform: rotate(0deg); }
+		100% { transform: rotate(360deg); }
+	}
+
+	.loading-spinner p {
+		color: #6b7280;
+		font-size: 0.9rem;
+	}
+
+	/* Redirect info styles */
+	.redirect-info {
+		margin-top: 1.5rem;
+		text-align: center;
+	}
+
+	.redirect-info p {
+		color: #4b5563;
+		font-size: 1rem;
+		margin-bottom: 1rem;
+	}
+
+	.redirect-info strong {
+		color: #667eea;
+		font-weight: 600;
+	}
+
+	.manual-redirect {
+		margin-top: 1.5rem;
+		padding: 1rem;
+		background: #f8fafc;
+		border-radius: 8px;
+		border: 1px solid #e2e8f0;
+	}
+
+	.manual-redirect p {
+		color: #64748b;
+		font-size: 0.9rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.manual-redirect .btn {
+		font-size: 0.95rem;
+		padding: 0.75rem 1.5rem;
 	}
 
 	.btn-primary {
