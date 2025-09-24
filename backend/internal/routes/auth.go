@@ -816,7 +816,7 @@ func VerifyEmailLinkHandler(db *database.DB) gin.HandlerFunc {
 		log.Printf("✅ Email verified via link for: %s (ID: %d)", user.Email, user.ID)
 
 		// Generate login tokens for auto-login
-		accessToken, refreshToken, err := services.GenerateTokens(user.ID, user.Email, user.Role)
+		tokenPair, err := services.GenerateTokenPair(user.ID, user.Email, user.Role, true) // email is verified
 		if err != nil {
 			log.Printf("Failed to generate tokens after verification: %v", err)
 			// Fall back to success page without auto-login
@@ -825,14 +825,32 @@ func VerifyEmailLinkHandler(db *database.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Store refresh token in database
-		if err := db.StoreRefreshToken(user.ID, refreshToken); err != nil {
-			log.Printf("Failed to store refresh token: %v", err)
+		// Create session for tracking
+		deviceInfo := services.GenerateDeviceFingerprint(c.Request)
+		clientIP := services.GetClientIP(c.Request.RemoteAddr, c.GetHeader("X-Forwarded-For"), c.GetHeader("X-Real-IP"))
+
+		// Extract token ID from refresh token for session tracking
+		refreshClaims, _ := services.ParseRefreshToken(tokenPair.RefreshToken)
+		tokenID := ""
+		if refreshClaims != nil {
+			tokenID = refreshClaims.TokenID
+		}
+
+		_, err = db.CreateSession(
+			user.ID,
+			tokenID,
+			deviceInfo,
+			clientIP,
+			c.GetHeader("User-Agent"),
+			time.Now().Add(7*24*time.Hour), // Session expires with refresh token
+		)
+		if err != nil {
+			log.Printf("Failed to create session: %v", err)
 		}
 
 		// Redirect to frontend with auto-login tokens
 		successURL := fmt.Sprintf("%s/auth/verify-email?success=true&access_token=%s&refresh_token=%s&user_id=%d",
-			getFrontendURL(c), accessToken, refreshToken, user.ID)
+			getFrontendURL(c), tokenPair.AccessToken, tokenPair.RefreshToken, user.ID)
 		log.Printf("🔄 [VERIFY-LINK] Redirecting to frontend with auto-login: %s", successURL)
 		c.Redirect(http.StatusTemporaryRedirect, successURL)
 	}
