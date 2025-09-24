@@ -49,6 +49,12 @@ type VerifyEmailRequest struct {
 	Token string `json:"token" binding:"required"`
 }
 
+// VerifyEmailLinkRequest represents email verification via URL link
+type VerifyEmailLinkRequest struct {
+	Token  string `form:"token" binding:"required"`
+	UserID int    `form:"user_id"`
+}
+
 // ChangePasswordRequest represents the change password payload
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password" binding:"required"`
@@ -173,6 +179,77 @@ func RegisterHandler(db *database.DB, emailService *services.EmailService) gin.H
 		c.JSON(http.StatusCreated, gin.H{
 			"message": "Registration successful. Please check your email to verify your account.",
 			"user_id": user.ID,
+		})
+	}
+}
+
+// RequestVerificationHandler handles verification email requests for existing users
+func RequestVerificationHandler(db *database.DB, emailService *services.EmailService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			Email string `json:"email" binding:"required,email"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+			return
+		}
+
+		// Rate limiting
+		clientIP := services.GetClientIP(c.Request.RemoteAddr, c.GetHeader("X-Forwarded-For"), c.GetHeader("X-Real-IP"))
+		if !services.RegisterRateLimiter.Allow(clientIP) {
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error": "Too many verification requests. Please try again later.",
+			})
+			return
+		}
+
+		// Sanitize email
+		req.Email = strings.ToLower(services.SanitizeString(req.Email))
+
+		// Get user by email
+		user, err := db.GetUserByEmail(req.Email)
+		if err != nil {
+			// Don't reveal if user exists or not for security
+			c.JSON(http.StatusOK, gin.H{
+				"message": "If an account with this email exists and requires verification, a verification email has been sent.",
+			})
+			return
+		}
+
+		// Check if already verified
+		if user.EmailVerified {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Email address is already verified",
+			})
+			return
+		}
+
+		// Generate new verification token
+		verificationToken := services.GenerateSecureToken()
+		if err := db.SetVerificationToken(user.ID, verificationToken); err != nil {
+			log.Printf("Failed to set verification token: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to generate verification token",
+			})
+			return
+		}
+
+		// Send verification email
+		if emailService != nil {
+			fullName := user.FirstName + " " + user.LastName
+			if err := emailService.SendVerificationEmail(user.ID, user.Email, fullName); err != nil {
+				log.Printf("Failed to send verification email: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": "Failed to send verification email",
+				})
+				return
+			}
+		}
+
+		log.Printf("✅ Verification email sent to existing user: %s", user.Email)
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Verification email sent successfully. Please check your email.",
 		})
 	}
 }
@@ -339,6 +416,35 @@ func LoginHandler(db *database.DB) gin.HandlerFunc {
 
 		// Record successful attempt
 		services.EnhancedLoginRateLimiter.RecordSuccessfulAttempt(req.Email)
+
+		// 🔐 EMAIL VERIFICATION CHECK: Block login if email not verified AND no previous login
+		if !user.EmailVerified && !user.LastLogin.Valid {
+			log.Printf("🚫 Login blocked for unverified user: %s (ID: %d) - first-time login requires email verification", user.Email, user.ID)
+
+			// Log security event
+			if db != nil {
+				auditLog := &database.AuditLog{
+					UserID:    &user.ID,
+					UserEmail: &user.Email,
+					Action:    "login_blocked",
+					Resource:  "authentication",
+					IPAddress: clientIP,
+					UserAgent: c.GetHeader("User-Agent"),
+					Status:    "warning",
+					Details:   &[]string{"Login blocked - email verification required for first-time login"}[0],
+					Severity:  "medium",
+				}
+				db.CreateAuditLog(auditLog)
+			}
+
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":                 "Email verification required",
+				"message":               "Please verify your email address before logging in. Check your inbox for a verification link.",
+				"verification_required": true,
+				"user_id":               user.ID,
+			})
+			return
+		}
 
 		// Check session limit
 		maxSessions := 5 // Default max sessions
@@ -612,7 +718,57 @@ func ResetPasswordHandler(db *database.DB) gin.HandlerFunc {
 	}
 }
 
-// VerifyEmailHandler handles email verification
+// VerifyEmailLinkHandler handles email verification via GET link (when user clicks email link)
+func VerifyEmailLinkHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req VerifyEmailLinkRequest
+		if err := c.ShouldBindQuery(&req); err != nil {
+			// Redirect to frontend with error
+			c.Redirect(http.StatusTemporaryRedirect, "/auth/verify-email?error=invalid_link")
+			return
+		}
+
+		// Check if database is available
+		if db == nil {
+			c.Redirect(http.StatusTemporaryRedirect, "/auth/verify-email?error=service_unavailable")
+			return
+		}
+
+		// Get user by verification token
+		user, err := db.GetUserByVerificationToken(req.Token)
+		if err != nil {
+			log.Printf("Invalid verification token: %s", req.Token)
+			c.Redirect(http.StatusTemporaryRedirect, "/auth/verify-email?error=invalid_token")
+			return
+		}
+
+		// Optional: Verify user ID matches (extra security)
+		if req.UserID > 0 && user.ID != req.UserID {
+			log.Printf("User ID mismatch in verification: expected %d, got %d", user.ID, req.UserID)
+			c.Redirect(http.StatusTemporaryRedirect, "/auth/verify-email?error=invalid_token")
+			return
+		}
+
+		// Set email as verified
+		if err := db.SetUserEmailVerified(user.ID); err != nil {
+			log.Printf("Failed to verify email: %v", err)
+			c.Redirect(http.StatusTemporaryRedirect, "/auth/verify-email?error=verification_failed")
+			return
+		}
+
+		// Clear verification token
+		if err := db.ClearVerificationToken(user.ID); err != nil {
+			log.Printf("Failed to clear verification token: %v", err)
+		}
+
+		log.Printf("✅ Email verified via link for: %s (ID: %d)", user.Email, user.ID)
+
+		// Redirect to success page
+		c.Redirect(http.StatusTemporaryRedirect, "/auth/verify-email?success=true")
+	}
+}
+
+// VerifyEmailHandler handles email verification via JSON API (for mobile apps/SPA)
 func VerifyEmailHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req VerifyEmailRequest

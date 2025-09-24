@@ -351,8 +351,18 @@ func SetupRoutes(
 		auth.POST("/change-password", middleware.AuthRequired(), ChangePasswordHandler(db))
 
 		// Email verification routes
-		auth.GET("/verify-email/:token", VerifyEmailTokenHandler(emailService))
-		auth.POST("/resend-verification", middleware.AuthRequired(), ResendVerificationHandler(db, emailService))
+		auth.GET("/verify-email-link", VerifyEmailLinkHandler(db))              // GET route for email links
+		auth.POST("/verify-email", VerifyEmailHandler(db))                      // POST route for API/mobile
+		auth.GET("/verify-email/:token", VerifyEmailTokenHandler(emailService)) // Legacy route
+		auth.POST("/resend-verification", ResendVerificationHandler(db, emailService))
+		auth.POST("/request-verification", RequestVerificationHandler(db, emailService)) // For existing users
+
+		// Password reset routes
+		auth.POST("/forgot-password", ForgotPasswordHandler(db, emailService))
+		auth.POST("/reset-password", ResetPasswordHandler(db))
+
+		// Token refresh
+		auth.POST("/refresh", RefreshTokenHandler(db))
 	}
 
 	// Initialize OAuth2 service
