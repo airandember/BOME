@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -86,6 +87,9 @@ func RegisterStripeAnalyticsRoutes(router *gin.RouterGroup, stripeService *servi
 		// Stripe products management endpoints
 		stripe.GET("/products/available", func(c *gin.Context) { getAvailableStripeProducts(c, db) })
 		stripe.GET("/products/all", func(c *gin.Context) { getAllStripeProducts(c, db) })
+		stripe.GET("/products/accordion", func(c *gin.Context) { getStripeProductsForAccordion(c, db) })
+		stripe.PUT("/products/video-approval/:id", func(c *gin.Context) { updateProductVideoApproval(c, db) })
+		stripe.POST("/products/update-legacy", func(c *gin.Context) { updateLegacyProducts(c, db) })
 		stripe.GET("/products/debug", func(c *gin.Context) { debugStripeProductsData(c, db) })
 		stripe.PUT("/products/:stripe_id/availability", func(c *gin.Context) { updateStripeProductAvailability(c, db) })
 		stripe.PUT("/products/bulk-availability", func(c *gin.Context) { bulkUpdateStripeProductAvailability(c, db) })
@@ -1717,4 +1721,271 @@ func getHealthRecommendations(health *database.StripeMetadataHealth) []string {
 	}
 
 	return recommendations
+}
+
+// getStripeProductsForAccordion returns Stripe products formatted for the accordion UI
+func getStripeProductsForAccordion(c *gin.Context, db *database.DB) {
+	log.Printf("🎯 Getting Stripe products for accordion...")
+
+	// Debug: Check what products and prices we have
+	debugQuery := `
+		SELECT p.id, p.name, pr.id as price_id, pr.unit_amount, pr.currency
+		FROM stripe_products p
+		LEFT JOIN stripe_prices pr ON p.id = pr.product_id
+		WHERE p.video_approved = true OR p.active = true
+		ORDER BY p.id
+		LIMIT 10
+	`
+	debugRows, err := db.DB.Query(debugQuery)
+	if err == nil {
+		log.Printf("🔍 Debug - Product/Price relationships (video_approved or active products):")
+		for debugRows.Next() {
+			var prodID int
+			var prodName string
+			var priceID *int
+			var unitAmount *int
+			var currency *string
+			debugRows.Scan(&prodID, &prodName, &priceID, &unitAmount, &currency)
+			if priceID != nil {
+				log.Printf("   ✅ Product %d (%s) -> Price %d (%v %v)", prodID, prodName, *priceID, unitAmount, currency)
+			} else {
+				log.Printf("   ❌ Product %d (%s) -> No price found", prodID, prodName)
+			}
+		}
+		debugRows.Close()
+	}
+
+	query := `
+		SELECT 
+			id, 
+			stripe_id, 
+			name, 
+			description, 
+			active, 
+			available,
+			video_approved,
+			livemode,
+			legacy_product,
+			created_at,
+			updated_at
+		FROM stripe_products
+		ORDER BY 
+			CASE WHEN video_approved THEN 0 ELSE 1 END,
+			active DESC,
+			name ASC
+	`
+
+	rows, err := db.DB.Query(query)
+	if err != nil {
+		log.Printf("❌ Error querying Stripe products: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to fetch Stripe products",
+		})
+		return
+	}
+	defer rows.Close()
+
+	var products []map[string]interface{}
+	for rows.Next() {
+		var id int
+		var stripeID, name string
+		var description *string
+		var active, available, videoApproved, livemode, legacyProduct bool
+		var createdAt, updatedAt time.Time
+
+		err := rows.Scan(&id, &stripeID, &name, &description, &active, &available, &videoApproved, &livemode, &legacyProduct, &createdAt, &updatedAt)
+		if err != nil {
+			log.Printf("❌ Error scanning Stripe product: %v", err)
+			continue
+		}
+
+		// Get price information for this product
+		priceQuery := `
+			SELECT 
+				id,
+				stripe_id,
+				unit_amount,
+				currency,
+				recurring_interval
+			FROM stripe_prices 
+			WHERE product_id = $1 
+			ORDER BY unit_amount ASC
+			LIMIT 1
+		`
+
+		var priceInfo map[string]interface{}
+		var priceID int
+		var priceStripeID string
+		var unitAmount *int
+		var currency *string
+		var recurringInterval *string
+
+		err = db.DB.QueryRow(priceQuery, id).Scan(&priceID, &priceStripeID, &unitAmount, &currency, &recurringInterval)
+		if err == nil {
+			priceInfo = map[string]interface{}{
+				"id":                 priceID,
+				"stripe_id":          priceStripeID,
+				"unit_amount":        unitAmount,
+				"currency":           currency,
+				"recurring_interval": recurringInterval,
+			}
+			var amountStr, currencyStr string
+			if unitAmount != nil {
+				amountStr = fmt.Sprintf("$%.2f", float64(*unitAmount)/100)
+			} else {
+				amountStr = "nil"
+			}
+			if currency != nil {
+				currencyStr = strings.ToUpper(*currency)
+			} else {
+				currencyStr = "nil"
+			}
+			log.Printf("✅ Found price for product %d (%s): %s %s", id, name, amountStr, currencyStr)
+		} else {
+			log.Printf("⚠️ No price found for product %d (%s): %v", id, name, err)
+		}
+
+		// Format description
+		desc := ""
+		if description != nil {
+			desc = *description
+			// Truncate long descriptions
+			if len(desc) > 200 {
+				desc = desc[:200] + "..."
+			}
+		}
+
+		product := map[string]interface{}{
+			"id":             id,
+			"stripe_id":      stripeID,
+			"name":           name,
+			"description":    desc,
+			"active":         active,
+			"available":      available,
+			"video_approved": videoApproved,
+			"livemode":       livemode,
+			"created_at":     createdAt.Format("2006-01-02 15:04:05"),
+			"updated_at":     updatedAt.Format("2006-01-02 15:04:05"),
+			"price":          priceInfo,
+			"legacy":         legacyProduct,
+		}
+		products = append(products, product)
+	}
+
+	// Group products by status
+	videoApproved := []map[string]interface{}{}
+	active := []map[string]interface{}{}
+	inactive := []map[string]interface{}{}
+
+	for _, product := range products {
+		if product["video_approved"].(bool) {
+			videoApproved = append(videoApproved, product)
+		} else if product["active"].(bool) {
+			active = append(active, product)
+		} else {
+			inactive = append(inactive, product)
+		}
+	}
+
+	log.Printf("✅ Retrieved %d products: %d video-approved, %d active, %d inactive",
+		len(products), len(videoApproved), len(active), len(inactive))
+
+	c.JSON(http.StatusOK, gin.H{
+		"products": gin.H{
+			"video_approved": videoApproved,
+			"active":         active,
+			"inactive":       inactive,
+		},
+		"total_count": len(products),
+		"counts": gin.H{
+			"video_approved": len(videoApproved),
+			"active":         len(active),
+			"inactive":       len(inactive),
+		},
+	})
+}
+
+// updateProductVideoApproval toggles the video_approved status for a product
+func updateProductVideoApproval(c *gin.Context, db *database.DB) {
+	productID := c.Param("id")
+
+	var request struct {
+		VideoApproved bool `json:"video_approved"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request format",
+		})
+		return
+	}
+
+	log.Printf("🔧 Updating video approval for product %s to %v", productID, request.VideoApproved)
+
+	// Update the product
+	query := `
+		UPDATE stripe_products 
+		SET video_approved = $1, updated_at = NOW()
+		WHERE id = $2
+		RETURNING id, name, video_approved
+	`
+
+	var id int
+	var name string
+	var videoApproved bool
+
+	err := db.DB.QueryRow(query, request.VideoApproved, productID).Scan(&id, &name, &videoApproved)
+	if err != nil {
+		log.Printf("❌ Error updating product video approval: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update product video approval",
+		})
+		return
+	}
+
+	log.Printf("✅ Updated product %d (%s) video_approved to %v", id, name, videoApproved)
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":             id,
+		"name":           name,
+		"video_approved": videoApproved,
+		"message":        fmt.Sprintf("Product '%s' video approval updated to %v", name, videoApproved),
+	})
+}
+
+// updateLegacyProducts marks products older than 2 years as legacy
+func updateLegacyProducts(c *gin.Context, db *database.DB) {
+	log.Printf("🕰️ Updating legacy products...")
+
+	// Update products older than 2 years to be legacy
+	cutoffDate := time.Now().AddDate(-2, 0, 0)
+
+	query := `
+		UPDATE stripe_products 
+		SET legacy_product = true 
+		WHERE created_at < $1 AND legacy_product = false
+	`
+
+	result, err := db.DB.Exec(query, cutoffDate)
+	if err != nil {
+		log.Printf("❌ Failed to update legacy products: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update legacy products",
+		})
+		return
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("⚠️ Could not get rows affected: %v", err)
+		rowsAffected = 0
+	}
+
+	log.Printf("✅ Updated %d products to legacy status", rowsAffected)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "Legacy products updated successfully",
+		"updated_count": rowsAffected,
+		"cutoff_date":   cutoffDate.Format("2006-01-02"),
+	})
 }

@@ -20,6 +20,7 @@
 	import OfferDetailsModal from './components/OfferDetailsModal.svelte';
 	import StripeIntegrationStatus from './components/StripeIntegrationStatus.svelte'; // Add Stripe status component
 	import StripeImportModal from './components/StripeImportModal.svelte';
+	import StripeProductsAccordion from './components/StripeProductsAccordion.svelte';
 
 	// State
 	let isLoading = true;
@@ -749,6 +750,9 @@
 					/>
 				{/each}
 			</SubscriptionAccordion>
+
+			<!-- Stripe Products Accordion (nested within Plans section) -->
+			<StripeProductsAccordion bind:activeAccordion />
 
 			<!-- Separator -->
 			<hr class="section-divider" />
