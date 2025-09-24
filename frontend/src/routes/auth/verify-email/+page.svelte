@@ -131,7 +131,7 @@
 								Resend Verification Email
 							{/if}
 						</button>
-						<a href="/auth/login" class="btn btn-secondary">Back to Login</a>
+						<a href="/login" class="btn btn-secondary">Back to Login</a>
 					</div>
 				</div>
 			{:else}

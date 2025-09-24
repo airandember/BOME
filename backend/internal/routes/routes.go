@@ -351,7 +351,8 @@ func SetupRoutes(
 		auth.POST("/change-password", middleware.AuthRequired(), ChangePasswordHandler(db))
 
 		// Email verification routes
-		auth.GET("/verify-email-link", VerifyEmailLinkHandler(db))              // GET route for email links
+		auth.GET("/verify-email-link", VerifyEmailLinkHandler(db)) // GET route for email links
+		fmt.Printf("✅ Registered verify-email-link route\n")
 		auth.POST("/verify-email", VerifyEmailHandler(db))                      // POST route for API/mobile
 		auth.GET("/verify-email/:token", VerifyEmailTokenHandler(emailService)) // Legacy route
 		auth.POST("/resend-verification", ResendVerificationHandler(db, emailService))

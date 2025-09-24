@@ -738,12 +738,16 @@ func ResetPasswordHandler(db *database.DB) gin.HandlerFunc {
 // VerifyEmailLinkHandler handles email verification via GET link (when user clicks email link)
 func VerifyEmailLinkHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		log.Printf("🔍 [VERIFY-LINK] Handler called: %s", c.Request.URL.String())
 		var req VerifyEmailLinkRequest
 		if err := c.ShouldBindQuery(&req); err != nil {
+			log.Printf("❌ [VERIFY-LINK] Failed to bind query parameters: %v", err)
 			// Redirect to frontend with error
 			c.Redirect(http.StatusTemporaryRedirect, "/auth/verify-email?error=invalid_link")
 			return
 		}
+
+		log.Printf("🔍 [VERIFY-LINK] Processing token: %s, user_id: %d", req.Token[:8]+"...", req.UserID)
 
 		// Check if database is available
 		if db == nil {
