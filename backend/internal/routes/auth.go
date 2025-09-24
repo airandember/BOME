@@ -735,6 +735,19 @@ func ResetPasswordHandler(db *database.DB) gin.HandlerFunc {
 	}
 }
 
+// getFrontendURL returns the appropriate frontend URL for redirects
+func getFrontendURL(c *gin.Context) string {
+	if strings.Contains(c.Request.Host, "localhost") {
+		return "http://localhost:5173" // Development frontend URL
+	}
+	// Production - use the same domain as the request
+	scheme := "https"
+	if c.Request.TLS == nil {
+		scheme = "http"
+	}
+	return fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+}
+
 // VerifyEmailLinkHandler handles email verification via GET link (when user clicks email link)
 func VerifyEmailLinkHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -743,7 +756,8 @@ func VerifyEmailLinkHandler(db *database.DB) gin.HandlerFunc {
 		if err := c.ShouldBindQuery(&req); err != nil {
 			log.Printf("❌ [VERIFY-LINK] Failed to bind query parameters: %v", err)
 			// Redirect to frontend with error
-			c.Redirect(http.StatusTemporaryRedirect, "/auth/verify-email?error=invalid_link")
+			errorURL := fmt.Sprintf("%s/auth/verify-email?error=invalid_link", getFrontendURL(c))
+			c.Redirect(http.StatusTemporaryRedirect, errorURL)
 			return
 		}
 
@@ -751,29 +765,39 @@ func VerifyEmailLinkHandler(db *database.DB) gin.HandlerFunc {
 
 		// Check if database is available
 		if db == nil {
-			c.Redirect(http.StatusTemporaryRedirect, "/auth/verify-email?error=service_unavailable")
+			errorURL := fmt.Sprintf("%s/auth/verify-email?error=service_unavailable", getFrontendURL(c))
+			c.Redirect(http.StatusTemporaryRedirect, errorURL)
 			return
 		}
 
 		// Get user by verification token
 		user, err := db.GetUserByVerificationToken(req.Token)
 		if err != nil {
-			log.Printf("Invalid verification token: %s", req.Token)
-			c.Redirect(http.StatusTemporaryRedirect, "/auth/verify-email?error=invalid_token")
+			log.Printf("❌ [VERIFY-LINK] Token lookup failed: %s (error: %v)", req.Token, err)
+
+			// Let's also check what tokens exist in the database for debugging
+			if debugUser, debugErr := db.GetUserByEmail("aarongusa@outlook.com"); debugErr == nil {
+				log.Printf("🔍 [DEBUG] User %d current verification_token in DB: %s", debugUser.ID, debugUser.VerificationToken)
+			}
+
+			errorURL := fmt.Sprintf("%s/auth/verify-email?error=invalid_token", getFrontendURL(c))
+			c.Redirect(http.StatusTemporaryRedirect, errorURL)
 			return
 		}
 
 		// Optional: Verify user ID matches (extra security)
 		if req.UserID > 0 && user.ID != req.UserID {
 			log.Printf("User ID mismatch in verification: expected %d, got %d", user.ID, req.UserID)
-			c.Redirect(http.StatusTemporaryRedirect, "/auth/verify-email?error=invalid_token")
+			errorURL := fmt.Sprintf("%s/auth/verify-email?error=invalid_token", getFrontendURL(c))
+			c.Redirect(http.StatusTemporaryRedirect, errorURL)
 			return
 		}
 
 		// Set email as verified
 		if err := db.SetUserEmailVerified(user.ID); err != nil {
 			log.Printf("Failed to verify email: %v", err)
-			c.Redirect(http.StatusTemporaryRedirect, "/auth/verify-email?error=verification_failed")
+			errorURL := fmt.Sprintf("%s/auth/verify-email?error=verification_failed", getFrontendURL(c))
+			c.Redirect(http.StatusTemporaryRedirect, errorURL)
 			return
 		}
 
@@ -784,8 +808,10 @@ func VerifyEmailLinkHandler(db *database.DB) gin.HandlerFunc {
 
 		log.Printf("✅ Email verified via link for: %s (ID: %d)", user.Email, user.ID)
 
-		// Redirect to success page
-		c.Redirect(http.StatusTemporaryRedirect, "/auth/verify-email?success=true")
+		// Redirect to frontend success page
+		successURL := fmt.Sprintf("%s/auth/verify-email?success=true", getFrontendURL(c))
+		log.Printf("🔄 [VERIFY-LINK] Redirecting to frontend: %s", successURL)
+		c.Redirect(http.StatusTemporaryRedirect, successURL)
 	}
 }
 

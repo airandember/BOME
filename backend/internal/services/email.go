@@ -70,10 +70,8 @@ func (s *EmailService) sendMockVerificationEmail(userID int, email, name string)
 		return fmt.Errorf("failed to generate token: %w", err)
 	}
 
-	// Store token in database
-	expiresAt := time.Now().Add(3 * time.Hour)
-	err = s.storeVerificationToken(userID, token, email, expiresAt)
-	if err != nil {
+	// Store token in database (use the same method as production)
+	if err := s.db.SetVerificationToken(userID, token); err != nil {
 		return fmt.Errorf("failed to store token: %w", err)
 	}
 
@@ -472,10 +470,8 @@ func (s *EmailService) SendVerificationEmail(userID int, email, name string) err
 		return fmt.Errorf("failed to generate token: %w", err)
 	}
 
-	// Store token in database
-	expiresAt := time.Now().Add(3 * time.Hour)
-	err = s.storeVerificationToken(userID, token, email, expiresAt)
-	if err != nil {
+	// Store token in database (use the same method as mock)
+	if err := s.db.SetVerificationToken(userID, token); err != nil {
 		return fmt.Errorf("failed to store token: %w", err)
 	}
 

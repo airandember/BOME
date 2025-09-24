@@ -108,7 +108,7 @@
 					<h1>Email Verified Successfully!</h1>
 					<p>Your email address has been verified. You can now log in to your account.</p>
 					<div class="actions">
-						<a href="/auth/login" class="btn btn-primary">Continue to Login</a>
+						<a href="/login" class="btn btn-primary">Continue to Login</a>
 					</div>
 				</div>
 			{:else if error}

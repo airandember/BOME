@@ -204,28 +204,46 @@ func (s *EmailService) generateToken() (string, error) {
 }
 
 func (s *EmailService) storeVerificationToken(userID int, token, email string, expiresAt time.Time) error {
+	log.Printf("🔍 [TOKEN-STORE] Storing token for user %d: %s (expires: %v)", userID, token, expiresAt)
+
 	query := `
 		INSERT INTO email_verification_tokens (user_id, token, email, expires_at)
 		VALUES ($1, $2, $3, $4)`
 
 	_, err := s.db.DB.Exec(query, userID, token, email, expiresAt)
+	if err != nil {
+		log.Printf("❌ [TOKEN-STORE] Failed to store token: %v", err)
+	} else {
+		log.Printf("✅ [TOKEN-STORE] Token stored successfully")
+	}
 	return err
 }
 
 func (s *EmailService) getBaseURL() string {
 	// Get from environment variable first
 	if baseURL := os.Getenv("PUBLIC_APP_URL"); baseURL != "" {
+		log.Printf("🔍 [EMAIL] Using PUBLIC_APP_URL: %s", baseURL)
+
+		// Override for development - if it's pointing to frontend, use backend instead
+		if strings.Contains(baseURL, "localhost:5173") {
+			log.Printf("🔄 [EMAIL] Development override: changing localhost:5173 to localhost:8080")
+			return "http://localhost:8080"
+		}
+
 		return baseURL
 	}
+
+	log.Printf("🔍 [EMAIL] PUBLIC_APP_URL not found, checking database...")
 
 	// Try to get from database settings
 	if baseURL, err := s.db.GetEmailSetting("app_base_url"); err == nil && baseURL != "" {
+		log.Printf("🔍 [EMAIL] Using database app_base_url: %s", baseURL)
 		return baseURL
 	}
 
-	// Development fallback with warning
-	log.Printf("⚠️ [EMAIL] PUBLIC_APP_URL not set! Email links will use localhost!")
-	return "http://localhost:5173"
+	// Development fallback with warning - use backend port for API endpoints
+	log.Printf("⚠️ [EMAIL] No base URL configured! Using development fallback: http://localhost:8080")
+	return "http://localhost:8080"
 }
 
 func (s *EmailService) isEmailEnabled() (bool, error) {
