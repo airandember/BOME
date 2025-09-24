@@ -55,38 +55,333 @@ func NewEmailService(db *database.DB) *EmailService {
 	return service
 }
 
+// isDevelopmentMode checks if we're in development mode
+func (s *EmailService) isDevelopmentMode() bool {
+	// Check if we're running on localhost or development environment
+	baseURL := s.getBaseURL()
+	return strings.Contains(baseURL, "localhost") || strings.Contains(baseURL, "127.0.0.1") || strings.Contains(baseURL, "bome.test")
+}
+
+// sendMockVerificationEmail simulates sending a verification email in development
+func (s *EmailService) sendMockVerificationEmail(userID int, email, name string) error {
+	// Generate verification token for database consistency
+	token, err := s.generateToken()
+	if err != nil {
+		return fmt.Errorf("failed to generate token: %w", err)
+	}
+
+	// Store token in database
+	expiresAt := time.Now().Add(24 * time.Hour)
+	err = s.storeVerificationToken(userID, token, email, expiresAt)
+	if err != nil {
+		return fmt.Errorf("failed to store token: %w", err)
+	}
+
+	// Get base URL from settings or use default
+	baseURL := s.getBaseURL()
+	verificationURL := fmt.Sprintf("%s/api/v1/auth/verify-email-link?token=%s&user_id=%d", baseURL, token, userID)
+
+	// Log the mock email instead of sending
+	log.Printf("📧 [MOCK-EMAIL] ==================== VERIFICATION EMAIL ====================")
+	log.Printf("📧 [MOCK-EMAIL] To: %s", email)
+	log.Printf("📧 [MOCK-EMAIL] Subject: 🔐 Verify Your Email - Book of Mormon Evidence")
+	log.Printf("📧 [MOCK-EMAIL] ")
+	log.Printf("📧 [MOCK-EMAIL] 📖 Welcome to BOME!")
+	log.Printf("📧 [MOCK-EMAIL] Book of Mormon Evidence Platform")
+	log.Printf("📧 [MOCK-EMAIL] ")
+	log.Printf("📧 [MOCK-EMAIL] Hi %s,", name)
+	log.Printf("📧 [MOCK-EMAIL] ")
+	log.Printf("📧 [MOCK-EMAIL] Welcome to the Book of Mormon Evidence community! We're excited")
+	log.Printf("📧 [MOCK-EMAIL] to have you join thousands of others exploring the historical")
+	log.Printf("📧 [MOCK-EMAIL] and archaeological evidence supporting the Book of Mormon.")
+	log.Printf("📧 [MOCK-EMAIL] ")
+	log.Printf("📧 [MOCK-EMAIL] 🔗 VERIFICATION LINK:")
+	log.Printf("📧 [MOCK-EMAIL] %s", verificationURL)
+	log.Printf("📧 [MOCK-EMAIL] ")
+	log.Printf("📧 [MOCK-EMAIL] ⏰ This verification link will expire in 24 hours.")
+	log.Printf("📧 [MOCK-EMAIL] ")
+	log.Printf("📧 [MOCK-EMAIL] Once verified, you'll have access to:")
+	log.Printf("📧 [MOCK-EMAIL] 📚 Exclusive research articles and studies")
+	log.Printf("📧 [MOCK-EMAIL] 🎥 Premium video content and documentaries")
+	log.Printf("📧 [MOCK-EMAIL] 🗺️ Interactive maps and archaeological findings")
+	log.Printf("📧 [MOCK-EMAIL] 👥 Community discussions and expert insights")
+	log.Printf("📧 [MOCK-EMAIL] 📱 Mobile app access for offline reading")
+	log.Printf("📧 [MOCK-EMAIL] ")
+	log.Printf("📧 [MOCK-EMAIL] Need help? Contact: support@bookofmormonevidence.org")
+	log.Printf("📧 [MOCK-EMAIL] ================================================================")
+
+	log.Printf("✅ [MOCK-EMAIL] Verification email logged for %s (token: %s)", email, token[:8]+"...")
+	return nil
+}
+
 // loadTemplates loads all email templates
 func (s *EmailService) loadTemplates() {
-	// Email verification template
+	// Email verification template - Professional BOME design
 	verificationHTML := `<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Verify Your Email - {{.CompanyName}}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Your Email - Book of Mormon Evidence</title>
+    <!--[if mso]>
+    <noscript>
+        <xml>
+            <o:OfficeDocumentSettings>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+        </xml>
+    </noscript>
+    <![endif]-->
     <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: #2563eb; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-        .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 8px 8px; }
-        .button { display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
-        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 14px; color: #666; }
+        /* Reset and base styles */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; 
+            line-height: 1.6; 
+            color: #1f2937; 
+            background-color: #f9fafb;
+            margin: 0;
+            padding: 0;
+        }
+        
+        /* Container */
+        .email-container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            background-color: #ffffff;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Header with gradient */
+        .header { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; 
+            padding: 40px 30px; 
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="25" cy="25" r="1" fill="white" opacity="0.1"/><circle cx="75" cy="75" r="1" fill="white" opacity="0.1"/><circle cx="50" cy="10" r="0.5" fill="white" opacity="0.1"/><circle cx="10" cy="60" r="0.5" fill="white" opacity="0.1"/><circle cx="90" cy="40" r="0.5" fill="white" opacity="0.1"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
+            pointer-events: none;
+        }
+        .header h1 { 
+            font-size: 28px; 
+            font-weight: 700; 
+            margin-bottom: 8px;
+            position: relative;
+            z-index: 1;
+        }
+        .header p { 
+            font-size: 16px; 
+            opacity: 0.9;
+            position: relative;
+            z-index: 1;
+        }
+        
+        /* Logo/Icon */
+        .logo { 
+            width: 64px; 
+            height: 64px; 
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            margin: 0 auto 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            position: relative;
+            z-index: 1;
+        }
+        
+        /* Content area */
+        .content { 
+            padding: 40px 30px;
+            background: #ffffff;
+        }
+        .content h2 { 
+            color: #1f2937; 
+            font-size: 24px; 
+            font-weight: 600; 
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .content p { 
+            color: #4b5563; 
+            font-size: 16px; 
+            margin-bottom: 16px;
+            line-height: 1.7;
+        }
+        .greeting { 
+            font-size: 18px; 
+            color: #1f2937; 
+            font-weight: 500;
+        }
+        
+        /* Call-to-action button */
+        .cta-container { 
+            text-align: center; 
+            margin: 32px 0;
+        }
+        .button { 
+            display: inline-block; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; 
+            padding: 16px 32px; 
+            text-decoration: none; 
+            border-radius: 8px; 
+            font-weight: 600;
+            font-size: 16px;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            transition: all 0.3s ease;
+        }
+        .button:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        
+        /* Fallback link */
+        .fallback-link { 
+            background: #f3f4f6; 
+            border-radius: 8px; 
+            padding: 20px; 
+            margin: 24px 0;
+            border-left: 4px solid #667eea;
+        }
+        .fallback-link p { 
+            margin-bottom: 8px; 
+            font-size: 14px;
+            color: #6b7280;
+        }
+        .fallback-link a { 
+            color: #667eea; 
+            word-break: break-all;
+            font-size: 14px;
+        }
+        
+        /* Security notice */
+        .security-notice { 
+            background: #fef3c7; 
+            border-radius: 8px; 
+            padding: 16px; 
+            margin: 24px 0;
+            border-left: 4px solid #f59e0b;
+        }
+        .security-notice p { 
+            color: #92400e; 
+            font-size: 14px; 
+            margin-bottom: 0;
+        }
+        
+        /* Footer */
+        .footer { 
+            background: #f9fafb; 
+            padding: 30px; 
+            text-align: center;
+            border-top: 1px solid #e5e7eb;
+        }
+        .footer p { 
+            color: #6b7280; 
+            font-size: 14px; 
+            margin-bottom: 8px;
+        }
+        .footer a { 
+            color: #667eea; 
+            text-decoration: none;
+        }
+        .footer a:hover { 
+            text-decoration: underline;
+        }
+        
+        /* Company info */
+        .company-info { 
+            margin-top: 20px; 
+            padding-top: 20px; 
+            border-top: 1px solid #e5e7eb;
+        }
+        .company-info p { 
+            font-size: 12px; 
+            color: #9ca3af;
+        }
+        
+        /* Mobile responsiveness */
+        @media only screen and (max-width: 600px) {
+            .email-container { margin: 0 10px; }
+            .header { padding: 30px 20px; }
+            .header h1 { font-size: 24px; }
+            .content { padding: 30px 20px; }
+            .content h2 { font-size: 20px; }
+            .button { padding: 14px 24px; font-size: 15px; }
+            .footer { padding: 20px; }
+        }
+        
+        /* Dark mode support */
+        @media (prefers-color-scheme: dark) {
+            .content { background: #1f2937; }
+            .content h2 { color: #f9fafb; }
+            .content p { color: #d1d5db; }
+            .greeting { color: #f9fafb; }
+            .fallback-link { background: #374151; }
+            .fallback-link p { color: #9ca3af; }
+        }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Welcome to {{.CompanyName}}!</h1>
-    </div>
-    <div class="content">
-        <h2>Verify Your Email Address</h2>
-        <p>Hi {{.UserName}},</p>
-        <p>Thank you for signing up! Please verify your email address to complete your account setup.</p>
-        <p><a href="{{.VerificationURL}}" class="button">Verify Email Address</a></p>
-        <p>If the button doesn't work, copy and paste this link into your browser:</p>
-        <p><a href="{{.VerificationURL}}">{{.VerificationURL}}</a></p>
-        <p>This verification link will expire in 24 hours.</p>
-    </div>
-    <div class="footer">
-        <p>If you didn't create an account, you can safely ignore this email.</p>
-        <p>Need help? Contact us at <a href="mailto:{{.SupportEmail}}">{{.SupportEmail}}</a></p>
+    <div class="email-container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">📖</div>
+            <h1>Welcome to BOME!</h1>
+            <p>Book of Mormon Evidence Platform</p>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="content">
+            <h2>🔐 Verify Your Email Address</h2>
+            <p class="greeting">Hi {{.UserName}},</p>
+            <p>Welcome to the Book of Mormon Evidence community! We're excited to have you join thousands of others exploring the historical and archaeological evidence supporting the Book of Mormon.</p>
+            <p>To complete your account setup and access our exclusive content, please verify your email address by clicking the button below:</p>
+            
+            <div class="cta-container">
+                <a href="{{.VerificationURL}}" class="button">✅ Verify Email Address</a>
+            </div>
+            
+            <div class="fallback-link">
+                <p><strong>Button not working?</strong> Copy and paste this link into your browser:</p>
+                <a href="{{.VerificationURL}}">{{.VerificationURL}}</a>
+            </div>
+            
+            <div class="security-notice">
+                <p>⏰ <strong>Security Notice:</strong> This verification link will expire in 24 hours for your account security.</p>
+            </div>
+            
+            <p>Once verified, you'll have access to:</p>
+            <ul style="color: #4b5563; margin-left: 20px; margin-bottom: 20px;">
+                <li>📚 Exclusive research articles and studies</li>
+                <li>🎥 Premium video content and documentaries</li>
+                <li>🗺️ Interactive maps and archaeological findings</li>
+                <li>👥 Community discussions and expert insights</li>
+                <li>📱 Mobile app access for offline reading</li>
+            </ul>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <p>If you didn't create an account with us, you can safely ignore this email.</p>
+            <p>Need help? Contact our support team at <a href="mailto:{{.SupportEmail}}">{{.SupportEmail}}</a></p>
+            
+            <div class="company-info">
+                <p><strong>Book of Mormon Evidence (BOME)</strong></p>
+                <p>Strengthening faith through evidence-based research</p>
+                <p>© 2024 Book of Mormon Evidence. All rights reserved.</p>
+            </div>
+        </div>
     </div>
 </body>
 </html>`
@@ -161,6 +456,11 @@ func (s *EmailService) loadTemplates() {
 func (s *EmailService) SendVerificationEmail(userID int, email, name string) error {
 	log.Printf("🔍 [EMAIL] Sending verification email to: %s", email)
 
+	// In development mode, just log the email instead of sending
+	if s.isDevelopmentMode() {
+		return s.sendMockVerificationEmail(userID, email, name)
+	}
+
 	// Generate verification token
 	token, err := s.generateToken()
 	if err != nil {
@@ -176,7 +476,8 @@ func (s *EmailService) SendVerificationEmail(userID int, email, name string) err
 
 	// Get base URL from settings or use default
 	baseURL := s.getBaseURL()
-	verificationURL := fmt.Sprintf("%s/verify-email?token=%s", baseURL, token)
+	// Use backend API endpoint for verification (will redirect to frontend)
+	verificationURL := fmt.Sprintf("%s/api/v1/auth/verify-email-link?token=%s&user_id=%d", baseURL, token, userID)
 
 	// Prepare email data
 	// Get support email from database

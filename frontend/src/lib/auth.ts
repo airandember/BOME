@@ -201,6 +201,22 @@ function createAuthStore() {
 				if (!response.ok) {
 					const error = await response.json();
 					// console.log('Auth: Login failed with error:', error);
+					
+					// Handle email verification required
+					if (response.status === 403 && error.verification_required) {
+						// Redirect to verification page with user context
+						if (browser) {
+							const verifyUrl = `/auth/verify-email?email=${encodeURIComponent(email)}&user_id=${error.user_id}`;
+							goto(verifyUrl);
+						}
+						return { 
+							success: false, 
+							error: error.message || 'Email verification required',
+							verification_required: true,
+							user_id: error.user_id
+						};
+					}
+					
 					throw new Error(error.error || 'Login failed');
 				}
 				
@@ -352,6 +368,37 @@ function createAuthStore() {
 				authError.set({
 					message: errorMessage,
 					code: 'RESET_PASSWORD_FAILED'
+				});
+				update(state => ({ ...state, loading: false, error: errorMessage }));
+				return { success: false, error: errorMessage };
+			} finally {
+				isLoading.set(false);
+			}
+		},
+
+		async requestVerification(email: string) {
+			try {
+				update(state => ({ ...state, loading: true, error: null }));
+				isLoading.set(true);
+				authError.set(null);
+				
+				const response = await apiRequest('/auth/request-verification', {
+					method: 'POST',
+					body: JSON.stringify({ email }),
+				});
+				
+				if (!response.ok) {
+					const error = await response.json();
+					throw new Error(error.error || 'Failed to send verification email');
+				}
+				
+				return { success: true };
+			} catch (error) {
+				console.error('Request verification error:', error);
+				const errorMessage = error instanceof Error ? error.message : 'Failed to send verification email';
+				authError.set({
+					message: errorMessage,
+					code: 'REQUEST_VERIFICATION_FAILED'
 				});
 				update(state => ({ ...state, loading: false, error: errorMessage }));
 				return { success: false, error: errorMessage };
