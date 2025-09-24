@@ -1467,7 +1467,7 @@ BEGIN
     -- Clean expired tokens
     UPDATE users 
     SET verification_token = NULL 
-    WHERE updated_at < NOW() - INTERVAL '24 hours' AND verification_token IS NOT NULL;
+    WHERE updated_at < NOW() - INTERVAL '3 hours' AND verification_token IS NOT NULL;
     
     UPDATE users 
     SET reset_token = NULL, reset_token_expiry = NULL 

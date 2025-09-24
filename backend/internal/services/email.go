@@ -71,7 +71,7 @@ func (s *EmailService) sendMockVerificationEmail(userID int, email, name string)
 	}
 
 	// Store token in database
-	expiresAt := time.Now().Add(24 * time.Hour)
+	expiresAt := time.Now().Add(3 * time.Hour)
 	err = s.storeVerificationToken(userID, token, email, expiresAt)
 	if err != nil {
 		return fmt.Errorf("failed to store token: %w", err)
@@ -98,7 +98,7 @@ func (s *EmailService) sendMockVerificationEmail(userID int, email, name string)
 	log.Printf("📧 [MOCK-EMAIL] 🔗 VERIFICATION LINK:")
 	log.Printf("📧 [MOCK-EMAIL] %s", verificationURL)
 	log.Printf("📧 [MOCK-EMAIL] ")
-	log.Printf("📧 [MOCK-EMAIL] ⏰ This verification link will expire in 24 hours.")
+	log.Printf("📧 [MOCK-EMAIL] ⏰ This verification link will expire in 3 hours.")
 	log.Printf("📧 [MOCK-EMAIL] ")
 	log.Printf("📧 [MOCK-EMAIL] Once verified, you'll have access to:")
 	log.Printf("📧 [MOCK-EMAIL] 📚 Exclusive research articles and studies")
@@ -154,7 +154,7 @@ func (s *EmailService) loadTemplates() {
         
         /* Header with gradient */
         .header { 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #a27c4b 0%,#223858  100%);
             color: white; 
             padding: 40px 30px; 
             text-align: center;
@@ -231,7 +231,7 @@ func (s *EmailService) loadTemplates() {
         }
         .button { 
             display: inline-block; 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg,#a27c4b  0%,#223858 100%);
             color: white; 
             padding: 16px 32px; 
             text-decoration: none; 
@@ -252,7 +252,7 @@ func (s *EmailService) loadTemplates() {
             border-radius: 8px; 
             padding: 20px; 
             margin: 24px 0;
-            border-left: 4px solid #667eea;
+            border-left: 4px solid #223858;
         }
         .fallback-link p { 
             margin-bottom: 8px; 
@@ -260,7 +260,7 @@ func (s *EmailService) loadTemplates() {
             color: #6b7280;
         }
         .fallback-link a { 
-            color: #667eea; 
+            color: #223858; 
             word-break: break-all;
             font-size: 14px;
         }
@@ -292,7 +292,7 @@ func (s *EmailService) loadTemplates() {
             margin-bottom: 8px;
         }
         .footer a { 
-            color: #667eea; 
+            color:#223858; 
             text-decoration: none;
         }
         .footer a:hover { 
@@ -326,10 +326,15 @@ func (s *EmailService) loadTemplates() {
             .content { background: #1f2937; }
             .content h2 { color: #f9fafb; }
             .content p { color: #d1d5db; }
+            .content a { color: #d1d5db }
+            .security-notice p { color: black }
+            ul li { color: rgb(255, 242, 205) }
+            .button {box-shadow: 0 0 0 black}
+            .button:hover { box-shadow: 0 6px 20px rgba(133, 97, 1, 0.6) }
             .greeting { color: #f9fafb; }
             .fallback-link { background: #374151; }
             .fallback-link p { color: #9ca3af; }
-        }
+        } 
     </style>
 </head>
 <body>
@@ -337,15 +342,15 @@ func (s *EmailService) loadTemplates() {
         <!-- Header -->
         <div class="header">
             <div class="logo">📖</div>
-            <h1>Welcome to BOME!</h1>
-            <p>Book of Mormon Evidence Platform</p>
+            <h1>Welcome to<br> Book of Mormon Evidence!</h1>
+            <p>Book of Mormon Evidence Beta</p>
         </div>
         
         <!-- Main Content -->
         <div class="content">
             <h2>🔐 Verify Your Email Address</h2>
-            <p class="greeting">Hi {{.UserName}},</p>
-            <p>Welcome to the Book of Mormon Evidence community! We're excited to have you join thousands of others exploring the historical and archaeological evidence supporting the Book of Mormon.</p>
+            <p class="greeting">Hi!</p>
+            <p>Welcome to the Book of Mormon Evidence community! We're excited to have you join thousands of others exploring the historical and archaeological evidence supporting the Book of Mormon, and other vast topics by amazing speakers.</p>
             <p>To complete your account setup and access our exclusive content, please verify your email address by clicking the button below:</p>
             
             <div class="cta-container">
@@ -358,7 +363,7 @@ func (s *EmailService) loadTemplates() {
             </div>
             
             <div class="security-notice">
-                <p>⏰ <strong>Security Notice:</strong> This verification link will expire in 24 hours for your account security.</p>
+                <p>⏰ <strong>Security Notice:</strong> This verification link will expire in 3 hours for your account security.</p>
             </div>
             
             <p>Once verified, you'll have access to:</p>
@@ -468,7 +473,7 @@ func (s *EmailService) SendVerificationEmail(userID int, email, name string) err
 	}
 
 	// Store token in database
-	expiresAt := time.Now().Add(24 * time.Hour)
+	expiresAt := time.Now().Add(3 * time.Hour)
 	err = s.storeVerificationToken(userID, token, email, expiresAt)
 	if err != nil {
 		return fmt.Errorf("failed to store token: %w", err)

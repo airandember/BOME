@@ -208,7 +208,7 @@
 <style>
 	.verify-email-page {
 		min-height: 100vh;
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		background: linear-gradient(150deg, var(--primary-gold) 1%, var(--primary-bom-dark) 60%);
 		display: flex;
 		align-items: center;
 		justify-content: center;

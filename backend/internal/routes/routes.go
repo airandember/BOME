@@ -345,7 +345,7 @@ func SetupRoutes(
 	// Real authentication routes
 	auth := v1.Group("/auth")
 	{
-		auth.POST("/login", LoginHandler(db))
+		auth.POST("/login", LoginHandler(db, emailService))
 		auth.POST("/register", RegisterHandler(db, emailService))
 		auth.POST("/logout", LogoutHandler(db))
 		auth.POST("/change-password", middleware.AuthRequired(), ChangePasswordHandler(db))
