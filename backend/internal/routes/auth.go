@@ -317,7 +317,7 @@ func ResendVerificationHandler(db *database.DB, emailService *services.EmailServ
 }
 
 // LoginHandler handles user login
-func LoginHandler(db *database.DB) gin.HandlerFunc {
+func LoginHandler(db *database.DB, emailService *services.EmailService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Enhanced rate limiting
 		clientIP := services.GetClientIP(c.Request.RemoteAddr, c.GetHeader("X-Forwarded-For"), c.GetHeader("X-Real-IP"))
@@ -421,6 +421,23 @@ func LoginHandler(db *database.DB) gin.HandlerFunc {
 		if !user.EmailVerified && !user.LastLogin.Valid {
 			log.Printf("🚫 Login blocked for unverified user: %s (ID: %d) - first-time login requires email verification", user.Email, user.ID)
 
+			// 📧 AUTO-SEND VERIFICATION EMAIL: Send verification email automatically
+			if emailService != nil {
+				// Generate new verification token
+				verificationToken := services.GenerateSecureToken()
+				if err := db.SetVerificationToken(user.ID, verificationToken); err != nil {
+					log.Printf("Failed to set verification token during login block: %v", err)
+				} else {
+					// Send verification email
+					fullName := user.FirstName + " " + user.LastName
+					if err := emailService.SendVerificationEmail(user.ID, user.Email, fullName); err != nil {
+						log.Printf("Failed to send auto-verification email during login block: %v", err)
+					} else {
+						log.Printf("✅ Auto-sent verification email to blocked user: %s", user.Email)
+					}
+				}
+			}
+
 			// Log security event
 			if db != nil {
 				auditLog := &database.AuditLog{
@@ -439,7 +456,7 @@ func LoginHandler(db *database.DB) gin.HandlerFunc {
 
 			c.JSON(http.StatusForbidden, gin.H{
 				"error":                 "Email verification required",
-				"message":               "Please verify your email address before logging in. Check your inbox for a verification link.",
+				"message":               "Please verify your email address before logging in. A verification email has been sent to your inbox.",
 				"verification_required": true,
 				"user_id":               user.ID,
 			})
