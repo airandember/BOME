@@ -165,16 +165,23 @@ func (s *SubscriptionPlanStripeService) GetStripeIntegrationStatus(ctx context.C
 		"sync_status":        "not_synced",
 	}
 
+	// Check for Stripe Product ID
+	if plan.StripeProductID != nil && *plan.StripeProductID != "" {
+		status["has_stripe_product"] = true
+		status["stripe_product_id"] = *plan.StripeProductID
+	}
+
+	// Check for Stripe Price ID
 	if plan.StripePriceID != nil && *plan.StripePriceID != "" {
 		status["has_stripe_price"] = true
 		status["stripe_price_id"] = *plan.StripePriceID
-		status["sync_status"] = "synced"
+	}
 
-		// If we have Stripe service, we could verify the price exists
-		if s.stripeService != nil && s.stripeService.IsEnabled() {
-			// For now, assume if we have a price ID, we have a product
-			status["has_stripe_product"] = true
-		}
+	// Determine sync status
+	if status["has_stripe_product"].(bool) && status["has_stripe_price"].(bool) {
+		status["sync_status"] = "synced"
+	} else if status["has_stripe_product"].(bool) || status["has_stripe_price"].(bool) {
+		status["sync_status"] = "partial"
 	}
 
 	return status, nil

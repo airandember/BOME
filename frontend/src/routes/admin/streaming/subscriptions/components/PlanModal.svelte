@@ -38,6 +38,26 @@
 	let showStripeProductModal = false;
 	let selectedStripeProduct: StripeProduct | null = null;
 
+	// Update formData when plan prop changes (for edit mode)
+	$: if (plan && mode === 'edit') {
+		formData = {
+			name: plan.name || '',
+			description: plan.description || '',
+			short_desc: plan.short_desc || '',
+			price: plan.price || 0,
+			currency: plan.currency || 'USD',
+			interval: plan.interval || 'month',
+			interval_count: plan.interval_count || 1,
+			stripe_price_id: plan.stripe_price_id || '',
+			stripe_product_id: plan.stripe_product_id || null,
+			features: plan.features ? [...plan.features] : [],
+			is_active: plan.is_active !== undefined ? plan.is_active : true,
+			promotion_start_date: plan.promotion_start_date || null,
+			promotion_end_date: plan.promotion_end_date || null,
+			sub_type: plan.sub_type || 'stnd'
+		};
+	}
+
 	// Convert ISO dates to HTML date input format for the form
 	$: formData.promotion_start_date = isoToDateInput(formData.promotion_start_date);
 	$: formData.promotion_end_date = isoToDateInput(formData.promotion_end_date);
