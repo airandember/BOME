@@ -10,6 +10,7 @@ import (
 
 	"github.com/stripe/stripe-go/v74"
 	"github.com/stripe/stripe-go/v74/checkout/session"
+	stripeprice "github.com/stripe/stripe-go/v74/price"
 )
 
 // StripePublicService handles public Stripe operations using publishable keys
@@ -122,23 +123,50 @@ func (s *StripePublicService) CreateEmbeddedCheckoutSession(planID, returnURL, u
 	// Look up actual plan details from database
 	log.Printf("🔍 [STRIPE-PUBLIC] Looking up plan details for plan ID: %s", planID)
 
-	// Get plan from database
-	planQuery := `SELECT stripe_price_id, name, price, currency FROM subscription_plans WHERE id = $1 AND is_active = true`
-	var stripePriceID, planName, currency string
+	// Get plan from database - now including stripe_product_id
+	planQuery := `SELECT stripe_price_id, stripe_product_id, name, price, currency FROM subscription_plans WHERE id = $1 AND is_active = true`
+	var stripePriceID, stripeProductID, planName, currency string
 	var price float64
 
-	err = s.db.DB.QueryRow(planQuery, planID).Scan(&stripePriceID, &planName, &price, &currency)
+	err = s.db.DB.QueryRow(planQuery, planID).Scan(&stripePriceID, &stripeProductID, &planName, &price, &currency)
 	if err != nil {
 		log.Printf("❌ [STRIPE-PUBLIC] Failed to get plan details: %v", err)
 		return "", fmt.Errorf("plan not found or inactive: %w", err)
 	}
 
-	log.Printf("🔍 [STRIPE-PUBLIC] Found plan: %s, Price ID: %s, Price: %.2f %s", planName, stripePriceID, price, currency)
+	log.Printf("🔍 [STRIPE-PUBLIC] Found plan: %s, Product ID: %s, Price ID: %s, Price: %.2f %s", planName, stripeProductID, stripePriceID, price, currency)
 
-	// Validate stripe_price_id exists
-	if stripePriceID == "" {
-		log.Printf("❌ [STRIPE-PUBLIC] Plan %s has no Stripe price ID configured", planName)
+	// Validate stripe_product_id exists (prefer product ID over price ID)
+	if stripeProductID == "" {
+		log.Printf("❌ [STRIPE-PUBLIC] Plan %s has no Stripe product ID configured", planName)
 		return "", errors.New("plan is not configured with Stripe - please contact support")
+	}
+
+	// Fetch the current active price for this product from Stripe
+	log.Printf("🔍 [STRIPE-PUBLIC] Fetching active prices for product: %s", stripeProductID)
+
+	// List prices for this product
+	priceParams := &stripe.PriceListParams{
+		Product: stripe.String(stripeProductID),
+		Active:  stripe.Bool(true),
+	}
+	priceParams.Filters.AddFilter("limit", "", "1") // Get just the first active price
+
+	iter := stripeprice.List(priceParams)
+	var activePriceID string
+
+	if iter.Next() {
+		activePrice := iter.Price()
+		activePriceID = activePrice.ID
+		log.Printf("✅ [STRIPE-PUBLIC] Found active price for product %s: %s", stripeProductID, activePriceID)
+	} else {
+		log.Printf("❌ [STRIPE-PUBLIC] No active prices found for product %s", stripeProductID)
+		return "", fmt.Errorf("no active prices found for product %s", stripeProductID)
+	}
+
+	if iter.Err() != nil {
+		log.Printf("❌ [STRIPE-PUBLIC] Error fetching prices for product %s: %v", stripeProductID, iter.Err())
+		return "", fmt.Errorf("failed to fetch prices for product: %w", iter.Err())
 	}
 
 	// Get actual user email from database
@@ -156,7 +184,7 @@ func (s *StripePublicService) CreateEmbeddedCheckoutSession(planID, returnURL, u
 		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			{
-				Price:    stripe.String(stripePriceID),
+				Price:    stripe.String(activePriceID), // Use the dynamically fetched price ID
 				Quantity: stripe.Int64(1),
 			},
 		},
