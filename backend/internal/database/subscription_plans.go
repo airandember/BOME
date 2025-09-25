@@ -21,6 +21,7 @@ type SubscriptionPlan struct {
 	Interval           string // 'month', 'year', 'week', 'day'
 	IntervalCount      int
 	StripePriceID      sql.NullString
+	StripeProductID    sql.NullString // Added Stripe Product ID field
 	Features           sql.NullString // JSON array of features
 	IsActive           bool
 	PromotionEndDate   sql.NullTime
@@ -40,20 +41,20 @@ func (db *DB) CreateSubscriptionPlan(plan *SubscriptionPlan) (*SubscriptionPlan,
 	log.Printf("Creating subscription plan: %+v", plan)
 	query := `
 		INSERT INTO subscription_plans (
-			name, description, price, currency, interval, interval_count, stripe_price_id, features, 
+			name, description, price, currency, interval, interval_count, stripe_price_id, stripe_product_id, features, 
 			is_active, promotion_end_date, created_at, updated_at, deleted_at,
 			short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
 		) RETURNING 
-			id, name, description, price, currency, interval, interval_count, stripe_price_id, features, 
+			id, name, description, price, currency, interval, interval_count, stripe_price_id, stripe_product_id, features, 
 			is_active, promotion_end_date, created_at, updated_at, deleted_at,
 			short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 	`
 
 	row := db.QueryRow(query,
 		plan.Name, plan.Description, plan.Price, plan.Currency, plan.Interval, plan.IntervalCount,
-		plan.StripePriceID, plan.Features, plan.IsActive, plan.PromotionEndDate, plan.CreatedAt,
+		plan.StripePriceID, plan.StripeProductID, plan.Features, plan.IsActive, plan.PromotionEndDate, plan.CreatedAt,
 		plan.UpdatedAt, plan.DeletedAt, plan.ShortDesc, plan.IsDeleted, plan.PromotionStartDate,
 		plan.PlanChangeHistory, plan.PromotionMetadata, plan.SubType,
 	)
@@ -61,7 +62,7 @@ func (db *DB) CreateSubscriptionPlan(plan *SubscriptionPlan) (*SubscriptionPlan,
 	createdPlan := &SubscriptionPlan{}
 	err := row.Scan(
 		&createdPlan.ID, &createdPlan.Name, &createdPlan.Description, &createdPlan.Price, &createdPlan.Currency,
-		&createdPlan.Interval, &createdPlan.IntervalCount, &createdPlan.StripePriceID, &createdPlan.Features,
+		&createdPlan.Interval, &createdPlan.IntervalCount, &createdPlan.StripePriceID, &createdPlan.StripeProductID, &createdPlan.Features,
 		&createdPlan.IsActive, &createdPlan.PromotionEndDate, &createdPlan.CreatedAt, &createdPlan.UpdatedAt,
 		&createdPlan.DeletedAt, &createdPlan.ShortDesc, &createdPlan.IsDeleted, &createdPlan.PromotionStartDate,
 		&createdPlan.PlanChangeHistory, &createdPlan.PromotionMetadata, &createdPlan.SubType,
@@ -90,7 +91,7 @@ func (db *DB) GetAllSubscriptionPlans() ([]*SubscriptionPlan, error) {
 	}
 
 	query := `
-		SELECT id, name, description, price, currency, interval, interval_count, stripe_price_id, features, 
+		SELECT id, name, description, price, currency, interval, interval_count, stripe_price_id, stripe_product_id, features, 
 		       is_active, promotion_end_date, created_at, updated_at, deleted_at,
 		       short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 		FROM subscription_plans 
@@ -111,7 +112,7 @@ func (db *DB) GetAllSubscriptionPlans() ([]*SubscriptionPlan, error) {
 		plan := &SubscriptionPlan{}
 		err := rows.Scan(
 			&plan.ID, &plan.Name, &plan.Description, &plan.Price, &plan.Currency, &plan.Interval,
-			&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.PromotionEndDate,
+			&plan.IntervalCount, &plan.StripePriceID, &plan.StripeProductID, &plan.Features, &plan.IsActive, &plan.PromotionEndDate,
 			&plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt, &plan.ShortDesc, &plan.IsDeleted,
 			&plan.PromotionStartDate, &plan.PlanChangeHistory, &plan.PromotionMetadata, &plan.SubType,
 		)
@@ -133,13 +134,13 @@ func (db *DB) GetAllSubscriptionPlans() ([]*SubscriptionPlan, error) {
 func (db *DB) GetSubscriptionPlanByID(id int) (*SubscriptionPlan, error) {
 	plan := &SubscriptionPlan{}
 	err := db.QueryRow(`
-		SELECT id, name, description, price, currency, interval, interval_count, stripe_price_id, features, 
+		SELECT id, name, description, price, currency, interval, interval_count, stripe_price_id, stripe_product_id, features, 
 		       is_active, promotion_end_date, created_at, updated_at, deleted_at,
 		       short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 		FROM subscription_plans WHERE id = $1
 	`, id).Scan(
 		&plan.ID, &plan.Name, &plan.Description, &plan.Price, &plan.Currency, &plan.Interval,
-		&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.PromotionEndDate,
+		&plan.IntervalCount, &plan.StripePriceID, &plan.StripeProductID, &plan.Features, &plan.IsActive, &plan.PromotionEndDate,
 		&plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt, &plan.ShortDesc, &plan.IsDeleted,
 		&plan.PromotionStartDate, &plan.PlanChangeHistory, &plan.PromotionMetadata, &plan.SubType,
 	)
@@ -153,7 +154,7 @@ func (db *DB) GetSubscriptionPlanByID(id int) (*SubscriptionPlan, error) {
 // GetActiveSubscriptionPlans retrieves all active subscription plans
 func (db *DB) GetActiveSubscriptionPlans() ([]*SubscriptionPlan, error) {
 	query := `
-		SELECT id, name, description, price, currency, interval, interval_count, stripe_price_id, features, 
+		SELECT id, name, description, price, currency, interval, interval_count, stripe_price_id, stripe_product_id, features, 
 		       is_active, promotion_end_date, created_at, updated_at, deleted_at,
 		       short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 		FROM subscription_plans 
@@ -172,7 +173,7 @@ func (db *DB) GetActiveSubscriptionPlans() ([]*SubscriptionPlan, error) {
 		plan := &SubscriptionPlan{}
 		err := rows.Scan(
 			&plan.ID, &plan.Name, &plan.Description, &plan.Price, &plan.Currency, &plan.Interval,
-			&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.PromotionEndDate,
+			&plan.IntervalCount, &plan.StripePriceID, &plan.StripeProductID, &plan.Features, &plan.IsActive, &plan.PromotionEndDate,
 			&plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt, &plan.ShortDesc, &plan.IsDeleted,
 			&plan.PromotionStartDate, &plan.PlanChangeHistory, &plan.PromotionMetadata, &plan.SubType,
 		)
@@ -292,10 +293,10 @@ func (db *DB) UpdateSubscriptionPlan(id int, updates map[string]interface{}) (*S
 		argIdx++
 	}
 
-	setParts = append(setParts, fmt.Sprintf("updated_at = NOW()"))
+	setParts = append(setParts, "updated_at = NOW()")
 	query := fmt.Sprintf(`
 		UPDATE subscription_plans SET %s WHERE id = $%d 
-		RETURNING id, name, description, price, currency, interval, interval_count, stripe_price_id, features, 
+		RETURNING id, name, description, price, currency, interval, interval_count, stripe_price_id, stripe_product_id, features, 
 		          is_active, promotion_end_date, created_at, updated_at, deleted_at, 
 		          short_desc, is_deleted, promotion_start_date, plan_change_history, promotion_metadata, sub_type
 	`, strings.Join(setParts, ", "), argIdx)
@@ -308,7 +309,7 @@ func (db *DB) UpdateSubscriptionPlan(id int, updates map[string]interface{}) (*S
 	plan := &SubscriptionPlan{}
 	if err := row.Scan(
 		&plan.ID, &plan.Name, &plan.Description, &plan.Price, &plan.Currency, &plan.Interval,
-		&plan.IntervalCount, &plan.StripePriceID, &plan.Features, &plan.IsActive, &plan.PromotionEndDate,
+		&plan.IntervalCount, &plan.StripePriceID, &plan.StripeProductID, &plan.Features, &plan.IsActive, &plan.PromotionEndDate,
 		&plan.CreatedAt, &plan.UpdatedAt, &plan.DeletedAt, &plan.ShortDesc, &plan.IsDeleted,
 		&plan.PromotionStartDate, &plan.PlanChangeHistory, &plan.PromotionMetadata, &plan.SubType,
 	); err != nil {

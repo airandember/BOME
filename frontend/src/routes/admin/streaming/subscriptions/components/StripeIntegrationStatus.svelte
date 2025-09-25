@@ -108,7 +108,7 @@
 					<span class="detail-label">Product:</span>
 					<span class="detail-value">
 						{#if status.has_stripe_product}
-							✅ Created ({status.stripe_product_id?.slice(-8) || 'Unknown'})
+							{status.stripe_product_id || 'Unknown'}
 						{:else}
 							❌ Not created
 						{/if}
@@ -119,7 +119,7 @@
 					<span class="detail-label">Price:</span>
 					<span class="detail-value">
 						{#if status.has_stripe_price}
-							✅ Created ({status.stripe_price_id?.slice(-8) || 'Unknown'})
+							{status.stripe_price_id || 'Unknown'}
 						{:else}
 							❌ Not created
 						{/if}

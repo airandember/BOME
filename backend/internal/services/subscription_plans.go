@@ -31,6 +31,7 @@ type SubscriptionPlanResponse struct {
 	Interval           string                   `json:"interval"`
 	IntervalCount      int                      `json:"interval_count"`
 	StripePriceID      *string                  `json:"stripe_price_id,omitempty"`
+	StripeProductID    *string                  `json:"stripe_product_id,omitempty"` // Added Stripe Product ID field
 	Features           []string                 `json:"features"`
 	IsActive           bool                     `json:"is_active"`
 	PromotionEndDate   *time.Time               `json:"promotion_end_date,omitempty"`
@@ -574,6 +575,10 @@ func (s *SubscriptionPlanService) convertToResponse(plan *database.SubscriptionP
 
 	if plan.StripePriceID.Valid {
 		response.StripePriceID = &plan.StripePriceID.String
+	}
+
+	if plan.StripeProductID.Valid {
+		response.StripeProductID = &plan.StripeProductID.String
 	}
 
 	if plan.PromotionEndDate.Valid {
