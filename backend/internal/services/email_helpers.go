@@ -230,6 +230,13 @@ func (s *EmailService) getBaseURL() string {
 			return "http://localhost:8080"
 		}
 
+		// Production fix: Add /bome-backend path to match frontend API calls
+		// This ensures email verification URLs use the same routing as all other API calls
+		if strings.Contains(baseURL, "bookofmormonevidence.org") && !strings.Contains(baseURL, "/bome-backend") {
+			baseURL = baseURL + "/bome-backend"
+			log.Printf("🔧 [EMAIL] Production fix: Added /bome-backend path: %s", baseURL)
+		}
+
 		return baseURL
 	}
 
