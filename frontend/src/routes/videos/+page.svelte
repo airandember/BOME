@@ -33,9 +33,27 @@
 	let scrollThreshold = 800; // pixels from bottom to trigger auto-load (accounts for footer height)
 	let isSearching = $state(false);
 	
-	// Simple search state - no debouncing needed
-	let searchAbortController: AbortController | null = null;
+	// Hybrid fuzzy search with Fuse.js - static index + dynamic updates
+	import Fuse from 'fuse.js';
+	
+	let fuseIndex: Fuse<Video> | null = null;
 	let searchCache = new Map<string, { results: Video[], timestamp: number }>();
+	let staticSearchIndex: Video[] = [];
+	let searchIndexLoaded = $state(false);
+	
+	// Fuse.js configuration for optimal search
+	const fuseOptions = {
+		keys: [
+			{ name: 'title', weight: 0.7 },
+			{ name: 'description', weight: 0.2 },
+			{ name: 'category', weight: 0.05 },
+			{ name: 'tags', weight: 0.05 }
+		],
+		threshold: 0.4, // 0.0 = exact match, 1.0 = match anything
+		includeScore: true,
+		minMatchCharLength: 2,
+		ignoreLocation: true
+	};
 
 
 	// Only set activeTab from URL on initial load, not on programmatic changes
@@ -53,22 +71,140 @@
 		}
 	});
 
-	// Client-side search filtering function
+	// Load the static comprehensive search index
+	async function loadStaticSearchIndex() {
+		try {
+			console.log('📥 Loading comprehensive search index...');
+			const response = await fetch('/search-index.json');
+			
+			if (!response.ok) {
+				throw new Error(`Failed to load search index: ${response.status}`);
+			}
+			
+			const data = await response.json();
+			staticSearchIndex = data.videos || [];
+			searchIndexLoaded = true;
+			
+			console.log('✅ Static search index loaded:', {
+				totalVideos: staticSearchIndex.length,
+				version: data.version,
+				generatedAt: data.generatedAt
+			});
+			
+			// Build the initial Fuse index with comprehensive data
+			updateSearchIndex();
+			
+			// Preload thumbnails for the most recent/popular videos for instant display
+			const recentVideos = staticSearchIndex
+				.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+				.slice(0, 20); // Preload 20 most recent thumbnails
+			
+			setTimeout(() => preloadThumbnails(recentVideos), 1000); // Delay to not block initial load
+			
+		} catch (error) {
+			console.warn('⚠️ Failed to load static search index, falling back to dynamic only:', error);
+			searchIndexLoaded = false;
+			// Still try to build index with available videos
+			updateSearchIndex();
+		}
+	}
+	
+	// Build or update the Fuse search index (hybrid approach)
+	function updateSearchIndex() {
+		// Combine static index with dynamically loaded videos
+		const dynamicVideos = [...videos, ...latestVideos];
+		
+		// Merge static and dynamic, removing duplicates
+		const allVideos = [...staticSearchIndex];
+		const existingIds = new Set(staticSearchIndex.map(v => v.id));
+		
+		// Add dynamic videos that aren't in the static index
+		dynamicVideos.forEach(video => {
+			if (!existingIds.has(video.id)) {
+				allVideos.push(video);
+			}
+		});
+		
+		if (allVideos.length > 0) {
+			fuseIndex = new Fuse(allVideos, fuseOptions);
+			console.log('🔍 Hybrid search index updated:', {
+				staticVideos: staticSearchIndex.length,
+				dynamicVideos: dynamicVideos.length,
+				totalSearchable: allVideos.length
+			});
+		}
+	}
+	
+	// Lightning-fast fuzzy search function with thumbnail preloading
+	function fuzzySearch(query: string): Video[] {
+		if (!query.trim() || !fuseIndex) return [];
+		
+		const startTime = performance.now();
+		const results = fuseIndex.search(query); // No limit - show ALL matching results
+		const searchTime = performance.now() - startTime;
+		
+		console.log('⚡ Fuzzy search completed in', Math.round(searchTime), 'ms for query:', query);
+		
+		// Extract the actual video objects from Fuse results
+		const videos = results.map(result => result.item);
+		
+		// Preload thumbnails for the first few results for instant display
+		preloadThumbnails(videos.slice(0, 12)); // Preload first 12 thumbnails
+		
+		return videos;
+	}
+	
+	// Preload thumbnails for instant display with better error handling
+	function preloadThumbnails(videos: Video[]) {
+		videos.forEach((video, index) => {
+			// Try multiple thumbnail sources for maximum compatibility
+			const thumbnailUrl = video.thumbnailUrl || video.thumbnail || video.bunny?.previewImageUrl;
+			
+			if (thumbnailUrl) {
+				// Add a small delay to prevent overwhelming the CDN
+				setTimeout(() => {
+					const img = new Image();
+					
+					// Set crossOrigin to handle CORS properly
+					img.crossOrigin = 'anonymous';
+					
+					img.onload = () => {
+						// Thumbnail successfully preloaded
+						// console.log('✅ Preloaded thumbnail:', thumbnailUrl);
+					};
+					
+					img.onerror = () => {
+						// Only log errors for debugging, don't spam console
+						if (Math.random() < 0.1) { // Log only 10% of errors to avoid spam
+							console.warn('⚠️ Thumbnail preload failed (CDN/CORS):', thumbnailUrl);
+						}
+					};
+					
+					img.src = thumbnailUrl;
+				}, index * 50); // Stagger requests by 50ms each
+			}
+		});
+	}
+	
+	// Fallback client-side filter (kept for compatibility)
 	function clientSideFilter(videoList: Video[], query: string): Video[] {
 		if (!query.trim()) return videoList;
 		
 		const searchTerms = query.toLowerCase().trim().split(' ').filter(term => term.length > 0);
+		if (searchTerms.length === 0) return videoList;
 		
 		return videoList.filter(video => {
-			const searchableText = [
-				video.title,
-				video.description,
-				video.category,
-				...(video.tags || [])
-			].join(' ').toLowerCase();
+			const title = (video.title || '').toLowerCase();
+			if (searchTerms.some(term => title.includes(term))) {
+				return true;
+			}
 			
-			// Check if ANY search term is found in the video's searchable text (more permissive)
-			return searchTerms.some(term => searchableText.includes(term));
+			const description = (video.description || '').toLowerCase();
+			const category = (video.category || '').toLowerCase();
+			const tags = (video.tags || []).join(' ').toLowerCase();
+			
+			const otherText = `${description} ${category} ${tags}`;
+			return searchTerms.some(term => otherText.includes(term));
 		});
 	}
 
@@ -150,6 +286,9 @@
 			initialDataLoaded,
 			loading
 		});
+		
+		// Load the comprehensive search index immediately for instant search
+		loadStaticSearchIndex();
 		
 		// Simple: If we have cached data, show it immediately
 		if (categories.length > 0 || videos.length > 0) {
@@ -296,6 +435,9 @@
 			// Update currentVideos after loading data
 			updateCurrentVideos();
 			
+			// Build search index with all loaded videos
+			updateSearchIndex();
+			
 			console.log('✅ loadInitialData completed successfully');
 		} catch (err: any) {
 			console.error('❌ loadInitialData failed:', err);
@@ -406,6 +548,9 @@
 			// Update currentVideos after loading more videos
 			updateCurrentVideos();
 			
+			// Update search index with new videos
+			updateSearchIndex();
+			
 			// Clear any previous errors on success
 			error = '';
 		} catch (err: any) {
@@ -428,8 +573,8 @@
 		}
 	}
 
-	// Optimized search function with caching and request cancellation
-	async function handleOptimizedSearch() {
+	// Lightning-fast fuzzy search function
+	function handleOptimizedSearch() {
 		const query = searchQuery.trim();
 		if (query.length === 0) {
 			clearSearch();
@@ -445,86 +590,74 @@
 			console.log('🚀 Cache hit for search:', query);
 			allSearchResults = cached.results;
 			updateCurrentVideos();
+			
+			// Show cached results toast
+			toastStore.success(
+				`Found ${cached.results.length} video${cached.results.length !== 1 ? 's' : ''} for "${query}" ⚡ Cached`,
+				{ duration: 3000 }
+			);
 			return;
 		}
 
-		console.log('🔍 Starting search for:', query);
+		console.log('🔍 Starting fuzzy search for:', query);
 		isSearching = true;
-		currentPage = 1;
 		
-		// Cancel any ongoing request
-		if (searchAbortController) {
-			searchAbortController.abort();
-		}
-		searchAbortController = new AbortController();
+		// Show searching toast
+		const searchToastId = toastStore.info(`Searching for "${query}"...`, {
+			persistent: true,
+			showClose: false
+		});
 		
 		// Clear previous search results
 		searchResults = [];
 		allSearchResults = [];
 		
-		try {
-			const startTime = performance.now();
-			
-			// Load search results with abort signal
-			const response: VideosResponse = await videoService.getVideos(
-				1,
-				50, // Reduced from 100 for better performance
-				undefined,
-				query,
-				searchAbortController.signal
+		// Ensure search index is up to date
+		if (!fuseIndex) {
+			updateSearchIndex();
+		}
+		
+		// INSTANT fuzzy search - no API calls needed!
+		const startTime = performance.now();
+		const results = fuzzySearch(query);
+		const searchTime = performance.now() - startTime;
+		
+		// Store results
+		allSearchResults = results;
+		
+		// Cache the results
+		searchCache.set(cacheKey, {
+			results: allSearchResults,
+			timestamp: Date.now()
+		});
+		
+		// For search, we don't use pagination - show all results
+		hasMore = false;
+		
+		console.log('⚡ Fuzzy search complete:', {
+			query,
+			totalResults: allSearchResults.length,
+			searchTime: Math.round(searchTime),
+			cached: false
+		});
+		
+		// Stop loading and update UI
+		isSearching = false;
+		updateCurrentVideos();
+		
+		// Remove searching toast and show results
+		toastStore.remove(searchToastId);
+		
+		if (allSearchResults.length > 0) {
+			toastStore.success(
+				`Found ${allSearchResults.length} video${allSearchResults.length !== 1 ? 's' : ''} for "${query}" (${Math.round(searchTime)}ms)`,
+				{ duration: 4000 }
 			);
-
-			const newVideos = response.videos || [];
-			const searchTime = performance.now() - startTime;
-			
-			// Validate and store search results
-			const validatedResults = clientSideFilter(newVideos, query);
-			allSearchResults = validatedResults.length > 0 ? validatedResults : newVideos;
-			
-			// Cache the results
-			searchCache.set(cacheKey, {
-				results: allSearchResults,
-				timestamp: Date.now()
-			});
-			
-			// If we have very few results, also search in the local cache
-			if (allSearchResults.length < 10) {
-				console.log('🔄 Expanding search with local results');
-				const localResults = [...videos, ...latestVideos];
-				
-				// Remove duplicates and add to search results
-				const existingIds = new Set(allSearchResults.map(v => v.id));
-				const additionalResults = localResults.filter(video => 
-					!existingIds.has(video.id) && 
-					clientSideFilter([video], query).length > 0
-				);
-				
-				allSearchResults = [...allSearchResults, ...additionalResults];
-			}
-			
-			// For search, we don't use pagination - show all results
-			hasMore = false;
-			
-			console.log('📊 Search complete:', {
-				query,
-				totalResults: allSearchResults.length,
-				searchTime: Math.round(searchTime),
-				cached: false
-			});
-			
-		} catch (err: any) {
-			if (err.name === 'AbortError') {
-				console.log('🚫 Search cancelled');
-				return;
-			}
-			console.error('❌ Search failed:', err);
-			handleError(err);
-		} finally {
-			// Always stop the search spinner when search completes
-			isSearching = false;
-			searchAbortController = null;
-			// Update currentVideos after search completes
-			updateCurrentVideos();
+		} else {
+			toastStore.warning(
+				`No videos found for "${query}". Try different keywords or check spelling.`,
+				{ duration: 5000 }
+			);
 		}
 	}
 
@@ -947,38 +1080,7 @@
 											Search
 										</button>
 									</div>
-									{#if searchQuery}
-										<div class="search-info">
-											{#if isSearching}
-												<div class="search-status searching">
-													<LoadingSpinner size="small" />
-													<span>Searching for "{searchQuery}"...</span>
-												</div>
-											{:else if currentVideos.length > 0}
-												<div class="search-status success">
-													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="status-icon">
-														<polyline points="20 6 9 17 4 12"></polyline>
-													</svg>
-													<span>{currentVideos.length} video{currentVideos.length !== 1 ? 's' : ''} found</span>
-													{#if searchCache.has(searchQuery.toLowerCase())}
-														<small class="cache-indicator">⚡ Cached</small>
-													{/if}
-												</div>
-											{:else if searchQuery && !isSearching}
-												<div class="search-status no-results">
-													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="status-icon">
-														<circle cx="12" cy="12" r="10"></circle>
-														<line x1="15" y1="9" x2="9" y2="15"></line>
-														<line x1="9" y1="9" x2="15" y2="15"></line>
-													</svg>
-													<span>No videos found for "{searchQuery}"</span>
-													<button class="btn-link" onclick={() => { searchQuery = ''; clearSearch(); }}>
-														Clear search
-													</button>
-												</div>
-											{/if}
-										</div>
-									{/if}
+									<!-- Search status now handled by toast notifications -->
 								</div>
 
 								{#if currentVideos.length === 0 && !loading && !loadingMore && !isSearching}
@@ -1034,38 +1136,7 @@
 											🔍 Search
 										</button>
 									</div>
-									{#if searchQuery}
-										<div class="search-info">
-											{#if isSearching}
-												<div class="search-status searching">
-													<LoadingSpinner size="small" />
-													<span>Searching for "{searchQuery}"...</span>
-												</div>
-											{:else if currentVideos.length > 0}
-												<div class="search-status success">
-													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="status-icon">
-														<polyline points="20 6 9 17 4 12"></polyline>
-													</svg>
-													<span>{currentVideos.length} video{currentVideos.length !== 1 ? 's' : ''} found</span>
-													{#if searchCache.has(searchQuery.toLowerCase())}
-														<small class="cache-indicator">⚡ Cached</small>
-													{/if}
-												</div>
-											{:else if searchQuery && !isSearching}
-												<div class="search-status no-results">
-													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="status-icon">
-														<circle cx="12" cy="12" r="10"></circle>
-														<line x1="15" y1="9" x2="9" y2="15"></line>
-														<line x1="9" y1="9" x2="15" y2="15"></line>
-													</svg>
-													<span>No videos found for "{searchQuery}"</span>
-													<button class="btn-link" onclick={() => { searchQuery = ''; clearSearch(); }}>
-														Clear search
-													</button>
-												</div>
-											{/if}
-										</div>
-									{/if}
+									<!-- Search status now handled by toast notifications -->
 								</div>
 
 								{#if currentVideos.length === 0 && !loading && !loadingMore && !isSearching}
@@ -1640,47 +1711,7 @@
 		justify-content: center;
 	}
 
-	.search-status {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.75rem 1rem;
-		border-radius: 8px;
-		font-size: 0.9rem;
-		font-weight: 500;
-		transition: all 0.2s ease;
-	}
-
-	.search-status .status-icon {
-		width: 16px;
-		height: 16px;
-		flex-shrink: 0;
-	}
-
-	.search-status.searching {
-		background: rgba(var(--primary-bom-rgb), 0.1);
-		color: var(--color-primary);
-		border: 1px solid rgba(var(--primary-bom-rgb), 0.2);
-	}
-
-	.search-status.success {
-		background: rgba(34, 197, 94, 0.1);
-		color: rgb(34, 197, 94);
-		border: 1px solid rgba(34, 197, 94, 0.2);
-	}
-
-	.search-status.no-results {
-		background: rgba(239, 68, 68, 0.1);
-		color: rgb(239, 68, 68);
-		border: 1px solid rgba(239, 68, 68, 0.2);
-	}
-
-	.cache-indicator {
-		opacity: 0.7;
-		font-weight: normal;
-		margin-left: 0.5rem;
-		font-size: 0.8rem;
-	}
+	/* Search status styles removed - now using toast notifications */
 
 	.btn-link {
 		background: none;
