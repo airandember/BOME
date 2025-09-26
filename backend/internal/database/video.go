@@ -14,6 +14,7 @@ type Video struct {
 	Description          string     `json:"description"`
 	BunnyVideoID         string     `json:"bunnyVideoId"`
 	ThumbnailURL         string     `json:"thumbnailUrl"`
+	ThumbnailFileName    string     `json:"thumbnailFileName"`
 	Duration             int        `json:"duration"`
 	FileSize             int64      `json:"fileSize"`
 	Status               string     `json:"status"`
@@ -144,6 +145,41 @@ func (db *DB) GetVideos(limit, offset int, category, status string) ([]*Video, e
 				return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
 			}
 		}
+		videos = append(videos, video)
+	}
+
+	return videos, nil
+}
+
+// GetAllVideos retrieves all videos from the database for search index generation
+func (db *DB) GetAllVideos() ([]Video, error) {
+	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, views, likes, created_by, created_at, updated_at FROM master_video_list ORDER BY created_at DESC`
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var videos []Video
+	for rows.Next() {
+		video := Video{}
+		var tagsStr string
+		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		// Set ThumbnailFileName to empty string since it's not in the database yet
+		video.ThumbnailFileName = ""
+
+		// Parse tags from JSONB (master_video_list uses JSONB for tags)
+		if tagsStr != "" {
+			if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
+			}
+		}
+
 		videos = append(videos, video)
 	}
 
