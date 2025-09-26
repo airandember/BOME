@@ -14,6 +14,7 @@
 		"dev": "vite dev",
 		"build": "npm run build:search-index && vite build",
 		"build:search-index": "node scripts/build-search-index.js",
+		"build:prod": "npm run build:search-index && vite build",
 		"preview": "vite preview",
 		"start": "PORT=3000 node build/index.js",
 		"prepare": "svelte-kit sync || echo ''",

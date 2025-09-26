@@ -9,7 +9,13 @@ import fetch from 'node-fetch';
 import fs from 'fs/promises';
 import path from 'path';
 
-const API_BASE_URL = process.env.API_URL || 'http://localhost:8080/api/v1';
+// Environment-aware API URL configuration
+const API_BASE_URL = process.env.API_URL || 
+                     process.env.VITE_API_URL || 
+                     process.env.PUBLIC_API_URL ||
+                     'http://localhost:8080/api/v1';
+
+console.log('🌍 Using API URL:', API_BASE_URL);
 const OUTPUT_FILE = 'static/search-index.json';
 
 async function fetchAllVideos() {
