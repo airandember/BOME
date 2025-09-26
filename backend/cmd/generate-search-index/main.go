@@ -51,26 +51,17 @@ func main() {
 	log.Println("🚀 Starting search index generation...")
 
 	// Load configuration
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("❌ Failed to load config: %v", err)
-	}
+	cfg := config.New()
 
 	// Connect to database
-	db, err := database.Connect(cfg.DatabaseURL)
+	db, err := database.New(cfg)
 	if err != nil {
 		log.Fatalf("❌ Failed to connect to database: %v", err)
 	}
 	defer db.Close()
 
 	// Initialize Bunny service
-	bunnyService := services.NewBunnyService(
-		cfg.BunnyStreamAPIKey,
-		cfg.BunnyStreamLibraryID,
-		cfg.BunnyStreamRegion,
-		cfg.BunnyCDNAPIKey,
-		cfg.BunnyCDNZoneName,
-	)
+	bunnyService := services.NewBunnyService()
 
 	// Generate search index
 	searchIndex, err := generateSearchIndex(db, bunnyService)

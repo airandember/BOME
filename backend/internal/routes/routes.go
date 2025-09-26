@@ -337,8 +337,12 @@ func SetupRoutes(
 	if db != nil {
 		SetupYouTubeRoutes(v1, db)
 		fmt.Printf("YouTube routes setup complete\n")
+
+		// Setup Search Index routes
+		SearchIndexRoutes(v1, db, bunnyService)
+		fmt.Printf("Search Index routes setup complete\n")
 	} else {
-		fmt.Printf("Skipping YouTube routes (database unavailable)\n")
+		fmt.Printf("Skipping YouTube and Search Index routes (database unavailable)\n")
 	}
 	fmt.Printf("Mock data routes setup complete\n")
 

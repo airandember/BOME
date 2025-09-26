@@ -81,6 +81,43 @@ func (s *SearchIndexScheduler) Stop() {
 	log.Println("✅ Search index scheduler stopped")
 }
 
+// UpdateConfiguration updates the scheduler configuration and restarts it
+func (s *SearchIndexScheduler) UpdateConfiguration(schedule, backupSchedule string, enableBackup bool) error {
+	// Stop current scheduler
+	s.Stop()
+
+	// Create new cron instance
+	s.cron = cron.New(cron.WithSeconds())
+
+	log.Printf("🔄 Updating search index scheduler configuration...")
+	log.Printf("   Main schedule: %s", schedule)
+	log.Printf("   Backup schedule: %s", backupSchedule)
+	log.Printf("   Backup enabled: %t", enableBackup)
+
+	// Add main schedule
+	_, err := s.cron.AddFunc(schedule, func() {
+		log.Println("🕛 Scheduled search index generation triggered")
+		s.generateSearchIndex()
+	})
+	if err != nil {
+		return fmt.Errorf("failed to schedule main search index generation: %w", err)
+	}
+
+	// Add backup schedule if enabled
+	if enableBackup {
+		_, err = s.cron.AddFunc(backupSchedule, func() {
+			log.Println("🌅 Backup search index generation triggered")
+			s.generateSearchIndex()
+		})
+		if err != nil {
+			return fmt.Errorf("failed to schedule backup search index generation: %w", err)
+		}
+	}
+
+	// Start the scheduler
+	return s.Start()
+}
+
 // TriggerManualGeneration manually triggers search index generation
 func (s *SearchIndexScheduler) TriggerManualGeneration() error {
 	log.Println("🔄 Manual search index generation triggered")
