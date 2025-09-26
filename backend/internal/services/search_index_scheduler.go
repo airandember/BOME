@@ -148,7 +148,7 @@ func (s *SearchIndexScheduler) generateSearchIndex() error {
 	// 3. Shared volume
 	// 4. Cloud storage (S3, etc.)
 
-	log.Printf("✅ Search index generated with %d videos", len(videos))
+	log.Printf("✅ Search index generated with %d videos (version: %s)", len(videos), searchIndex["version"])
 	return nil
 }
 
