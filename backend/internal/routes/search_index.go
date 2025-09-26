@@ -16,17 +16,30 @@ import (
 
 // SearchIndexRoutes sets up search index management routes
 func SearchIndexRoutes(router *gin.RouterGroup, db *database.DB, bunnyService *services.BunnyService) {
+	fmt.Printf("🔧 [SEARCH-INDEX] Setting up search index routes...\n")
+
 	// Initialize search index scheduler
+	fmt.Printf("🔧 [SEARCH-INDEX] Initializing scheduler...\n")
 	searchIndexScheduler := services.NewSearchIndexScheduler(db, bunnyService)
 
 	// Start the scheduler
+	fmt.Printf("🔧 [SEARCH-INDEX] Starting scheduler...\n")
 	err := searchIndexScheduler.Start()
 	if err != nil {
-		fmt.Printf("⚠️ Failed to start search index scheduler: %v\n", err)
+		fmt.Printf("⚠️ [SEARCH-INDEX] Failed to start search index scheduler: %v\n", err)
+	} else {
+		fmt.Printf("✅ [SEARCH-INDEX] Scheduler started successfully\n")
 	}
 
 	searchIndex := router.Group("/search-index")
 	{
+		// Add middleware to log all requests to search-index routes
+		searchIndex.Use(func(c *gin.Context) {
+			fmt.Printf("🌐 [SEARCH-INDEX] Incoming request: %s %s\n", c.Request.Method, c.Request.URL.Path)
+			c.Next()
+			fmt.Printf("🌐 [SEARCH-INDEX] Request completed: %s %s - Status: %d\n", c.Request.Method, c.Request.URL.Path, c.Writer.Status())
+		})
+
 		// Get scheduler status
 		searchIndex.GET("/scheduler/status", getSearchIndexSchedulerStatus(searchIndexScheduler))
 
@@ -45,17 +58,24 @@ func SearchIndexRoutes(router *gin.RouterGroup, db *database.DB, bunnyService *s
 		// Download current search index
 		searchIndex.GET("/download", downloadSearchIndex())
 	}
+
+	fmt.Printf("✅ [SEARCH-INDEX] All routes registered successfully\n")
 }
 
 // getSearchIndexSchedulerStatus returns the current scheduler status
 func getSearchIndexSchedulerStatus(scheduler *services.SearchIndexScheduler) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		fmt.Printf("🔍 [SEARCH-INDEX] GET /scheduler/status called\n")
+
 		status := scheduler.GetStatus()
+		fmt.Printf("🔍 [SEARCH-INDEX] Scheduler status: %+v\n", status)
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"status":  status,
 		})
+
+		fmt.Printf("✅ [SEARCH-INDEX] Status response sent successfully\n")
 	}
 }
 
@@ -81,6 +101,8 @@ func triggerSearchIndexGeneration(scheduler *services.SearchIndexScheduler) gin.
 // getSearchIndexConfig returns the current search index configuration
 func getSearchIndexConfig(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		fmt.Printf("🔍 [SEARCH-INDEX] GET /config called\n")
+
 		// Get configuration from public_settings
 		schedule, _ := db.GetPublicSetting("search_index_schedule")
 		if schedule == "" {
@@ -101,6 +123,9 @@ func getSearchIndexConfig(db *database.DB) gin.HandlerFunc {
 			enableBackupBool = true // Default: enabled
 		}
 
+		fmt.Printf("🔍 [SEARCH-INDEX] Config loaded: schedule=%s, autoSync=%t, backupSchedule=%s, enableBackup=%t\n",
+			schedule, autoSyncBool, backupSchedule, enableBackupBool)
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"config": gin.H{
@@ -111,6 +136,8 @@ func getSearchIndexConfig(db *database.DB) gin.HandlerFunc {
 				"timezone":       "America/Denver", // MST
 			},
 		})
+
+		fmt.Printf("✅ [SEARCH-INDEX] Config response sent successfully\n")
 	}
 }
 
@@ -198,11 +225,16 @@ func updateSearchIndexConfig(db *database.DB, scheduler *services.SearchIndexSch
 // getSearchIndexStats returns statistics about search index generation
 func getSearchIndexStats(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		fmt.Printf("🔍 [SEARCH-INDEX] GET /stats called\n")
+
 		// Get video count from database
 		videos, err := db.GetAllVideos()
 		videoCount := 0
 		if err == nil {
 			videoCount = len(videos)
+			fmt.Printf("🔍 [SEARCH-INDEX] Found %d videos in database\n", videoCount)
+		} else {
+			fmt.Printf("⚠️ [SEARCH-INDEX] Error getting videos: %v\n", err)
 		}
 
 		// Check if search index file exists and get its info
