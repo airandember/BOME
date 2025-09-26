@@ -36,6 +36,12 @@
 			description: 'YouTube RSS feed management and sync'
 		},
 		{
+			name: 'Search Index',
+			href: '/admin/streaming/search-index',
+			icon: 'search',
+			description: 'Manage search index generation and scheduling'
+		},
+		{
 			name: 'Tags & Categories',
 			href: '/admin/streaming/tags-categories',
 			icon: 'tag',

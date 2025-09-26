@@ -12,9 +12,9 @@
 	},
 	"scripts": {
 		"dev": "vite dev",
-		"build": "npm run build:search-index && vite build",
+		"build": "vite build",
 		"build:search-index": "node scripts/build-search-index.js",
-		"build:prod": "npm run build:search-index && vite build",
+		"build:prod": "vite build",
 		"search-index:generate": "node scripts/nightly-search-index.js generate",
 		"search-index:start": "node scripts/nightly-search-index.js start",
 		"search-index:status": "node scripts/nightly-search-index.js status",

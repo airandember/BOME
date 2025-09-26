@@ -15,7 +15,7 @@ RUN npm ci
 COPY . .
 
 # Build the application with production search index
-RUN npm run build:prod
+RUN npm run build
 
 # Debug: Check what was actually built
 RUN echo "=== BUILD DIRECTORY CONTENTS ===" && ls -la build/ && echo "=== END BUILD CONTENTS ==="
