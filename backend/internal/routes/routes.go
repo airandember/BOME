@@ -326,25 +326,29 @@ func SetupRoutes(
 
 	fmt.Printf("Admin routes setup complete\n")
 
-	// Setup all mock data routes for development/testing
-	fmt.Printf("Setting up mock data routes...\n")
-	SetupMockDataRoutes(v1)
-	SetupArticlesRoutes(v1)
-	SetupRolesRoutes(v1)
-	SetupStandardizedRolesRoutes(v1)
+	// Setup mock data routes only in development
+	if cfg.Environment == "development" {
+		fmt.Printf("Setting up mock data routes (development only)...\n")
+		SetupMockDataRoutes(v1)
+		SetupArticlesRoutes(v1)
+		SetupRolesRoutes(v1)
+		SetupStandardizedRolesRoutes(v1)
+		fmt.Printf("Mock data routes setup complete\n")
+	} else {
+		fmt.Printf("Skipping mock data routes (production mode)\n")
+	}
 
 	// Only setup YouTube routes if database is available
 	if db != nil {
 		SetupYouTubeRoutes(v1, db)
 		fmt.Printf("YouTube routes setup complete\n")
 
-		// Setup Search Index routes
-		SearchIndexRoutes(v1, db, bunnyService)
+		// Setup Search Index routes under admin path
+		SearchIndexRoutes(admin, db, bunnyService)
 		fmt.Printf("Search Index routes setup complete\n")
 	} else {
 		fmt.Printf("Skipping YouTube and Search Index routes (database unavailable)\n")
 	}
-	fmt.Printf("Mock data routes setup complete\n")
 
 	// Real authentication routes
 	auth := v1.Group("/auth")
