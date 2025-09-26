@@ -25,6 +25,12 @@
 	$: loading = state.loading;
 	$: error = state.error;
 
+	// New: Separate state for RSS latest videos and tabs
+	let rssLatestVideos: YouTubeVideo[] = [];
+	let rssLoading = false;
+	let activeTab = 'latest'; // 'latest' or 'more'
+	let showMoreTab = false; // Only show if database has >15 videos
+
 	// Reactive statement to determine which videos to show
 	$: {
 		if (searchTerm.trim() !== '') {
@@ -103,9 +109,30 @@
 	}
 
 	onMount(async () => {
-		// Initialize the store with all data
-		await youtubeActions.initialize();
+		// Load both RSS latest and database videos
+		await loadBothSections();
 	});
+
+	async function loadBothSections() {
+		// Load RSS latest videos (fresh from feed)
+		rssLoading = true;
+		try {
+			rssLatestVideos = await youtubeActions.getRSSLatestVideos(15);
+		} catch (error) {
+			console.error('Failed to load RSS videos:', error);
+		} finally {
+			rssLoading = false;
+		}
+
+		// Load database videos (archive) and check if we should show More tab
+		await youtubeActions.getAllVideos(50); // Get more videos to populate More tab
+		
+		// Load channel statistics
+		await youtubeActions.getChannelStats();
+		
+		// Show More tab only if database has more than 15 videos
+		showMoreTab = videos.length > 15;
+	}
 </script>
 
 <svelte:head>
@@ -120,6 +147,7 @@
 	<div class="hero-section">
 		<div class="container">
 			<div class="hero-content">
+				<img src='/channels4_profile.jpg' alt='Book of Mormon Evidence' class='hero-image' />	
 				<h1>Latest YouTube Videos</h1>
 				<p class="hero-description">
 					Watch the latest videos from the <strong>Book of Mormon Evidence</strong> YouTube channel. 
@@ -242,24 +270,47 @@
 			</div>
 		{/if}
 
-		<!-- Videos Grid -->
-		{#if !loading && !error && filteredVideos.length > 0}
-			<div class="videos-section">
-				<div class="section-header">
-					<h2>
-						{#if searchTerm}
-							Search Results for "{searchTerm}" ({filteredVideos.length})
-						{:else if selectedCategory}
-							{selectedCategory} Videos ({filteredVideos.length})
-						{:else}
-							Latest Videos ({filteredVideos.length})
-						{/if}
-					</h2>
+		<!-- Tab Navigation (only show when not searching/filtering) -->
+		{#if !searchTerm && !selectedCategory && !loading && !error}
+			<div class="tab-navigation">
+				<div class="tabs">
+					<button 
+						class="tab {activeTab === 'latest' ? 'active' : ''}"
+						on:click={() => activeTab = 'latest'}
+					>
+						🔥 Latest Videos ({rssLatestVideos.length})
+					</button>
+					{#if showMoreTab}
+						<button 
+							class="tab {activeTab === 'more' ? 'active' : ''}"
+							on:click={() => activeTab = 'more'}
+						>
+							📚 More Videos ({videos.length})
+						</button>
+					{/if}
 				</div>
+			</div>
+		{/if}
 
-				<div class="videos-grid">
-					{#each filteredVideos as video (video.id)}
-						<div class="video-card" on:click={() => openVideo(video)} on:keydown role="button" tabindex="0">
+		<!-- Search Results or Category Filter -->
+		{#if searchTerm || selectedCategory}
+			{#if !loading && !error && filteredVideos.length > 0}
+				<div class="videos-section">
+					<div class="section-header">
+						<h2>
+							{#if searchTerm}
+								Search Results for "{searchTerm}" ({filteredVideos.length})
+							{:else if selectedCategory}
+								{selectedCategory} Videos ({filteredVideos.length})
+							{:else}
+								Latest Videos ({filteredVideos.length})
+							{/if}
+						</h2>
+					</div>
+
+					<div class="videos-grid">
+						{#each filteredVideos as video (video.id)}
+							<div class="video-card" on:click={() => openVideo(video)} on:keydown role="button" tabindex="0">
 							<div class="video-thumbnail">
 								<img
 									src={getThumbnail(video)}
@@ -314,9 +365,107 @@
 								</p>
 							</div>
 						</div>
-					{/each}
+						{/each}
+					</div>
 				</div>
-			</div>
+			{/if}
+		{/if}
+
+		<!-- Tab Content (Latest Videos and More Videos) -->
+		{#if !searchTerm && !selectedCategory && !loading && !error}
+			<!-- Latest Videos Tab Content -->
+			{#if activeTab === 'latest' && rssLatestVideos.length > 0}
+				<div class="videos-section latest-section">
+					<div class="videos-grid">
+						{#each rssLatestVideos as video (video.id)}
+							<div class="video-card latest-video" on:click={() => openVideo(video)} on:keydown role="button" tabindex="0">
+								<div class="video-thumbnail">
+									<img
+										src={getThumbnail(video)}
+										alt={video.title}
+										loading="lazy"
+										class="thumbnail-image"
+									/>
+									<div class="video-duration">
+										{formatDuration(video.duration)}
+									</div>
+									<div class="play-overlay">
+										<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+											<polygon points="5,3 19,12 5,21"></polygon>
+										</svg>
+									</div>
+								</div>
+								<div class="video-info">
+									<h3 class="video-title">{video.title}</h3>
+									<div class="video-meta">
+										<span class="video-date">{formatDate(video.published_at)}</span>
+										<span class="video-views">{formatViewCount(video.view_count)} views</span>
+									</div>
+									<p class="video-description">
+										{video.description.length > 120 
+											? video.description.substring(0, 120) + '...' 
+											: video.description}
+									</p>
+									{#if video.tags && video.tags.length > 0}
+										<div class="video-tags">
+											{#each video.tags.slice(0, 3) as tag}
+												<span class="tag">#{tag}</span>
+											{/each}
+										</div>
+									{/if}
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			<!-- More Videos Tab Content -->
+			{#if activeTab === 'more' && showMoreTab && videos.length > 0}
+				<div class="videos-section archive-section">
+					<div class="videos-grid">
+						{#each videos as video (video.id)}
+							<div class="video-card archive-video" on:click={() => openVideo(video)} on:keydown role="button" tabindex="0">
+								<div class="video-thumbnail">
+									<img
+										src={getThumbnail(video)}
+										alt={video.title}
+										loading="lazy"
+										class="thumbnail-image"
+									/>
+									<div class="video-duration">
+										{formatDuration(video.duration)}
+									</div>
+									<div class="play-overlay">
+										<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+											<polygon points="5,3 19,12 5,21"></polygon>
+										</svg>
+									</div>
+								</div>
+								<div class="video-info">
+									<h3 class="video-title">{video.title}</h3>
+									<div class="video-meta">
+										<span class="video-date">{formatDate(video.published_at)}</span>
+										<span class="video-views">{formatViewCount(video.view_count)} views</span>
+									</div>
+									<p class="video-description">
+										{video.description.length > 120 
+											? video.description.substring(0, 120) + '...' 
+											: video.description}
+									</p>
+									{#if video.tags && video.tags.length > 0}
+										<div class="video-tags">
+											{#each video.tags.slice(0, 3) as tag}
+												<span class="tag">#{tag}</span>
+											{/each}
+										</div>
+									{/if}
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
 		{/if}
 
 		<!-- Empty State -->
@@ -366,6 +515,53 @@
 		padding-top: 80px;
 	}
 
+	/* Tab Navigation Styles */
+	.tab-navigation {
+		margin: 2rem 0;
+		padding: 0 2rem;
+	}
+
+	.tabs {
+		display: flex;
+		gap: 1rem;
+		border-bottom: 2px solid var(--border-color);
+		margin-bottom: 2rem;
+	}
+
+	.tab {
+		background: none;
+		border: none;
+		padding: 1rem 1.5rem;
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: var(--text-secondary);
+		cursor: pointer;
+		border-bottom: 3px solid transparent;
+		transition: all 0.3s ease;
+		position: relative;
+	}
+
+	.tab:hover {
+		color: var(--text-primary);
+		background: var(--bg-secondary);
+	}
+
+	.tab.active {
+		color: var(--accent-primary);
+		border-bottom-color: var(--accent-primary);
+		background: var(--bg-secondary);
+	}
+
+	/* Section Styling */
+	.latest-section .video-card {
+		border: 2px solid var(--accent-primary);
+		box-shadow: 0 4px 12px rgba(var(--accent-primary-rgb), 0.1);
+	}
+
+	.archive-section .video-card {
+		border: 2px solid var(--border-color);
+	}
+
 	/* Hero Section - Matching site's design system */
 	.hero-section {
 		background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
@@ -409,6 +605,13 @@
 		text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
 		line-height: var(--leading-relaxed);
 		margin-bottom: var(--space-2xl);
+	}
+
+	.hero-image {
+		width: 100px;
+		height: 100px;
+		object-fit: cover;
+		border-radius: 50%;
 	}
 
 	.channel-stats {

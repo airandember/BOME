@@ -30,69 +30,244 @@
 	let initialDataLoaded = $state(false);
 	let activeTab = $state<'latest' | 'collections' | 'categories' | 'allVideos'>('categories');
 
-	// Add reactive logging for state changes
-	$effect(() => {
-		console.log('🔄 Loading state changed:', loading, 'at', new Date().toISOString());
-	});
-
-	$effect(() => {
-		console.log('📊 InitialDataLoaded state changed:', initialDataLoaded, 'at', new Date().toISOString());
-	});
-
-	// Test effect to see if reactivity is working at all
-	$effect(() => {
-		console.log('🧪 Test effect running - categories length:', categories.length);
-	});
 	let scrollThreshold = 800; // pixels from bottom to trigger auto-load (accounts for footer height)
-	let searchTimeout: NodeJS.Timeout | null = null;
 	let isSearching = $state(false);
+	
+	// Hybrid fuzzy search with Fuse.js - static index + dynamic updates
+	import Fuse from 'fuse.js';
+	
+	let fuseIndex: Fuse<Video> | null = null;
+	let searchCache = new Map<string, { results: Video[], timestamp: number }>();
+	let staticSearchIndex: Video[] = [];
+	let searchIndexLoaded = $state(false);
+	
+	// Fuse.js configuration for optimal search
+	const fuseOptions = {
+		keys: [
+			{ name: 'title', weight: 0.7 },
+			{ name: 'description', weight: 0.2 },
+			{ name: 'category', weight: 0.05 },
+			{ name: 'tags', weight: 0.05 }
+		],
+		threshold: 0.4, // 0.0 = exact match, 1.0 = match anything
+		includeScore: true,
+		minMatchCharLength: 2,
+		ignoreLocation: true
+	};
 
-	// Set active tab from URL parameter using Svelte 5 $effect
+
+	// Only set activeTab from URL on initial load, not on programmatic changes
+	let initialLoad = $state(true);
+	
 	$effect(() => {
-		const tabParam = $page.url.searchParams.get('tab');
-		if (tabParam && ['latest', 'collections', 'categories', 'allVideos'].includes(tabParam)) {
-			activeTab = tabParam as typeof activeTab;
+		if (initialLoad) {
+			const tabParam = $page.url.searchParams.get('tab');
+			console.log('🔗 Initial URL effect - tabParam:', tabParam);
+			if (tabParam && ['latest', 'collections', 'categories', 'allVideos'].includes(tabParam)) {
+				console.log('✅ Setting initial activeTab from URL to:', tabParam);
+				activeTab = tabParam as typeof activeTab;
+			}
+			initialLoad = false;
 		}
 	});
 
-	// Client-side search filtering function
+	// Load the static comprehensive search index
+	async function loadStaticSearchIndex() {
+		try {
+			console.log('📥 Loading comprehensive search index...');
+			const response = await fetch('/search-index.json');
+			
+			if (!response.ok) {
+				throw new Error(`Failed to load search index: ${response.status}`);
+			}
+			
+			const data = await response.json();
+			staticSearchIndex = data.videos || [];
+			searchIndexLoaded = true;
+			
+			console.log('✅ Static search index loaded:', {
+				totalVideos: staticSearchIndex.length,
+				version: data.version,
+				generatedAt: data.generatedAt
+			});
+			
+			// Build the initial Fuse index with comprehensive data
+			updateSearchIndex();
+			
+			// Preload thumbnails for the most recent/popular videos for instant display
+			const recentVideos = staticSearchIndex
+				.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+				.slice(0, 20); // Preload 20 most recent thumbnails
+			
+			setTimeout(() => preloadThumbnails(recentVideos), 1000); // Delay to not block initial load
+			
+		} catch (error) {
+			console.warn('⚠️ Failed to load static search index, falling back to dynamic only:', error);
+			searchIndexLoaded = false;
+			// Still try to build index with available videos
+			updateSearchIndex();
+		}
+	}
+	
+	// Build or update the Fuse search index (hybrid approach)
+	function updateSearchIndex() {
+		// Combine static index with dynamically loaded videos
+		const dynamicVideos = [...videos, ...latestVideos];
+		
+		// Merge static and dynamic, removing duplicates
+		const allVideos = [...staticSearchIndex];
+		const existingIds = new Set(staticSearchIndex.map(v => v.id));
+		
+		// Add dynamic videos that aren't in the static index
+		dynamicVideos.forEach(video => {
+			if (!existingIds.has(video.id)) {
+				allVideos.push(video);
+			}
+		});
+		
+		if (allVideos.length > 0) {
+			fuseIndex = new Fuse(allVideos, fuseOptions);
+			console.log('🔍 Hybrid search index updated:', {
+				staticVideos: staticSearchIndex.length,
+				dynamicVideos: dynamicVideos.length,
+				totalSearchable: allVideos.length
+			});
+		}
+	}
+	
+	// Lightning-fast fuzzy search function with thumbnail preloading
+	function fuzzySearch(query: string): Video[] {
+		if (!query.trim() || !fuseIndex) return [];
+		
+		const startTime = performance.now();
+		const results = fuseIndex.search(query); // No limit - show ALL matching results
+		const searchTime = performance.now() - startTime;
+		
+		console.log('⚡ Fuzzy search completed in', Math.round(searchTime), 'ms for query:', query);
+		
+		// Extract the actual video objects from Fuse results
+		const videos = results.map(result => result.item);
+		
+		// Preload thumbnails for the first few results for instant display
+		preloadThumbnails(videos.slice(0, 12)); // Preload first 12 thumbnails
+		
+		return videos;
+	}
+	
+	// Preload thumbnails for instant display with better error handling
+	function preloadThumbnails(videos: Video[]) {
+		videos.forEach((video, index) => {
+			// Try multiple thumbnail sources for maximum compatibility
+			const thumbnailUrl = video.thumbnailUrl || video.thumbnail || video.bunny?.previewImageUrl;
+			
+			if (thumbnailUrl) {
+				// Add a small delay to prevent overwhelming the CDN
+				setTimeout(() => {
+					const img = new Image();
+					
+					// Set crossOrigin to handle CORS properly
+					img.crossOrigin = 'anonymous';
+					
+					img.onload = () => {
+						// Thumbnail successfully preloaded
+						// console.log('✅ Preloaded thumbnail:', thumbnailUrl);
+					};
+					
+					img.onerror = () => {
+						// Only log errors for debugging, don't spam console
+						if (Math.random() < 0.1) { // Log only 10% of errors to avoid spam
+							console.warn('⚠️ Thumbnail preload failed (CDN/CORS):', thumbnailUrl);
+						}
+					};
+					
+					img.src = thumbnailUrl;
+				}, index * 50); // Stagger requests by 50ms each
+			}
+		});
+	}
+	
+	// Fallback client-side filter (kept for compatibility)
 	function clientSideFilter(videoList: Video[], query: string): Video[] {
 		if (!query.trim()) return videoList;
 		
 		const searchTerms = query.toLowerCase().trim().split(' ').filter(term => term.length > 0);
+		if (searchTerms.length === 0) return videoList;
 		
 		return videoList.filter(video => {
-			const searchableText = [
-				video.title,
-				video.description,
-				video.category,
-				...(video.tags || [])
-			].join(' ').toLowerCase();
+			const title = (video.title || '').toLowerCase();
+			if (searchTerms.some(term => title.includes(term))) {
+				return true;
+			}
 			
-			// Check if ANY search term is found in the video's searchable text (more permissive)
-			return searchTerms.some(term => searchableText.includes(term));
+			const description = (video.description || '').toLowerCase();
+			const category = (video.category || '').toLowerCase();
+			const tags = (video.tags || []).join(' ').toLowerCase();
+			
+			const otherText = `${description} ${category} ${tags}`;
+			return searchTerms.some(term => otherText.includes(term));
 		});
 	}
 
-	// Handle real-time search with client-side filtering using Svelte 5 $effect
-	$effect(() => {
-		if (searchTimeout) {
-			clearTimeout(searchTimeout);
+	// Simple search input handler - only clears when empty
+	function handleSearchInput() {
+		// Clear search if query is empty
+		if (searchQuery.length === 0) {
+			clearSearch();
 		}
-		searchTimeout = setTimeout(() => {
-			if (searchQuery.length > 0) {
-				handleSearch();
-			} else if (searchQuery.length === 0) {
-				// Clear search when query is empty
-				clearSearch();
-			}
-		}, 300); // 300ms debounce
-	});
+	}
+	
+	// Handle Enter key press for search
+	function handleSearchKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			handleOptimizedSearch();
+		}
+	}
 
-	// Get the current video list based on tab and search state with client-side filtering
-	let currentVideos = $derived(searchQuery.length > 0 ? 
-		clientSideFilter(allSearchResults, searchQuery) : 
-		(activeTab === 'latest' ? latestVideos : videos));
+	// Direct state approach - no derived state complexity
+	let currentVideos = $state<Video[]>([]);
+	
+	// Function to update currentVideos based on current state
+	function updateCurrentVideos() {
+		console.log('🔄 updateCurrentVideos called:', {
+			activeTab,
+			searchQuery: searchQuery.length,
+			videos: videos.length,
+			latestVideos: latestVideos.length,
+			searchResults: searchResults.length
+		});
+		
+		// If we have a search query, use search results
+		if (searchQuery.length > 0) {
+			// Use allSearchResults if searchResults is empty but allSearchResults has data
+			const resultsToUse = searchResults.length > 0 ? searchResults : allSearchResults;
+			console.log('🔍 Setting currentVideos to search results:', {
+				searchResults: searchResults.length,
+				allSearchResults: allSearchResults.length,
+				using: resultsToUse.length
+			});
+			currentVideos = resultsToUse;
+		}
+		// For allVideos tab, use videos array
+		else if (activeTab === 'allVideos') {
+			console.log('📺 Setting currentVideos to videos:', videos.length);
+			currentVideos = videos;
+		}
+		// For latest tab, use latestVideos array  
+		else if (activeTab === 'latest') {
+			console.log('📺 Setting currentVideos to latestVideos:', latestVideos.length);
+			currentVideos = latestVideos;
+		}
+		// For other tabs (categories, collections), use empty
+		else {
+			console.log('📂 Setting currentVideos to empty for tab:', activeTab);
+			currentVideos = [];
+		}
+		
+		console.log('✅ currentVideos updated to length:', currentVideos.length);
+	}
+	
+	// We'll call updateCurrentVideos() manually where needed instead of using $effect
 
 	// Update searchResults when allSearchResults or searchQuery changes using Svelte 5 $effect
 	$effect(() => {
@@ -112,6 +287,9 @@
 			loading
 		});
 		
+		// Load the comprehensive search index immediately for instant search
+		loadStaticSearchIndex();
+		
 		// Simple: If we have cached data, show it immediately
 		if (categories.length > 0 || videos.length > 0) {
 			console.log('✅ Using cached data on mount - setting loading=false, initialDataLoaded=true');
@@ -125,31 +303,31 @@
 		}
 		
 		// Add global debug function to window for console access
-		if (typeof window !== 'undefined') {
-			(window as any).debugVideoSearch = () => {
-				console.log('🔍 Video Search Debug Info:', {
-					searchQuery,
-					isSearching,
-					totalVideos: videos.length,
-					latestVideos: latestVideos.length,
-					allSearchResults: allSearchResults.length,
-					filteredSearchResults: searchResults.length,
-					currentVideos: currentVideos.length,
-					activeTab,
-					hasMore,
-					currentPage
-				});
-				
-				if (searchQuery) {
-					console.log('🔍 Search Query Analysis:', {
-						originalQuery: searchQuery,
-						searchTerms: searchQuery.toLowerCase().trim().split(' ').filter(term => term.length > 0),
-						allResults: allSearchResults.map(v => ({ id: v.id, title: v.title })),
-						filteredResults: searchResults.map(v => ({ id: v.id, title: v.title }))
-					});
-				}
-			};
-		}
+		//if (typeof window !== 'undefined') {
+		//	(window as any).debugVideoSearch = () => {
+		//		console.log('🔍 Video Search Debug Info:', {
+		//			searchQuery,
+		//			isSearching,
+		//			totalVideos: videos.length,
+		//			latestVideos: latestVideos.length,
+		//			allSearchResults: allSearchResults.length,
+		//			filteredSearchResults: searchResults.length,
+		//			currentVideos: currentVideos.length,
+		//			activeTab,
+		//			hasMore,
+		//			currentPage
+		//		});
+		//		
+		//		if (searchQuery) {
+		//			console.log('🔍 Search Query Analysis:', {
+		//				originalQuery: searchQuery,
+		//				searchTerms: searchQuery.toLowerCase().trim().split(' ').filter(term => term.length > 0),
+		//				allResults: allSearchResults.map(v => ({ id: v.id, title: v.title })),
+		//				filteredResults: searchResults.map(v => ({ id: v.id, title: v.title }))
+		//			});
+		//		}
+		//	};
+		//}
 		
 		// Add scroll listener for infinite scroll
 		const handleScroll = () => {
@@ -253,6 +431,13 @@
 			// Load regular videos
 			await loadVideos();
 			initialDataLoaded = true;
+			
+			// Update currentVideos after loading data
+			updateCurrentVideos();
+			
+			// Build search index with all loaded videos
+			updateSearchIndex();
+			
 			console.log('✅ loadInitialData completed successfully');
 		} catch (err: any) {
 			console.error('❌ loadInitialData failed:', err);
@@ -360,6 +545,12 @@
 					(activeTab === 'latest' ? latestVideos.length : videos.length)
 			});
 			
+			// Update currentVideos after loading more videos
+			updateCurrentVideos();
+			
+			// Update search index with new videos
+			updateSearchIndex();
+			
 			// Clear any previous errors on success
 			error = '';
 		} catch (err: any) {
@@ -382,6 +573,95 @@
 		}
 	}
 
+	// Lightning-fast fuzzy search function
+	function handleOptimizedSearch() {
+		const query = searchQuery.trim();
+		if (query.length === 0) {
+			clearSearch();
+			return;
+		}
+
+		// Check cache first (5 minute cache)
+		const cacheKey = query.toLowerCase();
+		const cached = searchCache.get(cacheKey);
+		const cacheExpiry = 5 * 60 * 1000; // 5 minutes
+		
+		if (cached && (Date.now() - cached.timestamp) < cacheExpiry) {
+			console.log('🚀 Cache hit for search:', query);
+			allSearchResults = cached.results;
+			updateCurrentVideos();
+			
+			// Show cached results toast
+			toastStore.success(
+				`Found ${cached.results.length} video${cached.results.length !== 1 ? 's' : ''} for "${query}" ⚡ Cached`,
+				{ duration: 3000 }
+			);
+			return;
+		}
+
+		console.log('🔍 Starting fuzzy search for:', query);
+		isSearching = true;
+		
+		// Show searching toast
+		const searchToastId = toastStore.info(`Searching for "${query}"...`, {
+			persistent: true,
+			showClose: false
+		});
+		
+		// Clear previous search results
+		searchResults = [];
+		allSearchResults = [];
+		
+		// Ensure search index is up to date
+		if (!fuseIndex) {
+			updateSearchIndex();
+		}
+		
+		// INSTANT fuzzy search - no API calls needed!
+		const startTime = performance.now();
+		const results = fuzzySearch(query);
+		const searchTime = performance.now() - startTime;
+		
+		// Store results
+		allSearchResults = results;
+		
+		// Cache the results
+		searchCache.set(cacheKey, {
+			results: allSearchResults,
+			timestamp: Date.now()
+		});
+		
+		// For search, we don't use pagination - show all results
+		hasMore = false;
+		
+		console.log('⚡ Fuzzy search complete:', {
+			query,
+			totalResults: allSearchResults.length,
+			searchTime: Math.round(searchTime),
+			cached: false
+		});
+		
+		// Stop loading and update UI
+		isSearching = false;
+		updateCurrentVideos();
+		
+		// Remove searching toast and show results
+		toastStore.remove(searchToastId);
+		
+		if (allSearchResults.length > 0) {
+			toastStore.success(
+				`Found ${allSearchResults.length} video${allSearchResults.length !== 1 ? 's' : ''} for "${query}" (${Math.round(searchTime)}ms)`,
+				{ duration: 4000 }
+			);
+		} else {
+			toastStore.warning(
+				`No videos found for "${query}". Try different keywords or check spelling.`,
+				{ duration: 5000 }
+			);
+		}
+	}
+
+	// Keep the old function name for compatibility
 	async function handleSearch() {
 		if (searchQuery.trim().length === 0) {
 			clearSearch();
@@ -443,24 +723,21 @@
 		} finally {
 			// Always stop the search spinner when search completes
 			isSearching = false;
+			// Update currentVideos after search completes
+			updateCurrentVideos();
 		}
 	}
 
 	function clearSearch() {
 		console.log('🧹 Clearing search');
-		isSearching = false;
 		searchResults = [];
 		allSearchResults = [];
+		isSearching = false;
 		currentPage = 1;
-		
-		// Restore pagination for regular browsing
 		hasMore = true;
 		
-		// Don't reload if we already have data for the current tab
-		if ((activeTab === 'allVideos' && videos.length === 0) || 
-		    (activeTab === 'latest' && latestVideos.length === 0)) {
-			loadVideos(true);
-		}
+		// Update currentVideos after clearing search
+		updateCurrentVideos();
 	}
 
 	function handleClearSearch() {
@@ -551,32 +828,35 @@
 	}
 
 	function switchTab(tab: typeof activeTab) {
-		activeTab = tab;
+		console.log('🔄 switchTab called with:', tab, 'current activeTab:', activeTab);
 		
-		// Update URL to reflect the active tab using SvelteKit navigation
+		// Update the state first
+		activeTab = tab;
+		console.log('✅ activeTab set to:', activeTab);
+		
+		// Update URL parameter (this should not trigger the URL effect anymore)
 		const url = new URL($page.url);
 		url.searchParams.set('tab', tab);
-		replaceState(url.toString(), {});
+		console.log('🔗 Updating URL to:', url.toString());
+		replaceState(url, {});
 		
-		if (tab === 'latest' || tab === 'allVideos') {
-			// Don't clear search when switching between video tabs
-			selectedCategory = '';
-			
-			// If we're not searching, load appropriate data for the tab
-			if (!isSearching) {
-				// Check if we need to load data for this tab
-				if ((tab === 'allVideos' && videos.length === 0) || 
-				    (tab === 'latest' && latestVideos.length === 0)) {
-					loadVideos(true);
-				}
-			}
-		} else {
-			// Clear search when going to collections or categories
-			if (searchQuery) {
-				searchQuery = '';
-				clearSearch();
-			}
+		// Clear search when switching tabs
+		if (searchQuery) {
+			searchQuery = '';
+			clearSearch();
 		}
+		
+		// Load data if needed for video tabs
+		if (tab === 'allVideos' && videos.length === 0) {
+			loadVideos(true);
+		} else if (tab === 'latest' && latestVideos.length === 0) {
+			loadVideos(true);
+		}
+		
+		// Update currentVideos after tab switch
+		updateCurrentVideos();
+		
+		console.log('🏁 switchTab complete, final activeTab:', activeTab);
 	}
 
 	// Category section state for lazy loading - using Svelte 5 reactive approach
@@ -728,6 +1008,17 @@
 							<p>Discover our extensive collection of Book of Mormon evidence videos</p>
 						</header>
 
+						<!-- Debug Info 
+						<div style="background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px; font-family: monospace;">
+							<strong>🔍 DEBUG:</strong> activeTab = "{activeTab}" | videos.length = {videos.length} | currentVideos.length = {currentVideos.length} | loading = {loading}
+							<br>
+							<strong>🔍 SEARCH:</strong> searchQuery = "{searchQuery}" (length: {searchQuery.length}) | searchResults.length = {searchResults.length}
+							<br>
+							<button onclick={() => loadInitialData()} style="margin-top: 5px; padding: 5px 10px;">🔄 Force Load Data</button>
+							<button onclick={() => { searchQuery = ''; }} style="margin-top: 5px; padding: 5px 10px;">🧹 Clear Search</button>
+							<button onclick={() => { console.log('🔍 Manual currentVideos check:', { activeTab, videos: videos.length, result: activeTab === 'allVideos' ? videos : [] }); }} style="margin-top: 5px; padding: 5px 10px;">🔍 Test Logic</button>
+						</div>-->
+
 						<!-- Navigation Tabs -->
 						<div class="hub-tabs">
 								
@@ -765,34 +1056,31 @@
 								<h2>Book of Mormon Evidence Videos</h2>
 								<div class="filters-section">
 									<div class="search-bar">
-										<input
-											type="text"
-											placeholder="Search videos..."
-											bind:value={searchQuery}
-										/>
-										{#if searchQuery}
-											<button class="btn-clear" onclick={handleClearSearch} title="Clear search">
-												✕
-											</button>
-										{/if}
-										<button class="btn-primary" onclick={handleSearch}>
-											🔍 Search
-										</button>
-									</div>
-									{#if searchQuery}
-										<div class="search-info">
-											{#if isSearching}
-												<div class="search-loading">
-													<LoadingSpinner size="small" />
-													<p>Searching for "{searchQuery}"...</p>
-												</div>
-											{:else if searchResults.length > 0}
-												<p>{searchResults.length} video{searchResults.length !== 1 ? 's' : ''} found</p>
-											{:else if searchQuery && !isSearching}
-												<p>No videos found for "{searchQuery}"</p>
+										<div class="search-input-container">
+											<input
+												type="text"
+												placeholder="Search videos"
+												bind:value={searchQuery}
+												oninput={handleSearchInput}
+												onkeydown={handleSearchKeydown}
+												class="search-input"
+											/>
+											{#if searchQuery}
+												<button class="btn-clear" onclick={handleClearSearch} title="Clear search">
+													✕
+												</button>
 											{/if}
 										</div>
-									{/if}
+										<button class="btn-primary" onclick={handleOptimizedSearch} disabled={isSearching}>
+											{#if isSearching}
+												<LoadingSpinner size="small" />
+											{:else}
+												🔍
+											{/if}
+											Search
+										</button>
+									</div>
+									<!-- Search status now handled by toast notifications -->
 								</div>
 
 								{#if currentVideos.length === 0 && !loading && !loadingMore && !isSearching}
@@ -829,34 +1117,26 @@
 								<h2>Latest Uploads</h2>
 								<div class="filters-section">
 									<div class="search-bar">
-										<input
-											type="text"
-											placeholder="Search videos..."
-											bind:value={searchQuery}
-										/>
-										{#if searchQuery}
-											<button class="btn-clear" onclick={handleClearSearch} title="Clear search">
-												✕
-											</button>
-										{/if}
-										<button class="btn-primary" onclick={handleSearch}>
+										<div class="search-input-container">
+											<input
+												type="text"
+												placeholder="Search videos"
+												bind:value={searchQuery}
+												oninput={handleSearchInput}
+												onkeydown={handleSearchKeydown}
+												class="search-input"
+											/>
+											{#if searchQuery}
+												<button class="btn-clear" onclick={handleClearSearch} title="Clear search">
+													✕
+												</button>
+											{/if}
+										</div>
+										<button class="btn-primary" onclick={handleOptimizedSearch} disabled={isSearching}>
 											🔍 Search
 										</button>
 									</div>
-									{#if searchQuery}
-										<div class="search-info">
-											{#if isSearching}
-												<div class="search-loading">
-													<LoadingSpinner size="small" />
-													<p>Searching for "{searchQuery}"...</p>
-												</div>
-											{:else if searchResults.length > 0}
-												<p>{searchResults.length} video{searchResults.length !== 1 ? 's' : ''} found</p>
-											{:else if searchQuery && !isSearching}
-												<p>No videos found for "{searchQuery}"</p>
-											{/if}
-										</div>
-									{/if}
+									<!-- Search status now handled by toast notifications -->
 								</div>
 
 								{#if currentVideos.length === 0 && !loading && !loadingMore && !isSearching}
@@ -1158,6 +1438,15 @@
 		position: relative;
 	}
 
+	.search-input-container {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		position: relative;
+		width: 100%;
+	}
+
 	.search-bar input {
 		flex: 1;
 		padding: 0.75rem;
@@ -1418,9 +1707,36 @@
 
 	.search-info {
 		margin-top: 1rem;
-		text-align: center;
-		color: var(--color-text-secondary);
-		font-size: 0.9rem;
+		display: flex;
+		justify-content: center;
+	}
+
+	/* Search status styles removed - now using toast notifications */
+
+	.btn-link {
+		background: none;
+		border: none;
+		color: inherit;
+		text-decoration: underline;
+		cursor: pointer;
+		font-size: inherit;
+		margin-left: 0.5rem;
+		opacity: 0.8;
+		transition: opacity 0.2s;
+	}
+
+	.btn-link:hover {
+		opacity: 1;
+	}
+
+	.search-input {
+		transition: border-color 0.2s ease;
+	}
+
+	.search-input:focus {
+		outline: none;
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 2px rgba(var(--primary-bom-rgb), 0.2);
 	}
 
 	.search-loading {
@@ -1484,7 +1800,7 @@
 
 	.btn-primary {
 		background: var(--color-primary);
-		color: white;
+		color: var(--text-primary);
 		border: none;
 		padding: 0.75rem 1.5rem;
 		border-radius: 8px;
@@ -1902,5 +2218,3 @@
 		}
 	}
 </style> 
-
-

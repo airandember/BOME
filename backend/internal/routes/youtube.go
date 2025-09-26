@@ -12,20 +12,26 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// SetupYouTubeRoutes registers all YouTube routes
+// SetupYouTubeRoutes registers all YouTube routes and starts the scheduler
 func SetupYouTubeRoutes(router *gin.RouterGroup, db *database.DB) {
 	youtubeService := services.NewYouTubeService(db)
+
+	// Start the YouTube RSS scheduler for daily syncing at 2 PM MST
+	youtubeScheduler := services.NewYouTubeScheduler(db)
+	youtubeScheduler.Start()
 
 	// API endpoints for frontend
 	youtube := router.Group("/youtube")
 	{
 		youtube.GET("/videos", getYouTubeVideos(youtubeService))
 		youtube.GET("/videos/latest", getLatestYouTubeVideos(youtubeService))
+		youtube.GET("/videos/rss-latest", getRSSLatestVideos(youtubeService)) // NEW: Fresh RSS data
 		youtube.GET("/videos/search", searchYouTubeVideos(youtubeService))
 		youtube.GET("/videos/category/:category", getYouTubeVideosByCategory(youtubeService))
 		youtube.GET("/videos/:id", getYouTubeVideoByID(youtubeService))
 		youtube.GET("/status", getYouTubeStatus(youtubeService))
 		youtube.GET("/channel", getYouTubeChannelInfo(youtubeService))
+		youtube.GET("/channel/stats", getYouTubeChannelStats(youtubeService))
 		youtube.GET("/categories", getYouTubeCategories(youtubeService))
 		youtube.GET("/tags", getYouTubeTags(youtubeService))
 
@@ -33,6 +39,14 @@ func SetupYouTubeRoutes(router *gin.RouterGroup, db *database.DB) {
 		youtube.POST("/sync/rss", middleware.AuthRequired(), middleware.AdminRequired(), syncFromRSS(youtubeService))
 		youtube.POST("/sync/seed", middleware.AuthRequired(), middleware.AdminRequired(), seedFromMockData(youtubeService))
 		youtube.GET("/sync/status", middleware.AuthRequired(), middleware.AdminRequired(), getSyncStatus(youtubeService))
+
+		// Scheduler endpoints
+		youtube.GET("/scheduler/status", middleware.AuthRequired(), middleware.AdminRequired(), getSchedulerStatus(youtubeScheduler))
+		youtube.POST("/scheduler/trigger", middleware.AuthRequired(), middleware.AdminRequired(), triggerYouTubeSync(youtubeScheduler))
+
+		// Configuration endpoints
+		youtube.GET("/config", middleware.AuthRequired(), middleware.AdminRequired(), getYouTubeConfig(youtubeService))
+		youtube.POST("/config", middleware.AuthRequired(), middleware.AdminRequired(), updateYouTubeConfig(youtubeService, youtubeScheduler))
 	}
 }
 
@@ -84,6 +98,50 @@ func getLatestYouTubeVideos(youtubeService *services.YouTubeService) gin.Handler
 		// Return JSON response
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.JSON(http.StatusOK, response)
+	}
+}
+
+// getRSSLatestVideos returns fresh videos directly from RSS feed (no database)
+func getRSSLatestVideos(youtubeService *services.YouTubeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Parse limit parameter
+		limitStr := c.Query("limit")
+		limit := 15 // default limit for RSS latest
+
+		if limitStr != "" {
+			if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+				limit = parsedLimit
+			}
+		}
+
+		// Get fresh RSS data (bypass database)
+		response, err := youtubeService.GetRSSLatestVideos(limit)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get RSS latest videos"})
+			return
+		}
+
+		// Return JSON response
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.JSON(http.StatusOK, response)
+	}
+}
+
+// getYouTubeChannelStats returns channel statistics (subscribers, videos, views)
+func getYouTubeChannelStats(youtubeService *services.YouTubeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		stats, err := youtubeService.GetChannelStats()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get channel stats"})
+			return
+		}
+
+		// Return JSON response
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"stats":   stats,
+		})
 	}
 }
 
@@ -290,5 +348,98 @@ func getSyncStatus(youtubeService *services.YouTubeService) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, status)
+	}
+}
+
+// getSchedulerStatus returns the current scheduler status
+func getSchedulerStatus(scheduler *services.YouTubeScheduler) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		status := scheduler.GetStatus()
+		c.JSON(http.StatusOK, gin.H{
+			"success":   true,
+			"scheduler": status,
+		})
+	}
+}
+
+// triggerYouTubeSync manually triggers an RSS sync
+func triggerYouTubeSync(scheduler *services.YouTubeScheduler) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		result, err := scheduler.TriggerManualSync()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   "Failed to trigger manual sync",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Manual sync completed",
+			"result":  result,
+		})
+	}
+}
+
+// getYouTubeConfig returns the current YouTube configuration
+func getYouTubeConfig(youtubeService *services.YouTubeService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		config, err := youtubeService.GetConfiguration()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   "Failed to get configuration",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"config":  config,
+		})
+	}
+}
+
+// updateYouTubeConfig updates the YouTube configuration
+func updateYouTubeConfig(youtubeService *services.YouTubeService, scheduler *services.YouTubeScheduler) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var configData struct {
+			ChannelID       string `json:"channel_id" binding:"required"`
+			SyncHour        int    `json:"sync_hour" binding:"min=0,max=23"`
+			SyncMinute      int    `json:"sync_minute" binding:"min=0,max=59"`
+			Timezone        string `json:"timezone"`
+			AutoSyncEnabled bool   `json:"auto_sync_enabled"`
+		}
+
+		if err := c.ShouldBindJSON(&configData); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"error":   "Invalid configuration data",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		// Update configuration
+		err := youtubeService.UpdateConfiguration(configData.ChannelID, configData.SyncHour, configData.SyncMinute, configData.Timezone, configData.AutoSyncEnabled)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   "Failed to update configuration",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		// Restart scheduler with new configuration if needed
+		// This would require scheduler restart functionality
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Configuration updated successfully",
+		})
 	}
 }

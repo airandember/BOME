@@ -29,7 +29,7 @@ func (db *DB) CreateYouTubeVideo(video YouTubeVideo) error {
 		INSERT INTO youtube_videos (
 			id, title, description, published_at, updated_at,
 			thumbnail_url, video_url, embed_url, duration, view_count, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 
 	_, err := db.Exec(query,
 		video.ID,
@@ -58,7 +58,7 @@ func (db *DB) GetYouTubeVideoByID(id string) (*YouTubeVideo, error) {
 		SELECT id, title, description, published_at, updated_at,
 		       thumbnail_url, video_url, embed_url, duration, view_count, created_at
 		FROM youtube_videos 
-		WHERE id = ?`
+		WHERE id = $1`
 
 	var video YouTubeVideo
 	err := db.QueryRow(query, id).Scan(
@@ -89,9 +89,9 @@ func (db *DB) GetYouTubeVideoByID(id string) (*YouTubeVideo, error) {
 func (db *DB) UpdateYouTubeVideo(video YouTubeVideo) error {
 	query := `
 		UPDATE youtube_videos 
-		SET title = ?, description = ?, published_at = ?, updated_at = ?,
-		    thumbnail_url = ?, video_url = ?, embed_url = ?, duration = ?, view_count = ?
-		WHERE id = ?`
+		SET title = $1, description = $2, published_at = $3, updated_at = $4,
+		    thumbnail_url = $5, video_url = $6, embed_url = $7, duration = $8, view_count = $9
+		WHERE id = $10`
 
 	_, err := db.Exec(query,
 		video.Title,
@@ -162,7 +162,7 @@ func (db *DB) GetYouTubeVideos(limit int) ([]YouTubeVideo, error) {
 
 // DeleteYouTubeVideo deletes a YouTube video by ID
 func (db *DB) DeleteYouTubeVideo(id string) error {
-	query := `DELETE FROM youtube_videos WHERE id = ?`
+	query := `DELETE FROM youtube_videos WHERE id = $1`
 
 	_, err := db.Exec(query, id)
 	if err != nil {

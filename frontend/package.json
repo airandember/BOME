@@ -12,7 +12,8 @@
 	},
 	"scripts": {
 		"dev": "vite dev",
-		"build": "vite build",
+		"build": "npm run build:search-index && vite build",
+		"build:search-index": "node scripts/build-search-index.js",
 		"preview": "vite preview",
 		"start": "PORT=3000 node build/index.js",
 		"prepare": "svelte-kit sync || echo ''",
@@ -36,6 +37,7 @@
 		"eslint": "^8.0.0",
 		"eslint-config-prettier": "^9.0.0",
 		"eslint-plugin-svelte": "^3.11.0",
+		"node-fetch": "^3.3.2",
 		"prettier": "^3.0.0",
 		"prettier-plugin-svelte": "^3.4.0",
 		"svelte": "^5.38.1",
