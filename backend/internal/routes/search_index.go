@@ -42,21 +42,38 @@ func SearchIndexRoutes(router *gin.RouterGroup, db *database.DB, bunnyService *s
 
 		// Get scheduler status
 		searchIndex.GET("/scheduler/status", getSearchIndexSchedulerStatus(searchIndexScheduler))
+		fmt.Printf("🔧 [SEARCH-INDEX] Registered: GET /api/v1/search-index/scheduler/status\n")
 
 		// Trigger manual generation
 		searchIndex.POST("/scheduler/trigger", triggerSearchIndexGeneration(searchIndexScheduler))
+		fmt.Printf("🔧 [SEARCH-INDEX] Registered: POST /api/v1/search-index/scheduler/trigger\n")
 
 		// Get configuration
 		searchIndex.GET("/config", getSearchIndexConfig(db))
+		fmt.Printf("🔧 [SEARCH-INDEX] Registered: GET /api/v1/search-index/config\n")
 
 		// Update configuration
 		searchIndex.POST("/config", updateSearchIndexConfig(db, searchIndexScheduler))
+		fmt.Printf("🔧 [SEARCH-INDEX] Registered: POST /api/v1/search-index/config\n")
 
 		// Get generation history/stats
 		searchIndex.GET("/stats", getSearchIndexStats(db))
+		fmt.Printf("🔧 [SEARCH-INDEX] Registered: GET /api/v1/search-index/stats\n")
 
 		// Download current search index
 		searchIndex.GET("/download", downloadSearchIndex())
+		fmt.Printf("🔧 [SEARCH-INDEX] Registered: GET /api/v1/search-index/download\n")
+
+		// Test endpoint to verify routing works
+		searchIndex.GET("/test", func(c *gin.Context) {
+			fmt.Printf("🧪 [SEARCH-INDEX] Test endpoint called successfully!\n")
+			c.JSON(http.StatusOK, gin.H{
+				"success":   true,
+				"message":   "Search index routes are working!",
+				"timestamp": time.Now().Format("2006-01-02 15:04:05"),
+			})
+		})
+		fmt.Printf("🔧 [SEARCH-INDEX] Registered: GET /api/v1/search-index/test\n")
 	}
 
 	fmt.Printf("✅ [SEARCH-INDEX] All routes registered successfully\n")
