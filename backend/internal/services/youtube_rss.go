@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -68,27 +69,41 @@ func NewYouTubeRSSService(db *database.DB, channelID string) *YouTubeRSSService 
 // FetchRSSFeed fetches and parses the YouTube RSS feed
 func (y *YouTubeRSSService) FetchRSSFeed() (*YouTubeRSSFeed, error) {
 	url := fmt.Sprintf("https://www.youtube.com/feeds/videos.xml?channel_id=%s", y.channelID)
+	log.Printf("🌐 [RSS-FETCH] Fetching RSS feed from: %s", url)
 
 	resp, err := y.client.Get(url)
 	if err != nil {
+		log.Printf("❌ [RSS-FETCH] HTTP request failed: %v", err)
 		return nil, fmt.Errorf("failed to fetch RSS feed: %w", err)
 	}
 	defer resp.Body.Close()
 
+	log.Printf("📡 [RSS-FETCH] HTTP response status: %d", resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
+		log.Printf("❌ [RSS-FETCH] Bad HTTP status: %d", resp.StatusCode)
 		return nil, fmt.Errorf("RSS feed request failed with status: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Printf("❌ [RSS-FETCH] Failed to read response body: %v", err)
 		return nil, fmt.Errorf("failed to read RSS feed response: %w", err)
 	}
 
+	log.Printf("📄 [RSS-FETCH] Response body length: %d bytes", len(body))
+
 	var feed YouTubeRSSFeed
 	if err := xml.Unmarshal(body, &feed); err != nil {
+		log.Printf("❌ [RSS-FETCH] Failed to parse XML: %v", err)
+		maxLen := 500
+		if len(body) < maxLen {
+			maxLen = len(body)
+		}
+		log.Printf("📄 [RSS-FETCH] Raw XML (first %d chars): %s", maxLen, string(body[:maxLen]))
 		return nil, fmt.Errorf("failed to parse RSS feed XML: %w", err)
 	}
 
+	log.Printf("✅ [RSS-FETCH] Successfully parsed RSS feed: %d entries", len(feed.Entries))
 	return &feed, nil
 }
 
@@ -139,10 +154,15 @@ func (y *YouTubeRSSService) ConvertRSSEntryToVideo(entry YouTubeRSSEntry) (datab
 
 // SyncVideosFromRSS fetches RSS feed and saves new videos to database
 func (y *YouTubeRSSService) SyncVideosFromRSS() (*YouTubeSyncResult, error) {
+	log.Printf("🔄 [RSS-SYNC] Starting RSS sync for channel: %s", y.channelID)
+
 	feed, err := y.FetchRSSFeed()
 	if err != nil {
+		log.Printf("❌ [RSS-SYNC] Failed to fetch RSS feed: %v", err)
 		return nil, fmt.Errorf("failed to fetch RSS feed: %w", err)
 	}
+
+	log.Printf("📺 [RSS-SYNC] Fetched RSS feed with %d entries", len(feed.Entries))
 
 	result := &YouTubeSyncResult{
 		TotalFetched:  len(feed.Entries),
@@ -152,36 +172,60 @@ func (y *YouTubeRSSService) SyncVideosFromRSS() (*YouTubeSyncResult, error) {
 		SyncTime:      time.Now(),
 	}
 
-	for _, entry := range feed.Entries {
+	for i, entry := range feed.Entries {
+		log.Printf("🎬 [RSS-SYNC] Processing entry %d/%d: %s", i+1, len(feed.Entries), entry.Title)
+
 		video, err := y.ConvertRSSEntryToVideo(entry)
 		if err != nil {
+			log.Printf("❌ [RSS-SYNC] Failed to convert entry %s: %v", entry.ID, err)
 			result.Errors = append(result.Errors, fmt.Sprintf("Failed to convert entry %s: %v", entry.ID, err))
 			continue
 		}
 
+		log.Printf("📝 [RSS-SYNC] Converted video: ID=%s, Title=%s", video.ID, video.Title)
+
 		// Check if video already exists
 		existingVideo, err := y.db.GetYouTubeVideoByID(video.ID)
 		if err != nil {
+			log.Printf("❌ [RSS-SYNC] Failed to check existing video %s: %v", video.ID, err)
 			result.Errors = append(result.Errors, fmt.Sprintf("Failed to check existing video %s: %v", video.ID, err))
 			continue
 		}
 
 		if existingVideo == nil {
 			// Video doesn't exist, create it
+			log.Printf("➕ [RSS-SYNC] Creating new video: %s", video.ID)
 			if err := y.db.CreateYouTubeVideo(video); err != nil {
+				log.Printf("❌ [RSS-SYNC] Failed to create video %s: %v", video.ID, err)
 				result.Errors = append(result.Errors, fmt.Sprintf("Failed to create video %s: %v", video.ID, err))
 				continue
 			}
 			result.NewVideos++
+			log.Printf("✅ [RSS-SYNC] Successfully created video: %s", video.ID)
 		} else {
 			// Video exists, update it if needed
 			if existingVideo.UpdatedAt.Before(video.UpdatedAt) {
+				log.Printf("🔄 [RSS-SYNC] Updating existing video: %s", video.ID)
 				if err := y.db.UpdateYouTubeVideo(video); err != nil {
+					log.Printf("❌ [RSS-SYNC] Failed to update video %s: %v", video.ID, err)
 					result.Errors = append(result.Errors, fmt.Sprintf("Failed to update video %s: %v", video.ID, err))
 					continue
 				}
 				result.UpdatedVideos++
+				log.Printf("✅ [RSS-SYNC] Successfully updated video: %s", video.ID)
+			} else {
+				log.Printf("⏭️ [RSS-SYNC] Video %s is up to date, skipping", video.ID)
 			}
+		}
+	}
+
+	log.Printf("📊 [RSS-SYNC] Sync completed: %d fetched, %d new, %d updated, %d errors",
+		result.TotalFetched, result.NewVideos, result.UpdatedVideos, len(result.Errors))
+
+	if len(result.Errors) > 0 {
+		log.Printf("⚠️ [RSS-SYNC] Errors encountered:")
+		for _, errMsg := range result.Errors {
+			log.Printf("   - %s", errMsg)
 		}
 	}
 

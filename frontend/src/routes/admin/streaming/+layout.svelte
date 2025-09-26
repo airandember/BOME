@@ -30,6 +30,12 @@
 			description: 'Manage video content and uploads'
 		},
 		{
+			name: 'YouTube',
+			href: '/admin/streaming/youtube',
+			icon: 'play',
+			description: 'YouTube RSS feed management and sync'
+		},
+		{
 			name: 'Tags & Categories',
 			href: '/admin/streaming/tags-categories',
 			icon: 'tag',

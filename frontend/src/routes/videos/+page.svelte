@@ -74,20 +74,27 @@
 		});
 	}
 
-	// Handle real-time search with client-side filtering using Svelte 5 $effect
-	$effect(() => {
+	// Manual search handling - removed reactive effect to prevent infinite loops
+	function handleSearchInput() {
 		if (searchTimeout) {
 			clearTimeout(searchTimeout);
 		}
-		searchTimeout = setTimeout(() => {
-			if (searchQuery.length > 0) {
-				handleSearch();
-			} else if (searchQuery.length === 0) {
-				// Clear search when query is empty
+		
+		// Immediate clear when query is empty
+		if (searchQuery.length === 0) {
+			if (searchResults.length > 0 || allSearchResults.length > 0 || isSearching) {
 				clearSearch();
 			}
-		}, 300); // 300ms debounce
-	});
+			return;
+		}
+		
+		// Debounced search for queries with 2+ characters
+		if (searchQuery.length >= 2) {
+			searchTimeout = setTimeout(() => {
+				handleSearch();
+			}, 250);
+		}
+	}
 
 	// Get the current video list based on tab and search state with client-side filtering
 	let currentVideos = $derived(searchQuery.length > 0 ? 
@@ -279,6 +286,12 @@
 	}
 
 	async function loadVideos(reset = false) {
+		// Prevent infinite loops by checking if we're already loading
+		if (loading) {
+			console.log('⚠️ Already loading videos, skipping duplicate request');
+			return;
+		}
+		
 		try {
 			if (reset) {
 				currentPage = 1;
@@ -292,7 +305,9 @@
 				category: selectedCategory,
 				search: searchQuery,
 				isSearching,
-				reset
+				reset,
+				loading,
+				initialDataLoaded
 			});
 
 			const response: VideosResponse = await videoService.getVideos(
@@ -383,12 +398,19 @@
 	}
 
 	async function handleSearch() {
-		if (searchQuery.trim().length === 0) {
+		const trimmedQuery = searchQuery.trim();
+		
+		// Early return for empty or too short queries
+		if (trimmedQuery.length === 0) {
 			clearSearch();
 			return;
 		}
+		
+		if (trimmedQuery.length < 2) {
+			return; // Don't search for single characters
+		}
 
-		console.log('🔍 Starting search for:', searchQuery);
+		console.log('🔍 Starting optimized search for:', trimmedQuery);
 		isSearching = true;
 		currentPage = 1;
 		
@@ -397,43 +419,42 @@
 		allSearchResults = [];
 		
 		try {
-			// Load all search results at once (higher limit for comprehensive search)
-			const response: VideosResponse = await videoService.getVideos(
-				1,
-				100, // Load more results for search
-				undefined,
-				searchQuery
-			);
-
-			const newVideos = response.videos || [];
+			// First, search local cache for instant results
+			const allLocalVideos = [...videos, ...latestVideos];
+			const localResults = clientSideFilter(allLocalVideos, trimmedQuery);
 			
-			// Validate and store search results
-			const validatedResults = clientSideFilter(newVideos, searchQuery);
-			allSearchResults = validatedResults.length > 0 ? validatedResults : newVideos;
-			
-			// If we have very few results, also search in the local cache
-			if (allSearchResults.length < 10) {
-				console.log('🔄 Expanding search with local results');
-				const localResults = [
-					...videos,
-					...latestVideos
-				];
-				
-				// Remove duplicates and add to search results
-				const existingIds = new Set(allSearchResults.map(v => v.id));
-				const additionalResults = localResults.filter(video => 
-					!existingIds.has(video.id) && 
-					clientSideFilter([video], searchQuery).length > 0
-				);
-				
-				allSearchResults = [...allSearchResults, ...additionalResults];
+			if (localResults.length > 0) {
+				console.log('⚡ Found', localResults.length, 'local results');
+				allSearchResults = localResults;
+				// Show local results immediately, then fetch more
+				isSearching = false;
 			}
 			
-			// For search, we don't use pagination - show all results
+			// Then fetch from server for comprehensive results
+			const response: VideosResponse = await videoService.getVideos(
+				1,
+				50, // Reduced from 100 for better performance
+				undefined,
+				trimmedQuery
+			);
+
+			const serverVideos = response.videos || [];
+			
+			// Merge server results with local results, avoiding duplicates
+			const existingIds = new Set(allSearchResults.map(v => v.id));
+			const newServerResults = serverVideos.filter(video => !existingIds.has(video.id));
+			
+			// Validate server results
+			const validatedServerResults = clientSideFilter(newServerResults, trimmedQuery);
+			allSearchResults = [...allSearchResults, ...validatedServerResults];
+			
+			// Disable infinite scroll during search
 			hasMore = false;
 			
 			console.log('📊 Search complete:', {
-				query: searchQuery,
+				query: trimmedQuery,
+				localResults: localResults.length,
+				serverResults: validatedServerResults.length,
 				totalResults: allSearchResults.length
 			});
 			
@@ -448,6 +469,13 @@
 
 	function clearSearch() {
 		console.log('🧹 Clearing search');
+		
+		// Only clear if we actually have search state to clear
+		if (!isSearching && searchResults.length === 0 && allSearchResults.length === 0) {
+			console.log('🚫 No search state to clear, skipping');
+			return;
+		}
+		
 		isSearching = false;
 		searchResults = [];
 		allSearchResults = [];
@@ -456,11 +484,8 @@
 		// Restore pagination for regular browsing
 		hasMore = true;
 		
-		// Don't reload if we already have data for the current tab
-		if ((activeTab === 'allVideos' && videos.length === 0) || 
-		    (activeTab === 'latest' && latestVideos.length === 0)) {
-			loadVideos(true);
-		}
+		// Don't automatically reload - let the user navigate or the component handle it naturally
+		console.log('✅ Search cleared successfully');
 	}
 
 	function handleClearSearch() {
@@ -764,35 +789,60 @@
 							<section class="all-videos">
 								<h2>Book of Mormon Evidence Videos</h2>
 								<div class="filters-section">
-									<div class="search-bar">
-										<input
-											type="text"
-											placeholder="Search videos..."
-											bind:value={searchQuery}
-										/>
-										{#if searchQuery}
-											<button class="btn-clear" onclick={handleClearSearch} title="Clear search">
-												✕
-											</button>
-										{/if}
-										<button class="btn-primary" onclick={handleSearch}>
-											🔍 Search
-										</button>
-									</div>
-									{#if searchQuery}
-										<div class="search-info">
-											{#if isSearching}
-												<div class="search-loading">
-													<LoadingSpinner size="small" />
-													<p>Searching for "{searchQuery}"...</p>
-												</div>
-											{:else if searchResults.length > 0}
-												<p>{searchResults.length} video{searchResults.length !== 1 ? 's' : ''} found</p>
-											{:else if searchQuery && !isSearching}
-												<p>No videos found for "{searchQuery}"</p>
-											{/if}
+									<div class="search-container">
+										<div class="search-bar">
+											<div class="search-input-wrapper">
+												<svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+													<circle cx="11" cy="11" r="8"></circle>
+													<path d="m21 21-4.35-4.35"></path>
+												</svg>
+												<input
+													type="text"
+													placeholder="Search videos by title, description, or tags..."
+													bind:value={searchQuery}
+													oninput={handleSearchInput}
+													class="search-input"
+													autocomplete="off"
+													spellcheck="false"
+												/>
+												{#if searchQuery}
+													<button class="btn-clear" onclick={handleClearSearch} title="Clear search" aria-label="Clear search">
+														<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+															<line x1="18" y1="6" x2="6" y2="18"></line>
+															<line x1="6" y1="6" x2="18" y2="18"></line>
+														</svg>
+													</button>
+												{/if}
+											</div>
 										</div>
-									{/if}
+										
+										{#if searchQuery}
+											<div class="search-info">
+												{#if isSearching}
+													<div class="search-status searching">
+														<LoadingSpinner size="small" />
+														<span>Searching for "{searchQuery}"...</span>
+													</div>
+												{:else if searchResults.length > 0}
+													<div class="search-status success">
+														<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+															<polyline points="20 6 9 17 4 12"></polyline>
+														</svg>
+														<span>{searchResults.length} video{searchResults.length !== 1 ? 's' : ''} found</span>
+													</div>
+												{:else if searchQuery && !isSearching}
+													<div class="search-status no-results">
+														<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+															<circle cx="12" cy="12" r="10"></circle>
+															<line x1="15" y1="9" x2="9" y2="15"></line>
+															<line x1="9" y1="9" x2="15" y2="15"></line>
+														</svg>
+														<span>No videos found for "{searchQuery}"</span>
+													</div>
+												{/if}
+											</div>
+										{/if}
+									</div>
 								</div>
 
 								{#if currentVideos.length === 0 && !loading && !loadingMore && !isSearching}
@@ -828,35 +878,65 @@
 							<section class="latest-videos">
 								<h2>Latest Uploads</h2>
 								<div class="filters-section">
-									<div class="search-bar">
-										<input
-											type="text"
-											placeholder="Search videos..."
-											bind:value={searchQuery}
-										/>
-										{#if searchQuery}
-											<button class="btn-clear" onclick={handleClearSearch} title="Clear search">
-												✕
-											</button>
-										{/if}
-										<button class="btn-primary" onclick={handleSearch}>
-											🔍 Search
-										</button>
-									</div>
-									{#if searchQuery}
-										<div class="search-info">
-											{#if isSearching}
-												<div class="search-loading">
-													<LoadingSpinner size="small" />
-													<p>Searching for "{searchQuery}"...</p>
-												</div>
-											{:else if searchResults.length > 0}
-												<p>{searchResults.length} video{searchResults.length !== 1 ? 's' : ''} found</p>
-											{:else if searchQuery && !isSearching}
-												<p>No videos found for "{searchQuery}"</p>
-											{/if}
+									<div class="search-container">
+										<div class="search-bar">
+											<div class="search-input-wrapper">
+												<svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+													<circle cx="11" cy="11" r="8"></circle>
+													<path d="m21 21-4.35-4.35"></path>
+												</svg>
+												<input
+													type="text"
+													placeholder="Search videos by title, description, or tags..."
+													bind:value={searchQuery}
+													oninput={handleSearchInput}
+													class="search-input"
+													autocomplete="off"
+													spellcheck="false"
+												/>
+												{#if searchQuery}
+													<button class="btn-clear" onclick={handleClearSearch} title="Clear search" aria-label="Clear search">
+														<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+															<line x1="18" y1="6" x2="6" y2="18"></line>
+															<line x1="6" y1="6" x2="18" y2="18"></line>
+														</svg>
+													</button>
+												{/if}
+												{#if isSearching}
+													<div class="search-spinner">
+														<LoadingSpinner size="small" />
+													</div>
+												{/if}
+											</div>
 										</div>
-									{/if}
+										
+										{#if searchQuery}
+											<div class="search-info">
+												{#if isSearching}
+													<div class="search-status searching">
+														<LoadingSpinner size="small" />
+														<span>Searching for "{searchQuery}"...</span>
+													</div>
+												{:else if searchResults.length > 0}
+													<div class="search-status success">
+														<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+															<polyline points="20 6 9 17 4 12"></polyline>
+														</svg>
+														<span>{searchResults.length} video{searchResults.length !== 1 ? 's' : ''} found</span>
+													</div>
+												{:else if searchQuery && !isSearching}
+													<div class="search-status no-results">
+														<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+															<circle cx="12" cy="12" r="10"></circle>
+															<line x1="15" y1="9" x2="9" y2="15"></line>
+															<line x1="9" y1="9" x2="15" y2="15"></line>
+														</svg>
+														<span>No videos found for "{searchQuery}"</span>
+													</div>
+												{/if}
+											</div>
+										{/if}
+									</div>
 								</div>
 
 								{#if currentVideos.length === 0 && !loading && !loadingMore && !isSearching}
@@ -1150,46 +1230,153 @@
 		margin-bottom: 2rem;
 	}
 
-	.search-bar {
+	.search-container {
+		width: 100%;
+		max-width: 600px;
 		display: flex;
-		gap: 0.5rem;
-		max-width: 400px;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.search-bar {
 		width: 100%;
 		position: relative;
 	}
 
-	.search-bar input {
-		flex: 1;
-		padding: 0.75rem;
-		padding-right: 2.5rem; /* Make space for clear button when present */
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		font-size: 1rem;
+	.search-input-wrapper {
+		position: relative;
+		display: flex;
+		align-items: center;
 		background: var(--color-surface);
-		color: var(--color-text);
+		border: 2px solid var(--color-border);
+		border-radius: 12px;
+		transition: all 0.3s ease;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+		&:focus-within {
+			border-color: var(--color-primary);
+			box-shadow: 0 4px 16px rgba(var(--primary-bom-rgb), 0.2);
+		}
+
+		&:hover {
+			border-color: var(--color-primary-light);
+		}
 	}
 
-	.search-bar input:focus {
+	.search-icon {
+		position: absolute;
+		left: 1rem;
+		width: 20px;
+		height: 20px;
+		color: var(--color-text-secondary);
+		z-index: 1;
+		pointer-events: none;
+	}
+
+	.search-input {
+		flex: 1;
+		padding: 1rem 1rem 1rem 3rem;
+		border: none;
+		background: transparent;
+		font-size: 1rem;
+		color: var(--color-text);
 		outline: none;
-		border-color: var(--color-primary);
+		font-family: inherit;
+
+		&::placeholder {
+			color: var(--color-text-secondary);
+			opacity: 0.7;
+		}
 	}
 
 	.btn-clear {
 		position: absolute;
-		right: 70px; /* Position it inside the input, accounting for search button */
+		right: 1rem;
 		top: 50%;
 		transform: translateY(-50%);
 		background: none;
 		border: none;
 		color: var(--color-text-secondary);
 		cursor: pointer;
-		font-size: 1rem;
-		padding: 0.25rem;
-		transition: color 0.2s;
-		z-index: 1;
+		padding: 0.5rem;
+		border-radius: 6px;
+		transition: all 0.2s ease;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 2;
+
+		svg {
+			width: 16px;
+			height: 16px;
+		}
 
 		&:hover {
 			color: var(--color-text);
+			background: var(--color-surface-hover);
+		}
+	}
+
+	.search-spinner {
+		position: absolute;
+		right: 1rem;
+		top: 50%;
+		transform: translateY(-50%);
+		z-index: 2;
+	}
+
+	/* Responsive search styles */
+	@media (max-width: 768px) {
+		.search-container {
+			max-width: 100%;
+			padding: 0 1rem;
+		}
+
+		.search-input {
+			padding: 0.875rem 0.875rem 0.875rem 2.75rem;
+			font-size: 16px; /* Prevents zoom on iOS */
+		}
+
+		.search-icon {
+			left: 0.875rem;
+			width: 18px;
+			height: 18px;
+		}
+
+		.btn-clear {
+			right: 0.875rem;
+			padding: 0.375rem;
+
+			svg {
+				width: 14px;
+				height: 14px;
+			}
+		}
+
+		.search-status {
+			padding: 0.625rem 0.875rem;
+			font-size: 0.85rem;
+
+			svg {
+				width: 14px;
+				height: 14px;
+			}
+		}
+	}
+
+	@media (max-width: 480px) {
+		.search-input {
+			padding: 0.75rem 0.75rem 0.75rem 2.5rem;
+		}
+
+		.search-icon {
+			left: 0.75rem;
+			width: 16px;
+			height: 16px;
+		}
+
+		.btn-clear {
+			right: 0.75rem;
 		}
 	}
 
@@ -1417,10 +1604,48 @@
 	}
 
 	.search-info {
-		margin-top: 1rem;
-		text-align: center;
-		color: var(--color-text-secondary);
+		display: flex;
+		justify-content: center;
+		margin-top: 0.5rem;
+	}
+
+	.search-status {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem 1rem;
+		border-radius: 8px;
 		font-size: 0.9rem;
+		font-weight: 500;
+		transition: all 0.2s ease;
+
+		svg {
+			width: 16px;
+			height: 16px;
+			flex-shrink: 0;
+		}
+
+		span {
+			margin: 0;
+		}
+
+		&.searching {
+			background: rgba(var(--primary-bom-rgb), 0.1);
+			color: var(--color-primary);
+			border: 1px solid rgba(var(--primary-bom-rgb), 0.2);
+		}
+
+		&.success {
+			background: rgba(34, 197, 94, 0.1);
+			color: rgb(34, 197, 94);
+			border: 1px solid rgba(34, 197, 94, 0.2);
+		}
+
+		&.no-results {
+			background: rgba(239, 68, 68, 0.1);
+			color: rgb(239, 68, 68);
+			border: 1px solid rgba(239, 68, 68, 0.2);
+		}
 	}
 
 	.search-loading {

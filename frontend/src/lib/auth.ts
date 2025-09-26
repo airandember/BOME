@@ -635,11 +635,11 @@ function scheduleTokenRefresh(tokens: AuthTokens) {
 // API helper function with progress tracking
 export async function apiRequest(endpoint: string, options: RequestInit & { onProgress?: () => void } = {}): Promise<Response> {
 	const url = `${API_BASE_URL}${endpoint}`;
-	console.log('🔍 apiRequest debug:', {
-		endpoint,
-		API_BASE_URL,
-		finalUrl: url
-	});
+	//console.log('🔍 apiRequest debug:', {
+	//	endpoint,
+	//	API_BASE_URL,
+	//	finalUrl: url
+	//});
 	
 	const { onProgress, ...fetchOptions } = options;
 	
@@ -653,12 +653,12 @@ export async function apiRequest(endpoint: string, options: RequestInit & { onPr
 	
 	// Add auth header if we have tokens
 	const tokens = getCurrentTokens();
-	console.log('🔍 Auth debug:', {
-		hasTokens: !!tokens,
-		accessToken: tokens?.access_token ? `${tokens.access_token.substring(0, 20)}...` : 'none',
-		isAuthEndpoint: endpoint.includes('/auth/'),
-		endpoint
-	});
+	//console.log('🔍 Auth debug:', {
+	//	hasTokens: !!tokens,
+	//	accessToken: tokens?.access_token ? `${tokens.access_token.substring(0, 20)}...` : 'none',
+	//	isAuthEndpoint: endpoint.includes('/auth/'),
+	//	endpoint
+	//});
 	
 	if (tokens && !endpoint.includes('/auth/')) {
 		config.headers = {
@@ -688,8 +688,10 @@ export async function apiRequest(endpoint: string, options: RequestInit & { onPr
 								return;
 							}
 							
-							// Call progress callback on each chunk
-							onProgress();
+							// Call progress callback on each chunk if it exists
+							if (onProgress) {
+								onProgress();
+							}
 							controller.enqueue(value);
 							return pump();
 						});
@@ -733,7 +735,8 @@ export async function apiRequest(endpoint: string, options: RequestInit & { onPr
 
 function getCurrentTokens(): AuthTokens | null {
     let tokens: AuthTokens | null = null;
-    authTokens.subscribe(value => tokens = value)();
+    const unsubscribe = authTokens.subscribe(value => tokens = value);
+    unsubscribe();
     
     // If store is empty, try to get tokens directly from storage
     if (!tokens) {
@@ -745,7 +748,8 @@ function getCurrentTokens(): AuthTokens | null {
 
 function getCurrentUser(): User | null {
     let user: User | null = null;
-    currentUser.subscribe(value => user = value)();
+    const unsubscribe = currentUser.subscribe(value => user = value);
+    unsubscribe();
     return user;
 }
 

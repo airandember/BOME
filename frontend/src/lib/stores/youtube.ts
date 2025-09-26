@@ -108,7 +108,7 @@ export const youtubeActions = {
 		youtubeStore.update((state: YouTubeState) => ({ ...state, error }));
 	},
 
-	// Get latest videos
+	// Get latest videos from database
 	async getLatestVideos(limit: number = 10): Promise<void> {
 		youtubeActions.setLoading(true);
 		youtubeActions.setError(null);
@@ -124,6 +124,24 @@ export const youtubeActions = {
 		} catch (error) {
 			youtubeActions.setError(error instanceof Error ? error.message : 'Failed to load videos');
 			youtubeActions.setLoading(false);
+		}
+	},
+
+	// Get fresh RSS videos (real-time latest)
+	async getRSSLatestVideos(limit: number = 15): Promise<YouTubeVideo[]> {
+		try {
+			// Try RSS endpoint first, fallback to regular latest
+			try {
+				const response = await apiCall<YouTubeVideosResponse>(`/videos/rss-latest?limit=${limit}`);
+				return response.videos;
+			} catch (rssError) {
+				console.log('RSS endpoint not available, using regular latest videos');
+				const response = await apiCall<YouTubeVideosResponse>(`/videos/latest?limit=${limit}`);
+				return response.videos;
+			}
+		} catch (error) {
+			console.error('Failed to load RSS videos:', error);
+			return [];
 		}
 	},
 
@@ -220,6 +238,27 @@ export const youtubeActions = {
 		} catch (error) {
 			youtubeActions.setError(error instanceof Error ? error.message : 'Failed to load channel info');
 			youtubeActions.setLoading(false);
+		}
+	},
+
+	// Get channel statistics (subscribers, videos, views)
+	async getChannelStats(): Promise<ChannelInfo | null> {
+		try {
+			//console.log('🔍 [CHANNEL-STATS] Fetching channel statistics...');
+			const response = await apiCall<{success: boolean, stats: ChannelInfo}>('/channel/stats');
+			//console.log('📊 [CHANNEL-STATS] Raw API response:', response);
+			//console.log('📈 [CHANNEL-STATS] Channel stats:', response.stats);
+			
+			youtubeStore.update((state: YouTubeState) => ({
+				...state,
+				channelInfo: response.stats
+			}));
+			
+			//console.log('✅ [CHANNEL-STATS] Store updated with channel info');
+			return response.stats;
+		} catch (error) {
+			console.error('❌ [CHANNEL-STATS] Failed to load channel stats:', error);
+			return null;
 		}
 	},
 
