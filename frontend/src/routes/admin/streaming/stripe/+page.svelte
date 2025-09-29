@@ -2006,7 +2006,6 @@
 				{:else if activeTab === 'metadata'}
 					<MetadataHealth />
 				{:else if activeTab === 'setup'}
-					<EmailUsagePanel />
 					<Setup {summary} onClearKey={() => showClearModal = true} />
 				{/if}
 			</div>

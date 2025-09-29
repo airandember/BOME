@@ -1048,6 +1048,68 @@ func (s *StripeSyncService) upsertPrice(pr *stripe.Price) error {
 	return err
 }
 
+// ProcessVideoAccessForCustomer grants video access to a customer based on their active subscription
+func (s *StripeSyncService) ProcessVideoAccessForCustomer(customerID string) error {
+	log.Printf("🎥 Processing video access for Stripe customer: %s", customerID)
+
+	// Find the user associated with this Stripe customer
+	var userID int
+	var userEmail string
+	err := s.db.QueryRow(`
+		SELECT id, email FROM users 
+		WHERE stripe_customer_id = $1 OR $1 = ANY(COALESCE(stripe_customer_ids, '{}'))
+	`, customerID).Scan(&userID, &userEmail)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("⚠️ No user found for Stripe customer %s", customerID)
+			return nil // Not an error - customer might not be in our system yet
+		}
+		return fmt.Errorf("failed to find user for customer %s: %w", customerID, err)
+	}
+
+	log.Printf("🔍 Found user %d (%s) for Stripe customer %s", userID, userEmail, customerID)
+
+	// Check if user has an active subscription with video-approved products
+	var hasVideoAccess bool
+	err = s.db.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM stripe_subscriptions ss
+			JOIN stripe_prices sp ON ss.stripe_price_id = sp.stripe_id
+			JOIN stripe_products spr ON sp.product_id = spr.id
+			WHERE ss.customer_id = (SELECT id FROM stripe_customers WHERE stripe_id = $1)
+			AND ss.status IN ('active', 'trialing')
+			AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+			AND spr.video_approved = true
+		)
+	`, customerID).Scan(&hasVideoAccess)
+
+	if err != nil {
+		return fmt.Errorf("failed to check video access for customer %s: %w", customerID, err)
+	}
+
+	if hasVideoAccess {
+		// Grant video access by updating user's manual_video_access
+		_, err = s.db.Exec(`
+			UPDATE users 
+			SET manual_video_access = true, updated_at = NOW()
+			WHERE id = $1
+		`, userID)
+
+		if err != nil {
+			return fmt.Errorf("failed to grant video access to user %d: %w", userID, err)
+		}
+
+		log.Printf("✅ Video access granted to user %d (%s) via Stripe customer %s",
+			userID, userEmail, customerID)
+	} else {
+		log.Printf("ℹ️ No video-approved subscription found for customer %s (user: %s)",
+			customerID, userEmail)
+	}
+
+	return nil
+}
+
 func (s *StripeSyncService) upsertSubscription(sub *stripe.Subscription) error {
 	// Get customer ID from our database
 	var customerID sql.NullInt64

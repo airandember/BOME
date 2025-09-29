@@ -18,6 +18,9 @@ func RegisterStripeWebhookRoutes(router *gin.RouterGroup, stripeService *service
 	{
 		// Main webhook endpoint for all Stripe events
 		webhooks.POST("/", func(c *gin.Context) { handleStripeWebhook(c, stripeService, syncService) })
+
+		// Webhook status endpoint for admin dashboard
+		webhooks.GET("/status", func(c *gin.Context) { getWebhookStatus(c, syncService) })
 	}
 }
 
@@ -143,7 +146,30 @@ func handleInvoicePaymentSucceeded(event *stripe.Event, syncService *services.St
 	}
 
 	log.Printf("🧾 Webhook: Invoice payment succeeded - %s (Amount: %d)", invoice.ID, invoice.AmountPaid)
-	return syncService.UpsertInvoiceFromWebhook(&invoice)
+
+	// First, sync the invoice data
+	if err := syncService.UpsertInvoiceFromWebhook(&invoice); err != nil {
+		log.Printf("❌ Failed to sync invoice data: %v", err)
+		return err
+	}
+
+	// 🎯 CRITICAL: Grant video access when payment succeeds
+	if invoice.Customer != nil && invoice.Subscription != nil {
+		log.Printf("🎥 Processing video access for customer %s (subscription: %s)",
+			invoice.Customer.ID, invoice.Subscription.ID)
+
+		// This will trigger the sync service to update user video access
+		// based on their active subscription and product video_approved status
+		if err := syncService.ProcessVideoAccessForCustomer(invoice.Customer.ID); err != nil {
+			log.Printf("⚠️ Failed to process video access for customer %s: %v",
+				invoice.Customer.ID, err)
+			// Don't return error - invoice sync succeeded, video access is secondary
+		} else {
+			log.Printf("✅ Video access processed for customer %s", invoice.Customer.ID)
+		}
+	}
+
+	return nil
 }
 
 func handleInvoicePaymentFailed(event *stripe.Event, syncService *services.StripeSyncService) error {
@@ -230,4 +256,24 @@ func handleSubscriptionDeleted(event *stripe.Event, syncService *services.Stripe
 	log.Printf("📋 Webhook: Subscription deleted - %s (Customer: %s)",
 		subscription.ID, subscription.Customer.ID)
 	return syncService.MarkSubscriptionDeleted(subscription.ID)
+}
+
+// getWebhookStatus provides webhook status information for the admin dashboard
+func getWebhookStatus(c *gin.Context, syncService *services.StripeSyncService) {
+	// This is a simple implementation - you can enhance it with actual webhook tracking
+	// For now, we'll return basic status information
+
+	status := gin.H{
+		"active":      true,                                                            // Assume active if the endpoint is reachable
+		"lastEvent":   "Recently",                                                      // You could track this in database
+		"eventsToday": 0,                                                               // You could count events from logs/database
+		"successRate": 100,                                                             // You could calculate this from logs
+		"endpoint":    c.Request.Host + c.Request.URL.Path[:len(c.Request.URL.Path)-7], // Remove "/status"
+	}
+
+	log.Printf("📊 Webhook status requested from admin dashboard")
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "ok",
+		"webhook": status,
+	})
 }

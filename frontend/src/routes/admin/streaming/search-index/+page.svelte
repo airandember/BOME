@@ -45,7 +45,7 @@
 
 	async function loadSchedulerStatus() {
 		try {
-			const response = await fetch('/api/v1/admin/search-index/scheduler/status', {
+			const response = await fetch('/api/v1/admin/streaming/search-index/scheduler/status', {
 				headers: {
 					'Authorization': `Bearer ${getAuthToken()}`
 				}
@@ -66,7 +66,7 @@
 
 	async function loadConfiguration() {
 		try {
-			const response = await fetch('/api/v1/admin/search-index/config', {
+			const response = await fetch('/api/v1/admin/streaming/search-index/config', {
 				headers: {
 					'Authorization': `Bearer ${getAuthToken()}`
 				}
@@ -87,7 +87,7 @@
 
 	async function loadStats() {
 		try {
-			const response = await fetch('/api/v1/admin/search-index/stats', {
+			const response = await fetch('/api/v1/admin/streaming/search-index/stats', {
 				headers: {
 					'Authorization': `Bearer ${getAuthToken()}`
 				}
@@ -114,7 +114,7 @@
 	async function saveConfiguration() {
 		isSaving = true;
 		try {
-			const response = await fetch('/api/v1/admin/search-index/config', {
+			const response = await fetch('/api/v1/admin/streaming/search-index/config', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -142,7 +142,7 @@
 	async function triggerManualGeneration() {
 		isGenerating = true;
 		try {
-			const response = await fetch('/api/v1/admin/search-index/scheduler/trigger', {
+			const response = await fetch('/api/v1/admin/streaming/search-index/scheduler/trigger', {
 				method: 'POST',
 				headers: {
 					'Authorization': `Bearer ${getAuthToken()}`
@@ -170,7 +170,7 @@
 
 	async function downloadSearchIndex() {
 		try {
-			const response = await fetch('/api/v1/admin/search-index/download', {
+			const response = await fetch('/api/v1/admin/streaming/search-index/download', {
 				headers: {
 					'Authorization': `Bearer ${getAuthToken()}`
 				}

@@ -122,7 +122,7 @@ func SetupRoutes(
 
 		// Create admin cache service
 		analyticsService := services.NewSubscriptionAnalyticsService(db)
-		SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService, subscriptionPlanStripeService, subscriptionOffersStripeService)
+		SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService, subscriptionPlanStripeService, subscriptionOffersStripeService, bunnyService)
 		SetupMasterVideoRoutes(admin, db, bunnyService)
 
 		// Setup tag routes
@@ -343,8 +343,7 @@ func SetupRoutes(
 		SetupYouTubeRoutes(v1, db)
 		fmt.Printf("YouTube routes setup complete\n")
 
-		// Setup Search Index routes under admin path
-		SearchIndexRoutes(admin, db, bunnyService)
+		// Search Index routes are now set up within SetupAdminStreamingRoutes
 		fmt.Printf("Search Index routes setup complete\n")
 	} else {
 		fmt.Printf("Skipping YouTube and Search Index routes (database unavailable)\n")
