@@ -34,6 +34,11 @@
 	let syncJobs = $state<any[]>([])
 	let systemLoading = $state(false)
 
+	// Webhook configuration state
+	let webhookEndpointUrl = $state('')
+	let webhookStatus = $state<any>(null)
+	let webhookLoading = $state(false)
+
 	const { data = null, onClearKey } = $props<{ data?: any; onClearKey: () => void }>();
 
 	onMount(async () => {
@@ -45,6 +50,7 @@
 			loading = false;
 		}
 		await loadPublicSettings();
+		await initializeWebhookConfig();
 	});
 
 	//async function fetchSummary() {
@@ -109,6 +115,46 @@
 			}
 		} catch (err) {
 			console.error('Failed to load public settings:', err);
+		}
+	}
+
+	// === WEBHOOK CONFIGURATION FUNCTIONS ===
+
+	// Initialize webhook configuration
+	async function initializeWebhookConfig() {
+		// Generate webhook endpoint URL based on current environment
+		const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
+		webhookEndpointUrl = `${apiBaseUrl}/admin/streaming/stripe/webhooks/`;
+		
+		// Load webhook status
+		await loadWebhookStatus();
+	}
+
+	// Load webhook status and recent events
+	async function loadWebhookStatus() {
+		webhookLoading = true;
+		try {
+			const res = await apiRequest('/admin/streaming/stripe/webhooks/status');
+			if (res.ok) {
+				webhookStatus = await res.json();
+			}
+		} catch (err) {
+			console.error('Failed to load webhook status:', err);
+			webhookStatus = { error: 'Failed to load webhook status' };
+		} finally {
+			webhookLoading = false;
+		}
+	}
+
+	// Copy webhook URL to clipboard
+	async function copyWebhookUrl() {
+		try {
+			await navigator.clipboard.writeText(webhookEndpointUrl);
+			success = 'Webhook URL copied to clipboard!';
+			setTimeout(() => success = '', 3000);
+		} catch (err) {
+			error = 'Failed to copy to clipboard';
+			setTimeout(() => error = '', 3000);
 		}
 	}
 
@@ -665,6 +711,118 @@
 							</div>
 						</div>
 					{/if}
+				</div>
+
+				<!-- Webhook Configuration Section -->
+				<div class="next-steps-card web-hook-whole">
+					<h3>🔗 Webhook Configuration</h3>
+					<p>Configure Stripe webhooks for real-time payment processing and video access</p>
+					
+					<div class="webhook-config">
+						<!-- Webhook Endpoint URL -->
+						<div class="setting-item">
+							<div class="setting-header">
+								<h4>Webhook Endpoint URL</h4>
+								<span class="setting-type">Required</span>
+							</div>
+							<p class="setting-description">
+								Copy this URL to your Stripe Dashboard → Webhooks to enable real-time payment processing.
+								When payments succeed, users will automatically get video access.
+							</p>
+							
+							<div class="webhook-url-display">
+								<div class="url-container">
+									<code class="webhook-url">{webhookEndpointUrl}</code>
+									<button 
+										class="btn btn-outline btn-sm copy-btn" 
+										onclick={copyWebhookUrl}
+										title="Copy webhook URL"
+									>
+										📋 Copy
+									</button>
+								</div>
+							</div>
+						</div>
+
+						<!-- Webhook Status -->
+						{#if webhookLoading}
+							<div class="setting-item">
+								<div class="loading-small">
+									<div class="spinner-small"></div>
+									<span>Loading webhook status...</span>
+								</div>
+							</div>
+						{:else if webhookStatus}
+							<div class="setting-item">
+								<div class="setting-header">
+									<h4>Webhook Status</h4>
+									<span class="setting-type {webhookStatus.active ? 'success' : 'warning'}">
+										{webhookStatus.active ? 'Active' : 'Inactive'}
+									</span>
+								</div>
+								<p class="setting-description">
+									{#if webhookStatus.active}
+										✅ Webhooks are working! Last event received: {webhookStatus.lastEvent || 'Never'}
+									{:else}
+										⚠️ No recent webhook events detected. Make sure to configure webhooks in your Stripe Dashboard.
+									{/if}
+								</p>
+								
+								{#if webhookStatus.eventsToday}
+									<div class="webhook-stats">
+										<div class="stat-item">
+											<span class="stat-value">{webhookStatus.eventsToday}</span>
+											<span class="stat-label">Events Today</span>
+										</div>
+										{#if webhookStatus.successRate}
+											<div class="stat-item">
+												<span class="stat-value">{webhookStatus.successRate}%</span>
+												<span class="stat-label">Success Rate</span>
+											</div>
+										{/if}
+									</div>
+								{/if}
+							</div>
+						{/if}
+
+						<!-- Setup Instructions -->
+						<div class="setting-item">
+							<div class="setting-header">
+								<h4>Setup Instructions</h4>
+								<span class="setting-type">Guide</span>
+							</div>
+							<div class="webhook-instructions">
+								<div class="instruction-step">
+									<div class="step-number">1</div>
+									<div class="step-content">
+										<strong>Go to Stripe Dashboard</strong>
+										<p>Navigate to <a href="https://dashboard.stripe.com/webhooks" target="_blank" rel="noopener">Developers → Webhooks</a></p>
+									</div>
+								</div>
+								<div class="instruction-step">
+									<div class="step-number">2</div>
+									<div class="step-content">
+										<strong>Add Endpoint</strong>
+										<p>Click "Add endpoint" and paste the URL above</p>
+									</div>
+								</div>
+								<div class="instruction-step">
+									<div class="step-number">3</div>
+									<div class="step-content">
+										<strong>Select Events</strong>
+										<p>Choose these events: <code>customer.subscription.*</code>, <code>invoice.payment_succeeded</code>, <code>customer.*</code></p>
+									</div>
+								</div>
+								<div class="instruction-step">
+									<div class="step-number">4</div>
+									<div class="step-content">
+										<strong>Test Webhook</strong>
+										<p>Use Stripe's "Send test webhook" feature to verify the connection</p>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
 				</div>
 
 				<!-- Stripe Data Management Section -->
@@ -1300,7 +1458,7 @@
 
 	.next-steps-card h3 {
 		margin: 0 0 var(--space-lg, 1.5rem) 0;
-		color: var(--text, #111827);
+		color: var(--text-primary, #111827);
 		font-size: 1.5rem;
 	}
 
@@ -1893,5 +2051,158 @@
 		.system-health .health-grid {
 			grid-template-columns: 1fr;
 		}
+	}
+
+	/* Webhook Configuration Styles */
+	.webhook-config {
+		display: grid;
+		gap: 1.5rem;
+		margin-top: 1rem;
+	}
+
+	.web-hook-whole {
+		margin-top: var(--space-lg);
+		border-radius: 50px;
+        background: var(--bg-secondary);
+        box-shadow:  5px 5px 10px var(--bg-secondary),
+             -5px -5px 10px var(--bg-secondary);
+	}
+
+	.webhook-url-display {
+		margin-top: 0.75rem;
+	}
+
+	.url-container {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		background: var(--bg-tertiary);
+		border: 1px solid var(--border-color);
+		border-radius: 8px;
+		padding: 0.75rem;
+	}
+
+	.webhook-url {
+		flex: 1;
+		font-family: 'Courier New', monospace;
+		font-size: 0.875rem;
+		color: var(--text-primary);
+		background: transparent;
+		border: none;
+		word-break: break-all;
+	}
+
+	.copy-btn {
+		flex-shrink: 0;
+		white-space: nowrap;
+	}
+
+	.webhook-stats {
+		display: flex;
+		gap: 1.5rem;
+		margin-top: 0.75rem;
+		padding: 0.75rem;
+		background: var(--bg-tertiary);
+		border-radius: 8px;
+		border: 1px solid var(--border-color);
+	}
+
+	.stat-item {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.25rem;
+	}
+
+	.stat-value {
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: var(--primary);
+	}
+
+	.stat-label {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		font-weight: 500;
+	}
+
+	.webhook-instructions {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		margin-top: 0.75rem;
+	}
+
+	.instruction-step {
+		display: flex;
+		gap: 0.75rem;
+		align-items: flex-start;
+	}
+
+	.step-number {
+		flex-shrink: 0;
+		width: 1.5rem;
+		height: 1.5rem;
+		background: var(--primary);
+		color: white;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
+
+	.step-content {
+		flex: 1;
+	}
+
+	.step-content strong {
+		display: block;
+		margin-bottom: 0.25rem;
+		color: var(--text-primary);
+	}
+
+	.step-content p {
+		margin: 0;
+		color: var(--text-secondary);
+		font-size: 0.875rem;
+		line-height: 1.4;
+	}
+
+	.step-content code {
+		background: var(--bg-tertiary);
+		padding: 0.125rem 0.375rem;
+		border-radius: 4px;
+		font-size: 0.8rem;
+		border: 1px solid var(--border-color);
+	}
+
+	.loading-small {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		color: var(--text-muted);
+		font-size: 0.875rem;
+	}
+
+	.spinner-small {
+		width: 1rem;
+		height: 1rem;
+		border: 2px solid var(--border-color);
+		border-top: 2px solid var(--primary);
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+	}
+
+	.setting-type.success {
+		background: var(--success-bg);
+		color: var(--success-text);
+	}
+
+	.setting-type.warning {
+		background: var(--warning-bg);
+		color: var(--warning-text);
 	}
 </style> 

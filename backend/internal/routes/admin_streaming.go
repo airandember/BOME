@@ -18,7 +18,7 @@ import (
 )
 
 // SetupAdminStreamingRoutes sets up streaming admin dashboard routes
-func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeService *services.StripeService, analyticsService *services.SubscriptionAnalyticsService, biService *services.BusinessIntelligenceService, subscriptionPlanStripeService *services.SubscriptionPlanStripeService, subscriptionOffersStripeService *services.SubscriptionOffersStripeService) {
+func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeService *services.StripeService, analyticsService *services.SubscriptionAnalyticsService, biService *services.BusinessIntelligenceService, subscriptionPlanStripeService *services.SubscriptionPlanStripeService, subscriptionOffersStripeService *services.SubscriptionOffersStripeService, bunnyService *services.BunnyService) {
 	// Streaming admin routes - requires streaming manager role or higher
 	streaming := admin.Group("/streaming")
 	streaming.Use(middleware.AuthRequired())
@@ -460,6 +460,11 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 
 		// Start the cron service for scheduled syncs
 		go cronService.StartCronJobs()
+
+		// Add search index routes to the streaming admin group
+		if bunnyService != nil {
+			SearchIndexRoutes(streaming, db, bunnyService)
+		}
 	}
 }
 
