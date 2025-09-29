@@ -17,7 +17,6 @@ import (
 // RegisterRequest represents the registration payload
 type RegisterRequest struct {
 	Email     string `json:"email" binding:"required"`
-	Password  string `json:"password" binding:"required"`
 	FirstName string `json:"first_name" binding:"required"`
 	LastName  string `json:"last_name" binding:"required"`
 }
@@ -96,12 +95,6 @@ func RegisterHandler(db *database.DB, emailService *services.EmailService) gin.H
 			return
 		}
 
-		// Validate password strength
-		if err := services.ValidatePassword(req.Password); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
 		// Validate names
 		if err := services.ValidateName(req.FirstName); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid first name: " + err.Error()})
@@ -121,32 +114,41 @@ func RegisterHandler(db *database.DB, emailService *services.EmailService) gin.H
 			return
 		}
 
-		// Check if user already exists
-		exists, err := db.CheckUserExists(req.Email)
-		if err != nil {
-			log.Printf("Database error checking user existence: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Service temporarily unavailable. Please try again later.",
+		// 🔄 UNIFIED FLOW: Check if user already exists
+		// If they exist, send them verification email to complete setup
+		existingUser, err := db.GetUserByEmail(req.Email)
+		if err == nil && existingUser != nil {
+			log.Printf("🔄 [UNIFIED-FLOW] Existing user attempting registration: %s (ID: %d)", existingUser.Email, existingUser.ID)
+
+			// Generate new verification token for existing user
+			verificationToken := services.GenerateSecureToken()
+			if err := db.SetVerificationToken(existingUser.ID, verificationToken); err != nil {
+				log.Printf("Failed to set verification token for existing user: %v", err)
+			}
+
+			// Send verification email
+			if emailService != nil {
+				fullName := existingUser.FirstName + " " + existingUser.LastName
+				if err := emailService.SendVerificationEmail(existingUser.ID, existingUser.Email, fullName); err != nil {
+					log.Printf("Failed to send verification email to existing user: %v", err)
+				} else {
+					log.Printf("✅ Verification email sent to existing user: %s", existingUser.Email)
+				}
+			}
+
+			// Return success message (same as new user to avoid revealing account existence)
+			c.JSON(http.StatusCreated, gin.H{
+				"message":               "Registration successful. Please check your email to complete your account setup.",
+				"user_id":               existingUser.ID,
+				"email":                 existingUser.Email,
+				"verification_required": true,
 			})
 			return
 		}
-		if exists {
-			c.JSON(http.StatusConflict, gin.H{"error": "An account with this email already exists"})
-			return
-		}
 
-		// Hash password
-		hash, err := services.HashPassword(req.Password)
-		if err != nil {
-			log.Printf("Failed to hash password: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Service temporarily unavailable. Please try again later.",
-			})
-			return
-		}
-
-		// Create user
-		user, err := db.CreateUser(req.Email, hash, req.FirstName, req.LastName, "user")
+		// Create new user with empty password hash (will trigger password setup after verification)
+		passwordHash := "" // Empty password triggers password setup flow
+		user, err := db.CreateUser(req.Email, passwordHash, req.FirstName, req.LastName, "user")
 		if err != nil {
 			log.Printf("Failed to create user: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -177,7 +179,7 @@ func RegisterHandler(db *database.DB, emailService *services.EmailService) gin.H
 		log.Printf("User registered successfully: %s (ID: %d) from %s", user.Email, user.ID, clientIP)
 
 		c.JSON(http.StatusCreated, gin.H{
-			"message":               "Registration successful. Please check your email to verify your account.",
+			"message":               "Registration successful. Please check your email to complete your account setup.",
 			"user_id":               user.ID,
 			"email":                 user.Email,
 			"verification_required": true,
@@ -779,7 +781,7 @@ func VerifyEmailLinkHandler(db *database.DB) gin.HandlerFunc {
 
 			// Let's also check what tokens exist in the database for debugging
 			if debugUser, debugErr := db.GetUserByEmail("aarongusa@outlook.com"); debugErr == nil {
-				log.Printf("🔍 [DEBUG] User %d current verification_token in DB: %s", debugUser.ID, debugUser.VerificationToken)
+				log.Printf("🔍 [DEBUG] User %d current verification_token in DB: %s", debugUser.ID, debugUser.VerificationToken.String)
 			}
 
 			errorURL := fmt.Sprintf("%s/auth/verify-email?error=invalid_token", getFrontendURL(c))
@@ -815,7 +817,39 @@ func VerifyEmailLinkHandler(db *database.DB) gin.HandlerFunc {
 
 		log.Printf("✅ Email verified via link for: %s (ID: %d)", user.Email, user.ID)
 
-		// Generate login tokens for auto-login
+		// 🔐 CHECK IF USER NEEDS PASSWORD SETUP
+		needsPasswordSetup := user.PasswordHash == "" ||
+			user.PasswordHash == "temp_hash" ||
+			!user.PasswordChanged ||
+			!user.LastLogin.Valid
+
+		log.Printf("🔍 Password setup check for user %d: needsSetup=%v (hash_empty=%v, temp_hash=%v, not_changed=%v, no_login=%v)",
+			user.ID, needsPasswordSetup,
+			user.PasswordHash == "",
+			user.PasswordHash == "temp_hash",
+			!user.PasswordChanged,
+			!user.LastLogin.Valid)
+
+		if needsPasswordSetup {
+			// Generate a temporary setup token for password setup
+			setupToken := services.GenerateSecureToken()
+			if err := db.SetPasswordSetupToken(user.ID, setupToken); err != nil {
+				log.Printf("Failed to set password setup token: %v", err)
+				// Fall back to normal success page
+				successURL := fmt.Sprintf("%s/auth/verify-email?success=true", getFrontendURL(c))
+				c.Redirect(http.StatusTemporaryRedirect, successURL)
+				return
+			}
+
+			// Redirect to password setup page
+			setupURL := fmt.Sprintf("%s/auth/setup-password?token=%s&user_id=%d",
+				getFrontendURL(c), setupToken, user.ID)
+			log.Printf("🔐 [PASSWORD-SETUP] Redirecting user %d to password setup: %s", user.ID, setupURL)
+			c.Redirect(http.StatusTemporaryRedirect, setupURL)
+			return
+		}
+
+		// Generate login tokens for auto-login (existing users with passwords)
 		tokenPair, err := services.GenerateTokenPair(user.ID, user.Email, user.Role, true) // email is verified
 		if err != nil {
 			log.Printf("Failed to generate tokens after verification: %v", err)
@@ -1201,6 +1235,134 @@ func UpdateCurrentUserHandler(db *database.DB) gin.HandlerFunc {
 				"avatar_url":     user.AvatarURL,
 				"created_at":     user.CreatedAt,
 				"last_login":     user.LastLogin,
+			},
+		})
+	}
+}
+
+// SetupPasswordRequest represents the password setup request
+type SetupPasswordRequest struct {
+	Token    string `json:"token" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	UserID   int    `json:"user_id,omitempty"`
+}
+
+// SetupPasswordHandler handles password setup for users without passwords (Stripe customers, etc.)
+func SetupPasswordHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req SetupPasswordRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+			return
+		}
+
+		// Validate password
+		if err := services.ValidatePassword(req.Password); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Check if database is available
+		if db == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": "Service temporarily unavailable. Please try again later.",
+			})
+			return
+		}
+
+		// Get user by password setup token
+		user, err := db.GetUserByPasswordSetupToken(req.Token)
+		if err != nil {
+			log.Printf("Invalid password setup token: %s (error: %v)", req.Token, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or expired setup token"})
+			return
+		}
+
+		// Optional: Verify user ID matches (extra security)
+		if req.UserID > 0 && user.ID != req.UserID {
+			log.Printf("User ID mismatch in password setup: expected %d, got %d", user.ID, req.UserID)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid setup token"})
+			return
+		}
+
+		// Hash new password
+		hash, err := services.HashPassword(req.Password)
+		if err != nil {
+			log.Printf("Failed to hash password: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Service temporarily unavailable. Please try again later.",
+			})
+			return
+		}
+
+		// Update password and mark as changed
+		if err := db.UpdateUserPasswordWithChange(user.ID, hash); err != nil {
+			log.Printf("Failed to update password: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Service temporarily unavailable. Please try again later.",
+			})
+			return
+		}
+
+		// Clear the setup token
+		if err := db.ClearPasswordSetupToken(user.ID); err != nil {
+			log.Printf("Failed to clear password setup token: %v", err)
+		}
+
+		// Update last login to complete the setup process
+		if err := db.UpdateLastLogin(user.ID); err != nil {
+			log.Printf("Failed to update last login: %v", err)
+		}
+
+		log.Printf("✅ Password setup completed for: %s (ID: %d)", user.Email, user.ID)
+
+		// Generate login tokens for auto-login
+		tokenPair, err := services.GenerateTokenPair(user.ID, user.Email, user.Role, true) // email is verified
+		if err != nil {
+			log.Printf("Failed to generate tokens after password setup: %v", err)
+			c.JSON(http.StatusOK, gin.H{
+				"message": "Password setup successful. Please login with your new password.",
+			})
+			return
+		}
+
+		// Create session for tracking
+		deviceInfo := services.GenerateDeviceFingerprint(c.Request)
+		clientIP := services.GetClientIP(c.Request.RemoteAddr, c.GetHeader("X-Forwarded-For"), c.GetHeader("X-Real-IP"))
+
+		// Extract token ID from refresh token for session tracking
+		refreshClaims, _ := services.ParseRefreshToken(tokenPair.RefreshToken)
+		tokenID := ""
+		if refreshClaims != nil {
+			tokenID = refreshClaims.TokenID
+		}
+
+		_, err = db.CreateSession(
+			user.ID,
+			tokenID,
+			deviceInfo,
+			clientIP,
+			c.GetHeader("User-Agent"),
+			time.Now().Add(7*24*time.Hour), // Session expires with refresh token
+		)
+		if err != nil {
+			log.Printf("Failed to create session: %v", err)
+		}
+
+		// Return success with auto-login tokens
+		c.JSON(http.StatusOK, gin.H{
+			"message":       "Password setup successful! You are now logged in.",
+			"access_token":  tokenPair.AccessToken,
+			"refresh_token": tokenPair.RefreshToken,
+			"expires_in":    tokenPair.ExpiresIn,
+			"token_type":    "Bearer",
+			"user": gin.H{
+				"id":             user.ID,
+				"email":          user.Email,
+				"first_name":     user.FirstName,
+				"last_name":      user.LastName,
+				"role":           user.Role,
+				"email_verified": true, // Always true after setup
 			},
 		})
 	}

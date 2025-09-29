@@ -6,8 +6,6 @@
 	import OAuth2Login from '$lib/components/OAuth2Login.svelte';
 
 	let email = '';
-	let password = '';
-	let confirmPassword = '';
 	let firstName = '';
 	let lastName = '';
 	let loading = false;
@@ -24,18 +22,8 @@
 	});
 
 	async function handleRegister() {
-		if (!email || !password || !confirmPassword || !firstName || !lastName) {
+		if (!email || !firstName || !lastName) {
 			error = 'Please fill in all fields';
-			return;
-		}
-
-		if (password !== confirmPassword) {
-			error = 'Passwords do not match';
-			return;
-		}
-
-		if (password.length < 8) {
-			error = 'Password must be at least 8 characters long';
 			return;
 		}
 
@@ -44,7 +32,6 @@
 
 		const result = await auth.register({
 			email,
-			password,
 			first_name: firstName,
 			last_name: lastName
 		});
@@ -71,14 +58,14 @@
 <div class="auth-container">
 	<div class="auth-card">
 		<div class="auth-header">
-			<h1>Create Account</h1>
-			<p>Join us to explore Book of Mormon evidences</p>
+			<h1>Get Started with BOME</h1>
+			<p>Join us to explore Book of Mormon evidences - we'll help you set up your account!</p>
 		</div>
 
 		{#if success}
 			<div class="success-message">
-				<h3>Registration Successful!</h3>
-				<p>Your account has been created. Please check your email to verify your account...</p>
+				<h3>Welcome to BOME!</h3>
+				<p>Please check your email to complete your account setup. We'll help you create a secure password in the next step!</p>
 			</div>
 		{:else}
 			<!-- OAuth2 Registration Options -->
@@ -122,30 +109,6 @@
 					/>
 				</div>
 
-				<div class="form-group">
-					<label for="password">Password</label>
-					<input
-						type="password"
-						id="password"
-						bind:value={password}
-						placeholder="Enter your password"
-						autocomplete="new-password"
-						required
-					/>
-				</div>
-
-				<div class="form-group">
-					<label for="confirmPassword">Confirm Password</label>
-					<input
-						type="password"
-						id="confirmPassword"
-						bind:value={confirmPassword}
-						placeholder="Confirm your password"
-						autocomplete="new-password"
-						required
-					/>
-				</div>
-
 				{#if error}
 					<div class="error-message">
 						{error}
@@ -153,7 +116,7 @@
 				{/if}
 
 				<button type="submit" class="btn-primary" disabled={loading}>
-					{loading ? 'Creating Account...' : 'Create Account'}
+					{loading ? 'Getting Started...' : 'Get Started'}
 				</button>
 			</form>
 		{/if}
@@ -163,7 +126,7 @@
 		<div class="auth-footer">
 			<p>
 				Already have an account?
-				<a href="/login" class="link">Sign in</a>
+				<a href="/login" class="link">Log in</a>
 			</p>
 		</div>
 	</div>
