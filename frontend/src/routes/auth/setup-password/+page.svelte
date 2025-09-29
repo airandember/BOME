@@ -76,7 +76,31 @@
 				})
 			});
 
-			const data = await response.json();
+			console.log('🔍 Response status:', response.status);
+			console.log('🔍 Response headers:', Object.fromEntries(response.headers.entries()));
+
+			let data;
+			const contentType = response.headers.get('content-type');
+			
+			if (contentType && contentType.includes('application/json')) {
+				data = await response.json();
+			} else {
+				// Handle HTML/text responses (like nginx error pages)
+				const textResponse = await response.text();
+				console.log('🔍 Non-JSON response:', textResponse.substring(0, 200) + '...');
+				
+				if (response.status === 504) {
+					data = { 
+						error: 'Gateway timeout - the server took too long to respond. Please try again in a moment.',
+						debug_info: 'Received HTML response instead of JSON, likely nginx timeout'
+					};
+				} else {
+					data = { 
+						error: `Server error (${response.status}). Please try again.`,
+						debug_info: `Received non-JSON response: ${textResponse.substring(0, 100)}...`
+					};
+				}
+			}
 
 			if (response.ok) {
 				console.log('✅ Password setup successful:', data);

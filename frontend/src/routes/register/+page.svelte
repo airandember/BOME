@@ -229,7 +229,7 @@
 		border: none;
 		border-radius: 12px;
 		background: var(--bg-glass-dark);
-		color: white;
+		color: var(--text-primary);
 		font-size: 1rem;
 		font-weight: 600;
 		cursor: pointer;
