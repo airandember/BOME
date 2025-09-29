@@ -265,11 +265,11 @@
 <style>
 	.setup-password-page {
 		min-height: 100vh;
-		background: var(--bg-gradient);
-		padding: 2rem 0;
+		background: linear-gradient(150deg, var(--primary-gold) 1%, var(--primary-bom-dark) 60%);
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		padding: 2rem;
 	}
 
 	.container {
@@ -281,25 +281,15 @@
 	.setup-container,
 	.success-container,
 	.error-container {
-		background: var(--card-bg);
-		border-radius: 20px;
-		box-shadow: var(--neumorphic-shadow);
-		border: 1px solid var(--border-color);
+		background: white;
+		border-radius: 16px;
+		box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
 		padding: 3rem 2rem;
 		text-align: center;
+		width: 100%;
+		max-width: 600px;
 	}
 
-	.setup-container {
-		border-color: var(--primary-color);
-	}
-
-	.success-container {
-		border-color: var(--success-color);
-	}
-
-	.error-container {
-		border-color: var(--error-color);
-	}
 
 	.setup-header {
 		margin-bottom: 2rem;
@@ -310,22 +300,31 @@
 	.error-icon {
 		font-size: 4rem;
 		margin-bottom: 1.5rem;
+		display: block;
+	}
+
+	.success-icon {
+		color: #10b981;
+	}
+
+	.error-icon {
+		color: #ef4444;
 	}
 
 	.setup-container h1,
 	.success-container h1,
 	.error-container h1 {
-		font-size: 2.5rem;
+		color: #1f2937;
+		font-size: 2rem;
 		font-weight: 700;
-		color: var(--text-primary);
 		margin-bottom: 1rem;
 	}
 
 	.setup-header p,
 	.success-message,
 	.error-message {
+		color: #6b7280;
 		font-size: 1.1rem;
-		color: var(--text-secondary);
 		line-height: 1.6;
 		margin-bottom: 1rem;
 	}

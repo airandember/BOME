@@ -1250,11 +1250,16 @@ type SetupPasswordRequest struct {
 // SetupPasswordHandler handles password setup for users without passwords (Stripe customers, etc.)
 func SetupPasswordHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		log.Printf("🔐 [SETUP-PASSWORD] Handler called: %s", c.Request.URL.String())
+
 		var req SetupPasswordRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
+			log.Printf("❌ [SETUP-PASSWORD] Failed to bind JSON: %v", err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
 			return
 		}
+
+		log.Printf("🔐 [SETUP-PASSWORD] Processing request for token: %s", req.Token[:8]+"...")
 
 		// Validate password
 		if err := services.ValidatePassword(req.Password); err != nil {
