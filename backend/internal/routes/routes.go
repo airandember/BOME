@@ -356,6 +356,7 @@ func SetupRoutes(
 		auth.POST("/register", RegisterHandler(db, emailService))
 		auth.POST("/logout", LogoutHandler(db))
 		auth.POST("/change-password", middleware.AuthRequired(), ChangePasswordHandler(db))
+		auth.POST("/setup-password", SetupPasswordHandler(db))
 
 		// Email verification routes
 		fmt.Printf("🔄 Registering verify-email-link route...\n")

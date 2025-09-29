@@ -397,6 +397,37 @@ func (db *DB) ClearVerificationToken(userID int) error {
 	return err
 }
 
+// SetPasswordSetupToken sets a password setup token for a user (reuses reset_token field)
+func (db *DB) SetPasswordSetupToken(userID int, token string) error {
+	expiry := time.Now().Add(24 * time.Hour) // 24 hour expiry for password setup
+	_, err := db.Exec(`UPDATE users SET reset_token = $1, reset_token_expiry = $2, updated_at = NOW() WHERE id = $3`, token, expiry, userID)
+	return err
+}
+
+// GetUserByPasswordSetupToken retrieves a user by password setup token
+func (db *DB) GetUserByPasswordSetupToken(token string) (*User, error) {
+	user := &User{}
+	err := db.QueryRow(
+		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
+		 stripe_customer_id, stripe_customer_ids,
+		 reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed, password_changed 
+		 FROM users WHERE reset_token = $1 AND reset_token_expiry > NOW()`,
+		token,
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified,
+		&user.StripeCustomerID, &user.StripeCustomerIDs,
+		&user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed, &user.PasswordChanged)
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+// ClearPasswordSetupToken clears the password setup token after use
+func (db *DB) ClearPasswordSetupToken(userID int) error {
+	_, err := db.Exec(`UPDATE users SET reset_token = NULL, reset_token_expiry = NULL, updated_at = NOW() WHERE id = $1`, userID)
+	return err
+}
+
 // UpdateUserStripeCustomerID updates a user's Stripe customer ID (legacy method)
 func (db *DB) UpdateUserStripeCustomerID(userID int, stripeCustomerID string) error {
 	_, err := db.Exec(`UPDATE users SET stripe_customer_id = $1, updated_at = NOW() WHERE id = $2`, stripeCustomerID, userID)
