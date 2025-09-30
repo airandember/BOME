@@ -350,6 +350,7 @@ func SetupRoutes(
 	}
 
 	// Real authentication routes
+	fmt.Printf("🔐 Setting up authentication routes...\n")
 	auth := v1.Group("/auth")
 	{
 		auth.POST("/login", LoginHandler(db, emailService))
@@ -357,6 +358,7 @@ func SetupRoutes(
 		auth.POST("/logout", LogoutHandler(db))
 		auth.POST("/change-password", middleware.AuthRequired(), ChangePasswordHandler(db))
 		auth.POST("/setup-password", SetupPasswordHandler(db))
+		fmt.Printf("✅ Auth route registered: POST /api/v1/auth/setup-password\n")
 
 		// Email verification routes
 		fmt.Printf("🔄 Registering verify-email-link route...\n")
@@ -379,6 +381,7 @@ func SetupRoutes(
 		// Token refresh
 		auth.POST("/refresh", RefreshTokenHandler(db))
 	}
+	fmt.Printf("✅ Authentication routes setup complete\n")
 
 	// Initialize OAuth2 service
 	oauth2Service := services.NewOAuth2Service(db)
