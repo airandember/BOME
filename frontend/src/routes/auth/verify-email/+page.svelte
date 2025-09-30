@@ -513,7 +513,7 @@
 
 	.btn-primary {
 		background: #3b82f6;
-		color: white;
+		color: var(--text-primary);
 	}
 
 	.btn-primary:hover:not(:disabled) {
@@ -523,7 +523,7 @@
 
 	.btn-secondary {
 		background: #f3f4f6;
-		color: #6b7280;
+		color: var(--text-secondary);
 	}
 
 	.btn-secondary:hover {

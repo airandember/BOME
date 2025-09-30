@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { showToast } from '$lib/toast';
-	import { storeAuthData } from '$lib/auth';
+	import { storeAuthData, apiRequest } from '$lib/auth';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 
 	let password = '';
@@ -64,11 +64,8 @@
 		try {
 			console.log('🔐 Setting up password...');
 			
-			const response = await fetch('/api/v1/auth/setup-password', {
+			const response = await apiRequest('/auth/setup-password', {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
 				body: JSON.stringify({
 					token: token,
 					password: password,
@@ -517,7 +514,7 @@
 
 	.btn-primary {
 		background: var(--primary-color);
-		color: white;
+		color: var(--text-primary);
 	}
 
 	.btn-primary:hover:not(:disabled) {
