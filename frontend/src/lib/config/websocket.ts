@@ -17,8 +17,16 @@ export const WS_CONFIG = {
 } as const;
 
 export const getWebSocketUrl = (endpoint: string, token: string): string => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // In development, use the same host and port as the frontend (Vite will proxy WebSocket connections)
-    const backendHost = window.location.host;
-    return `${protocol}//${backendHost}${endpoint}?token=${encodeURIComponent(token)}`;
+    // Use environment variable if available, otherwise construct from current location
+    const wsBaseUrl = import.meta.env.VITE_WS_URL;
+    
+    if (wsBaseUrl) {
+        // Environment variable is set (production)
+        return `${wsBaseUrl}${endpoint}?token=${encodeURIComponent(token)}`;
+    } else {
+        // Development fallback
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const backendHost = window.location.host;
+        return `${protocol}//${backendHost}${endpoint}?token=${encodeURIComponent(token)}`;
+    }
 }; 

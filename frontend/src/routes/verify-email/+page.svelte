@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { showToast } from '$lib/toast';
+	import { apiRequest } from '$lib/auth';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 
 	let loading = true;
@@ -32,7 +33,7 @@
 		try {
 			console.log('🔍 Verifying email token:', token.substring(0, 8) + '...');
 			
-			const response = await fetch(`/api/v1/auth/verify-email/${token}`);
+			const response = await apiRequest(`/auth/verify-email/${token}`);
 			
 			if (!response.ok) {
 				const errorData = await response.json();
