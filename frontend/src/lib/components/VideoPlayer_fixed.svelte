@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount, createEventDispatcher } from 'svelte';
     import { analytics } from '\/services/analytics';
-    import { auth } from '\/auth';
+    import { auth, apiRequest } from '\/auth';
 
     export let videoId: string = '';
     export let title: string = '';
@@ -48,10 +48,9 @@
     async function createBlobUrl(videoId: string, authToken: string): Promise<string> {
         console.log([Blob] Creating blob URL for video: ${videoId});
         
-        const response = await fetch(http://localhost:8080/api/v1/blob/${videoId}, {
+        const response = await apiRequest(`/blob/${videoId}`, {
             method: 'GET',
             headers: {
-                'Authorization': Bearer ${authToken},
                 'Accept': 'video/mp4,*/*'
             }
         });

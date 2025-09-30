@@ -1,21 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { showToast } from '$lib/toast';
+	import { apiRequest } from '$lib/auth';
 
-	// Helper function to get auth token (same as other admin components)
-	function getAuthToken(): string {
-		const stored = localStorage.getItem('bome_auth_data');
-		if (stored) {
-			try {
-				const tokenData = JSON.parse(stored);
-				return tokenData.access_token || '';
-			} catch (e) {
-				console.error('Failed to parse bome_auth_data:', e);
-			}
-		}
-		// Fallback to old token storage
-		return localStorage.getItem('token') || '';
-	}
 
 	// State variables
 	let isLoading = true;
@@ -62,10 +49,8 @@
 
 	async function loadSchedulerStatus() {
 		try {
-			const response = await fetch('/api/v1/youtube/scheduler/status', {
-				headers: {
-					'Authorization': `Bearer ${getAuthToken()}`
-				}
+			const response = await apiRequest('/youtube/scheduler/status', {
+				method: 'GET'
 			});
 			
 			if (response.ok) {
@@ -79,10 +64,8 @@
 
 	async function loadSyncStatus() {
 		try {
-			const response = await fetch('/api/v1/youtube/sync/status', {
-				headers: {
-					'Authorization': `Bearer ${getAuthToken()}`
-				}
+			const response = await apiRequest('/youtube/sync/status', {
+				method: 'GET'
 			});
 			
 			if (response.ok) {
@@ -95,10 +78,8 @@
 
 	async function loadRecentVideos() {
 		try {
-			const response = await fetch('/api/v1/youtube/videos/latest?limit=5', {
-				headers: {
-					'Authorization': `Bearer ${getAuthToken()}`
-				}
+			const response = await apiRequest('/youtube/videos/latest?limit=5', {
+				method: 'GET'
 			});
 			
 			if (response.ok) {
@@ -112,10 +93,8 @@
 
 	async function loadConfiguration() {
 		try {
-			const response = await fetch('/api/v1/youtube/config', {
-				headers: {
-					'Authorization': `Bearer ${getAuthToken()}`
-				}
+			const response = await apiRequest('/youtube/config', {
+				method: 'GET'
 			});
 			
 			if (response.ok) {
@@ -136,12 +115,8 @@
 	async function saveConfiguration() {
 		isSaving = true;
 		try {
-			const response = await fetch('/api/v1/youtube/config', {
+			const response = await apiRequest('/youtube/config', {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${getAuthToken()}`
-				},
 				body: JSON.stringify({
 					channel_id: channelId,
 					sync_hour: syncHour,
@@ -170,12 +145,8 @@
 	async function triggerManualSync() {
 		isSyncing = true;
 		try {
-			const response = await fetch('/api/v1/youtube/scheduler/trigger', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${getAuthToken()}`
-				}
+			const response = await apiRequest('/youtube/scheduler/trigger', {
+				method: 'POST'
 			});
 			
 			if (response.ok) {

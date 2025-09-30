@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { toastStore } from '$lib/stores/toast';
+	import { apiRequest } from '$lib/auth';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 
 	// State management
@@ -16,11 +17,6 @@
 	let stats = $state<any>(null);
 	let isGenerating = $state(false);
 	let isSaving = $state(false);
-
-	// Helper function to get auth token
-	function getAuthToken(): string | null {
-		return localStorage.getItem('access_token');
-	}
 
 	// Load all data on mount
 	onMount(() => {
@@ -45,10 +41,8 @@
 
 	async function loadSchedulerStatus() {
 		try {
-			const response = await fetch('/api/v1/admin/streaming/search-index/scheduler/status', {
-				headers: {
-					'Authorization': `Bearer ${getAuthToken()}`
-				}
+			const response = await apiRequest('/admin/streaming/search-index/scheduler/status', {
+				method: 'GET'
 			});
 
 			if (!response.ok) {
@@ -66,10 +60,8 @@
 
 	async function loadConfiguration() {
 		try {
-			const response = await fetch('/api/v1/admin/streaming/search-index/config', {
-				headers: {
-					'Authorization': `Bearer ${getAuthToken()}`
-				}
+			const response = await apiRequest('/admin/streaming/search-index/config', {
+				method: 'GET'
 			});
 
 			if (!response.ok) {
@@ -87,10 +79,8 @@
 
 	async function loadStats() {
 		try {
-			const response = await fetch('/api/v1/admin/streaming/search-index/stats', {
-				headers: {
-					'Authorization': `Bearer ${getAuthToken()}`
-				}
+			const response = await apiRequest('/admin/streaming/search-index/stats', {
+				method: 'GET'
 			});
 
 			if (!response.ok) {
@@ -114,12 +104,8 @@
 	async function saveConfiguration() {
 		isSaving = true;
 		try {
-			const response = await fetch('/api/v1/admin/streaming/search-index/config', {
+			const response = await apiRequest('/admin/streaming/search-index/config', {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${getAuthToken()}`
-				},
 				body: JSON.stringify(config)
 			});
 
@@ -142,11 +128,8 @@
 	async function triggerManualGeneration() {
 		isGenerating = true;
 		try {
-			const response = await fetch('/api/v1/admin/streaming/search-index/scheduler/trigger', {
-				method: 'POST',
-				headers: {
-					'Authorization': `Bearer ${getAuthToken()}`
-				}
+			const response = await apiRequest('/admin/streaming/search-index/scheduler/trigger', {
+				method: 'POST'
 			});
 
 			if (!response.ok) {
@@ -170,10 +153,8 @@
 
 	async function downloadSearchIndex() {
 		try {
-			const response = await fetch('/api/v1/admin/streaming/search-index/download', {
-				headers: {
-					'Authorization': `Bearer ${getAuthToken()}`
-				}
+			const response = await apiRequest('/admin/streaming/search-index/download', {
+				method: 'GET'
 			});
 
 			if (!response.ok) {

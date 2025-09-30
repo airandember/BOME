@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/auth';
+	import { auth, apiRequest } from '$lib/auth';
 
 	// Get URL parameters
 	let userEmail = '';
@@ -34,7 +34,7 @@
 				console.log('🔄 Attempting auto-login with tokens...');
 				
 				// Get user data from backend
-				const userResponse = await fetch(`http://localhost:8080/api/v1/users/me`, {
+				const userResponse = await apiRequest('/users/me', {
 					headers: {
 						'Authorization': `Bearer ${accessToken}`,
 						'Content-Type': 'application/json'
