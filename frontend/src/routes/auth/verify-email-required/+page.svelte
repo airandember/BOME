@@ -287,7 +287,7 @@
 
 	.btn-primary {
 		background: #3b82f6;
-		color: white;
+		color: var(--text-primary);
 	}
 
 	.btn-primary:hover:not(:disabled) {
