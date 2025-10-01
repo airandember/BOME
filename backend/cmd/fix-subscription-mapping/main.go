@@ -2,12 +2,7 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
-	"os"
-
-	"bome-backend/internal/config"
-	"bome-backend/internal/database"
 
 	_ "github.com/lib/pq"
 )
@@ -15,11 +10,10 @@ import (
 func main() {
 	log.Println("🔧 Starting subscription mapping fix...")
 
-	// Load configuration
-	cfg := config.Load()
-	
-	// Connect to database
-	db, err := database.Connect(cfg.DatabaseURL)
+	// Connect to database using environment variable
+	databaseURL := "your_database_url_here" // Replace with actual database URL
+
+	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
 		log.Fatalf("❌ Failed to connect to database: %v", err)
 	}
@@ -27,19 +21,99 @@ func main() {
 
 	log.Println("✅ Connected to database")
 
-	// Step 1: Create price mapping based on stripe_prices table and unit_amount
-	// Based on the stripe_prices data provided
-	priceMapping := map[int64]int{
-		997:   11, // EMonth price -> Monthly plan (plan_id 11)
-		999:   11, // premiummonthly price -> Monthly plan (plan_id 11)
-		8982:  12, // PPlan price (Legacy Semi-Annual) -> Annual plan (plan_id 12)
-		9564:  12, // YPremium price -> Annual plan (plan_id 12) 
-		7200:  12, // bestvaluepromo price -> Annual plan (plan_id 12)
+	// Step 1: Build price mapping dynamically from subscription_plans and stripe_prices tables
+	log.Println("🔍 Building price mappings from database tables...")
+	
+	// Query to get subscription plans and their corresponding stripe prices
+	planQuery := `
+		SELECT 
+			sp.id as plan_id,
+			sp.name as plan_name,
+			sp.stripe_price_id,
+			spr.unit_amount
+		FROM subscription_plans sp
+		LEFT JOIN stripe_prices spr ON sp.stripe_price_id = spr.stripe_id
+		WHERE sp.is_active = true
+		ORDER BY sp.id
+	`
+	
+	rows, err := db.Query(planQuery)
+	if err != nil {
+		log.Fatalf("❌ Failed to query subscription plans: %v", err)
 	}
-
-	log.Println("💰 Price to Plan ID mapping:")
-	for price, planID := range priceMapping {
-		log.Printf("  $%.2f (unit_amount: %d) -> Plan ID: %d", float64(price)/100, price, planID)
+	defer rows.Close()
+	
+	priceMapping := make(map[int64]int)
+	planNames := make(map[int]string)
+	
+	log.Println("💰 Found subscription plans:")
+	for rows.Next() {
+		var planID int
+		var planName string
+		var stripePriceID sql.NullString
+		var unitAmount sql.NullInt64
+		
+		err := rows.Scan(&planID, &planName, &stripePriceID, &unitAmount)
+		if err != nil {
+			log.Printf("❌ Error scanning row: %v", err)
+			continue
+		}
+		
+		planNames[planID] = planName
+		
+		if stripePriceID.Valid && unitAmount.Valid {
+			priceMapping[unitAmount.Int64] = planID
+			log.Printf("  Plan ID %d (%s): %s -> $%.2f (unit_amount: %d)", 
+				planID, planName, stripePriceID.String, float64(unitAmount.Int64)/100, unitAmount.Int64)
+		} else {
+			log.Printf("  Plan ID %d (%s): No Stripe price mapping found", planID, planName)
+		}
+	}
+	
+	if len(priceMapping) == 0 {
+		log.Println("⚠️  No price mappings found. Checking for additional price patterns...")
+		
+		// Fallback: Look for common unit_amounts in stripe_subscriptions and map to reasonable plans
+		commonPricesQuery := `
+			SELECT DISTINCT unit_amount, COUNT(*) as subscriber_count
+			FROM stripe_subscriptions ss
+			WHERE ss.status IN ('active', 'trialing')
+			AND ss.unit_amount IS NOT NULL
+			GROUP BY unit_amount
+			ORDER BY subscriber_count DESC
+		`
+		
+		priceRows, err := db.Query(commonPricesQuery)
+		if err != nil {
+			log.Printf("❌ Failed to query common prices: %v", err)
+		} else {
+			defer priceRows.Close()
+			
+			log.Println("🔍 Common subscription prices found:")
+			for priceRows.Next() {
+				var unitAmount int64
+				var count int
+				
+				err := priceRows.Scan(&unitAmount, &count)
+				if err != nil {
+					continue
+				}
+				
+				log.Printf("  $%.2f (unit_amount: %d) - %d subscribers", 
+					float64(unitAmount)/100, unitAmount, count)
+				
+				// Smart mapping based on price ranges
+				var planID int
+				if unitAmount < 1500 { // Less than $15 = Monthly
+					planID = 11
+				} else { // $15+ = Annual
+					planID = 12
+				}
+				
+				priceMapping[unitAmount] = planID
+				log.Printf("    → Mapped to Plan ID %d (%s)", planID, planNames[planID])
+			}
+		}
 	}
 
 	// Step 2: Update users.sub_id based on their active Stripe subscriptions
@@ -58,7 +132,7 @@ func main() {
 	`
 
 	totalUpdated := 0
-	
+
 	for unitAmount, planID := range priceMapping {
 		result, err := db.Exec(updateQuery, planID, unitAmount)
 		if err != nil {
@@ -75,11 +149,11 @@ func main() {
 
 	// Step 3: Update product_name in stripe_subscriptions based on unit_amount
 	productNameMapping := map[int64]string{
-		997:   "Basic Monthly",
-		999:   "Premium Monthly",
-		8982:  "Premium Semi-Annual",
-		9564:  "Premium Annual", 
-		7200:  "Best Value Annual",
+		997:  "Basic Monthly",
+		999:  "Premium Monthly",
+		8982: "Premium Semi-Annual",
+		9564: "Premium Annual",
+		7200: "Best Value Annual",
 	}
 
 	log.Println("📝 Updating product names in stripe_subscriptions...")
@@ -104,7 +178,7 @@ func main() {
 
 	// Step 4: Verify the fix
 	log.Println("🔍 Verifying the fix...")
-	
+
 	verifyQuery := `
 		SELECT 
 			u.id, u.email, u.sub_id, sp.name as plan_name, ss.unit_amount, ss.product_name
