@@ -1,4 +1,5 @@
 import { api } from '$lib/api';
+import { apiRequest } from '$lib/auth';
 
 export interface Subscriber {
 	id: number;
@@ -879,10 +880,8 @@ export class StreamingSubscriberService {
 				token = tokenData.access_token || '';
 			}
 			
-			const response = await fetch(`/api/v1/admin/subscribers/export?format=${format}`, {
-				headers: {
-					'Authorization': `Bearer ${token}`,
-				},
+			const response = await apiRequest(`/admin/subscribers/export?format=${format}`, {
+				method: 'GET',
 			});
 			
 			if (!response.ok) {
@@ -909,10 +908,8 @@ export class StreamingSubscriberService {
 				token = tokenData.access_token || '';
 			}
 			
-			const response = await fetch(`/api/v1/admin/subscribers/non-subscribers/export?format=${format}`, {
-				headers: {
-					'Authorization': `Bearer ${token}`,
-				},
+			const response = await apiRequest(`/admin/subscribers/non-subscribers/export?format=${format}`, {
+				method: 'GET'
 			});
 			
 			if (!response.ok) {

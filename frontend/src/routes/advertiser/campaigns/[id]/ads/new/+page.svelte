@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { auth } from '$lib/auth';
+	import { auth, apiRequest } from '$lib/auth';
 	import type { AdCampaign, FormErrors } from '$lib/types/advertising';
 	
 	let campaign: AdCampaign | null = null;
@@ -47,11 +47,9 @@
 	});
 
 	async function loadCampaign() {
-		const response = await fetch(`/api/v1/advertiser/campaigns/${campaignId}`, {
-			headers: {
-				'Authorization': `Bearer ${$auth.token}`
-			}
-		});
+	const response = await apiRequest(`/advertiser/campaigns/${campaignId}`, {
+		method: 'GET'
+	});
 
 		if (response.ok) {
 			const data = await response.json();
@@ -124,12 +122,8 @@
 		errors = {};
 
 		try {
-			const response = await fetch(`/api/v1/advertiser/campaigns/${campaignId}/ads`, {
+			const response = await apiRequest(`/advertiser/campaigns/${campaignId}/ads`, {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${$auth.token}`
-				},
 				body: JSON.stringify(formData)
 			});
 

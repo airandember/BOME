@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/auth';
+	import { auth, apiRequest } from '$lib/auth';
 	import Navigation from '$lib/components/Navigation.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
@@ -108,10 +108,8 @@
 
 		// Check if user has advertiser account (for real API)
 		try {
-			const accountResponse = await fetch('/api/v1/advertiser/account', {
-				headers: {
-					'Authorization': `Bearer ${$auth.token}`
-				}
+			const accountResponse = await apiRequest('/advertiser/account', {
+				method: 'GET'
 			});
 
 			if (accountResponse.ok) {
@@ -129,10 +127,8 @@
 	}
 
 	async function loadCampaigns() {
-		const response = await fetch('/api/v1/advertiser/campaigns', {
-			headers: {
-				'Authorization': `Bearer ${$auth.token}`
-			}
+		const response = await apiRequest('/advertiser/campaigns', {
+			method: 'GET'
 		});
 
 		if (response.ok) {
@@ -150,10 +146,8 @@
 
 		for (const campaign of campaigns) {
 			try {
-				const response = await fetch(`/api/v1/advertiser/campaigns/${campaign.id}/analytics`, {
-					headers: {
-						'Authorization': `Bearer ${$auth.token}`
-					}
+				const response = await apiRequest(`/advertiser/campaigns/${campaign.id}/analytics`, {
+					method: 'GET'
 				});
 
 				if (response.ok) {

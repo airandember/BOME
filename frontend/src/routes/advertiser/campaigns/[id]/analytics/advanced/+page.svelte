@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/auth';
+	import { auth, apiRequest } from '$lib/auth';
 	import type { AdvancedAnalytics, ExportOptions } from '$lib/types/advertising';
 	
 	let campaignId: number;
@@ -36,11 +36,9 @@
 		error = null;
 
 		try {
-			const response = await fetch(`/api/v1/campaigns/${campaignId}/analytics/advanced?start=${dateRange.start}&end=${dateRange.end}`, {
-				headers: {
-					'Authorization': `Bearer ${$auth.token}`
-				}
-			});
+		const response = await apiRequest(`/campaigns/${campaignId}/analytics/advanced?start=${dateRange.start}&end=${dateRange.end}`, {
+			method: 'GET'
+		});
 
 			if (response.ok) {
 				const data = await response.json();
@@ -145,12 +143,8 @@
 
 		exporting = true;
 		try {
-			const response = await fetch(`/api/v1/campaigns/${campaignId}/analytics/export`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${$auth.token}`
-				},
+		const response = await apiRequest(`/campaigns/${campaignId}/analytics/export`, {
+			method: 'POST',
 				body: JSON.stringify(exportOptions)
 			});
 

@@ -1,5 +1,6 @@
 <script>
 	import { onMount } from 'svelte';
+	import { apiRequest } from '$lib/auth';
 	import { fade, fly } from 'svelte/transition';
 
 	// Reactive variables
@@ -51,7 +52,7 @@
 				plan: planFilter
 			});
 
-			const response = await fetch(`/api/admin/streaming/customers?${params}`);
+			const response = await apiRequest(`/admin/streaming/customers?${params}`);
 			
 			if (response.ok) {
 				const data = await response.json();
@@ -104,11 +105,8 @@
 		try {
 			isSubmitting = true;
 
-			const response = await fetch(`/api/admin/streaming/subscriptions/${selectedCustomer.subscription.id}/refund`, {
+			const response = await apiRequest(`/admin/streaming/subscriptions/${selectedCustomer.subscription.id}/refund`, {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
 				body: JSON.stringify(refundData)
 			});
 
@@ -133,11 +131,8 @@
 		try {
 			isSubmitting = true;
 
-			const response = await fetch(`/api/admin/streaming/customers/${selectedCustomer.id}/communication`, {
+			const response = await apiRequest(`/admin/streaming/customers/${selectedCustomer.id}/communication`, {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
 				body: JSON.stringify(communicationData)
 			});
 
@@ -164,11 +159,8 @@
 		}
 
 		try {
-			const response = await fetch(`/api/admin/streaming/subscriptions/${customer.subscription.id}`, {
-				method: 'DELETE',
-				headers: {
-					'Content-Type': 'application/json'
-				},
+		const response = await apiRequest(`/admin/streaming/subscriptions/${customer.subscription.id}`, {
+			method: 'DELETE',
 				body: JSON.stringify({ reason: 'Admin cancellation' })
 			});
 

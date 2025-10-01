@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/auth';
+	import { auth, apiRequest } from '$lib/auth';
 	import type { AdvertiserAccount, FormErrors } from '$lib/types/advertising';
 	
 	let advertiserAccount: AdvertiserAccount | null = null;
@@ -38,10 +38,8 @@
 	});
 
 	async function loadAdvertiserAccount() {
-		const response = await fetch('/api/v1/advertiser/account', {
-			headers: {
-				'Authorization': `Bearer ${$auth.token}`
-			}
+		const response = await apiRequest('/advertiser/account', {
+			method: 'GET'
 		});
 
 		if (!response.ok) {
@@ -94,12 +92,8 @@
 		loading = true;
 		
 		try {
-			const response = await fetch('/api/v1/advertiser/campaigns', {
+			const response = await apiRequest('/advertiser/campaigns', {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${$auth.token}`
-				},
 				body: JSON.stringify(formData)
 			});
 

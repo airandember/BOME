@@ -10,11 +10,10 @@
 	import SubscriberPagination from './SubscriberPagination.svelte';
 	import SubscriberEditModal from './SubscriberEditModal.svelte';
 	import EnhancedSubscribersPage from './EnhancedSubscribersPage.svelte';
-	import { auth } from '$lib/auth';
+	import { auth, apiRequest } from '$lib/auth';
 	import SendOfferModal from './SendOfferModal.svelte';
 	import type { SubscriptionOffer } from '$lib/services/subscription-offers';
 	import { SubscriptionOfferService } from '$lib/services/subscription-offers';
-	import { apiRequest } from '$lib/auth';
 	import StripeCustomers from './customers/+page.svelte';
 
 	// State
@@ -141,11 +140,8 @@ async function fetchRoles() {
 // Load subscription plans for edit modal
 async function fetchSubscriptionPlans() {
 	try {
-		const response = await fetch('/api/v1/admin/subscription-plans/', {
-			headers: {
-				'Authorization': `Bearer ${$auth.token}`,
-				'Content-Type': 'application/json'
-			}
+		const response = await apiRequest('/admin/subscription-plans/', {
+			method: 'GET'
 		});
 		
 		if (response.ok) {

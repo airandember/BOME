@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { auth } from '$lib/auth';
+	import { auth, apiRequest } from '$lib/auth';
 	import type { AdCampaign, CampaignAnalytics, AdAnalytics } from '$lib/types/advertising';
 	
 	let campaign: AdCampaign | null = null;
@@ -41,11 +41,9 @@
 	}
 
 	async function loadCampaign() {
-		const response = await fetch(`/api/v1/advertiser/campaigns/${campaignId}`, {
-			headers: {
-				'Authorization': `Bearer ${$auth.token}`
-			}
-		});
+	const response = await apiRequest(`/advertiser/campaigns/${campaignId}`, {
+		method: 'GET'
+	});
 
 		if (response.ok) {
 			const data = await response.json();
@@ -56,11 +54,9 @@
 	}
 
 	async function loadAnalytics() {
-		const response = await fetch(`/api/v1/advertiser/campaigns/${campaignId}/analytics?start_date=${dateRange.start}&end_date=${dateRange.end}`, {
-			headers: {
-				'Authorization': `Bearer ${$auth.token}`
-			}
-		});
+	const response = await apiRequest(`/advertiser/campaigns/${campaignId}/analytics?start_date=${dateRange.start}&end_date=${dateRange.end}`, {
+		method: 'GET'
+	});
 
 		if (response.ok) {
 			const data = await response.json();

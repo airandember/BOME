@@ -1,5 +1,6 @@
 import { writable, type Writable } from 'svelte/store';
 import { browser } from '$app/environment';
+import { apiRequest } from '$lib/auth';
 
 export interface AnalyticsData {
 	metadata: {
@@ -219,8 +220,8 @@ class AnalyticsService {
 		this.errorStore.set(null);
 
 		try {
-			const response = await fetch(`/api/v1/admin/dashboard/analytics?period=${period}`, {
-				credentials: 'include'
+			const response = await apiRequest(`/admin/dashboard/analytics?period=${period}`, {
+				method: 'GET'
 			});
 
 			if (!response.ok) {
@@ -240,8 +241,8 @@ class AnalyticsService {
 	// Fetch real-time analytics
 	async fetchRealTimeAnalytics(): Promise<void> {
 		try {
-			const response = await fetch('/api/v1/admin/dashboard/analytics/realtime', {
-				credentials: 'include'
+			const response = await apiRequest('/admin/dashboard/analytics/realtime', {
+				method: 'GET'
 			});
 
 			if (!response.ok) {
@@ -264,8 +265,8 @@ class AnalyticsService {
 	// Fetch system health
 	async fetchSystemHealth(): Promise<void> {
 		try {
-			const response = await fetch('/api/v1/admin/dashboard/analytics/system-health', {
-				credentials: 'include'
+			const response = await apiRequest('/admin/dashboard/analytics/system-health', {
+				method: 'GET'
 			});
 
 			if (!response.ok) {
@@ -282,8 +283,8 @@ class AnalyticsService {
 	// Fetch monitoring data
 	async fetchMonitoringData(): Promise<void> {
 		try {
-			const response = await fetch('/api/v1/admin/monitoring', {
-				credentials: 'include'
+			const response = await apiRequest('/admin/monitoring', {
+				method: 'GET'
 			});
 
 			if (!response.ok) {
@@ -300,8 +301,8 @@ class AnalyticsService {
 	// Fetch cross-subsite analytics
 	async fetchCrossSubsiteAnalytics(timeframe: string = '24h', subsite: string = 'all'): Promise<void> {
 		try {
-			const response = await fetch(`/api/v1/admin/analytics/cross-subsite?timeframe=${timeframe}&subsite=${subsite}`, {
-				credentials: 'include'
+			const response = await apiRequest(`/admin/analytics/cross-subsite?timeframe=${timeframe}&subsite=${subsite}`, {
+				method: 'GET'
 			});
 
 			if (!response.ok) {
@@ -318,8 +319,8 @@ class AnalyticsService {
 	// Fetch webhook analytics
 	async fetchWebhookAnalytics(timeframe: string = '24h'): Promise<void> {
 		try {
-			const response = await fetch(`/api/v1/admin/analytics/webhooks?timeframe=${timeframe}`, {
-				credentials: 'include'
+			const response = await apiRequest(`/admin/analytics/webhooks?timeframe=${timeframe}`, {
+				method: 'GET'
 			});
 
 			if (!response.ok) {
@@ -336,9 +337,8 @@ class AnalyticsService {
 	// Acknowledge alert
 	async acknowledgeAlert(alertId: number): Promise<boolean> {
 		try {
-			const response = await fetch(`/api/v1/admin/monitoring/alerts/${alertId}/acknowledge`, {
-				method: 'POST',
-				credentials: 'include'
+			const response = await apiRequest(`/admin/monitoring/alerts/${alertId}/acknowledge`, {
+				method: 'POST'
 			});
 
 			if (!response.ok) {
@@ -364,11 +364,8 @@ class AnalyticsService {
 				...eventData
 			};
 
-			await fetch('/api/v1/admin/dashboard/analytics/track', {
+			await apiRequest('/admin/dashboard/analytics/track', {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
 				credentials: 'include',
 				body: JSON.stringify(payload)
 			});
@@ -386,11 +383,8 @@ class AnalyticsService {
 				subsite: 'streaming'
 			}));
 
-			await fetch('/api/v1/admin/dashboard/analytics/batch', {
+			await apiRequest('/admin/dashboard/analytics/batch', {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
 				credentials: 'include',
 				body: JSON.stringify(payload)
 			});
@@ -402,8 +396,8 @@ class AnalyticsService {
 	// Export analytics data
 	async exportAnalytics(format: 'csv' | 'json' = 'csv', period: string = '7d'): Promise<void> {
 		try {
-			const response = await fetch(`/api/v1/admin/dashboard/analytics/export?format=${format}&period=${period}`, {
-				credentials: 'include'
+			const response = await apiRequest(`/admin/dashboard/analytics/export?format=${format}&period=${period}`, {
+				method: 'GET'
 			});
 
 			if (!response.ok) {
