@@ -1602,7 +1602,7 @@ async function loadStripeCustomersData() {
 
 	@media (max-width: 768px) {
 		.subscribers-page {
-			padding: 1rem;
+			padding: 0.5rem;
 		}
 
 		.page-header {
@@ -1613,6 +1613,51 @@ async function loadStripeCustomersData() {
 
 		.tab-navigation {
 			flex-wrap: wrap;
+			gap: 0.25rem;
+		}
+
+		.tab-button {
+			flex: 1;
+			min-width: 120px;
+			justify-content: center;
+			padding: 0.5rem 1rem;
+			font-size: 0.875rem;
+		}
+
+		.tab-icon {
+			font-size: 1rem;
+		}
+
+		/* Improve mobile table experience */
+		.tab-content {
+			border-radius: 0.25rem;
+			margin: 0 -0.5rem;
+		}
+
+		.subscribers-section,
+		.stripe-subs-section {
+			padding: 0.75rem;
+		}
+
+		/* Mobile card-like layout for better UX */
+		.loading-container {
+			padding: 2rem 1rem;
+		}
+	}
+
+	@media (max-width: 480px) {
+		.subscribers-page {
+			padding: 0.25rem;
+		}
+
+		.tab-button {
+			padding: 0.5rem 0.75rem;
+			font-size: 0.8rem;
+		}
+
+		.tab-content {
+			margin: 0 -0.25rem;
+			border-radius: 0;
 		}
 	}
 </style> 

@@ -69,28 +69,13 @@ export class SubscriberCache {
       if (response && typeof response === 'object') {
         let actualData: any;
         
-        // Check if it's the enhanced format (direct)
-        if ('subscribers' in response) {
-          actualData = response;
-        }
-        // Check if it's the old format (wrapped in 'data')
-        else if ('data' in response && response.data && typeof response.data === 'object') {
+        // The API client wraps responses in { data: ... }, so check for that first
+        if ('data' in response && response.data && typeof response.data === 'object') {
           actualData = response.data;
-          // Transform old format to enhanced format
-          if ('subscribers' in actualData) {
-            actualData = {
-              subscribers: actualData.subscribers,
-              total_count: actualData.pagination?.total || actualData.total || 0,
-              pagination: actualData.pagination || {},
-              kpis: actualData.kpis || {
-                total_subscribers: 0,
-                active_subscribers: 0,
-                video_access_users: 0,
-                total_mrr: 0,
-                manual_access_users: 0
-              }
-            };
-          }
+        }
+        // Check if it's the enhanced format (direct) - fallback
+        else if ('subscribers' in response) {
+          actualData = response;
         }
         
         if (actualData && 'subscribers' in actualData) {
@@ -164,13 +149,13 @@ export class SubscriberCache {
       if (response && typeof response === 'object') {
         let actualKpis: any;
         
-        // Check if it's the enhanced format (direct KPIs)
-        if ('total_subscribers' in response || 'active_subscribers' in response) {
-          actualKpis = response;
-        }
-        // Check if it's wrapped in 'data'
-        else if ('data' in response && response.data && typeof response.data === 'object') {
+        // The API client wraps responses in { data: ... }, so check for that first
+        if ('data' in response && response.data && typeof response.data === 'object') {
           actualKpis = response.data;
+        }
+        // Check if it's the enhanced format (direct KPIs) - fallback
+        else if ('total_subscribers' in response || 'active_subscribers' in response) {
+          actualKpis = response;
         }
         
         if (actualKpis) {

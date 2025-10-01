@@ -164,6 +164,13 @@
 		if (sortColumn !== column.key) return '↕️';
 		return sortDirection === 'asc' ? '↑' : '↓';
 	}
+	
+	// Handle mobile card click (for row actions)
+	function handleCardClick(item: any) {
+		if (!selectable) {
+			handleRowAction(item, 'view');
+		}
+	}
 </script>
 
 <div class="data-table">
@@ -318,7 +325,81 @@
 				</tbody>
 			</table>
 		{/if}
-	</div>
+
+		<!-- Mobile Cards -->
+		<div class="mobile-cards">
+			{#each (sortedData || []) as item, index (`${item.id}-${index}`)}
+				<div 
+					class="mobile-card {selectable ? 'selectable' : ''} {selectedItems.has(item.id) ? 'selected' : ''}"
+					role="button"
+					tabindex="0"
+					onclick={() => handleCardClick(item)}
+					onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCardClick(item); } }}
+				>
+						{#if selectable}
+							<input
+								type="checkbox"
+								class="mobile-card-checkbox"
+								checked={selectedItems.has(item.id)}
+								onchange={() => handleSelectItem(item)}
+								aria-label="Select item"
+							/>
+						{/if}
+
+						<div class="mobile-card-header">
+							<div class="mobile-card-title-section">
+								<h4 class="mobile-card-title">
+									{formatValue(item[columns[0]?.key], columns[0])}
+								</h4>
+								{#if columns[1]}
+									<p class="mobile-card-subtitle">
+										{formatValue(item[columns[1]?.key], columns[1])}
+									</p>
+								{/if}
+							</div>
+
+						</div>
+
+						<div class="mobile-card-body">
+							{#each columns.slice(2) as column}
+								{#if column.type !== 'actions' && item[column.key] !== undefined && item[column.key] !== null}
+									<div class="mobile-card-field">
+										<span class="mobile-card-field-label">{column.label}:</span>
+										<span class="mobile-card-field-value">
+											{#if column.key.includes('status')}
+												<span class="mobile-status-badge {item[column.key]?.toLowerCase()}">
+													{formatValue(item[column.key], column)}
+												</span>
+											{:else}
+												{formatValue(item[column.key], column)}
+											{/if}
+										</span>
+									</div>
+								{/if}
+							{/each}
+							<div class="mobile-card-actions">
+								<button
+									type="button"
+									class="action-btn"
+									onclick={(e) => { e.stopPropagation(); handleRowAction(item, 'edit'); }}
+									title="Edit"
+								>
+									✏️
+								</button>
+								<button
+									type="button"
+									class="action-btn"
+									onclick={(e) => { e.stopPropagation(); handleRowAction(item, 'view'); }}
+									title="View"
+								>
+									👁️
+								</button>
+							</div>
+						</div>
+					</div>
+				{/each}
+			</div>
+		</div>
 	
 	<!-- Table Footer -->
 	<div class="table-footer">
@@ -637,5 +718,141 @@
 			flex-wrap: wrap;
 			justify-content: center;
 		}
+
+		/* Hide table on mobile and show card layout */
+		.data-table table {
+			display: none !important;
+		}
+
+		.mobile-cards {
+			display: flex !important;
+		}
+	}
+
+	/* Mobile card layout */
+	.mobile-cards {
+		display: none;
+		flex-direction: column;
+		gap: 1rem;
+		padding: 1rem;
+	}
+
+	.mobile-card {
+		background: white;
+		border: 1px solid #e5e7eb;
+		border-radius: 0.5rem;
+		padding: 1rem;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		position: relative;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.mobile-card:hover {
+		box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+		border-color: #d1d5db;
+	}
+
+	.mobile-card:focus {
+		outline: 2px solid #2563eb;
+		outline-offset: 2px;
+	}
+
+	.mobile-card.selected {
+		border-color: #2563eb;
+		box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+	}
+
+	.mobile-card-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		margin-bottom: 0.75rem;
+		padding-bottom: 0.75rem;
+		border-bottom: 1px solid #e5e7eb;
+	}
+
+	.mobile-card-title {
+		font-weight: 600;
+		color: #111827;
+		font-size: 1rem;
+		margin: 0;
+	}
+
+	.mobile-card-subtitle {
+		color: #6b7280;
+		font-size: 0.875rem;
+		margin: 0.25rem 0 0 0;
+	}
+
+	.mobile-card-actions {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.mobile-card-body {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 0.5rem;
+	}
+
+	.mobile-card-field {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.25rem 0;
+	}
+
+	.mobile-card-field-label {
+		font-weight: 500;
+		color: #6b7280;
+		font-size: 0.875rem;
+		flex-shrink: 0;
+		margin-right: 1rem;
+	}
+
+	.mobile-card-field-value {
+		text-align: right;
+		color: #111827;
+		font-size: 0.875rem;
+		word-break: break-word;
+	}
+
+	.mobile-card-checkbox {
+		position: absolute;
+		top: 1rem;
+		left: 1rem;
+		transform: translateY(-50%);
+	}
+
+	.mobile-card.selectable {
+		padding-left: 3rem;
+	}
+
+	/* Status badges in mobile cards */
+	.mobile-status-badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.25rem 0.5rem;
+		border-radius: 0.25rem;
+		font-size: 0.75rem;
+		font-weight: 500;
+	}
+
+	.mobile-status-badge.active {
+		background-color: #dcfce7;
+		color: #166534;
+	}
+
+	.mobile-status-badge.inactive {
+		background-color: #fef2f2;
+		color: #dc2626;
+	}
+
+	.mobile-status-badge.pending {
+		background-color: #fef3c7;
+		color: #d97706;
 	}
 </style>
