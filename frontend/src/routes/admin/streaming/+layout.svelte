@@ -182,27 +182,16 @@
 
 	async function deriveQuickStatsFromSubscribers() {
 		try {
-			const resp = await StreamingSubscriberService.getSubscribers({ limit: 1000 });
-			const subs: Subscriber[] = resp.subscribers || [];
-		const now = new Date();
-		const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-
-		const isWithinPeriod = (s: Subscriber) => {
-			const start = s.current_period_start ? new Date(s.current_period_start) : StreamingSubscriberService.calculateSubscriptionStartDate(s);
-			const end = s.current_period_end ? new Date(s.current_period_end) : StreamingSubscriberService.calculateSubscriptionEndDate(s);
-			if (start && start > now) return false;
-			if (end && end > now) return true;
-			return s.subscription_status === 'active' || s.subscription_status === 'trialing';
-		};
-
-		const activeSubs = subs.filter(isWithinPeriod);
-		quickActiveSubscriptions = activeSubs.length;
-		quickMonthlyRevenue = Math.round(activeSubs.reduce((sum, s) => sum + toMonthly(s.plan_price, s.plan_interval, s.plan_interval_count), 0) * 100) / 100;
-
-		const canceledThisPeriod = subs.filter(s => s.subscription_status === 'canceled' && s.updated_at && new Date(s.updated_at) >= thirtyDaysAgo).length;
-		const previousActiveBase = quickActiveSubscriptions + canceledThisPeriod;
-		const churn = previousActiveBase > 0 ? (canceledThisPeriod / previousActiveBase) * 100 : 0;
-		quickChurnRate = Math.round(churn * 10) / 10;
+			// Use the dedicated stats endpoint instead of fetching all subscribers
+			const stats = await StreamingSubscriberService.getSubscriberStats();
+			quickActiveSubscriptions = stats.active_subscribers || 0;
+			quickMonthlyRevenue = stats.monthly_revenue || 0;
+			
+			// Calculate churn rate if available in stats
+			const totalSubscribers = stats.total_subscribers || 0;
+			const canceledSubscribers = stats.canceled_subscribers || 0;
+			const churn = totalSubscribers > 0 ? (canceledSubscribers / totalSubscribers) * 100 : 0;
+			quickChurnRate = Math.round(churn * 10) / 10;
 		} catch (error) {
 			// Gracefully handle errors when Stripe isn't configured or database is unavailable
 			console.warn('Unable to load subscriber stats (this is normal if Stripe is not configured):', error);

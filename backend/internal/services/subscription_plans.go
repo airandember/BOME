@@ -468,23 +468,13 @@ func (s *SubscriptionPlanService) GetAllSubscriptionPlans(ctx context.Context) (
 		return nil, fmt.Errorf("failed to get subscription plans: %w", err)
 	}
 
-	// Debug: Log the raw plans from database
-	log.Printf("Service: Raw plans from database: %+v", plans)
-	for i, plan := range plans {
-		log.Printf("Service: Plan %d: ID=%d, Name=%s, IsActive=%v, SubType=%s, Interval=%s",
-			i, plan.ID, plan.Name, plan.IsActive, plan.SubType, plan.Interval)
-		log.Printf("Service: Plan %d PlanChangeHistory: Valid=%v, String='%s'",
-			i, plan.PlanChangeHistory.Valid, plan.PlanChangeHistory.String)
-	}
-
 	// Convert to response format
 	responsePlans := make([]*SubscriptionPlanResponse, len(plans))
 	for i, plan := range plans {
 		responsePlans[i] = s.convertToResponse(plan)
 	}
 
-	// Debug: Log the response plans
-	log.Printf("Service: Response plans: %+v", responsePlans)
+	log.Printf("Retrieved %d subscription plans", len(responsePlans))
 
 	return responsePlans, nil
 }
@@ -525,17 +515,15 @@ func (s *SubscriptionPlanService) CheckAndHandleExpiredPromotions(ctx context.Co
 
 		_, err = s.db.UpdateSubscriptionPlan(planID, updates)
 		if err != nil {
-			log.Printf("Service: Failed to deactivate expired promotion for plan %d: %v", planID, err)
+			log.Printf("Failed to deactivate expired promotion for plan %d: %v", planID, err)
 		} else {
-			log.Printf("Service: Deactivated expired promotion for plan %d", planID)
+			log.Printf("⏰ Deactivated expired promotion for plan %d (%s)", planID, plan.Name)
 
-			// Add history event for automatic expiration using the new promo expiry event
+			// Add history event for automatic expiration
 			event := s.historyService.CreatePromoExpiryEvent(plan)
 			err = s.historyService.AddHistoryEvent(ctx, planID, event)
 			if err != nil {
-				log.Printf("Warning: Failed to add expiration history event for plan %d: %v", planID, err)
-			} else {
-				log.Printf("Service: Successfully added promo expiry history event for plan %d", planID)
+				log.Printf("Warning: Failed to add expiration history for plan %d: %v", planID, err)
 			}
 		}
 	}
@@ -551,8 +539,6 @@ func (s *SubscriptionPlanService) validateSubscriptionPlanRequest(req interface{
 
 // convertToResponse converts a database subscription plan to response format
 func (s *SubscriptionPlanService) convertToResponse(plan *database.SubscriptionPlan) *SubscriptionPlanResponse {
-	log.Printf("convertToResponse: Starting conversion for plan %d", plan.ID)
-
 	response := &SubscriptionPlanResponse{
 		ID:            strconv.Itoa(plan.ID), // Convert int ID to string for response
 		Name:          plan.Name,
@@ -602,10 +588,8 @@ func (s *SubscriptionPlanService) convertToResponse(plan *database.SubscriptionP
 	}
 
 	// Get history from the separate table instead of JSONB column
-	log.Printf("convertToResponse: Fetching history from separate table for plan %d", plan.ID)
 	historyEvents, err := s.historyService.GetPlanHistory(context.Background(), plan.ID)
 	if err != nil {
-		log.Printf("convertToResponse: Failed to get history for plan %d: %v", plan.ID, err)
 		response.PlanChangeHistory = []map[string]interface{}{} // Empty array if failed
 	} else {
 		// Convert history events to the expected format
@@ -624,7 +608,6 @@ func (s *SubscriptionPlanService) convertToResponse(plan *database.SubscriptionP
 			historyArray = append(historyArray, historyMap)
 		}
 		response.PlanChangeHistory = historyArray
-		log.Printf("convertToResponse: Successfully converted %d history events for plan %d", len(historyArray), plan.ID)
 	}
 
 	// Parse promotion metadata JSON if available (this stays as JSONB for now)
@@ -639,7 +622,6 @@ func (s *SubscriptionPlanService) convertToResponse(plan *database.SubscriptionP
 		response.PromotionMetadata = map[string]interface{}{} // Empty map if no metadata
 	}
 
-	log.Printf("convertToResponse: Final response for plan %d - PlanChangeHistory length: %d", plan.ID, len(response.PlanChangeHistory))
 	return response
 }
 
