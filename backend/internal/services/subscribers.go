@@ -78,7 +78,7 @@ func NewSubscriberService(db *database.DB) *SubscriberService {
 // GetSubscribers retrieves all subscribers with optional filters
 func (s *SubscriberService) GetSubscribers(limit, offset int, filters *SubscriberFilters) ([]*Subscriber, error) {
 	log.Printf("🔍 GetSubscribers: Starting with limit=%d, offset=%d", limit, offset)
-	
+
 	// First check if Stripe sync tables exist
 	var stripeTablesExist bool
 	err := s.db.QueryRow(`
@@ -87,16 +87,16 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 			WHERE table_name IN ('stripe_customers', 'stripe_subscriptions', 'stripe_products', 'stripe_prices')
 		)
 	`).Scan(&stripeTablesExist)
-	
+
 	if err != nil {
 		log.Printf("❌ Error checking for Stripe tables: %v", err)
 		stripeTablesExist = false
 	}
-	
+
 	log.Printf("🔍 Stripe tables exist: %v", stripeTablesExist)
-	
+
 	var query string
-	
+
 	if stripeTablesExist {
 		// Use complex query with Stripe tables
 		query = `
