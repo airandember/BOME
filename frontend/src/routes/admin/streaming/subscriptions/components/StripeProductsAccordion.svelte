@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { apiRequest } from '$lib/auth';
 	import { showToast } from '$lib/toast';
 	import { StripeProductsService, type StripeProduct, type StripeProductsResponse } from '$lib/services/stripe-products';
 	import StripeProductCard from './StripeProductCard.svelte';
@@ -105,12 +106,8 @@
 		try {
 			isUpdating = true;
 			
-			const response = await fetch('/api/v1/admin/streaming/stripe/products/update-legacy', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${getAuthToken()}`
-				}
+			const response = await apiRequest('/admin/streaming/stripe/products/update-legacy', {
+				method: 'POST'
 			});
 
 			if (!response.ok) {

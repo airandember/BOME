@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/auth';
+	import { auth, apiRequest } from '$lib/auth';
 	import type { AdPlacement, PlacementPerformance, FormErrors } from '$lib/types/advertising';
 	
 	let placements: AdPlacement[] = [];
@@ -73,11 +73,9 @@
 	}
 
 	async function loadPlacements() {
-		const response = await fetch('/api/v1/admin/ads/placements', {
-			headers: {
-				'Authorization': `Bearer ${$auth.token}`
-			}
-		});
+	const response = await apiRequest('/admin/ads/placements', {
+		method: 'GET'
+	});
 
 		if (response.ok) {
 			const data = await response.json();
@@ -129,11 +127,9 @@
 	}
 
 	async function loadPerformance() {
-		const response = await fetch('/api/v1/admin/ads/placements/performance', {
-			headers: {
-				'Authorization': `Bearer ${$auth.token}`
-			}
-		});
+	const response = await apiRequest('/admin/ads/placements/performance', {
+		method: 'GET'
+	});
 
 		if (response.ok) {
 			const data = await response.json();
@@ -254,18 +250,14 @@
 		errors = {};
 
 		try {
-			const url = editingPlacement 
-				? `/api/v1/admin/ads/placements/${editingPlacement.id}`
-				: '/api/v1/admin/ads/placements';
+		const url = editingPlacement
+			? `/admin/ads/placements/${editingPlacement.id}`
+			: '/admin/ads/placements';
 			
 			const method = editingPlacement ? 'PUT' : 'POST';
 
-			const response = await fetch(url, {
+			const response = await apiRequest(url, {
 				method,
-				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${$auth.token}`
-				},
 				body: JSON.stringify(formData)
 			});
 
@@ -286,12 +278,8 @@
 
 	async function togglePlacementStatus(placement: AdPlacement) {
 		try {
-			const response = await fetch(`/api/v1/admin/ads/placements/${placement.id}`, {
-				method: 'PUT',
-				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${$auth.token}`
-				},
+		const response = await apiRequest(`/admin/ads/placements/${placement.id}`, {
+			method: 'PUT',
 				body: JSON.stringify({
 					...placement,
 					is_active: !placement.is_active

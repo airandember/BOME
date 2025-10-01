@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/auth';
+	import { auth, apiRequest } from '$lib/auth';
 	import Navigation from '$lib/components/Navigation.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
@@ -142,10 +142,8 @@
 				};
 			} else {
 				// Real API call for production
-				const response = await fetch('/api/v1/advertiser/analytics', {
-					headers: {
-						'Authorization': `Bearer ${$auth.token}`
-					}
+				const response = await apiRequest('/advertiser/analytics', {
+					method: 'GET'
 				});
 
 				if (response.ok) {

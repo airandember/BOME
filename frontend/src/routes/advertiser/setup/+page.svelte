@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/auth';
+	import { auth, apiRequest } from '$lib/auth';
 	import type { AdvertiserFormData, FormErrors } from '$lib/types/advertising';
 	
 	let formData: AdvertiserFormData = {
@@ -64,12 +64,8 @@
 		loading = true;
 		
 		try {
-			const response = await fetch('/api/v1/advertiser/account', {
+			const response = await apiRequest('/advertiser/account', {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${$auth.token}`
-				},
 				body: JSON.stringify(formData)
 			});
 

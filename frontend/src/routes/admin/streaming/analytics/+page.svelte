@@ -70,7 +70,7 @@
 				period: selectedPeriod
 			});
 
-			const response = await fetch(`/api/admin/streaming/analytics/executive-summary?${params}`);
+			const response = await apiRequest(`/admin/streaming/analytics/executive-summary?${params}`);
 			
 			if (response.ok) {
 				executiveSummaryData = await response.json();
@@ -107,7 +107,7 @@
 				period: selectedPeriod
 			});
 
-			const response = await fetch(`/api/admin/streaming/analytics/funnel-analysis?${params}`);
+			const response = await apiRequest(`/admin/streaming/analytics/funnel-analysis?${params}`);
 			
 			if (response.ok) {
 				funnelAnalysisData = await response.json();
@@ -140,7 +140,7 @@
 				period: selectedPeriod
 			});
 
-			const response = await fetch(`/api/admin/streaming/analytics/revenue-impact?${params}`);
+			const response = await apiRequest(`/admin/streaming/analytics/revenue-impact?${params}`);
 			
 			if (response.ok) {
 				revenueImpactData = await response.json();
@@ -175,7 +175,7 @@
 				period: selectedPeriod
 			});
 
-			const response = await fetch(`/api/admin/streaming/analytics/customer-journey?${params}`);
+			const response = await apiRequest(`/admin/streaming/analytics/customer-journey?${params}`);
 			
 			if (response.ok) {
 				customerJourneyData = await response.json();
@@ -255,7 +255,7 @@
 	// Load audit logs
 	async function loadAuditLogs() {
 		try {
-			const response = await fetch('/api/admin/streaming/analytics/audit-logs');
+			const response = await apiRequest('/admin/streaming/analytics/audit-logs');
 			if (response.ok) {
 				auditLogs = await response.json();
 			}

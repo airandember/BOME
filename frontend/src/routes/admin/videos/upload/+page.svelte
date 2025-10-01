@@ -4,7 +4,7 @@
 	import Footer from '$lib/components/Footer.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import { toastStore } from '$lib/stores/toast';
-	import { isAdmin } from '$lib/auth';
+	import { isAdmin, apiRequest } from '$lib/auth';
 	import { goto } from '$app/navigation';
 	import { videoService } from '$lib/video';
 
@@ -83,10 +83,9 @@
 			formData.append('category', category);
 			formData.append('tags', JSON.stringify(selectedTags));
 
-			const response = await fetch('/api/v1/videos/upload', {
+			const response = await apiRequest('/videos/upload', {
 				method: 'POST',
-				body: formData,
-				credentials: 'include'
+				body: formData
 			});
 
 			const result = await response.json();
