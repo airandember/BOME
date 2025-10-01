@@ -167,7 +167,10 @@ func (db *DB) GetPlanHistory(planID int) ([]*PlanHistoryEvent, error) {
 		return nil, fmt.Errorf("error iterating history events: %w", err)
 	}
 
-	log.Printf("Database: Retrieved %d history events for plan %d", len(events), planID)
+	// Only log for excessive queries to avoid spam
+	if len(events) > 100 {
+		log.Printf("Database: Retrieved %d history events for plan %d", len(events), planID)
+	}
 	return events, nil
 }
 

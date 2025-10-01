@@ -167,7 +167,10 @@ func (s *PlanHistoryService) GetPlanHistory(ctx context.Context, planID int) ([]
 		events = append(events, event)
 	}
 
-	log.Printf("GetPlanHistory: Retrieved %d history events for plan %d", len(events), planID)
+	// Only log if there are many events (to avoid spam for plans with no history)
+	if len(events) > 50 {
+		log.Printf("GetPlanHistory: Retrieved %d history events for plan %d", len(events), planID)
+	}
 	return events, nil
 }
 

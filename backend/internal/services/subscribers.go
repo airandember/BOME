@@ -77,7 +77,6 @@ func NewSubscriberService(db *database.DB) *SubscriberService {
 
 // GetSubscribers retrieves all subscribers with optional filters
 func (s *SubscriberService) GetSubscribers(limit, offset int, filters *SubscriberFilters) ([]*Subscriber, error) {
-	log.Printf("🔍 GetSubscribers: Starting with limit=%d, offset=%d", limit, offset)
 
 	// ENHANCED: Use proper ID-based relationships instead of unit_amount matching
 	query := `
@@ -158,33 +157,26 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 		}
 
 		if filters.Role != nil {
-			fmt.Printf("DEBUG: Processing role filter: %s\n", *filters.Role)
 			argCount++
 			query += fmt.Sprintf(" AND u.role = $%d", argCount)
 			args = append(args, *filters.Role)
-			fmt.Printf("DEBUG: Role filter added to query\n")
 		}
 
 		if filters.LastLogin != nil {
-			fmt.Printf("DEBUG: Processing last login filter: %v\n", *filters.LastLogin)
 			if filters.LastLogin.IsZero() {
 				// Special case for "never" - users who have never logged in
 				query += " AND u.last_login IS NULL"
-				fmt.Printf("DEBUG: Last login filter added (IS NULL)\n")
 			} else {
 				argCount++
 				query += fmt.Sprintf(" AND u.last_login >= $%d", argCount)
 				args = append(args, *filters.LastLogin)
-				fmt.Printf("DEBUG: Last login filter added (>= %v)\n", *filters.LastLogin)
 			}
 		}
 
 		if filters.CreatedDate != nil {
-			fmt.Printf("DEBUG: Processing created date filter: %v\n", *filters.CreatedDate)
 			argCount++
 			query += fmt.Sprintf(" AND u.created_at >= $%d", argCount)
 			args = append(args, *filters.CreatedDate)
-			fmt.Printf("DEBUG: Created date filter added (>= %v)\n", *filters.CreatedDate)
 		}
 
 		if filters.DateRange != nil {
