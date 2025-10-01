@@ -79,84 +79,56 @@ func NewSubscriberService(db *database.DB) *SubscriberService {
 func (s *SubscriberService) GetSubscribers(limit, offset int, filters *SubscriberFilters) ([]*Subscriber, error) {
 	log.Printf("🔍 GetSubscribers: Starting with limit=%d, offset=%d", limit, offset)
 
-	// First check if Stripe sync tables exist
-	var stripeTablesExist bool
-	err := s.db.QueryRow(`
-		SELECT EXISTS (
-			SELECT 1 FROM information_schema.tables 
-			WHERE table_name IN ('stripe_customers', 'stripe_subscriptions', 'stripe_products', 'stripe_prices')
+	// ENHANCED: Use proper ID-based relationships instead of unit_amount matching
+	query := `
+		SELECT 
+			u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified,
+			u.stripe_customer_id, u.last_login, u.created_at, u.updated_at,
+			COALESCE(u.sub_id, ss.id) as subscription_id,
+			-- Proper ID-based plan mapping using FK relationships
+			COALESCE(
+				sp.id,                    -- Direct user subscription plan
+				sp_via_stripe.id          -- Plan mapped via Stripe price relationship
+			) as plan_id,
+			COALESCE(
+				sp.name,                  -- Direct plan name
+				sp_via_stripe.name,       -- Plan name via Stripe mapping
+				ss.product_name,          -- Stripe product name fallback
+				'Active Subscription'     -- Final fallback
+			) as plan_name,
+			COALESCE(sp.price, sp_via_stripe.price, ss.unit_amount::float / 100.0, 0.0) as plan_price, 
+			COALESCE(sp.currency, sp_via_stripe.currency, ss.currency, 'USD') as plan_currency,
+			COALESCE(sp.interval, sp_via_stripe.interval, 'month') as interval, 
+			COALESCE(sp.interval_count, sp_via_stripe.interval_count, 1) as interval_count,
+			COALESCE(ss.status, 'active') as subscription_status,
+			ss.current_period_start, 
+			ss.current_period_end,
+			COALESCE(ss.stripe_id, u.stripe_customer_id) as stripe_subscription_id
+		FROM users u
+		-- Direct subscription plan relationship
+		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id AND sp.is_active = true AND sp.deleted_at IS NULL
+		-- Stripe customer relationship
+		LEFT JOIN stripe_customers sc ON (
+			u.stripe_customer_id = sc.stripe_id OR 
+			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
-	`).Scan(&stripeTablesExist)
-
-	if err != nil {
-		log.Printf("❌ Error checking for Stripe tables: %v", err)
-		stripeTablesExist = false
-	}
-
-	log.Printf("🔍 Stripe tables exist: %v", stripeTablesExist)
-
-	var query string
-
-	if stripeTablesExist {
-		// Use complex query with Stripe tables
-		query = `
-			SELECT 
-				u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified,
-				u.stripe_customer_id, u.last_login, u.created_at, u.updated_at,
-				COALESCE(u.sub_id, ss.id) as subscription_id,
-				COALESCE(sp.id, 0) as plan_id, 
-				COALESCE(
-					sp.name, 
-					ss.product_name,
-					CASE 
-						WHEN ss.status = 'active' THEN 'Active Subscription'
-						WHEN ss.status = 'trialing' THEN 'Trial Subscription'
-						ELSE 'Subscription'
-					END
-				) as plan_name,
-				COALESCE(sp.price, ss.unit_amount::float / 100.0, 0.0) as plan_price, 
-				COALESCE(sp.currency, ss.currency, 'USD') as plan_currency,
-				COALESCE(sp.interval, 'month') as interval, 
-				COALESCE(sp.interval_count, 1) as interval_count,
-				COALESCE(ss.status, 'active') as subscription_status,
-				ss.current_period_start, 
-				ss.current_period_end,
-				COALESCE(ss.stripe_id, u.stripe_customer_id) as stripe_subscription_id
-			FROM users u
-			LEFT JOIN subscription_plans sp ON u.sub_id = sp.id AND sp.is_active = true AND sp.deleted_at IS NULL
-			LEFT JOIN stripe_customers sc ON (
-				u.stripe_customer_id = sc.stripe_id OR 
-				sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
-			)
-			LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing')
-			WHERE (u.sub_id IS NOT NULL OR ss.id IS NOT NULL)
-			AND u.is_active = true
-			AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW() OR ss.id IS NULL)
-		`
-	} else {
-		// Use simplified query without Stripe tables
-		log.Printf("⚠️  Using fallback query without Stripe tables")
-		query = `
-			SELECT 
-				u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified,
-				u.stripe_customer_id, u.last_login, u.created_at, u.updated_at,
-				COALESCE(u.sub_id, 0) as subscription_id,
-				COALESCE(sp.id, 0) as plan_id, 
-				COALESCE(sp.name, 'Active Subscription') as plan_name,
-				COALESCE(sp.price, 0.0) as plan_price, 
-				COALESCE(sp.currency, 'USD') as plan_currency,
-				COALESCE(sp.interval, 'month') as interval, 
-				COALESCE(sp.interval_count, 1) as interval_count,
-				'active' as subscription_status,
-				NULL as current_period_start, 
-				NULL as current_period_end,
-				u.stripe_customer_id as stripe_subscription_id
-			FROM users u
-			LEFT JOIN subscription_plans sp ON u.sub_id = sp.id AND sp.is_active = true AND sp.deleted_at IS NULL
-			WHERE u.sub_id IS NOT NULL
-			AND u.is_active = true
-		`
-	}
+		-- Active Stripe subscriptions
+		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing')
+		-- Map Stripe subscription to prices using proper FK relationships
+		LEFT JOIN stripe_prices spr ON (
+			ss.stripe_price_id = spr.stripe_id OR 
+			ss.price_id = spr.id
+		)
+		-- Map Stripe prices to subscription plans using stripe_price_id
+		LEFT JOIN subscription_plans sp_via_stripe ON (
+			spr.stripe_id = sp_via_stripe.stripe_price_id AND 
+			sp_via_stripe.is_active = true AND 
+			sp_via_stripe.deleted_at IS NULL
+		)
+		WHERE (u.sub_id IS NOT NULL OR ss.id IS NOT NULL)
+		AND u.is_active = true
+		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW() OR ss.id IS NULL)
+	`
 
 	args := []interface{}{}
 	argCount := 0
