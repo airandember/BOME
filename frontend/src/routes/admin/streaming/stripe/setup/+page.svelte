@@ -20,8 +20,10 @@
 	let publicSettingsSuccess = $state('');
 	let editingPublishableKey = $state(false);
 	let editingPortalUrl = $state(false);
+	let editingWebhookSecret = $state(false);
 	let publishableKey = $state('');
 	let portalUrl = $state('');
+	let webhookSecret = $state('');
 
 	// Stripe Data Management state
 	let databaseStats = $state<any>(null)
@@ -221,6 +223,40 @@
 			}
 		} catch (err) {
 			publicSettingsError = 'Failed to save portal URL';
+			console.error(err);
+		} finally {
+			savingPublicSettings = false;
+		}
+	}
+
+	// Save webhook secret
+	async function saveWebhookSecret() {
+		if (!webhookSecret.trim()) return;
+		
+		savingPublicSettings = true;
+		publicSettingsError = '';
+		publicSettingsSuccess = '';
+		
+		try {
+			const res = await apiRequest('/admin/streaming/stripe/public-settings', {
+				method: 'POST',
+				body: JSON.stringify({ 
+					key: 'stripe_webhook_secret', 
+					value: webhookSecret.trim() 
+				})
+			});
+			
+			if (res.ok) {
+				publicSettingsSuccess = 'Webhook secret saved successfully!';
+				webhookSecret = '';
+				editingWebhookSecret = false;
+				await loadPublicSettings(); // Refresh settings
+			} else {
+				const errorData = await res.json();
+				publicSettingsError = errorData.error || 'Failed to save webhook secret';
+			}
+		} catch (err) {
+			publicSettingsError = 'Failed to save webhook secret';
 			console.error(err);
 		} finally {
 			savingPublicSettings = false;
@@ -572,8 +608,8 @@
 
 				<!-- Public Settings Section -->
 				<div class="next-steps-card">
-					<h3>🔑 Public Settings</h3>
-					<p>Configure public Stripe settings (publishable key, portal URL) for user-facing features</p>
+					<h3>🔑 Stripe Configuration</h3>
+					<p>Configure your Stripe settings (publishable key, portal URL, webhook secret) for complete integration</p>
 					
 					<div class="public-settings-grid">
 						<!-- Stripe Publishable Key -->
@@ -683,6 +719,64 @@
 												type="button" 
 												class="btn btn-secondary btn-sm" 
 												onclick={() => { editingPortalUrl = false; portalUrl = ''; }}
+											>
+												Cancel
+											</button>
+										{/if}
+									</div>
+								</form>
+							{/if}
+						</div>
+
+						<!-- Webhook Secret -->
+						<div class="setting-item">
+							<div class="setting-header">
+								<h4>Webhook Secret</h4>
+								<span class="setting-type secure">Secure</span>
+							</div>
+							<p class="setting-description">
+								Your Stripe webhook endpoint secret (whsec_...) for validating webhook events. Get this from your Stripe Dashboard → Webhooks → [Your Endpoint] → Signing secret.
+							</p>
+							
+							{#if publicSettings?.stripe_webhook_secret && !editingWebhookSecret}
+								<div class="saved-setting">
+									<div class="saved-setting-display">
+										<code class="key-display">
+											whsec_••••••••••••••••••••••••••••••••••••••••••••••••••••
+										</code>
+									</div>
+									<div class="saved-setting-actions">
+										<button class="btn btn-outline btn-sm" onclick={() => editingWebhookSecret = true}>
+											✏️ Update
+										</button>
+										<button class="btn btn-secondary btn-sm" onclick={() => deletePublicSetting('stripe_webhook_secret')}>
+											🗑️ Remove
+										</button>
+									</div>
+								</div>
+							{:else}
+								<form onsubmit={(e) => { e.preventDefault(); saveWebhookSecret(); }} class="setting-form">
+									<div class="input-group">
+										<input 
+											class="input" 
+											type="password" 
+											placeholder="whsec_..." 
+											bind:value={webhookSecret}
+										/>
+									</div>
+									<div class="setting-form-actions">
+										<button 
+											type="submit" 
+											class="btn btn-primary btn-sm" 
+											disabled={savingPublicSettings || !webhookSecret.trim()}
+										>
+											{savingPublicSettings ? 'Saving...' : 'Save Secret'}
+										</button>
+										{#if editingWebhookSecret}
+											<button 
+												type="button" 
+												class="btn btn-secondary btn-sm" 
+												onclick={() => { editingWebhookSecret = false; webhookSecret = ''; }}
 											>
 												Cancel
 											</button>
@@ -2205,5 +2299,10 @@
 	.setting-type.warning {
 		background: var(--warning-bg);
 		color: var(--warning-text);
+	}
+
+	.setting-type.secure {
+		background: #1f2937;
+		color: #f3f4f6;
 	}
 </style> 
