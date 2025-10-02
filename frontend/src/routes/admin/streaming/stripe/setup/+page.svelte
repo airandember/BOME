@@ -124,7 +124,8 @@
 	async function initializeWebhookConfig() {
 		// Generate webhook endpoint URL based on current environment
 		const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
-		webhookEndpointUrl = `${apiBaseUrl}/admin/streaming/stripe/webhooks/`;
+		// Use the PUBLIC webhook endpoint that Stripe can access (no auth required)
+		webhookEndpointUrl = `${apiBaseUrl}/webhooks/stripe`;
 		
 		// Load webhook status
 		await loadWebhookStatus();
@@ -727,7 +728,7 @@
 							</div>
 							<p class="setting-description">
 								Copy this URL to your Stripe Dashboard → Webhooks to enable real-time payment processing.
-								When payments succeed, users will automatically get video access.
+								When payments succeed, users will automatically get video access. This is a public endpoint that Stripe can access directly.
 							</p>
 							
 							<div class="webhook-url-display">
@@ -810,7 +811,7 @@
 									<div class="step-number">3</div>
 									<div class="step-content">
 										<strong>Select Events</strong>
-										<p>Choose these events: <code>customer.subscription.*</code>, <code>invoice.payment_succeeded</code>, <code>customer.*</code></p>
+										<p>Choose these events: <code>customer.*</code>, <code>customer.subscription.*</code>, <code>invoice.payment_succeeded</code>, <code>invoice.payment_failed</code>, <code>product.*</code>, <code>price.*</code></p>
 									</div>
 								</div>
 								<div class="instruction-step">
