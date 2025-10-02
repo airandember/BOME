@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -1062,10 +1063,30 @@ func (s *StripeSyncService) ProcessVideoAccessForCustomer(customerID string) err
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			log.Printf("⚠️ No user found for Stripe customer %s", customerID)
-			return nil // Not an error - customer might not be in our system yet
+			log.Printf("⚠️ No user found for Stripe customer %s - this shouldn't happen in normal flow", customerID)
+			log.Printf("🔍 Customer %s may have subscribed without going through our signup process", customerID)
+
+			// This is unusual - typically users sign up first, then subscribe
+			// We'll try to find them by email and link them, but won't create new users
+			// since that would bypass our normal registration flow
+			linkedUserID, err := s.linkExistingUserByEmail(customerID)
+			if err != nil {
+				log.Printf("❌ Failed to link existing user for Stripe customer %s: %v", customerID, err)
+				log.Printf("ℹ️ User should complete normal signup process to access videos")
+				return nil // Don't fail the webhook - user can register normally later
+			}
+
+			if linkedUserID > 0 {
+				userID = linkedUserID
+				log.Printf("✅ Linked existing user %d to Stripe customer %s", userID, customerID)
+			} else {
+				log.Printf("ℹ️ No existing user found with matching email for Stripe customer %s", customerID)
+				log.Printf("💡 User should complete normal signup process to access videos")
+				return nil // User needs to register through normal flow
+			}
+		} else {
+			return fmt.Errorf("failed to find user for customer %s: %w", customerID, err)
 		}
-		return fmt.Errorf("failed to find user for customer %s: %w", customerID, err)
 	}
 
 	log.Printf("🔍 Found user %d (%s) for Stripe customer %s", userID, userEmail, customerID)
@@ -1108,6 +1129,124 @@ func (s *StripeSyncService) ProcessVideoAccessForCustomer(customerID string) err
 	}
 
 	return nil
+}
+
+// linkExistingUserByEmail attempts to link an existing user to a Stripe customer by email
+func (s *StripeSyncService) linkExistingUserByEmail(customerID string) (int, error) {
+	// First, get the Stripe customer data from our database
+	var stripeEmail sql.NullString
+	err := s.db.QueryRow(`
+		SELECT email 
+		FROM stripe_customers 
+		WHERE stripe_id = $1
+	`, customerID).Scan(&stripeEmail)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to find Stripe customer %s in database: %w", customerID, err)
+	}
+
+	if !stripeEmail.Valid || stripeEmail.String == "" {
+		return 0, fmt.Errorf("stripe customer %s has no email address", customerID)
+	}
+
+	email := stripeEmail.String
+
+	// Try to find an existing user with this email
+	var existingUserID int
+	err = s.db.QueryRow(`
+		SELECT id FROM users 
+		WHERE email = $1 AND is_active = true
+	`, email).Scan(&existingUserID)
+
+	if err == nil {
+		// User exists! Link them to this Stripe customer
+		log.Printf("🔗 Linking existing user %d (%s) to Stripe customer %s", existingUserID, email, customerID)
+
+		// Update user to include this Stripe customer ID
+		_, err = s.db.Exec(`
+			UPDATE users 
+			SET stripe_customer_id = $1, updated_at = NOW()
+			WHERE id = $2 AND (stripe_customer_id IS NULL OR stripe_customer_id = '')
+		`, customerID, existingUserID)
+
+		if err != nil {
+			return 0, fmt.Errorf("failed to link user %d to Stripe customer %s: %w", existingUserID, customerID, err)
+		}
+
+		return existingUserID, nil
+	}
+
+	if err != sql.ErrNoRows {
+		return 0, fmt.Errorf("error checking for existing user: %w", err)
+	}
+
+	// No existing user found
+	log.Printf("ℹ️ No existing user found with email %s for Stripe customer %s", email, customerID)
+	return 0, nil // Return 0 to indicate no user was found/linked
+}
+
+// syncCustomerToUserTable syncs Stripe customer data to the users table
+func (s *StripeSyncService) syncCustomerToUserTable(cust *stripe.Customer) error {
+	// Find user by stripe_customer_id or email
+	var userID int
+	var currentEmail string
+	err := s.db.QueryRow(`
+		SELECT id, email FROM users 
+		WHERE (stripe_customer_id = $1 OR $1 = ANY(COALESCE(stripe_customer_ids, '{}'))) 
+		   OR (email = $2 AND is_active = true)
+	`, cust.ID, cust.Email).Scan(&userID, &currentEmail)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("ℹ️ No user found for Stripe customer %s (%s) - user may not have registered yet", cust.ID, cust.Email)
+			return nil // Not an error - user might register later
+		}
+		return fmt.Errorf("failed to find user for customer %s: %w", cust.ID, err)
+	}
+
+	// Parse name from Stripe customer
+	firstName, lastName := parseFullName(cust.Name)
+
+	// Update user with Stripe customer data
+	log.Printf("🔄 Syncing Stripe customer %s data to user %d", cust.ID, userID)
+
+	_, err = s.db.Exec(`
+		UPDATE users 
+		SET 
+			stripe_customer_id = $1,
+			first_name = COALESCE(NULLIF($2, ''), first_name),
+			last_name = COALESCE(NULLIF($3, ''), last_name),
+			email = COALESCE(NULLIF($4, ''), email),
+			updated_at = NOW()
+		WHERE id = $5
+	`, cust.ID, firstName, lastName, cust.Email, userID)
+
+	if err != nil {
+		return fmt.Errorf("failed to update user %d with Stripe customer data: %w", userID, err)
+	}
+
+	log.Printf("✅ Successfully synced Stripe customer %s to user %d", cust.ID, userID)
+	return nil
+}
+
+// parseFullName splits a full name into first and last name
+func parseFullName(fullName string) (string, string) {
+	if fullName == "" {
+		return "", ""
+	}
+
+	parts := strings.Fields(strings.TrimSpace(fullName))
+	if len(parts) == 0 {
+		return "", ""
+	}
+	if len(parts) == 1 {
+		return parts[0], ""
+	}
+
+	// First name is the first part, last name is everything else joined
+	firstName := parts[0]
+	lastName := strings.Join(parts[1:], " ")
+	return firstName, lastName
 }
 
 func (s *StripeSyncService) upsertSubscription(sub *stripe.Subscription) error {
@@ -1422,7 +1561,21 @@ func (s *StripeSyncService) getSyncConfig(entityType string) (*SyncConfig, error
 // Webhook-specific methods for real-time updates
 func (s *StripeSyncService) UpsertCustomerFromWebhook(cust *stripe.Customer) error {
 	log.Printf("🔄 Webhook sync: Updating customer %s", cust.ID)
-	return s.upsertCustomer(cust)
+
+	// First, sync to stripe_customers table
+	err := s.upsertCustomer(cust)
+	if err != nil {
+		return err
+	}
+
+	// Then, sync to users table if a matching user exists
+	err = s.syncCustomerToUserTable(cust)
+	if err != nil {
+		// Don't fail the webhook if user sync fails - log and continue
+		log.Printf("⚠️ Failed to sync customer %s to users table: %v", cust.ID, err)
+	}
+
+	return nil
 }
 
 func (s *StripeSyncService) MarkCustomerDeleted(customerID string) error {
