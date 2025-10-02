@@ -2,27 +2,68 @@
 	import { onMount } from 'svelte';
 	import { apiRequest } from '$lib/auth';
 	import { fade, fly } from 'svelte/transition';
+	import StripeOnlyTable from '../subscribers/customers/StripeOnlyTable.svelte';
+	import SyncedCustomersTable from '../subscribers/customers/SyncedCustomersTable.svelte';
+	import LocalOnlyTable from '../subscribers/customers/LocalOnlyTable.svelte';
 
 	// Reactive variables
 	let isLoading = true;
-	let subscribers = [];
+	let customers = [];
 	let error = null;
-	let selectedSubscriber = null;
+	let selectedCustomer = null;
 	let showCustomerModal = false;
 	let showRefundModal = false;
 	let showCommunicationModal = false;
 	let isSubmitting = false;
+
+	// Props from parent component
+	export let summary = { total_customers: 0, total_subscriptions: 0 };
+	export let stripeData = { customers: [], subscriptions: [] };
+
+	// Separate customer categories
+	$: stripeOnlyCustomers = stripeData.customers.filter(customer => 
+		customer.source === 'stripe' && !customer.localId
+	);
+	$: syncedCustomers = stripeData.customers.filter(customer => 
+		customer.source === 'stripe' && customer.localId
+	);
+	$: localOnlyCustomers = stripeData.customers.filter(customer => 
+		customer.source === 'local' && !customer.stripeId
+	);
+
+	// State for syncing operations
+	let syncingCustomers = new Set();
+	let bulkCreatingUsers = false;
+
+	// Event handlers for table actions
+	function handleCreateUser(customer) {
+		console.log('Creating user for customer:', customer);
+		// Add the customer ID to syncing set
+		syncingCustomers = new Set([...syncingCustomers, customer.id]);
+		
+		// Simulate API call (replace with actual implementation)
+		setTimeout(() => {
+			syncingCustomers = new Set([...syncingCustomers].filter(id => id !== customer.id));
+			console.log('User created successfully');
+		}, 2000);
+	}
+
+	function handleCreateAllUsers() {
+		console.log('Creating all users...');
+		bulkCreatingUsers = true;
+		
+		// Simulate API call (replace with actual implementation)
+		setTimeout(() => {
+			bulkCreatingUsers = false;
+			console.log('All users created successfully');
+		}, 3000);
+	}
 
 
 	// Search and filters
 	let searchTerm = '';
 	let statusFilter = 'all';
 	let planFilter = 'all';
-
-	// Pagination
-	let currentPage = 1;
-	let itemsPerPage = 20;
-	let totalItems = 0;
 
 	// Communication form
 	let communicationData = {
@@ -37,6 +78,28 @@
 		reason: '',
 		notes: ''
 	};
+
+	// DataTable event handlers
+	function handleRowAction(event) {
+		const { item: customer, action } = event.detail;
+		switch (action) {
+			case 'view':
+				openCustomerModal(customer);
+				break;
+			case 'edit':
+				openCustomerModal(customer);
+				break;
+		}
+	}
+
+	// Transform customers data for DataTable
+	$: customersForTable = customers.map(customer => ({
+		...customer,
+		plan_name: customer.subscription?.plan_name || 'No subscription',
+		plan_price: customer.subscription ? formatCurrency(customer.subscription.price, customer.subscription.currency) : '-',
+		status: customer.subscription?.status || 'inactive',
+		next_billing: customer.subscription?.current_period_end || null
+	}));
 
 	// Load customers
 	async function loadCustomers() {
@@ -312,179 +375,27 @@
 			</div>
 		</div>
 
-		<!-- Customers Table -->
-		<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-			<div class="overflow-x-auto">
-				<table class="min-w-full divide-y divide-gray-200">
-					<thead class="bg-gray-50">
-						<tr>
-							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-								Customer
-							</th>
-							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-								Subscription
-							</th>
-							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-								Status
-							</th>
-							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-								Next Billing
-							</th>
-							<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-								Actions
-							</th>
-						</tr>
-					</thead>
-					<tbody class="bg-white divide-y divide-gray-200">
-						{#each customers as customer (customer.id)}
-							<tr class="hover:bg-gray-50" in:fly={{ y: 20, duration: 300 }}>
-								<td class="px-6 py-4 whitespace-nowrap">
-									<div class="flex items-center">
-										<div class="h-10 w-10 bg-blue-600 rounded-full flex items-center justify-center">
-											<span class="text-white text-sm font-medium">
-												{customer.name?.charAt(0).toUpperCase() || 'U'}
-											</span>
-										</div>
-										<div class="ml-4">
-											<div class="text-sm font-medium text-gray-900">{customer.name}</div>
-											<div class="text-sm text-gray-500">{customer.email}</div>
-										</div>
-									</div>
-								</td>
-								<td class="px-6 py-4 whitespace-nowrap">
-									{#if customer.subscription}
-										<div>
-											<div class="text-sm font-medium text-gray-900">
-												{customer.subscription.plan_name}
-											</div>
-											<div class="text-sm text-gray-500">
-												{formatCurrency(customer.subscription.price, customer.subscription.currency)}
-											</div>
-										</div>
-									{:else}
-										<span class="text-sm text-gray-500">No subscription</span>
-									{/if}
-								</td>
-								<td class="px-6 py-4 whitespace-nowrap">
-									{#if customer.subscription}
-										<div class="flex items-center">
-											<svelte:component this={getStatusIcon(customer.subscription.status)} class="h-4 w-4 mr-2" />
-											<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {getStatusBadge(customer.subscription.status).class}">
-												{getStatusBadge(customer.subscription.status).text}
-											</span>
-										</div>
-									{:else}
-										<span class="text-sm text-gray-500">-</span>
-									{/if}
-								</td>
-								<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-									{#if customer.subscription?.current_period_end}
-										{formatDate(customer.subscription.current_period_end)}
-									{:else}
-										-
-									{/if}
-								</td>
-								<td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-									<div class="flex items-center space-x-2">
-										<button
-											class="text-blue-600 hover:text-blue-900"
-											on:click={() => openCustomerModal(customer)}
-										>
-											<EyeIcon class="h-4 w-4" />
-										</button>
-										{#if customer.subscription}
-											<button
-												class="text-green-600 hover:text-green-900"
-												on:click={() => openRefundModal(customer)}
-											>
-												<CurrencyDollarIcon class="h-4 w-4" />
-											</button>
-											<button
-												class="text-red-600 hover:text-red-900"
-												on:click={() => cancelSubscription(customer)}
-											>
-												<XMarkIcon class="h-4 w-4" />
-											</button>
-										{/if}
-										<button
-											class="text-purple-600 hover:text-purple-900"
-											on:click={() => openCommunicationModal(customer)}
-										>
-											<ChatBubbleLeftIcon class="h-4 w-4" />
-										</button>
-									</div>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+		<!-- Individual Customer Tables -->
+		<div class="customer-tables">
+			<!-- Stripe Only Customers -->
+			<StripeOnlyTable 
+				customers={stripeOnlyCustomers}
+				{syncingCustomers}
+				{bulkCreatingUsers}
+				oncreateUser={handleCreateUser}
+				oncreateAllUsers={handleCreateAllUsers}
+			/>
 
-			<!-- Pagination -->
-			{#if totalPages > 1}
-				<div class="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
-					<div class="flex items-center justify-between">
-						<div class="flex-1 flex justify-between sm:hidden">
-							<button
-								class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-								disabled={currentPage === 1}
-								on:click={() => currentPage > 1 && (currentPage--, loadCustomers())}
-							>
-								Previous
-							</button>
-							<button
-								class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-								disabled={currentPage === totalPages}
-								on:click={() => currentPage < totalPages && (currentPage++, loadCustomers())}
-							>
-								Next
-							</button>
-						</div>
-						<div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-							<div>
-								<p class="text-sm text-gray-700">
-									Showing <span class="font-medium">{((currentPage - 1) * itemsPerPage) + 1}</span> to <span class="font-medium">{Math.min(currentPage * itemsPerPage, totalItems)}</span> of <span class="font-medium">{totalItems}</span> results
-								</p>
-							</div>
-							<div>
-								<nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
-									<button
-										class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
-										disabled={currentPage === 1}
-										on:click={() => currentPage > 1 && (currentPage--, loadCustomers())}
-									>
-										Previous
-									</button>
-									{#each Array.from({ length: totalPages }, (_, i) => i + 1) as page}
-										<button
-											class="relative inline-flex items-center px-4 py-2 border text-sm font-medium {currentPage === page ? 'z-10 bg-blue-50 border-blue-500 text-blue-600' : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'}"
-											on:click={() => currentPage !== page && (currentPage = page, loadCustomers())}
-										>
-											{page}
-										</button>
-									{/each}
-									<button
-										class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
-										disabled={currentPage === totalPages}
-										on:click={() => currentPage < totalPages && (currentPage++, loadCustomers())}
-									>
-										Next
-									</button>
-								</nav>
-							</div>
-						</div>
-					</div>
-				</div>
-			{/if}
+			<!-- Synced Customers -->
+			<SyncedCustomersTable 
+				customers={syncedCustomers}
+			/>
+
+			<!-- Local Only Users -->
+			<LocalOnlyTable 
+				customers={localOnlyCustomers}
+			/>
 		</div>
-
-		{#if customers.length === 0}
-			<div class="text-center py-12">
-				<UsersIcon class="h-12 w-12 text-gray-400 mx-auto mb-4" />
-				<h3 class="text-lg font-medium text-gray-900 mb-2">No customers found</h3>
-				<p class="text-gray-600">Try adjusting your search or filter criteria.</p>
-			</div>
-		{/if}
 	</div>
 {/if}
 
@@ -709,3 +620,17 @@
 		</div>
 	</div>
 {/if} 
+
+<style>
+	.customer-tables {
+		display: flex;
+		flex-direction: column;
+		gap: 2rem;
+	}
+
+	@media (max-width: 768px) {
+		.customer-tables {
+			gap: 1rem;
+		}
+	}
+</style>

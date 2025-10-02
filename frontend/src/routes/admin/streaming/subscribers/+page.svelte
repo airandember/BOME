@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { StreamingSubscriberService, type Subscriber, type NonSubscriber, type SubscriberFilters, type NonSubscriberFilters } from '$lib/services/streaming-subscribers';
-	import type { EnhancedSubscriber } from '$lib/types/enhanced-subscriber';
 	import { subscriberCache } from '$lib/cache/subscriber-cache';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
@@ -11,10 +10,11 @@
 	import SubscriberPagination from './SubscriberPagination.svelte';
 	import SubscriberEditModal from './SubscriberEditModal.svelte';
 	import EnhancedSubscribersPage from './EnhancedSubscribersPage.svelte';
-	import { auth, apiRequest } from '$lib/auth';
+	import { auth } from '$lib/auth';
 	import SendOfferModal from './SendOfferModal.svelte';
 	import type { SubscriptionOffer } from '$lib/services/subscription-offers';
 	import { SubscriptionOfferService } from '$lib/services/subscription-offers';
+	import { apiRequest } from '$lib/auth';
 	import StripeCustomers from './customers/+page.svelte';
 
 	// State
@@ -32,11 +32,11 @@
 	let stripeSubsLoaded = $state(false);
 	
 	// All data arrays (source of truth)
-	let allSubscribers = $state<EnhancedSubscriber[]>([]);
+	let allSubscribers = $state<Subscriber[]>([]);
 	let allNonSubscribers = $state<NonSubscriber[]>([]);
 	
 	// Display arrays (what gets shown in tables)
-	let displayedSubscribers = $state<EnhancedSubscriber[]>([]);
+	let displayedSubscribers = $state<Subscriber[]>([]);
 	let displayedNonSubscribers = $state<NonSubscriber[]>([]);
 	
 	let subscriberCount = $state(0);
@@ -58,7 +58,7 @@
 
 	// Edit modal state
 	let showEditModal = $state(false);
-	let selectedSubscriber: EnhancedSubscriber | null = $state(null);
+	let selectedSubscriber: Subscriber | null = $state(null);
 
 	// Pagination
 	let currentPage = $state(1);
@@ -94,7 +94,7 @@
 	let currentSelectedCount = $derived(activeTab === 'subscribers' ? selectedSubscribers.size : selectedNonSubscribers.size);
 
 	// Reactive paginated data - updates automatically when display arrays or currentPage changes
-	let paginatedSubscribers = $state<EnhancedSubscriber[]>([]);
+	let paginatedSubscribers = $state<Subscriber[]>([]);
 	let paginatedNonSubscribers = $state<NonSubscriber[]>([]);
 
 	// Update paginated data when dependencies change
@@ -141,8 +141,11 @@ async function fetchRoles() {
 // Load subscription plans for edit modal
 async function fetchSubscriptionPlans() {
 	try {
-		const response = await apiRequest('/admin/subscription-plans/', {
-			method: 'GET'
+		const response = await fetch('/api/v1/admin/subscription-plans/', {
+			headers: {
+				'Authorization': `Bearer ${$auth.token}`,
+				'Content-Type': 'application/json'
+			}
 		});
 		
 		if (response.ok) {
@@ -221,15 +224,18 @@ onMount(async () => {
 });
 
 // Load data for a specific tab
-async function loadTabData(tab: 'subscribers' | 'stripe-subs') {
+async function loadTabData(tab: 'subscribers' | 'non-subscribers' | 'stripe-subs') {
 	console.log(`🔄 Loading data for tab: ${tab}`);
 	
 	switch (tab) {
 		case 'subscribers':
 			await loadSubscribersData();
 			break;
+		case 'non-subscribers':
+			await loadNonSubscribersData();
+			break;
 		case 'stripe-subs':
-			await loadStripeCustomersData();
+			await loadStripeSubsData();
 			break;
 	}
 }
@@ -246,7 +252,6 @@ async function loadSubscribersData() {
 		console.log('🔄 Loading subscribers...');
 		
 		const subscribersResponse = await subscriberCache.getSubscribers(1, 0, {}); // Get all subscribers
-
 		allSubscribers = subscribersResponse.subscribers || [];
 		subscriberCount = subscribersResponse.total_count || allSubscribers.length;
 		
@@ -272,16 +277,56 @@ async function loadSubscribersData() {
 	}
 }
 
-// Load Stripe customers and subscriptions data
-async function loadStripeCustomersData() {
+// Load non-subscribers data
+async function loadNonSubscribersData() {
+	if (nonSubscribersLoaded) {
+		console.log('✅ Non-subscribers already loaded, skipping...');
+		return;
+	}
+	
+	nonSubscribersLoading = true;
+	try {
+		console.log('🔄 Loading non-subscribers...');
+		
+		const nonSubscribersResponse = await StreamingSubscriberService.getNonSubscribers({
+			limit: 0, // Get all non-subscribers (no limit)
+			offset: 0
+		});
+		allNonSubscribers = nonSubscribersResponse.non_subscribers || [];
+		nonSubscriberCount = allNonSubscribers.length;
+		
+		console.log('✅ Loaded non-subscribers:', allNonSubscribers.length);
+		
+		// Initialize display array
+		displayedNonSubscribers = [...allNonSubscribers];
+		
+		// Apply filters if any are set
+		if (activeTab === 'non-subscribers') {
+			debounceApplyFilters();
+		}
+		
+		nonSubscribersLoaded = true;
+	} catch (error) {
+		console.error('❌ Error loading non-subscribers:', error);
+		showToast('Failed to load non-subscribers', 'error');
+		allNonSubscribers = [];
+		displayedNonSubscribers = [];
+		nonSubscriberCount = 0;
+	} finally {
+		nonSubscribersLoading = false;
+	}
+}
+
+// Load Stripe subs data
+async function loadStripeSubsData() {
 	if (stripeSubsLoaded) {
-		console.log('✅ Stripe customers data already loaded, skipping...');
+		console.log('✅ Stripe subs already loaded, skipping...');
 		return;
 	}
 	
 	stripeSubsLoading = true;
 	try {
-		console.log('🔄 Loading Stripe customers and subscriptions data...');
+		console.log('🔄 Loading Stripe subs data...');
 		
 		// Load Stripe data from database in parallel
 		const [customers, subscriptions] = await Promise.all([
@@ -292,14 +337,14 @@ async function loadStripeCustomersData() {
 		stripeCustomers = customers;
 		stripeSubscriptions = subscriptions;
 		
-		console.log('✅ Loaded Stripe customers data:', {
+		console.log('✅ Loaded Stripe subs data:', {
 			customers: stripeCustomers.length,
 			subscriptions: stripeSubscriptions.length
 		});
 		
 		stripeSubsLoaded = true;
 	} catch (error) {
-		console.error('❌ Error loading Stripe customers data:', error);
+		console.error('❌ Error loading Stripe subs data:', error);
 		showToast('Failed to load Stripe data', 'error');
 		stripeCustomers = [];
 		stripeSubscriptions = [];
@@ -407,7 +452,7 @@ async function loadStripeCustomersData() {
 			}
 		} else {
 			if (!hasFilters) {
-				// No filters applied - show all stripe subs (instant)
+				// No filters applied - show all non-subscribers (instant)
 				displayedNonSubscribers = [...allNonSubscribers];
 			} else {
 				// Apply filters efficiently
@@ -438,7 +483,7 @@ async function loadStripeCustomersData() {
 					
 					// Last login filter
 					if (currentFilters.lastLoginFilter) {
-						console.log('🔍 Applying last login filter to stripe sub:', nonSubscriber.email, 'Filter:', currentFilters.lastLoginFilter);
+						console.log('🔍 Applying last login filter to non-subscriber:', nonSubscriber.email, 'Filter:', currentFilters.lastLoginFilter);
 						const matches = matchesLastLoginFilter(nonSubscriber, currentFilters.lastLoginFilter);
 						if (!matches) {
 							console.log('❌ Non-subscriber filtered out by last login:', {
@@ -454,7 +499,7 @@ async function loadStripeCustomersData() {
 					
 					// Created date filter
 					if (currentFilters.createdDateFilter) {
-						console.log('🔍 Applying created date filter to stripe sub:', nonSubscriber.email, 'Filter:', currentFilters.createdDateFilter);
+						console.log('🔍 Applying created date filter to non-subscriber:', nonSubscriber.email, 'Filter:', currentFilters.createdDateFilter);
 						const matches = matchesCreatedDateFilter(nonSubscriber, currentFilters.createdDateFilter);
 						if (!matches) {
 							console.log('❌ Non-subscriber filtered out by created date:', {
@@ -494,7 +539,7 @@ async function loadStripeCustomersData() {
 	}
 
 	// Helper function to check if item matches last login filter - updated for date ranges
-	function matchesLastLoginFilter(item: EnhancedSubscriber | NonSubscriber, filter: string): boolean {
+	function matchesLastLoginFilter(item: Subscriber | NonSubscriber, filter: string): boolean {
 		console.log('🔍 matchesLastLoginFilter called:', { 
 			itemEmail: item.email, 
 			lastLogin: item.last_login, 
@@ -609,7 +654,7 @@ async function loadStripeCustomersData() {
 	}
 
 	// Helper function to check if item matches created date filter - updated for date ranges
-	function matchesCreatedDateFilter(item: EnhancedSubscriber | NonSubscriber, filter: string): boolean {
+	function matchesCreatedDateFilter(item: Subscriber | NonSubscriber, filter: string): boolean {
 		if (!filter || filter.trim() === '') return true;
 		
 		// Handle the new date range format (startDate|endDate)
@@ -721,7 +766,7 @@ async function loadStripeCustomersData() {
 	});
 
 	$effect(() => {
-		if (activeTab === 'stripe-subs' && allNonSubscribers.length > 0 && nonSubscribersLoaded) {
+		if (activeTab === 'non-subscribers' && allNonSubscribers.length > 0 && nonSubscribersLoaded) {
 			// Only apply on initial load, not on every filter change
 			const hasAnyFilters = nonSubscriberSearchTerm || nonSubscriberEmailVerifiedFilter !== undefined || 
 				nonSubscriberRoleFilter || nonSubscriberLastLoginFilter || nonSubscriberCreatedDateFilter || 
@@ -873,13 +918,13 @@ async function loadStripeCustomersData() {
 	// The selection state is now managed directly in the handler
 
 	// Handle tab change
-	function handleTabChange(event: CustomEvent<{ tab: 'subscribers' | 'stripe-subs' }>) {
+	function handleTabChange(event: CustomEvent<{ tab: 'subscribers' | 'non-subscribers' }>) {
 		const { tab } = event.detail;
 		
 		// Determine animation direction
-		if (activeTab === 'subscribers' && tab === 'stripe-subs') {
+		if (activeTab === 'subscribers' && tab === 'non-subscribers') {
 			animationDirection = 'right';
-		} else if (activeTab === 'stripe-subs' && tab === 'subscribers') {
+		} else if (activeTab === 'non-subscribers' && tab === 'subscribers') {
 			animationDirection = 'left';
 		}
 		
@@ -904,7 +949,7 @@ async function loadStripeCustomersData() {
 
 
 	// Update the changeTab function to handle the new tab
-	async function changeTab(tab: 'subscribers' | 'stripe-subs') {
+	async function changeTab(tab: 'subscribers' | 'non-subscribers' | 'stripe-subs') {
 		if (tab === activeTab) return;
 		
 		// Clear selections when switching tabs
@@ -917,9 +962,9 @@ async function loadStripeCustomersData() {
 		currentPage = 1;
 		
 		// Set animation direction based on tab order
-		if (activeTab === 'subscribers' && tab === 'stripe-subs') {
+		if (activeTab === 'subscribers' && tab === 'non-subscribers') {
 			animationDirection = 'right';
-		} else if (activeTab === 'stripe-subs' && tab === 'subscribers') {
+		} else if (activeTab === 'non-subscribers' && tab === 'subscribers') {
 			animationDirection = 'left';
 		} else if (tab === 'stripe-subs') {
 			// New tab - determine direction based on current tab
@@ -976,15 +1021,15 @@ async function loadStripeCustomersData() {
 					nonSubscriberRoleFilter = value;
 					break;
 				case 'lastLogin':
-					console.log('📅 Setting stripe sub last login filter:', value);
+					console.log('📅 Setting non-subscriber last login filter:', value);
 					nonSubscriberLastLoginFilter = value;
 					break;
 				case 'createdDate':
-					console.log('📅 Setting stripe sub created date filter:', value);
+					console.log('📅 Setting non-subscriber created date filter:', value);
 					nonSubscriberCreatedDateFilter = value;
 					break;
 				case 'hasSubbed':
-					console.log('📅 Setting stripe sub has subbed filter:', value);
+					console.log('📅 Setting non-subscriber has subbed filter:', value);
 					nonSubscriberHasSubbedFilter = value;
 					break;
 			}
@@ -1042,10 +1087,10 @@ async function loadStripeCustomersData() {
 		}
 	}
 
-	// Handle stripe sub update from edit modal
+	// Handle non-subscriber update from edit modal
 	async function handleNonSubscriberUpdate(updatedNonSubscriber: NonSubscriber) {
 		try {
-			// Update the stripe sub in our local arrays
+			// Update the non-subscriber in our local arrays
 			allNonSubscribers = allNonSubscribers.map(ns => 
 				ns.id === updatedNonSubscriber.id ? updatedNonSubscriber : ns
 			);
@@ -1053,10 +1098,10 @@ async function loadStripeCustomersData() {
 				ns.id === updatedNonSubscriber.id ? updatedNonSubscriber : ns
 			);
 			
-			showToast('Stripe sub updated successfully', 'success');
+			showToast('Non-subscriber updated successfully', 'success');
 		} catch (error) {
-			console.error('Error updating stripe sub:', error);
-			showToast('Failed to update stripe sub', 'error');
+			console.error('Error updating non-subscriber:', error);
+			showToast('Failed to update non-subscriber', 'error');
 		}
 	}
 
@@ -1131,7 +1176,7 @@ async function loadStripeCustomersData() {
 				filename = `subscribers-${new Date().toISOString().split('T')[0]}.csv`;
 			} else {
 				blob = await StreamingSubscriberService.exportNonSubscribers('csv');
-				filename = `stripe-subs-${new Date().toISOString().split('T')[0]}.csv`;
+				filename = `non-subscribers-${new Date().toISOString().split('T')[0]}.csv`;
 			}
 			
 			const url = window.URL.createObjectURL(blob);
@@ -1143,64 +1188,17 @@ async function loadStripeCustomersData() {
 			window.URL.revokeObjectURL(url);
 			document.body.removeChild(a);
 			
-			const tabName = activeTab === 'subscribers' ? 'Subscribers' : 'Stripe Subs';
+			const tabName = activeTab === 'subscribers' ? 'Subscribers' : 'Non-subscribers';
 			showToast(`${tabName} exported successfully`, 'success');
 		} catch (error) {
 			console.error('Error exporting data:', error);
-			const tabName = activeTab === 'subscribers' ? 'subscribers' : 'stripe-subs';
+			const tabName = activeTab === 'subscribers' ? 'subscribers' : 'non-subscribers';
 			showToast(`Failed to export ${tabName}`, 'error');
 		}
 	}
 
-	// Helper function to convert EnhancedSubscriber to Subscriber for modal compatibility
-	function convertToSubscriber(enhanced: EnhancedSubscriber): Subscriber {
-		return {
-			id: enhanced.id,
-			email: enhanced.email,
-			first_name: enhanced.first_name,
-			last_name: enhanced.last_name,
-			role: enhanced.role,
-			email_verified: enhanced.email_verified,
-			plan_name: enhanced.plan_name,
-			plan_price: enhanced.plan_price,
-			plan_currency: enhanced.plan_currency,
-			stripe_customer_id: enhanced.stripe_customer_id || undefined,
-			stripe_subscription_id: enhanced.stripe_subscription_id || undefined,
-			last_login: enhanced.last_login || undefined,
-			created_at: enhanced.created_at,
-			updated_at: enhanced.updated_at,
-			// Map additional fields if available
-			subscription_status: enhanced.plan_status,
-			current_period_start: enhanced.billing_period_start || undefined,
-			current_period_end: enhanced.billing_period_end || undefined
-		};
-	}
-
-	// Helper function to convert Subscriber back to EnhancedSubscriber (for updates)
-	function convertFromSubscriber(subscriber: Subscriber, original: EnhancedSubscriber): EnhancedSubscriber {
-		return {
-			...original,
-			// Update the fields that can be edited
-			email: subscriber.email,
-			first_name: subscriber.first_name,
-			last_name: subscriber.last_name,
-			role: subscriber.role,
-			email_verified: subscriber.email_verified,
-			plan_name: subscriber.plan_name || original.plan_name,
-			plan_price: subscriber.plan_price || original.plan_price,
-			plan_currency: subscriber.plan_currency || original.plan_currency,
-			stripe_customer_id: subscriber.stripe_customer_id || null,
-			stripe_subscription_id: subscriber.stripe_subscription_id || null,
-			last_login: subscriber.last_login || null,
-			updated_at: subscriber.updated_at,
-			plan_status: (subscriber.subscription_status as any) || original.plan_status,
-			billing_period_start: subscriber.current_period_start || original.billing_period_start,
-			billing_period_end: subscriber.current_period_end || original.billing_period_end
-		};
-	}
-
 	// Handle edit subscriber event from table
-	function handleEditSubscriber(event: CustomEvent<{ subscriber: EnhancedSubscriber }>) {
+	function handleEditSubscriber(event: CustomEvent<{ subscriber: Subscriber }>) {
 		const { subscriber } = event.detail;
 		selectedSubscriber = subscriber;
 		showEditModal = true;
@@ -1209,17 +1207,12 @@ async function loadStripeCustomersData() {
 	// Handle subscriber update from edit modal
 	async function handleSubscriberUpdate(updatedSubscriber: Subscriber) {
 		try {
-			if (!selectedSubscriber) return;
-			
-			// Convert the updated Subscriber back to EnhancedSubscriber
-			const updatedEnhanced = convertFromSubscriber(updatedSubscriber, selectedSubscriber);
-			
 			// Update the subscriber in our local arrays
 			allSubscribers = allSubscribers.map(s => 
-				s.id === updatedEnhanced.id ? updatedEnhanced : s
+				s.id === updatedSubscriber.id ? updatedSubscriber : s
 			);
 			displayedSubscribers = displayedSubscribers.map(s => 
-				s.id === updatedEnhanced.id ? updatedEnhanced : s
+				s.id === updatedSubscriber.id ? updatedSubscriber : s
 			);
 			
 			showToast('Subscriber updated successfully', 'success');
@@ -1256,7 +1249,7 @@ async function loadStripeCustomersData() {
 	<!--<div class="page-header">
 		<div class="header-content">
 			<h1 class="page-title">Subscribers Management</h1>
-			<p class="page-description">Manage subscribers and Stripe subscriptions</p>
+			<p class="page-description">Manage subscribers and non-subscribers</p>
 		</div>
 	</div>-->
 
@@ -1268,7 +1261,7 @@ async function loadStripeCustomersData() {
 			onclick={() => changeTab('subscribers')}
 		>
 			<span class="tab-icon">👥</span>
-			Subscribers
+			Subscribers ({displayedSubscribers.length})
 		</button>
 		<button 
 			class="tab-button" 
@@ -1325,7 +1318,7 @@ async function loadStripeCustomersData() {
 {#if showEditModal && selectedSubscriber}
 	<SubscriberEditModal 
 		bind:isOpen={showEditModal}
-		subscriber={convertToSubscriber(selectedSubscriber)}
+		subscriber={selectedSubscriber}
 		{subscriptionPlans}
 		onSave={handleSubscriberUpdate}
 		onCancel={() => { showEditModal = false; selectedSubscriber = null; }}
@@ -1602,7 +1595,7 @@ async function loadStripeCustomersData() {
 
 	@media (max-width: 768px) {
 		.subscribers-page {
-			padding: 0.5rem;
+			padding: 1rem;
 		}
 
 		.page-header {
@@ -1613,51 +1606,6 @@ async function loadStripeCustomersData() {
 
 		.tab-navigation {
 			flex-wrap: wrap;
-			gap: 0.25rem;
-		}
-
-		.tab-button {
-			flex: 1;
-			min-width: 120px;
-			justify-content: center;
-			padding: 0.5rem 1rem;
-			font-size: 0.875rem;
-		}
-
-		.tab-icon {
-			font-size: 1rem;
-		}
-
-		/* Improve mobile table experience */
-		.tab-content {
-			border-radius: 0.25rem;
-			margin: 0 -0.5rem;
-		}
-
-		.subscribers-section,
-		.stripe-subs-section {
-			padding: 0.75rem;
-		}
-
-		/* Mobile card-like layout for better UX */
-		.loading-container {
-			padding: 2rem 1rem;
-		}
-	}
-
-	@media (max-width: 480px) {
-		.subscribers-page {
-			padding: 0.25rem;
-		}
-
-		.tab-button {
-			padding: 0.5rem 0.75rem;
-			font-size: 0.8rem;
-		}
-
-		.tab-content {
-			margin: 0 -0.25rem;
-			border-radius: 0;
 		}
 	}
 </style> 

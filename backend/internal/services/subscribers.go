@@ -77,53 +77,40 @@ func NewSubscriberService(db *database.DB) *SubscriberService {
 
 // GetSubscribers retrieves all subscribers with optional filters
 func (s *SubscriberService) GetSubscribers(limit, offset int, filters *SubscriberFilters) ([]*Subscriber, error) {
-
-	// ENHANCED: Use proper ID-based relationships instead of unit_amount matching
+	// SIMPLIFIED: Use direct Stripe data from stripe_subscriptions table
 	query := `
 		SELECT 
 			u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified,
 			u.stripe_customer_id, u.last_login, u.created_at, u.updated_at,
 			COALESCE(u.sub_id, ss.id) as subscription_id,
-			-- Proper ID-based plan mapping using FK relationships
+			COALESCE(sp.id, 0) as plan_id, 
 			COALESCE(
-				sp.id,                    -- Direct user subscription plan
-				sp_via_stripe.id          -- Plan mapped via Stripe price relationship
-			) as plan_id,
-			COALESCE(
-				sp.name,                  -- Direct plan name
-				sp_via_stripe.name,       -- Plan name via Stripe mapping
-				ss.product_name,          -- Stripe product name fallback
-				'Active Subscription'     -- Final fallback
+				sp.name, 
+				stripe_prod.name,
+				ss.product_name,
+				CASE 
+					WHEN ss.status = 'active' THEN 'Active Subscription'
+					WHEN ss.status = 'trialing' THEN 'Trial Subscription'
+					ELSE 'Subscription'
+				END
 			) as plan_name,
-			COALESCE(sp.price, sp_via_stripe.price, ss.unit_amount::float / 100.0, 0.0) as plan_price, 
-			COALESCE(sp.currency, sp_via_stripe.currency, ss.currency, 'USD') as plan_currency,
-			COALESCE(sp.interval, sp_via_stripe.interval, 'month') as interval, 
-			COALESCE(sp.interval_count, sp_via_stripe.interval_count, 1) as interval_count,
+			COALESCE(sp.price, stripe_price.unit_amount::float / 100.0, ss.unit_amount::float / 100.0, 0.0) as plan_price, 
+			COALESCE(sp.currency, stripe_price.currency, ss.currency, 'USD') as plan_currency,
+			COALESCE(sp.interval, stripe_price.recurring_interval, 'month') as interval, 
+			COALESCE(sp.interval_count, 1) as interval_count,
 			COALESCE(ss.status, 'active') as subscription_status,
 			ss.current_period_start, 
 			ss.current_period_end,
 			COALESCE(ss.stripe_id, u.stripe_customer_id) as stripe_subscription_id
 		FROM users u
-		-- Direct subscription plan relationship
 		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id AND sp.is_active = true AND sp.deleted_at IS NULL
-		-- Stripe customer relationship
 		LEFT JOIN stripe_customers sc ON (
 			u.stripe_customer_id = sc.stripe_id OR 
 			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
-		-- Active Stripe subscriptions
 		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing')
-		-- Map Stripe subscription to prices using proper FK relationships
-		LEFT JOIN stripe_prices spr ON (
-			ss.stripe_price_id = spr.stripe_id OR 
-			ss.price_id = spr.id
-		)
-		-- Map Stripe prices to subscription plans using stripe_price_id
-		LEFT JOIN subscription_plans sp_via_stripe ON (
-			spr.stripe_id = sp_via_stripe.stripe_price_id AND 
-			sp_via_stripe.is_active = true AND 
-			sp_via_stripe.deleted_at IS NULL
-		)
+		LEFT JOIN stripe_products stripe_prod ON ss.product_id = stripe_prod.id
+		LEFT JOIN stripe_prices stripe_price ON stripe_prod.id = stripe_price.product_id
 		WHERE (u.sub_id IS NOT NULL OR ss.id IS NOT NULL)
 		AND u.is_active = true
 		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW() OR ss.id IS NULL)
@@ -157,26 +144,33 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 		}
 
 		if filters.Role != nil {
+			fmt.Printf("DEBUG: Processing role filter: %s\n", *filters.Role)
 			argCount++
 			query += fmt.Sprintf(" AND u.role = $%d", argCount)
 			args = append(args, *filters.Role)
+			fmt.Printf("DEBUG: Role filter added to query\n")
 		}
 
 		if filters.LastLogin != nil {
+			fmt.Printf("DEBUG: Processing last login filter: %v\n", *filters.LastLogin)
 			if filters.LastLogin.IsZero() {
 				// Special case for "never" - users who have never logged in
 				query += " AND u.last_login IS NULL"
+				fmt.Printf("DEBUG: Last login filter added (IS NULL)\n")
 			} else {
 				argCount++
 				query += fmt.Sprintf(" AND u.last_login >= $%d", argCount)
 				args = append(args, *filters.LastLogin)
+				fmt.Printf("DEBUG: Last login filter added (>= %v)\n", *filters.LastLogin)
 			}
 		}
 
 		if filters.CreatedDate != nil {
+			fmt.Printf("DEBUG: Processing created date filter: %v\n", *filters.CreatedDate)
 			argCount++
 			query += fmt.Sprintf(" AND u.created_at >= $%d", argCount)
 			args = append(args, *filters.CreatedDate)
+			fmt.Printf("DEBUG: Created date filter added (>= %v)\n", *filters.CreatedDate)
 		}
 
 		if filters.DateRange != nil {

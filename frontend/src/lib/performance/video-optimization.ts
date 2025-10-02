@@ -1,6 +1,5 @@
 // Video optimization and intelligent preloading system
 import { browser } from '$app/environment';
-import { apiRequest } from '$lib/auth';
 
 // Types
 interface VideoMetadata {
@@ -168,7 +167,7 @@ export class VideoOptimizationService {
     try {
       console.log(`🔄 Preloading video metadata: ${videoId}`);
       
-      const response = await apiRequest(`/bunny-videos/${videoId}`, {
+      const response = await fetch(`/api/v1/bunny-videos/${videoId}`, {
         method: 'GET',
         headers: {
           'Accept': 'application/json',

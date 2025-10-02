@@ -125,6 +125,18 @@ func SetupRoutes(
 		SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService, subscriptionPlanStripeService, subscriptionOffersStripeService, bunnyService)
 		SetupMasterVideoRoutes(admin, db, bunnyService)
 
+		// 🔗 PUBLIC STRIPE WEBHOOK ENDPOINT (NO AUTH REQUIRED)
+		// This must be accessible to Stripe servers without authentication
+		syncService := services.NewStripeSyncService(db, stripeService)
+		webhooks := v1.Group("/webhooks")
+		{
+			// Public Stripe webhook endpoint - NO MIDDLEWARE
+			webhooks.POST("/stripe", func(c *gin.Context) {
+				HandleStripeWebhook(c, stripeService, syncService)
+			})
+		}
+		fmt.Printf("✅ Public Stripe webhook registered: POST /api/v1/webhooks/stripe\n")
+
 		// Setup tag routes
 		SetupTagRoutes(router, db)
 
