@@ -32,6 +32,7 @@
 
 	let scrollThreshold = 800; // pixels from bottom to trigger auto-load (accounts for footer height)
 	let isSearching = $state(false);
+	let searchTimeout: ReturnType<typeof setTimeout> | null = null; // For debounced search
 	
 	// Hybrid fuzzy search with Fuse.js - static index + dynamic updates
 	import Fuse from 'fuse.js';
@@ -158,7 +159,7 @@
 	function preloadThumbnails(videos: Video[]) {
 		videos.forEach((video, index) => {
 			// Try multiple thumbnail sources for maximum compatibility
-			const thumbnailUrl = video.thumbnailUrl || video.thumbnail || video.bunny?.previewImageUrl;
+			const thumbnailUrl = video.thumbnailUrl || (video as any).thumbnail || (video as any).bunny?.previewImageUrl;
 			
 			if (thumbnailUrl) {
 				// Add a small delay to prevent overwhelming the CDN
@@ -208,12 +209,21 @@
 		});
 	}
 
-	// Simple search input handler - only clears when empty
+	// Handle search input with debouncing for better UX
 	function handleSearchInput() {
-		// Clear search if query is empty
-		if (searchQuery.length === 0) {
-			clearSearch();
+		// Clear existing timeout
+		if (searchTimeout) {
+			clearTimeout(searchTimeout);
 		}
+		
+		// Debounce search for 300ms
+		searchTimeout = setTimeout(() => {
+			if (searchQuery.trim()) {
+				handleOptimizedSearch();
+			} else {
+				clearSearch();
+			}
+		}, 300);
 	}
 	
 	// Handle Enter key press for search
