@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -186,6 +187,8 @@ func NewStripeService(db *database.DB) *StripeService {
 			log.Println("Loading stored Stripe key from database")
 			service.UpdateSecretKey(storedKey)
 		}
+		// Also try to load webhook secret from database
+		service.loadStoredWebhookSecret(db)
 	}
 
 	// Fall back to environment variables if no stored key
@@ -228,6 +231,50 @@ func (s *StripeService) loadStoredKey(db *database.DB) string {
 	}
 
 	return decryptedKey
+}
+
+// loadStoredWebhookSecret loads the encrypted webhook secret from database
+func (s *StripeService) loadStoredWebhookSecret(db *database.DB) {
+	if db == nil {
+		return
+	}
+
+	// Get the encrypted webhook secret from database
+	encryptedSecret, err := db.GetSecureSetting("stripe_webhook_secret")
+	if err != nil {
+		// Only log if it's not a "not found" error
+		if err != sql.ErrNoRows {
+			log.Printf("Error loading stored webhook secret: %v", err)
+		}
+		return
+	}
+
+	// Decrypt the secret
+	cryptoService := GetGlobalCryptoService()
+	if cryptoService == nil {
+		log.Printf("Cannot decrypt webhook secret: crypto service not available")
+		return
+	}
+
+	decryptedSecret, err := cryptoService.DecryptString(encryptedSecret)
+	if err != nil {
+		log.Printf("Failed to decrypt stored webhook secret: %v", err)
+		return
+	}
+
+	s.webhookSecret = decryptedSecret
+	log.Printf("✅ Loaded webhook secret from database")
+}
+
+// UpdateWebhookSecret updates the webhook secret and reloads the service configuration
+func (s *StripeService) UpdateWebhookSecret(webhookSecret string) {
+	s.webhookSecret = webhookSecret
+
+	if webhookSecret != "" {
+		log.Printf("✅ Webhook secret updated - webhook validation enabled")
+	} else {
+		log.Printf("⚠️ Webhook secret cleared - webhook validation disabled")
+	}
 }
 
 // IsEnabled returns whether Stripe is properly configured

@@ -138,6 +138,65 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 			})
 		})
 
+		// Webhook secret configuration endpoint
+		streaming.POST("/stripe/webhook-secret", func(c *gin.Context) {
+			log.Printf("🔗 Stripe webhook secret endpoint called")
+			var req struct {
+				Secret string `json:"secret" binding:"required"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				log.Printf("❌ Failed to bind JSON: %v", err)
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
+				return
+			}
+
+			// Safe secret logging - handle short secrets
+			secretPrefix := req.Secret
+			if len(req.Secret) > 8 {
+				secretPrefix = req.Secret[:8] + "..."
+			}
+			log.Printf("🔗 Received webhook secret request: %s", secretPrefix)
+
+			// Only allow webhook secrets (whsec_)
+			if !(len(req.Secret) > 6 && req.Secret[:6] == "whsec_") {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "A Stripe webhook secret starting with whsec_ is required"})
+				return
+			}
+
+			crypto := services.GetGlobalCryptoService()
+			if crypto == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Crypto service not initialized"})
+				return
+			}
+
+			// Encrypt the webhook secret
+			encryptedSecret, err := crypto.EncryptString(req.Secret)
+			if err != nil {
+				log.Printf("❌ Failed to encrypt webhook secret: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt webhook secret"})
+				return
+			}
+
+			// Store in database
+			err = db.SetSecureSetting("stripe_webhook_secret", encryptedSecret)
+			if err != nil {
+				log.Printf("❌ Failed to store webhook secret: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store webhook secret"})
+				return
+			}
+
+			// Update the service's webhook secret
+			if stripeService != nil {
+				stripeService.UpdateWebhookSecret(req.Secret)
+				log.Printf("✅ Stripe webhook secret updated successfully")
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"message": "Webhook secret saved and updated successfully",
+			})
+		})
+
 		streaming.GET("/stripe/summary", func(c *gin.Context) {
 			// Add detailed request logging for debugging
 			requestID := c.GetHeader("X-Request-ID")
@@ -313,6 +372,22 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 				return
 			}
 
+			// Check if webhook secret exists in secure_settings (but don't expose the value)
+			encryptedSecret, err := db.GetSecureSetting("stripe_webhook_secret")
+			if err == nil && encryptedSecret != "" {
+				// Try to decrypt to see if it's actually set (not just empty)
+				crypto := services.GetGlobalCryptoService()
+				if crypto != nil {
+					if decryptedSecret, decErr := crypto.DecryptString(encryptedSecret); decErr == nil && decryptedSecret != "" {
+						// Webhook secret exists and is not empty, add a placeholder to indicate it's configured
+						if settings == nil {
+							settings = make(map[string]string)
+						}
+						settings["stripe_webhook_secret"] = "configured" // Just indicates it exists
+					}
+				}
+			}
+
 			c.JSON(http.StatusOK, gin.H{"settings": settings})
 		})
 
@@ -341,6 +416,48 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 				return
 			}
 
+			// Special handling for webhook secret - store in secure_settings (encrypted)
+			if req.Key == "stripe_webhook_secret" {
+				log.Printf("🔗 [PUBLIC-SETTINGS] Handling webhook secret securely")
+
+				// Validate webhook secret format
+				if !(len(req.Value) > 6 && req.Value[:6] == "whsec_") {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Webhook secret must start with whsec_"})
+					return
+				}
+
+				crypto := services.GetGlobalCryptoService()
+				if crypto == nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Crypto service not initialized"})
+					return
+				}
+
+				// Encrypt the webhook secret
+				encryptedSecret, err := crypto.EncryptString(req.Value)
+				if err != nil {
+					log.Printf("❌ Failed to encrypt webhook secret: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt webhook secret"})
+					return
+				}
+
+				// Store in secure_settings
+				err = db.SetSecureSetting("stripe_webhook_secret", encryptedSecret)
+				if err != nil {
+					log.Printf("❌ Failed to store webhook secret: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store webhook secret"})
+					return
+				}
+
+				// Update the service's webhook secret
+				if stripeService != nil {
+					stripeService.UpdateWebhookSecret(req.Value)
+					log.Printf("✅ Stripe webhook secret updated successfully via public settings")
+				}
+
+				c.JSON(http.StatusOK, gin.H{"message": "Webhook secret saved securely"})
+				return
+			}
+
 			log.Printf("🔍 [PUBLIC-SETTINGS] Calling db.SetPublicSetting...")
 			// Store public setting (non-encrypted)
 			if err := db.SetPublicSetting(req.Key, req.Value); err != nil {
@@ -362,6 +479,43 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 
 			if db == nil {
 				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Database not available"})
+				return
+			}
+
+			// Special handling for webhook secret - delete from secure_settings
+			if key == "stripe_webhook_secret" {
+				log.Printf("🔗 [PUBLIC-SETTINGS] Deleting webhook secret securely")
+
+				// Clear the webhook secret by setting it to empty (encrypted)
+				crypto := services.GetGlobalCryptoService()
+				if crypto == nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Crypto service not initialized"})
+					return
+				}
+
+				// Encrypt empty string to clear the secret
+				encryptedEmpty, err := crypto.EncryptString("")
+				if err != nil {
+					log.Printf("❌ Failed to encrypt empty webhook secret: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear webhook secret"})
+					return
+				}
+
+				// Set to empty encrypted value
+				err = db.SetSecureSetting("stripe_webhook_secret", encryptedEmpty)
+				if err != nil {
+					log.Printf("❌ Failed to clear webhook secret: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear webhook secret"})
+					return
+				}
+
+				// Clear the service's webhook secret
+				if stripeService != nil {
+					stripeService.UpdateWebhookSecret("")
+					log.Printf("✅ Stripe webhook secret cleared successfully")
+				}
+
+				c.JSON(http.StatusOK, gin.H{"message": "Webhook secret deleted successfully"})
 				return
 			}
 
