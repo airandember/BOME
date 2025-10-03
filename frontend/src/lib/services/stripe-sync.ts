@@ -34,7 +34,7 @@ export interface SyncResponse {
 }
 
 export class StripeSyncService {
-	private static readonly BASE_URL = '/api/v1/admin/streaming/stripe/sync';
+	private static readonly BASE_URL = '/admin/streaming/stripe/sync';
 
 	/**
 	 * Trigger an incremental sync (last 24 hours by default)

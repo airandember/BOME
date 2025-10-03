@@ -77,7 +77,7 @@ func NewSubscriberService(db *database.DB) *SubscriberService {
 
 // GetSubscribers retrieves all subscribers with optional filters
 func (s *SubscriberService) GetSubscribers(limit, offset int, filters *SubscriberFilters) ([]*Subscriber, error) {
-	// SIMPLIFIED: Use direct Stripe data from stripe_subscriptions table
+	// ENHANCED: Combine both legacy subscription_plans AND current Stripe products
 	query := `
 		SELECT 
 			u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified,
@@ -85,33 +85,61 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 			COALESCE(u.sub_id, ss.id) as subscription_id,
 			COALESCE(sp.id, 0) as plan_id, 
 			COALESCE(
-				sp.name, 
-				stripe_prod.name,
-				ss.product_name,
+				sp.name,                    -- Legacy subscription plan name (highest priority)
+				stripe_prod.name,           -- Current Stripe product name  
+				ss.product_name,            -- Fallback from stripe_subscriptions
 				CASE 
 					WHEN ss.status = 'active' THEN 'Active Subscription'
 					WHEN ss.status = 'trialing' THEN 'Trial Subscription'
 					ELSE 'Subscription'
 				END
 			) as plan_name,
-			COALESCE(sp.price, stripe_price.unit_amount::float / 100.0, ss.unit_amount::float / 100.0, 0.0) as plan_price, 
-			COALESCE(sp.currency, stripe_price.currency, ss.currency, 'USD') as plan_currency,
-			COALESCE(sp.interval, stripe_price.recurring_interval, 'month') as interval, 
+			COALESCE(
+				sp.price,                                           -- Legacy plan price
+				stripe_price.unit_amount::float / 100.0,           -- Stripe price (cents to dollars)
+				ss.unit_amount::float / 100.0,                     -- Fallback from subscription
+				0.0
+			) as plan_price, 
+			COALESCE(
+				sp.currency,                -- Legacy plan currency
+				stripe_price.currency,      -- Stripe price currency
+				ss.currency,                -- Fallback currency
+				'USD'
+			) as plan_currency,
+			COALESCE(
+				sp.interval,                        -- Legacy plan interval
+				stripe_price.recurring_interval,    -- Stripe price interval
+				'month'                             -- Default interval
+			) as interval, 
 			COALESCE(sp.interval_count, 1) as interval_count,
 			COALESCE(ss.status, 'active') as subscription_status,
 			ss.current_period_start, 
 			ss.current_period_end,
 			COALESCE(ss.stripe_id, u.stripe_customer_id) as stripe_subscription_id
 		FROM users u
-		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id AND sp.is_active = true AND sp.deleted_at IS NULL
+		-- Join legacy subscription plans (for users with sub_id)
+		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id 
+			AND sp.is_active = true 
+			AND sp.deleted_at IS NULL
+		-- Join Stripe customers (for users with stripe_customer_id)
 		LEFT JOIN stripe_customers sc ON (
 			u.stripe_customer_id = sc.stripe_id OR 
 			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
-		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing')
-		LEFT JOIN stripe_products stripe_prod ON ss.product_id = stripe_prod.id
-		LEFT JOIN stripe_prices stripe_price ON stripe_prod.id = stripe_price.product_id
-		WHERE (u.sub_id IS NOT NULL OR ss.id IS NOT NULL)
+		-- Join current Stripe subscriptions (for active Stripe subs)
+		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id 
+			AND ss.status IN ('active', 'trialing')
+		-- Join Stripe products (to get current product names)
+		LEFT JOIN stripe_products stripe_prod ON (
+			ss.stripe_product_id = stripe_prod.stripe_id OR    -- Direct product link
+			ss.product_id = stripe_prod.id                     -- Alternative product link
+		)
+		-- Join Stripe prices (to get current pricing info)
+		LEFT JOIN stripe_prices stripe_price ON (
+			ss.price_id = stripe_price.id OR                   -- Direct price link
+			ss.stripe_price_id = stripe_price.stripe_id        -- Alternative price link
+		)
+		WHERE (u.sub_id IS NOT NULL OR ss.id IS NOT NULL)  -- Has legacy OR Stripe subscription
 		AND u.is_active = true
 		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW() OR ss.id IS NULL)
 	`
@@ -369,16 +397,23 @@ func (s *SubscriberService) GetUserAsSubscriber(userID int) (*Subscriber, error)
 
 // GetSubscriberCount returns the total count of subscribers
 func (s *SubscriberService) GetSubscriberCount(filters *SubscriberFilters) (int, error) {
+	// ENHANCED: Count both legacy subscription_plans AND current Stripe subscriptions
 	query := `
 		SELECT COUNT(DISTINCT u.id)
 		FROM users u
-		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id AND sp.is_active = true AND sp.deleted_at IS NULL
+		-- Join legacy subscription plans (for users with sub_id)
+		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id 
+			AND sp.is_active = true 
+			AND sp.deleted_at IS NULL
+		-- Join Stripe customers (for users with stripe_customer_id)
 		LEFT JOIN stripe_customers sc ON (
 			u.stripe_customer_id = sc.stripe_id OR 
 			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
-		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing')
-		WHERE (u.sub_id IS NOT NULL OR ss.id IS NOT NULL)
+		-- Join current Stripe subscriptions (for active Stripe subs)
+		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id 
+			AND ss.status IN ('active', 'trialing')
+		WHERE (u.sub_id IS NOT NULL OR ss.id IS NOT NULL)  -- Has legacy OR Stripe subscription
 		AND u.is_active = true
 		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW() OR ss.id IS NULL)
 	`

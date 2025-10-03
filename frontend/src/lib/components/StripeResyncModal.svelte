@@ -19,6 +19,7 @@
 	let selectedSyncType = $state<'incremental' | 'initial'>('incremental');
 	let customSinceDate = $state('');
 	let progressMessage = $state('');
+	let errorMessage = $state('');
 
 	// Reactive
 	const isInitialSync = $derived(selectedSyncType === 'initial');
@@ -28,6 +29,7 @@
 	// Load sync status when modal opens
 	$effect(() => {
 		if (isOpen && !syncing) {
+			errorMessage = ''; // Clear any previous errors
 			loadSyncStatus();
 		}
 	});
@@ -35,8 +37,32 @@
 	async function loadSyncStatus() {
 		try {
 			syncStatus = await StripeSyncService.getSyncStatus();
-		} catch (error) {
+			errorMessage = ''; // Clear error on success
+		} catch (error: any) {
 			console.error('Failed to load sync status:', error);
+			errorMessage = `🚨 Stripe Sync Service Not Available
+
+Error: ${error.message}
+
+Expected Endpoint: /admin/streaming/stripe/sync/status
+Full URL: https://watch.bookofmormonevidence.org/bome-backend/api/v1/admin/streaming/stripe/sync/status
+
+DIAGNOSIS:
+The Stripe sync routes are not responding in production. This could mean:
+
+1. ❌ Stripe sync routes not registered in production backend
+2. ❌ Database connection issues preventing route registration  
+3. ❌ Missing middleware or authentication issues
+4. ❌ Backend compilation/deployment issues
+
+IMMEDIATE ACTIONS:
+1. Check backend logs for route registration messages
+2. Verify database connectivity in production
+3. Confirm all Stripe services are initialized
+4. Check if /admin/streaming routes are working
+
+TEMPORARY WORKAROUND:
+For now, you can sync data manually using the subscription plans interface or direct database queries until the sync service is restored.`;
 		}
 	}
 
@@ -83,7 +109,8 @@
 
 		} catch (error: any) {
 			console.error('Sync failed:', error);
-			progressMessage = `Sync failed: ${error.message}`;
+			progressMessage = '';
+			errorMessage = `Sync failed: ${error.message}. Please report this error to technical support.`;
 			showToast(`Sync failed: ${error.message}`, 'error');
 		} finally {
 			syncing = false;
@@ -129,7 +156,25 @@
 			</div>
 
 			<div class="modal-body">
-				{#if hasActiveSyncJob && syncStatus?.current_job}
+				{#if errorMessage}
+					<!-- Error Display -->
+					<div class="error-section">
+						<div class="error-header">
+							<h3>❌ Error</h3>
+						</div>
+						<div class="error-content">
+							<p>{errorMessage}</p>
+							<div class="error-actions">
+								<button class="btn btn-secondary" onclick={loadSyncStatus}>
+									🔄 Retry Connection
+								</button>
+								<button class="btn btn-primary" onclick={() => { errorMessage = ''; }}>
+									✕ Dismiss
+								</button>
+							</div>
+						</div>
+					</div>
+				{:else if hasActiveSyncJob && syncStatus?.current_job}
 					<!-- Active sync in progress -->
 					<div class="sync-active">
 						<div class="sync-info">
@@ -347,6 +392,38 @@
 
 	.modal-body {
 		padding: 24px;
+	}
+
+	.error-section {
+		background: #fef2f2;
+		border: 1px solid #fecaca;
+		border-radius: 8px;
+		padding: 20px;
+		margin-bottom: 16px;
+	}
+
+	.error-header h3 {
+		margin: 0 0 12px 0;
+		color: #dc2626;
+		font-size: 1.1rem;
+	}
+
+	.error-content p {
+		margin: 0 0 16px 0;
+		color: #7f1d1d;
+		line-height: 1.5;
+		font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+		background: #fee2e2;
+		padding: 12px;
+		border-radius: 4px;
+		font-size: 0.9rem;
+		word-break: break-word;
+	}
+
+	.error-actions {
+		display: flex;
+		gap: 12px;
+		flex-wrap: wrap;
 	}
 
 	.sync-type-selection {
