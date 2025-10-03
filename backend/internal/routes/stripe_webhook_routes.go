@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -75,12 +76,13 @@ func RegisterStripeWebhookRoutes(router *gin.RouterGroup, stripeService *service
 	}
 }
 
-// HandleStripeWebhook processes incoming Stripe webhook events (exported for public endpoint)
+// HandleStripeWebhook processes incoming Stripe webhook events dynamically (exported for public endpoint)
 func HandleStripeWebhook(c *gin.Context, stripeService *services.StripeService, syncService *services.StripeSyncService) {
 	// Read the request body
 	payload, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		log.Printf("❌ Webhook: Failed to read request body: %v", err)
+		recordWebhookFailure()
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
 		return
 	}
@@ -94,74 +96,135 @@ func HandleStripeWebhook(c *gin.Context, stripeService *services.StripeService, 
 		return
 	}
 
-	// Validate the webhook signature
-	event, err := stripeService.ValidateWebhookSignature(payload, signature)
-	if err != nil {
-		log.Printf("❌ Webhook: Invalid signature: %v", err)
+	// Parse the raw event to determine version and type
+	var rawEvent map[string]interface{}
+	if err := json.Unmarshal(payload, &rawEvent); err != nil {
+		log.Printf("❌ Webhook: Failed to parse JSON: %v", err)
 		recordWebhookFailure()
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid signature"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
 		return
 	}
 
-	log.Printf("📨 Webhook received: %s", event.Type)
+	// Extract event type safely
+	eventType, typeOk := rawEvent["type"].(string)
+	if !typeOk {
+		log.Printf("❌ Webhook: Missing or invalid event type")
+		recordWebhookFailure()
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing event type"})
+		return
+	}
 
-	// Track successful webhook receipt for status monitoring
-	updateWebhookActivity(event.Type)
+	log.Printf("📨 Webhook received: %s", eventType)
 
+	// Determine if this is a v1 or v2 event
+	isV2Event := strings.HasPrefix(eventType, "v2.")
+
+	if isV2Event {
+		// Handle v2 events with raw signature validation
+		if err := stripeService.ValidateWebhookSignatureRaw(payload, signature); err != nil {
+			log.Printf("❌ Webhook: Invalid v2 signature: %v", err)
+			recordWebhookFailure()
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid signature"})
+			return
+		}
+
+		log.Printf("✅ Webhook: v2 event signature validated successfully")
+		updateWebhookActivity(eventType)
+
+		// Process v2 events
+		switch eventType {
+		case "v2.core.event_destination.ping":
+			log.Printf("📍 Webhook: v2 ping event - endpoint is healthy")
+			c.JSON(http.StatusOK, gin.H{
+				"received":  true,
+				"type":      "v2_ping",
+				"status":    "healthy",
+				"timestamp": time.Now().UTC().Format(time.RFC3339),
+			})
+			return
+
+		default:
+			log.Printf("📋 Webhook: v2 event %s acknowledged but not processed", eventType)
+			c.JSON(http.StatusOK, gin.H{
+				"received":   true,
+				"ignored":    true,
+				"reason":     "v2_event_not_implemented",
+				"event_type": eventType,
+			})
+			return
+		}
+	} else {
+		// Handle v1 events with full parsing
+		event, err := stripeService.ValidateWebhookSignature(payload, signature)
+		if err != nil {
+			log.Printf("❌ Webhook: Invalid v1 signature: %v", err)
+			recordWebhookFailure()
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid signature"})
+			return
+		}
+
+		log.Printf("✅ Webhook: v1 event signature validated successfully")
+		updateWebhookActivity(event.Type)
+
+		// Process v1 events (your existing logic)
+		err = processV1Event(event, syncService)
+		if err != nil {
+			log.Printf("❌ Webhook: Failed to process v1 event %s: %v", event.Type, err)
+			recordWebhookFailure()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process webhook"})
+			return
+		}
+
+		log.Printf("✅ Webhook: Successfully processed v1 event %s", event.Type)
+		c.JSON(http.StatusOK, gin.H{"received": true, "processed": true, "type": "v1_event"})
+	}
+}
+
+// processV1Event handles all v1 Stripe events
+func processV1Event(event *stripe.Event, syncService *services.StripeSyncService) error {
 	// Process only the events we care about based on your requirements
 	switch event.Type {
 	// Customer events - YES
 	case "customer.created":
-		err = handleCustomerCreated(event, syncService)
+		return handleCustomerCreated(event, syncService)
 	case "customer.updated":
-		err = handleCustomerUpdated(event, syncService)
+		return handleCustomerUpdated(event, syncService)
 	case "customer.deleted":
-		err = handleCustomerDeleted(event, syncService)
+		return handleCustomerDeleted(event, syncService)
 
 	// Subscription events - YES (updated per your request)
 	case "customer.subscription.created":
-		err = handleSubscriptionCreated(event, syncService)
+		return handleSubscriptionCreated(event, syncService)
 	case "customer.subscription.updated":
-		err = handleSubscriptionUpdated(event, syncService)
+		return handleSubscriptionUpdated(event, syncService)
 	case "customer.subscription.deleted":
-		err = handleSubscriptionDeleted(event, syncService)
+		return handleSubscriptionDeleted(event, syncService)
 
 	// Invoice payment events - YES
 	case "invoice.payment_succeeded":
-		err = handleInvoicePaymentSucceeded(event, syncService)
+		return handleInvoicePaymentSucceeded(event, syncService)
 	case "invoice.payment_failed":
-		err = handleInvoicePaymentFailed(event, syncService)
+		return handleInvoicePaymentFailed(event, syncService)
 
 	// Product events - YES
 	case "product.created":
-		err = handleProductCreated(event, syncService)
+		return handleProductCreated(event, syncService)
 	case "product.updated":
-		err = handleProductUpdated(event, syncService)
+		return handleProductUpdated(event, syncService)
 
 	// Price events - YES
 	case "price.created":
-		err = handlePriceCreated(event, syncService)
+		return handlePriceCreated(event, syncService)
 	case "price.updated":
-		err = handlePriceUpdated(event, syncService)
+		return handlePriceUpdated(event, syncService)
 
 	// Events we explicitly DON'T handle based on your requirements:
 	// - payment_intent.* (NO - left out for now)
 
 	default:
-		log.Printf("📋 Webhook: Ignoring event type %s (not in our priority list)", event.Type)
-		c.JSON(http.StatusOK, gin.H{"received": true, "ignored": true})
-		return
+		log.Printf("📋 Webhook: Ignoring v1 event type %s (not in our priority list)", event.Type)
+		return nil // Not an error - just ignored
 	}
-
-	if err != nil {
-		log.Printf("❌ Webhook: Failed to process %s: %v", event.Type, err)
-		recordWebhookFailure()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process webhook"})
-		return
-	}
-
-	log.Printf("✅ Webhook: Successfully processed %s", event.Type)
-	c.JSON(http.StatusOK, gin.H{"received": true})
 }
 
 // Customer webhook handlers
