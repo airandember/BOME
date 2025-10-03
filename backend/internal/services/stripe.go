@@ -675,7 +675,7 @@ func (s *StripeService) CreateCustomerPortalSession(customerID, returnURL string
 	return "", fmt.Errorf("customer portal session creation not implemented")
 }
 
-// ValidateWebhookSignature validates a webhook signature
+// ValidateWebhookSignature validates a webhook signature and parses v1 events
 func (s *StripeService) ValidateWebhookSignature(payload []byte, signature string) (*stripe.Event, error) {
 	if !s.isEnabled {
 		return nil, fmt.Errorf("stripe service is disabled")
@@ -691,6 +691,20 @@ func (s *StripeService) ValidateWebhookSignature(payload []byte, signature strin
 	}
 
 	return &event, nil
+}
+
+// ValidateWebhookSignatureRaw validates webhook signature without parsing the event (for v2 events)
+func (s *StripeService) ValidateWebhookSignatureRaw(payload []byte, signature string) error {
+	if !s.isEnabled {
+		return fmt.Errorf("stripe service is disabled")
+	}
+
+	if s.webhookSecret == "" {
+		return fmt.Errorf("webhook secret not configured")
+	}
+
+	// Use Stripe's internal signature validation without event parsing
+	return webhook.ValidatePayload(payload, signature, s.webhookSecret)
 }
 
 // ProcessWebhook processes a Stripe webhook event
