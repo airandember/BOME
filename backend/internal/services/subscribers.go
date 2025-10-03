@@ -77,7 +77,10 @@ func NewSubscriberService(db *database.DB) *SubscriberService {
 
 // GetSubscribers retrieves all subscribers with optional filters
 func (s *SubscriberService) GetSubscribers(limit, offset int, filters *SubscriberFilters) ([]*Subscriber, error) {
+	log.Printf("🔍 GetSubscribers called with limit=%d, offset=%d", limit, offset)
+
 	// ENHANCED: Combine both legacy subscription_plans AND current Stripe products
+	// SIMPLIFIED VERSION: Remove potentially problematic columns for debugging
 	query := `
 		SELECT 
 			u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified,
@@ -96,8 +99,12 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 			) as plan_name,
 			COALESCE(
 				sp.price,                                           -- Legacy plan price
-				stripe_price.unit_amount::float / 100.0,           -- Stripe price (cents to dollars)
-				ss.unit_amount::float / 100.0,                     -- Fallback from subscription
+				CASE WHEN stripe_price.unit_amount IS NOT NULL 
+					THEN stripe_price.unit_amount::float / 100.0 
+					ELSE NULL END,                                  -- Stripe price (cents to dollars)
+				CASE WHEN ss.unit_amount IS NOT NULL 
+					THEN ss.unit_amount::float / 100.0 
+					ELSE NULL END,                                  -- Fallback from subscription
 				0.0
 			) as plan_price, 
 			COALESCE(
@@ -129,16 +136,10 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 		-- Join current Stripe subscriptions (for active Stripe subs)
 		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id 
 			AND ss.status IN ('active', 'trialing')
-		-- Join Stripe products (to get current product names)
-		LEFT JOIN stripe_products stripe_prod ON (
-			ss.stripe_product_id = stripe_prod.stripe_id OR    -- Direct product link
-			ss.product_id = stripe_prod.id                     -- Alternative product link
-		)
-		-- Join Stripe prices (to get current pricing info)
-		LEFT JOIN stripe_prices stripe_price ON (
-			ss.price_id = stripe_price.id OR                   -- Direct price link
-			ss.stripe_price_id = stripe_price.stripe_id        -- Alternative price link
-		)
+		-- Join Stripe products (to get current product names) - SIMPLIFIED
+		LEFT JOIN stripe_products stripe_prod ON ss.stripe_product_id = stripe_prod.stripe_id
+		-- Join Stripe prices (to get current pricing info) - SIMPLIFIED
+		LEFT JOIN stripe_prices stripe_price ON ss.stripe_price_id = stripe_price.stripe_id
 		WHERE (u.sub_id IS NOT NULL OR ss.id IS NOT NULL)  -- Has legacy OR Stripe subscription
 		AND u.is_active = true
 		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW() OR ss.id IS NULL)
@@ -237,9 +238,12 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 	}
 
 	log.Printf("getSubscribers: Executing query with %d args", len(args))
+	log.Printf("🔍 Final query: %s", query)
+	log.Printf("🔍 Query args: %+v", args)
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
+		log.Printf("❌ Database query failed: %v", err)
 		return nil, fmt.Errorf("failed to get subscribers: %w", err)
 	}
 	defer rows.Close()
@@ -270,6 +274,7 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 			&stripeSubscriptionID,
 		)
 		if err != nil {
+			log.Printf("❌ Row scan failed: %v", err)
 			return nil, fmt.Errorf("failed to scan subscriber: %w", err)
 		}
 
