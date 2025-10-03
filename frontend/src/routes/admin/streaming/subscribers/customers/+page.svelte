@@ -5,6 +5,7 @@
 	import SimpleTable from './SimpleTable.svelte';
 	import { StreamingSubscriberService } from '$lib/services/streaming-subscribers';
 	import { showToast } from '$lib/toast';
+	import StripeResyncModal from '$lib/components/StripeResyncModal.svelte';
 
 	// State variables
 	let loading = $state(true);
@@ -25,6 +26,9 @@
 	let syncedCount = $state(0);
 	let localOnlyCount = $state(0);
 	let stripeOnlyCount = $state(0);
+
+	// Resync modal state
+	let showResyncModal = $state(false);
 
 
 	// Pagination for Stripe Only customers
@@ -892,6 +896,21 @@
 		// TODO: Implement bulk sync to Stripe
 		showToast('Sync All to Stripe functionality coming soon!', 'info');
 	}
+
+	// Handle resync modal actions
+	function openResyncModal() {
+		showResyncModal = true;
+	}
+
+	function closeResyncModal() {
+		showResyncModal = false;
+	}
+
+	function handleResyncSuccess() {
+		// Refresh data after successful resync
+		showToast('Resync completed! Refreshing data...', 'success');
+		refreshData();
+	}
 </script>
 
 <div class="customers-page">
@@ -922,6 +941,10 @@
 		<div class="header-actions">
 			<button class="btn btn-secondary" onclick={refreshData}>
 				🔄 Refresh Data
+			</button>
+			
+			<button class="btn btn-primary" onclick={openResyncModal}>
+				🔄 Resync Database
 			</button>
 		</div>
 	</div>
@@ -999,6 +1022,13 @@
 		</div>
 	{/if}
 </div>
+
+<!-- Stripe Resync Modal -->
+<StripeResyncModal 
+	isOpen={showResyncModal} 
+	onClose={closeResyncModal} 
+	onSuccess={handleResyncSuccess} 
+/>
 
 <style>
 	.customers-page {

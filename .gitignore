@@ -130,3 +130,5 @@ data/art_exclusions
 .gitignore
 data/at_ex.sql
 data/session_aug19.sql
+data/Categories.txt
+data/PROD _ User and Stripe Tables.txt
