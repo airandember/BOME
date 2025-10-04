@@ -151,19 +151,22 @@ func (h *SubscriptionPlanHandler) CreateSubscriptionPlanHandler(c *gin.Context) 
 // GetAllSubscriptionPlansHandler handles GET /api/subscription_plans
 // @route GET /api/subscription_plans
 func (h *SubscriptionPlanHandler) GetAllSubscriptionPlansHandler(c *gin.Context) {
-	log.Println("GetAllSubscriptionPlansHandler called")
+	log.Println("🎯 BEEP BOOP BEEP - GetAllSubscriptionPlansHandler called")
+	log.Printf("🎯 BEEP BOOP BEEP - Time: %s", time.Now().Format("2006-01-02 15:04:05"))
+
 	plans, err := h.service.GetAllSubscriptionPlans(c.Request.Context())
 	if err != nil {
-		log.Printf("GetAllSubscriptionPlansHandler: error: %v", err)
+		log.Printf("🎯 BEEP BOOP BEEP - ERROR in GetAllSubscriptionPlansHandler: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to get subscription plans",
 			"details": err.Error(),
 			"status":  "error",
+			"debug":   "BEEP BOOP BEEP - Backend is running new code!",
 		})
 		return
 	}
 
-	log.Printf("Retrieved %d subscription plans\n", len(plans))
+	log.Printf("🎯 BEEP BOOP BEEP - Retrieved %d subscription plans successfully", len(plans))
 	c.JSON(http.StatusOK, plans)
 }
 
