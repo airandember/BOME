@@ -153,8 +153,13 @@ func (h *SubscriptionPlanHandler) CreateSubscriptionPlanHandler(c *gin.Context) 
 func (h *SubscriptionPlanHandler) GetAllSubscriptionPlansHandler(c *gin.Context) {
 	log.Println("🎯 BEEP BOOP BEEP - GetAllSubscriptionPlansHandler called")
 	log.Printf("🎯 BEEP BOOP BEEP - Time: %s", time.Now().Format("2006-01-02 15:04:05"))
+	log.Printf("🎯 BEEP BOOP BEEP - Request URL: %s", c.Request.URL.String())
+	log.Printf("🎯 BEEP BOOP BEEP - Request Method: %s", c.Request.Method)
 
+	log.Printf("🎯 BEEP BOOP BEEP - About to call service.GetAllSubscriptionPlans")
 	plans, err := h.service.GetAllSubscriptionPlans(c.Request.Context())
+	log.Printf("🎯 BEEP BOOP BEEP - service.GetAllSubscriptionPlans returned")
+
 	if err != nil {
 		log.Printf("🎯 BEEP BOOP BEEP - ERROR in GetAllSubscriptionPlansHandler: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -167,7 +172,9 @@ func (h *SubscriptionPlanHandler) GetAllSubscriptionPlansHandler(c *gin.Context)
 	}
 
 	log.Printf("🎯 BEEP BOOP BEEP - Retrieved %d subscription plans successfully", len(plans))
+	log.Printf("🎯 BEEP BOOP BEEP - About to send JSON response")
 	c.JSON(http.StatusOK, plans)
+	log.Printf("🎯 BEEP BOOP BEEP - JSON response sent successfully")
 }
 
 // GetSubscriptionPlanByIDHandler handles GET /api/subscription_plans/:id

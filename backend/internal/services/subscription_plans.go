@@ -457,10 +457,14 @@ func (s *SubscriptionPlanService) GetAllSubscriptionPlans(ctx context.Context) (
 	log.Printf("🎯 BEEP BOOP BEEP - Service: Database connection available, checking expired promotions asynchronously")
 
 	// Check and handle expired promotions asynchronously to avoid blocking the main query
+	log.Printf("🎯 BEEP BOOP BEEP - Service: Starting async expired promotions check")
 	go func() {
+		log.Printf("🎯 BEEP BOOP BEEP - Service: Inside async goroutine, about to call CheckAndHandleExpiredPromotions")
 		err := s.CheckAndHandleExpiredPromotions(ctx)
 		if err != nil {
 			log.Printf("🎯 BEEP BOOP BEEP - Warning: Failed to check expired promotions (async): %v", err)
+		} else {
+			log.Printf("🎯 BEEP BOOP BEEP - Service: CheckAndHandleExpiredPromotions completed successfully")
 		}
 	}()
 
@@ -470,12 +474,15 @@ func (s *SubscriptionPlanService) GetAllSubscriptionPlans(ctx context.Context) (
 		log.Printf("🎯 BEEP BOOP BEEP - Service ERROR - Failed to get subscription plans: %v", err)
 		return nil, fmt.Errorf("failed to get subscription plans: %w", err)
 	}
+	log.Printf("🎯 BEEP BOOP BEEP - Service: Database query returned %d plans", len(plans))
 
 	// Convert to response format
+	log.Printf("🎯 BEEP BOOP BEEP - Service: Converting %d plans to response format", len(plans))
 	responsePlans := make([]*SubscriptionPlanResponse, len(plans))
 	for i, plan := range plans {
 		responsePlans[i] = s.convertToResponse(plan)
 	}
+	log.Printf("🎯 BEEP BOOP BEEP - Service: Conversion completed")
 
 	log.Printf("🎯 BEEP BOOP BEEP - Service: Retrieved %d subscription plans successfully", len(responsePlans))
 
