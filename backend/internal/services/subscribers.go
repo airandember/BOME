@@ -149,7 +149,12 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 			(ss.id IS NOT NULL AND ss.status IN ('active', 'trialing') AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW()))
 		)
 		AND u.is_active = true
-		ORDER BY u.id, sp.id DESC NULLS LAST, ss.created_at DESC NULLS LAST  -- Prioritize legacy plans
+		ORDER BY u.id, 
+			sp.id DESC NULLS LAST,                    -- Legacy plans first (highest priority)
+			ss.stripe_price_id IS NOT NULL DESC,      -- Subs with price_id first  
+			ss.product_name IS NOT NULL DESC,         -- Subs with product_name first
+			ss.unit_amount DESC NULLS LAST,           -- Higher value subs first
+			ss.created_at DESC NULLS LAST             -- Most recent subs first
 	`
 
 	args := []interface{}{}
