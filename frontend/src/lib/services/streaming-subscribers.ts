@@ -142,8 +142,8 @@ export class StreamingSubscriberService {
 			}
 		}
 
-		const url = `/admin/subscribers/?${queryParams}`;
-			console.log('Making API request to:', url);
+		const url = `/admin/subscribers/enhanced?${queryParams}`;
+			console.log('Making API request to ENHANCED endpoint:', url);
 			console.log('Query parameters being sent:', queryParams.toString());
 			
 			const response = await api.get(url);

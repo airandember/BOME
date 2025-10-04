@@ -79,10 +79,10 @@ func NewSubscriberService(db *database.DB) *SubscriberService {
 func (s *SubscriberService) GetSubscribers(limit, offset int, filters *SubscriberFilters) ([]*Subscriber, error) {
 	log.Printf("🔍 GetSubscribers called with limit=%d, offset=%d", limit, offset)
 
-	// ENHANCED: Combine both legacy subscription_plans AND current Stripe products
-	// SIMPLIFIED VERSION: Remove potentially problematic columns for debugging
+	// ENHANCED: Show only CURRENTLY ACTIVE subscriptions (legacy + Stripe)
+	// FIXED: Prevent duplicates and only show active plans
 	query := `
-		SELECT 
+		SELECT DISTINCT ON (u.id)
 			u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified,
 			u.stripe_customer_id, u.last_login, u.created_at, u.updated_at,
 			COALESCE(u.sub_id, ss.id) as subscription_id,
@@ -133,16 +133,23 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 			u.stripe_customer_id = sc.stripe_id OR 
 			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
-		-- Join current Stripe subscriptions (for active Stripe subs)
+		-- Join current Stripe subscriptions (for ACTIVE Stripe subs only)
 		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id 
 			AND ss.status IN ('active', 'trialing')
-		-- Join Stripe products (to get current product names) - SIMPLIFIED
+			AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+		-- Join Stripe products (to get current product names)
 		LEFT JOIN stripe_products stripe_prod ON ss.stripe_product_id = stripe_prod.stripe_id
-		-- Join Stripe prices (to get current pricing info) - SIMPLIFIED
+		-- Join Stripe prices (to get current pricing info)
 		LEFT JOIN stripe_prices stripe_price ON ss.stripe_price_id = stripe_price.stripe_id
-		WHERE (u.sub_id IS NOT NULL OR ss.id IS NOT NULL)  -- Has legacy OR Stripe subscription
+		WHERE (
+			-- Has active legacy subscription
+			(u.sub_id IS NOT NULL AND sp.id IS NOT NULL) 
+			OR 
+			-- Has active Stripe subscription
+			(ss.id IS NOT NULL AND ss.status IN ('active', 'trialing') AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW()))
+		)
 		AND u.is_active = true
-		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW() OR ss.id IS NULL)
+		ORDER BY u.id, sp.id DESC NULLS LAST, ss.created_at DESC NULLS LAST  -- Prioritize legacy plans
 	`
 
 	args := []interface{}{}
@@ -328,6 +335,222 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 	return subscribers, nil
 }
 
+// GetSubscriptionHistory retrieves expired/inactive subscriptions for history view
+func (s *SubscriberService) GetSubscriptionHistory(limit, offset int, filters *SubscriberFilters) ([]*Subscriber, error) {
+	log.Printf("🔍 GetSubscriptionHistory called with limit=%d, offset=%d", limit, offset)
+
+	// Get EXPIRED/INACTIVE subscriptions (legacy + Stripe)
+	query := `
+		SELECT DISTINCT ON (u.id, COALESCE(sp.id, ss.id))
+			u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified,
+			u.stripe_customer_id, u.last_login, u.created_at, u.updated_at,
+			COALESCE(u.sub_id, ss.id) as subscription_id,
+			COALESCE(sp.id, 0) as plan_id, 
+			COALESCE(
+				sp.name,                    -- Legacy subscription plan name
+				stripe_prod.name,           -- Stripe product name  
+				ss.product_name,            -- Fallback from stripe_subscriptions
+				CASE 
+					WHEN ss.status = 'canceled' THEN 'Canceled Subscription'
+					WHEN ss.status = 'incomplete_expired' THEN 'Expired Subscription'
+					WHEN ss.status = 'past_due' THEN 'Past Due Subscription'
+					ELSE 'Inactive Subscription'
+				END
+			) as plan_name,
+			COALESCE(
+				sp.price,                                           -- Legacy plan price
+				CASE WHEN stripe_price.unit_amount IS NOT NULL 
+					THEN stripe_price.unit_amount::float / 100.0 
+					ELSE NULL END,                                  -- Stripe price (cents to dollars)
+				CASE WHEN ss.unit_amount IS NOT NULL 
+					THEN ss.unit_amount::float / 100.0 
+					ELSE NULL END,                                  -- Fallback from subscription
+				0.0
+			) as plan_price, 
+			COALESCE(
+				sp.currency,                -- Legacy plan currency
+				stripe_price.currency,      -- Stripe price currency
+				ss.currency,                -- Fallback currency
+				'USD'
+			) as plan_currency,
+			COALESCE(
+				sp.interval,                        -- Legacy plan interval
+				stripe_price.recurring_interval,    -- Stripe price interval
+				'month'                             -- Default interval
+			) as interval, 
+			COALESCE(sp.interval_count, 1) as interval_count,
+			COALESCE(ss.status, 'expired') as subscription_status,
+			ss.current_period_start, 
+			ss.current_period_end,
+			COALESCE(ss.stripe_id, u.stripe_customer_id) as stripe_subscription_id
+		FROM users u
+		-- Join legacy subscription plans (including inactive ones)
+		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id 
+			AND (sp.is_active = false OR sp.deleted_at IS NOT NULL)
+		-- Join Stripe customers
+		LEFT JOIN stripe_customers sc ON (
+			u.stripe_customer_id = sc.stripe_id OR 
+			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
+		)
+		-- Join EXPIRED/INACTIVE Stripe subscriptions
+		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id 
+			AND (
+				ss.status IN ('canceled', 'incomplete_expired', 'past_due', 'unpaid') 
+				OR (ss.current_period_end IS NOT NULL AND ss.current_period_end <= NOW())
+			)
+		-- Join Stripe products (to get product names)
+		LEFT JOIN stripe_products stripe_prod ON ss.stripe_product_id = stripe_prod.stripe_id
+		-- Join Stripe prices (to get pricing info)
+		LEFT JOIN stripe_prices stripe_price ON ss.stripe_price_id = stripe_price.stripe_id
+		WHERE (
+			-- Has inactive legacy subscription
+			(u.sub_id IS NOT NULL AND (sp.is_active = false OR sp.deleted_at IS NOT NULL)) 
+			OR 
+			-- Has expired/inactive Stripe subscription
+			(ss.id IS NOT NULL AND (
+				ss.status IN ('canceled', 'incomplete_expired', 'past_due', 'unpaid') 
+				OR (ss.current_period_end IS NOT NULL AND ss.current_period_end <= NOW())
+			))
+		)
+		AND u.is_active = true
+		ORDER BY u.id, COALESCE(sp.id, ss.id), COALESCE(ss.current_period_end, sp.updated_at) DESC NULLS LAST
+	`
+
+	args := []interface{}{}
+	argCount := 0
+
+	// Add filters (similar to main subscribers)
+	if filters != nil {
+		log.Printf("🔍 Applying history filters: %+v", filters)
+
+		if filters.Status != nil {
+			argCount++
+			query += fmt.Sprintf(" AND ss.status = $%d", argCount)
+			args = append(args, *filters.Status)
+		}
+
+		if filters.Search != "" {
+			argCount++
+			query += fmt.Sprintf(" AND (u.email ILIKE $%d OR u.first_name ILIKE $%d OR u.last_name ILIKE $%d)",
+				argCount, argCount, argCount)
+			searchTerm := "%" + filters.Search + "%"
+			args = append(args, searchTerm)
+		}
+
+		if filters.EmailVerified != nil {
+			argCount++
+			query += fmt.Sprintf(" AND u.email_verified = $%d", argCount)
+			args = append(args, *filters.EmailVerified)
+		}
+
+		if filters.Role != nil {
+			argCount++
+			query += fmt.Sprintf(" AND u.role = $%d", argCount)
+			args = append(args, *filters.Role)
+		}
+	}
+
+	// Add limit and offset
+	if limit > 0 {
+		argCount++
+		query += fmt.Sprintf(" LIMIT $%d", argCount)
+		args = append(args, limit)
+	}
+
+	if offset > 0 {
+		argCount++
+		query += fmt.Sprintf(" OFFSET $%d", argCount)
+		args = append(args, offset)
+	}
+
+	log.Printf("🔍 Executing subscription history query with %d args", len(args))
+	log.Printf("🔍 History query: %s", query)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		log.Printf("❌ Subscription history query failed: %v", err)
+		return nil, fmt.Errorf("failed to get subscription history: %w", err)
+	}
+	defer rows.Close()
+
+	var subscribers []*Subscriber
+	for rows.Next() {
+		subscriber := &Subscriber{}
+		var interval sql.NullString
+		var intervalCount sql.NullInt64
+
+		// Temporary variables for nullable fields
+		var planID sql.NullInt64
+		var planName sql.NullString
+		var planPrice sql.NullFloat64
+		var planCurrency sql.NullString
+		var subscriptionID sql.NullInt64
+		var subscriptionStatus sql.NullString
+		var stripeCustomerID sql.NullString
+		var stripeSubscriptionID sql.NullString
+
+		err := rows.Scan(
+			&subscriber.ID, &subscriber.Email, &subscriber.FirstName, &subscriber.LastName,
+			&subscriber.Role, &subscriber.EmailVerified, &stripeCustomerID,
+			&subscriber.LastLogin, &subscriber.CreatedAt, &subscriber.UpdatedAt,
+			&subscriptionID, &planID, &planName,
+			&planPrice, &planCurrency, &interval, &intervalCount,
+			&subscriptionStatus, &subscriber.CurrentPeriodStart, &subscriber.CurrentPeriodEnd,
+			&stripeSubscriptionID,
+		)
+		if err != nil {
+			log.Printf("❌ History row scan failed: %v", err)
+			return nil, fmt.Errorf("failed to scan subscription history: %w", err)
+		}
+
+		// Assign nullable fields to pointers
+		if planID.Valid {
+			id := int(planID.Int64)
+			subscriber.PlanID = &id
+		}
+		if planName.Valid {
+			subscriber.PlanName = &planName.String
+		}
+		if planPrice.Valid {
+			subscriber.PlanPrice = &planPrice.Float64
+		}
+		if planCurrency.Valid {
+			subscriber.PlanCurrency = &planCurrency.String
+		}
+		if subscriptionID.Valid {
+			id := int(subscriptionID.Int64)
+			subscriber.SubscriptionID = &id
+		}
+		if subscriptionStatus.Valid {
+			subscriber.SubscriptionStatus = &subscriptionStatus.String
+		}
+		if stripeCustomerID.Valid {
+			subscriber.StripeCustomerID = &stripeCustomerID.String
+		}
+		if stripeSubscriptionID.Valid {
+			subscriber.StripeSubscriptionID = &stripeSubscriptionID.String
+		}
+
+		// Set SubID to the same value as SubscriptionID
+		subscriber.SubID = subscriber.SubscriptionID
+
+		// Set plan interval data if available
+		if interval.Valid && interval.String != "" {
+			subscriber.PlanInterval = &interval.String
+		}
+		if intervalCount.Valid && intervalCount.Int64 > 0 {
+			count := int(intervalCount.Int64)
+			subscriber.PlanIntervalCount = &count
+		}
+
+		subscribers = append(subscribers, subscriber)
+	}
+
+	log.Printf("getSubscriptionHistory: Retrieved %d expired/inactive subscriptions", len(subscribers))
+
+	return subscribers, nil
+}
+
 // GetSubscriberByID retrieves a subscriber by user ID
 func (s *SubscriberService) GetSubscriberByID(userID int) (*Subscriber, error) {
 	query := `
@@ -402,7 +625,8 @@ func (s *SubscriberService) GetUserAsSubscriber(userID int) (*Subscriber, error)
 
 // GetSubscriberCount returns the total count of subscribers
 func (s *SubscriberService) GetSubscriberCount(filters *SubscriberFilters) (int, error) {
-	// ENHANCED: Count both legacy subscription_plans AND current Stripe subscriptions
+	// ENHANCED: Count only CURRENTLY ACTIVE subscriptions (legacy + Stripe)
+	// FIXED: Use DISTINCT to prevent counting duplicate users
 	query := `
 		SELECT COUNT(DISTINCT u.id)
 		FROM users u
@@ -415,12 +639,18 @@ func (s *SubscriberService) GetSubscriberCount(filters *SubscriberFilters) (int,
 			u.stripe_customer_id = sc.stripe_id OR 
 			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
-		-- Join current Stripe subscriptions (for active Stripe subs)
+		-- Join current Stripe subscriptions (for ACTIVE Stripe subs only)
 		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id 
 			AND ss.status IN ('active', 'trialing')
-		WHERE (u.sub_id IS NOT NULL OR ss.id IS NOT NULL)  -- Has legacy OR Stripe subscription
+			AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+		WHERE (
+			-- Has active legacy subscription
+			(u.sub_id IS NOT NULL AND sp.id IS NOT NULL) 
+			OR 
+			-- Has active Stripe subscription
+			(ss.id IS NOT NULL AND ss.status IN ('active', 'trialing') AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW()))
+		)
 		AND u.is_active = true
-		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW() OR ss.id IS NULL)
 	`
 
 	args := []interface{}{}
