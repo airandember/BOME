@@ -453,13 +453,15 @@ func (s *SubscriptionPlanService) GetAllSubscriptionPlans(ctx context.Context) (
 		return nil, fmt.Errorf("database is not available")
 	}
 
-	log.Printf("Service: Database connection available, checking expired promotions")
+	log.Printf("Service: Database connection available, checking expired promotions asynchronously")
 
-	// Check and handle expired promotions first
-	err := s.CheckAndHandleExpiredPromotions(ctx)
-	if err != nil {
-		log.Printf("Warning: Failed to check expired promotions: %v", err)
-	}
+	// Check and handle expired promotions asynchronously to avoid blocking the main query
+	go func() {
+		err := s.CheckAndHandleExpiredPromotions(ctx)
+		if err != nil {
+			log.Printf("Warning: Failed to check expired promotions (async): %v", err)
+		}
+	}()
 
 	log.Printf("Service: Getting all subscription plans from database")
 	plans, err := s.db.GetAllSubscriptionPlans()

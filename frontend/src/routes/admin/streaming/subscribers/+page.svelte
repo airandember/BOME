@@ -141,19 +141,37 @@ async function fetchRoles() {
 // Load subscription plans for edit modal
 async function fetchSubscriptionPlans() {
 	try {
+		console.log('🔄 Attempting to load subscription plans...');
+		
+		// Add timeout to prevent hanging
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+		
 		const response = await fetch('/api/v1/subscription-plans/all', {
 			headers: {
 				'Authorization': `Bearer ${$auth.token}`,
 				'Content-Type': 'application/json'
-			}
+			},
+			signal: controller.signal
 		});
+		
+		clearTimeout(timeoutId);
 		
 		if (response.ok) {
 			const data = await response.json();
 			subscriptionPlans = data || [];
+			console.log('✅ Loaded subscription plans:', subscriptionPlans.length);
+		} else {
+			console.warn('⚠️ Subscription plans request failed:', response.status);
+			subscriptionPlans = []; // Graceful fallback
 		}
 	} catch (error) {
-		console.error('Error fetching subscription plans:', error);
+		if (error.name === 'AbortError') {
+			console.warn('⚠️ Subscription plans request timed out - continuing without plans');
+		} else {
+			console.error('❌ Error fetching subscription plans:', error);
+		}
+		subscriptionPlans = []; // Graceful fallback - UI will still work
 	}
 }
 
