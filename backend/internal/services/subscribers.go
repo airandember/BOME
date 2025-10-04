@@ -229,8 +229,8 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 		}
 	}
 
-	// Default ordering by user name (first_name, last_name, then email)
-	query += " ORDER BY u.first_name ASC, u.last_name ASC, u.email ASC"
+	// Note: ORDER BY is already set in the main query for DISTINCT ON to work properly
+	// Do not add another ORDER BY here as it will override the DISTINCT ON ordering
 
 	if limit > 0 {
 		argCount++

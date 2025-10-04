@@ -141,7 +141,7 @@ async function fetchRoles() {
 // Load subscription plans for edit modal
 async function fetchSubscriptionPlans() {
 	try {
-		const response = await fetch('/api/v1/admin/subscription-plans/', {
+		const response = await fetch('/api/v1/subscription-plans/all', {
 			headers: {
 				'Authorization': `Bearer ${$auth.token}`,
 				'Content-Type': 'application/json'
