@@ -148,11 +148,7 @@ async function fetchSubscriptionPlans() {
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 		
-		const response = await fetch('/api/v1/subscription-plans/all', {
-			headers: {
-				'Authorization': `Bearer ${$auth.token}`,
-				'Content-Type': 'application/json'
-			},
+		const response = await apiRequest('/subscription-plans/all', {
 			signal: controller.signal
 		});
 		
@@ -1239,7 +1235,7 @@ async function loadStripeSubsData() {
 			onclick={() => changeTab('subscribers')}
 		>
 			<span class="tab-icon">👥</span>
-			Subscribers ({displayedSubscribers.length})
+			Subscribers
 		</button>
 		<button 
 			class="tab-button" 
