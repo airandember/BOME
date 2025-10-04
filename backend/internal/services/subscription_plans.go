@@ -445,28 +445,29 @@ func (s *SubscriptionPlanService) UpdatePromotionStatus(ctx context.Context, id 
 
 // GetAllSubscriptionPlans gets all subscription plans without pagination or filters
 func (s *SubscriptionPlanService) GetAllSubscriptionPlans(ctx context.Context) ([]*SubscriptionPlanResponse, error) {
-	log.Printf("Service: GetAllSubscriptionPlans called")
+	log.Printf("🎯 BEEP BOOP BEEP - Service GetAllSubscriptionPlans called")
+	log.Printf("🎯 BEEP BOOP BEEP - Service Time: %s", time.Now().Format("2006-01-02 15:04:05"))
 
 	// Check if database is nil
 	if s.db == nil {
-		log.Printf("Service: ERROR - Database is nil!")
+		log.Printf("🎯 BEEP BOOP BEEP - Service ERROR - Database is nil!")
 		return nil, fmt.Errorf("database is not available")
 	}
 
-	log.Printf("Service: Database connection available, checking expired promotions asynchronously")
+	log.Printf("🎯 BEEP BOOP BEEP - Service: Database connection available, checking expired promotions asynchronously")
 
 	// Check and handle expired promotions asynchronously to avoid blocking the main query
 	go func() {
 		err := s.CheckAndHandleExpiredPromotions(ctx)
 		if err != nil {
-			log.Printf("Warning: Failed to check expired promotions (async): %v", err)
+			log.Printf("🎯 BEEP BOOP BEEP - Warning: Failed to check expired promotions (async): %v", err)
 		}
 	}()
 
-	log.Printf("Service: Getting all subscription plans from database")
+	log.Printf("🎯 BEEP BOOP BEEP - Service: Getting all subscription plans from database")
 	plans, err := s.db.GetAllSubscriptionPlans()
 	if err != nil {
-		log.Printf("Service: ERROR - Failed to get subscription plans: %v", err)
+		log.Printf("🎯 BEEP BOOP BEEP - Service ERROR - Failed to get subscription plans: %v", err)
 		return nil, fmt.Errorf("failed to get subscription plans: %w", err)
 	}
 
@@ -476,7 +477,7 @@ func (s *SubscriptionPlanService) GetAllSubscriptionPlans(ctx context.Context) (
 		responsePlans[i] = s.convertToResponse(plan)
 	}
 
-	log.Printf("Retrieved %d subscription plans", len(responsePlans))
+	log.Printf("🎯 BEEP BOOP BEEP - Service: Retrieved %d subscription plans successfully", len(responsePlans))
 
 	return responsePlans, nil
 }

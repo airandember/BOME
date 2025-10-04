@@ -59,6 +59,8 @@ func main() {
 		log.Println("🚀 Running in BOOTSTRAP MODE - optimized for initial deployment")
 	}
 
+	log.Printf("🚀🚀🚀 BACKEND STARTED - BEEP BOOP BEEP - %s 🚀🚀🚀", time.Now().Format("2006-01-02 15:04:05"))
+
 	db, err = database.New(cfg)
 	if err != nil {
 		log.Printf("Failed to connect to PostgreSQL database (may still be provisioning): %v", err)
