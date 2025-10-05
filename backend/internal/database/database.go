@@ -2225,7 +2225,17 @@ BEGIN
             WHERE table_name = 'stripe_subscriptions' AND column_name = 'product_name'
         ) THEN
             ALTER TABLE stripe_subscriptions ADD COLUMN product_name TEXT;
+            RAISE NOTICE 'Added product_name column to stripe_subscriptions';
         END IF;
+        
+        -- Backfill product_name from stripe_products for existing subscriptions
+        -- This ensures historical data is properly populated
+        UPDATE stripe_subscriptions ss
+        SET product_name = sp.name
+        FROM stripe_products sp
+        WHERE ss.stripe_product_id = sp.stripe_id
+          AND (ss.product_name IS NULL OR ss.product_name = '')
+          AND sp.name IS NOT NULL;
         
         -- Add indexes for better performance
         CREATE INDEX IF NOT EXISTS idx_stripe_subscriptions_stripe_price_id ON stripe_subscriptions(stripe_price_id);

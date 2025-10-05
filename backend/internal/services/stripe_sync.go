@@ -1279,7 +1279,22 @@ func (s *StripeSyncService) upsertSubscription(sub *stripe.Subscription) error {
 			// Get product information
 			if firstItem.Price.Product != nil {
 				stripeProductID = sql.NullString{String: firstItem.Price.Product.ID, Valid: true}
-				productName = sql.NullString{String: firstItem.Price.Product.Name, Valid: true}
+
+				// Get product name - try from Stripe API first, fallback to database
+				if firstItem.Price.Product.Name != "" {
+					productName = sql.NullString{String: firstItem.Price.Product.Name, Valid: true}
+					log.Printf("✅ Got product name from Stripe API: %s", firstItem.Price.Product.Name)
+				} else {
+					// Fallback: Get product name from our database
+					var dbProductName string
+					err := s.db.QueryRow("SELECT name FROM stripe_products WHERE stripe_id = $1", firstItem.Price.Product.ID).Scan(&dbProductName)
+					if err == nil && dbProductName != "" {
+						productName = sql.NullString{String: dbProductName, Valid: true}
+						log.Printf("✅ Got product name from database: %s", dbProductName)
+					} else {
+						log.Printf("⚠️ Product name not available in API or database for product: %s", firstItem.Price.Product.ID)
+					}
+				}
 			}
 		}
 	}
