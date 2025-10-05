@@ -675,6 +675,54 @@ export class StreamingSubscriberService {
 	}
 
 	/**
+	 * Cancel a subscriber's subscription
+	 */
+	static async cancelSubscriber(id: number, reason: string = 'Admin cancellation', atPeriodEnd: boolean = false): Promise<Subscriber> {
+		try {
+			const response = await apiRequest(`/admin/subscriptions/${id}`, {
+				method: 'DELETE',
+				body: JSON.stringify({
+					reason: reason,
+					at_period_end: atPeriodEnd,
+					admin_notes: `Cancelled by admin: ${reason}`
+				})
+			});
+			
+			if (response.ok) {
+				const data = await response.json();
+				// Since this cancels the subscription, we need to refresh the subscriber data
+				return await this.getSubscriberById(id);
+			} else {
+				const errorData = await response.json();
+				throw new Error(errorData.error || 'Failed to cancel subscriber');
+			}
+		} catch (error) {
+			console.error('Error cancelling subscriber:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Get subscriber by ID
+	 */
+	static async getSubscriberById(id: number): Promise<Subscriber> {
+		try {
+			const response = await apiRequest(`/admin/subscribers/${id}`);
+			
+			if (response.ok) {
+				const data = await response.json();
+				return data.subscriber;
+			} else {
+				const errorData = await response.json();
+				throw new Error(errorData.error || 'Failed to get subscriber');
+			}
+		} catch (error) {
+			console.error('Error getting subscriber:', error);
+			throw error;
+		}
+	}
+
+	/**
 	 * Get subscriber history
 	 */
 	static async getSubscriberHistory(id: number): Promise<any[]> {
