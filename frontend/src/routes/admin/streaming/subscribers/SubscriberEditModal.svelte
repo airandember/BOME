@@ -97,6 +97,38 @@
 		}
 	}
 
+	// Handle cancel subscriber subscription
+	async function handleCancelSubscription() {
+		if (!subscriber) return;
+
+		// Show confirmation dialog
+		const confirmed = confirm(
+			`Are you sure you want to cancel ${subscriber.first_name} ${subscriber.last_name}'s subscription?\n\n` +
+			'This will:\n' +
+			'• Cancel their Stripe subscription\n' +
+			'• Remove their video access\n' +
+			'• Move them to cancelled status\n\n' +
+			'This action cannot be easily undone.'
+		);
+
+		if (!confirmed) return;
+
+		try {
+			isSubmitting = true;
+			const updatedSubscriber = await StreamingSubscriberService.cancelSubscriber(
+				subscriber.id, 
+				'Cancelled by admin via subscriber management'
+			);
+			onSave(updatedSubscriber);
+			showToast('Subscriber cancelled successfully', 'success');
+		} catch (error) {
+			console.error('Error cancelling subscriber:', error);
+			showToast('Failed to cancel subscriber', 'error');
+		} finally {
+			isSubmitting = false;
+		}
+	}
+
 	// Handle adding a note
 	async function handleAddNote() {
 		if (!subscriber || !newNote.trim()) return;
@@ -169,9 +201,23 @@
 	// Get status badge class
 	function getStatusBadgeClass(status: string): string {
 		const statusClasses: { [key: string]: string } = {
+			// Active states
 			'active': 'bg-green-100 text-green-800',
+			'trialing': 'bg-blue-100 text-blue-800',
+			
+			// Inactive/Problem states
 			'inactive': 'bg-gray-100 text-gray-800',
-			'suspended': 'bg-red-100 text-red-800'
+			'suspended': 'bg-red-100 text-red-800',
+			'canceled': 'bg-orange-100 text-orange-800',
+			'cancelled': 'bg-orange-100 text-orange-800', // Alternative spelling
+			
+			// Payment issues
+			'past_due': 'bg-yellow-100 text-yellow-800',
+			'unpaid': 'bg-red-100 text-red-800',
+			
+			// Expired states
+			'incomplete_expired': 'bg-gray-100 text-gray-600',
+			'expired': 'bg-gray-100 text-gray-600'
 		};
 		return statusClasses[status] || 'bg-gray-100 text-gray-800';
 	}
@@ -241,14 +287,44 @@
 					>
 						{isSubmitting ? 'Activating...' : 'Activate Subscriber'}
 					</button>
-				{:else}
+				{:else if subscriber.subscription_status === 'canceled' || subscriber.subscription_status === 'cancelled'}
 					<button
 						type="button"
-						class="btn btn-warning"
-						on:click={handleSuspend}
+						class="btn btn-success"
+						on:click={handleActivate}
 						disabled={isSubmitting}
 					>
-						{isSubmitting ? 'Suspending...' : 'Suspend Subscriber'}
+						{isSubmitting ? 'Reactivating...' : 'Reactivate Subscriber'}
+					</button>
+				{:else if subscriber.subscription_status === 'active' || subscriber.subscription_status === 'trialing'}
+					<!-- Active subscription - show suspend and cancel options -->
+					<div class="action-buttons-group">
+						<button
+							type="button"
+							class="btn btn-warning"
+							on:click={handleSuspend}
+							disabled={isSubmitting}
+						>
+							{isSubmitting ? 'Suspending...' : 'Suspend Subscriber'}
+						</button>
+						<button
+							type="button"
+							class="btn btn-danger"
+							on:click={handleCancelSubscription}
+							disabled={isSubmitting}
+						>
+							{isSubmitting ? 'Cancelling...' : 'Cancel Subscription'}
+						</button>
+					</div>
+				{:else}
+					<!-- Other statuses (past_due, unpaid, etc.) - show activate option -->
+					<button
+						type="button"
+						class="btn btn-success"
+						on:click={handleActivate}
+						disabled={isSubmitting}
+					>
+						{isSubmitting ? 'Activating...' : 'Activate Subscriber'}
 					</button>
 				{/if}
 			</div>
@@ -738,6 +814,17 @@
 		cursor: pointer;
 		transition: all 0.2s;
 		text-decoration: none;
+	}
+
+	.action-buttons-group {
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.action-buttons-group .btn {
+		flex: 1;
+		min-width: 140px;
 	}
 
 	.btn-primary {
