@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -79,82 +80,154 @@ func NewSubscriberService(db *database.DB) *SubscriberService {
 func (s *SubscriberService) GetSubscribers(limit, offset int, filters *SubscriberFilters) ([]*Subscriber, error) {
 	log.Printf("🔍 GetSubscribers called with limit=%d, offset=%d", limit, offset)
 
-	// ENHANCED: Show only CURRENTLY ACTIVE subscriptions (legacy + Stripe)
-	// FIXED: Prevent duplicates and only show active plans
+	// UNIFIED PLANS APPROACH: Treat subscription_plans and stripe_products as one dataset
+	// This eliminates complex COALESCE logic and provides cleaner plan management
 	query := `
-		SELECT DISTINCT ON (u.id)
-			u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified,
-			u.stripe_customer_id, u.last_login, u.created_at, u.updated_at,
-			COALESCE(u.sub_id, ss.id) as subscription_id,
-			COALESCE(sp.id, 0) as plan_id, 
-			COALESCE(
-				sp.name,                    -- Legacy subscription plan name (highest priority)
-				stripe_prod.name,           -- Current Stripe product name  
-				ss.product_name,            -- Fallback from stripe_subscriptions
-				CASE 
-					WHEN ss.status = 'active' THEN 'Active Subscription'
-					WHEN ss.status = 'trialing' THEN 'Trial Subscription'
-					ELSE 'Subscription'
-				END
-			) as plan_name,
-			COALESCE(
-				sp.price,                                           -- Legacy plan price
+		WITH unified_plans AS (
+			-- Legacy subscription plans
+			SELECT 
+				'legacy' as plan_source,
+				sp.id::text as plan_id,
+				sp.name as plan_name,
+				sp.price as plan_price,
+				sp.currency as plan_currency,
+				sp.interval as plan_interval,
+				sp.interval_count as plan_interval_count,
+				sp.is_active as is_active,
+				sp.created_at as created_at,
+				sp.updated_at as updated_at,
+				NULL as stripe_product_id,
+				NULL as stripe_price_id
+			FROM subscription_plans sp
+			WHERE sp.is_active = true 
+			  AND sp.deleted_at IS NULL
+			
+			UNION ALL
+			
+			-- Stripe products as plans (with pricing from stripe_prices)
+			SELECT 
+				'stripe' as plan_source,
+				stripe_prod.stripe_id as plan_id,
+				stripe_prod.name as plan_name,
 				CASE WHEN stripe_price.unit_amount IS NOT NULL 
 					THEN stripe_price.unit_amount::float / 100.0 
-					ELSE NULL END,                                  -- Stripe price (cents to dollars)
-				CASE WHEN ss.unit_amount IS NOT NULL 
-					THEN ss.unit_amount::float / 100.0 
-					ELSE NULL END,                                  -- Fallback from subscription
-				0.0
-			) as plan_price, 
-			COALESCE(
-				sp.currency,                -- Legacy plan currency
-				stripe_price.currency,      -- Stripe price currency
-				ss.currency,                -- Fallback currency
-				'USD'
-			) as plan_currency,
-			COALESCE(
-				sp.interval,                        -- Legacy plan interval
-				stripe_price.recurring_interval,    -- Stripe price interval
-				'month'                             -- Default interval
-			) as interval, 
-			COALESCE(sp.interval_count, 1) as interval_count,
-			COALESCE(ss.status, 'active') as subscription_status,
-			ss.current_period_start, 
-			ss.current_period_end,
-			COALESCE(ss.stripe_id, u.stripe_customer_id) as stripe_subscription_id
-		FROM users u
-		-- Join legacy subscription plans (for users with sub_id)
-		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id 
-			AND sp.is_active = true 
-			AND sp.deleted_at IS NULL
-		-- Join Stripe customers (for users with stripe_customer_id)
-		LEFT JOIN stripe_customers sc ON (
-			u.stripe_customer_id = sc.stripe_id OR 
-			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
+					ELSE 0.0 
+				END as plan_price,
+				COALESCE(stripe_price.currency, 'USD') as plan_currency,
+				COALESCE(stripe_price.recurring_interval, 'month') as plan_interval,
+				COALESCE(stripe_price.recurring_interval_count, 1) as plan_interval_count,
+				stripe_prod.active as is_active,
+				stripe_prod.created_at as created_at,
+				stripe_prod.updated_at as updated_at,
+				stripe_prod.stripe_id as stripe_product_id,
+				stripe_price.stripe_id as stripe_price_id
+			FROM stripe_products stripe_prod
+			LEFT JOIN stripe_prices stripe_price ON stripe_prod.stripe_id = stripe_price.product_id
+			WHERE stripe_prod.active = true
+		),
+		
+		user_plans AS (
+			SELECT 
+				u.id as user_id,
+				u.email,
+				u.first_name,
+				u.last_name,
+				u.role,
+				u.email_verified,
+				u.stripe_customer_id,
+				u.last_login,
+				u.created_at as user_created_at,
+				u.updated_at as user_updated_at,
+				
+				-- Plan information from unified plans
+				up.plan_source,
+				up.plan_id,
+				up.plan_name,
+				up.plan_price,
+				up.plan_currency,
+				up.plan_interval,
+				up.plan_interval_count,
+				
+				-- Subscription status information
+				CASE 
+					WHEN up.plan_source = 'legacy' THEN 'active'
+					ELSE COALESCE(ss.status, 'active')
+				END as subscription_status,
+				
+				-- Subscription periods (only for Stripe)
+				ss.current_period_start,
+				ss.current_period_end,
+				ss.stripe_id as stripe_subscription_id,
+				
+				-- Priority for DISTINCT ON ordering (legacy plans first)
+				CASE 
+					WHEN up.plan_source = 'legacy' THEN 1  -- Legacy plans highest priority
+					WHEN up.plan_source = 'stripe' AND ss.stripe_price_id IS NOT NULL THEN 2
+					WHEN up.plan_source = 'stripe' AND up.plan_name IS NOT NULL THEN 3
+					ELSE 4
+				END as plan_priority
+				
+			FROM users u
+			
+			-- Join with unified plans via legacy subscription
+			LEFT JOIN unified_plans up ON (
+				(up.plan_source = 'legacy' AND u.sub_id::text = up.plan_id) OR
+				(up.plan_source = 'stripe' AND EXISTS (
+					SELECT 1 FROM stripe_customers sc2 
+					JOIN stripe_subscriptions ss2 ON sc2.id = ss2.customer_id
+					WHERE (u.stripe_customer_id = sc2.stripe_id OR sc2.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}')))
+					  AND ss2.stripe_product_id = up.stripe_product_id
+					  AND ss2.status IN ('active', 'trialing')
+					  AND (ss2.current_period_end IS NULL OR ss2.current_period_end > NOW())
+				))
+			)
+			
+			-- Join Stripe subscription details for Stripe plans
+			LEFT JOIN stripe_customers sc ON (
+				up.plan_source = 'stripe' AND 
+				(u.stripe_customer_id = sc.stripe_id OR sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}')))
+			)
+			LEFT JOIN stripe_subscriptions ss ON (
+				up.plan_source = 'stripe' AND 
+				sc.id = ss.customer_id AND 
+				ss.stripe_product_id = up.stripe_product_id AND
+				ss.status IN ('active', 'trialing') AND
+				(ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+			)
+			
+			WHERE up.plan_id IS NOT NULL  -- Only users with plans
+			  AND u.is_active = true
 		)
-		-- Join current Stripe subscriptions (for ACTIVE Stripe subs only)
-		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id 
-			AND ss.status IN ('active', 'trialing')
-			AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
-		-- Join Stripe products (to get current product names)
-		LEFT JOIN stripe_products stripe_prod ON ss.stripe_product_id = stripe_prod.stripe_id
-		-- Join Stripe prices (to get current pricing info)
-		LEFT JOIN stripe_prices stripe_price ON ss.stripe_price_id = stripe_price.stripe_id
-		WHERE (
-			-- Has active legacy subscription
-			(u.sub_id IS NOT NULL AND sp.id IS NOT NULL) 
-			OR 
-			-- Has active Stripe subscription
-			(ss.id IS NOT NULL AND ss.status IN ('active', 'trialing') AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW()))
-		)
-		AND u.is_active = true
-		ORDER BY u.id, 
-			sp.id DESC NULLS LAST,                    -- Legacy plans first (highest priority)
-			ss.stripe_price_id IS NOT NULL DESC,      -- Subs with price_id first  
-			ss.product_name IS NOT NULL DESC,         -- Subs with product_name first
-			ss.unit_amount DESC NULLS LAST,           -- Higher value subs first
-			ss.created_at DESC NULLS LAST             -- Most recent subs first
+		
+		-- Final query with unified plan data
+		SELECT DISTINCT ON (user_id)
+			user_id as id,
+			email,
+			first_name,
+			last_name,
+			role,
+			email_verified,
+			stripe_customer_id,
+			last_login,
+			user_created_at as created_at,
+			user_updated_at as updated_at,
+			
+			-- Unified plan information
+			plan_id as subscription_id,
+			plan_id,
+			plan_name,
+			plan_price,
+			plan_currency,
+			plan_interval,
+			plan_interval_count,
+			subscription_status,
+			current_period_start,
+			current_period_end,
+			stripe_subscription_id
+			
+		FROM user_plans
+		WHERE 1=1  -- Placeholder for dynamic filters
+		ORDER BY user_id, plan_priority ASC  -- Priority ensures legacy plans come first
 	`
 
 	args := []interface{}{}
@@ -263,15 +336,15 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 	var subscribers []*Subscriber
 	for rows.Next() {
 		subscriber := &Subscriber{}
-		var interval sql.NullString
-		var intervalCount sql.NullInt64
 
-		// Temporary variables for nullable fields
-		var planID sql.NullInt64
+		// Temporary variables for nullable fields from unified query
+		var subscriptionID sql.NullString // plan_id from unified query (now string)
+		var planID sql.NullString         // plan_id from unified query (now string)
 		var planName sql.NullString
 		var planPrice sql.NullFloat64
 		var planCurrency sql.NullString
-		var subscriptionID sql.NullInt64
+		var planInterval sql.NullString
+		var planIntervalCount sql.NullInt64
 		var subscriptionStatus sql.NullString
 		var stripeCustomerID sql.NullString
 		var stripeSubscriptionID sql.NullString
@@ -281,7 +354,7 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 			&subscriber.Role, &subscriber.EmailVerified, &stripeCustomerID,
 			&subscriber.LastLogin, &subscriber.CreatedAt, &subscriber.UpdatedAt,
 			&subscriptionID, &planID, &planName,
-			&planPrice, &planCurrency, &interval, &intervalCount,
+			&planPrice, &planCurrency, &planInterval, &planIntervalCount,
 			&subscriptionStatus, &subscriber.CurrentPeriodStart, &subscriber.CurrentPeriodEnd,
 			&stripeSubscriptionID,
 		)
@@ -290,12 +363,14 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 			return nil, fmt.Errorf("failed to scan subscriber: %w", err)
 		}
 
-		// Debug: Diagnostic logging removed - using direct Stripe data now
+		// Debug: Diagnostic logging removed - using unified plans now
 
-		// Assign nullable fields to pointers
+		// Assign nullable fields to pointers (updated for unified query)
 		if planID.Valid {
-			id := int(planID.Int64)
-			subscriber.PlanID = &id
+			// Convert string plan_id to int for backward compatibility
+			if id, err := strconv.Atoi(planID.String); err == nil {
+				subscriber.PlanID = &id
+			}
 		}
 		if planName.Valid {
 			subscriber.PlanName = &planName.String
@@ -307,8 +382,10 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 			subscriber.PlanCurrency = &planCurrency.String
 		}
 		if subscriptionID.Valid {
-			id := int(subscriptionID.Int64)
-			subscriber.SubscriptionID = &id
+			// Convert string subscription_id to int for backward compatibility
+			if id, err := strconv.Atoi(subscriptionID.String); err == nil {
+				subscriber.SubscriptionID = &id
+			}
 		}
 		if subscriptionStatus.Valid {
 			subscriber.SubscriptionStatus = &subscriptionStatus.String
@@ -324,11 +401,11 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 		subscriber.SubID = subscriber.SubscriptionID
 
 		// Set plan interval data if available
-		if interval.Valid && interval.String != "" {
-			subscriber.PlanInterval = &interval.String
+		if planInterval.Valid && planInterval.String != "" {
+			subscriber.PlanInterval = &planInterval.String
 		}
-		if intervalCount.Valid && intervalCount.Int64 > 0 {
-			count := int(intervalCount.Int64)
+		if planIntervalCount.Valid && planIntervalCount.Int64 > 0 {
+			count := int(planIntervalCount.Int64)
 			subscriber.PlanIntervalCount = &count
 		}
 
