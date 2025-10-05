@@ -1,6 +1,3 @@
--- Test the dynamic price mapping query
--- This verifies that we're properly mapping unit_amount to plan names from existing data
-
 WITH price_mapping AS (
     -- Create a mapping of unit_amount to plan names from existing data
     SELECT DISTINCT 
@@ -11,7 +8,7 @@ WITH price_mapping AS (
             ORDER BY sp.created_at DESC
         ) as plan_name
     FROM stripe_prices sp
-    JOIN stripe_products prod ON sp.product_id = prod.stripe_id
+    JOIN stripe_products prod ON sp.product_id = prod.id
     WHERE sp.unit_amount IS NOT NULL 
       AND prod.name IS NOT NULL
       AND prod.active = true
@@ -70,7 +67,7 @@ LEFT JOIN (
             ORDER BY sp.created_at DESC
         ) as plan_name
     FROM stripe_prices sp
-    JOIN stripe_products prod ON sp.product_id = prod.stripe_id
+    JOIN stripe_products prod ON sp.product_id = prod.id
     WHERE sp.unit_amount IS NOT NULL 
       AND prod.name IS NOT NULL
       AND prod.active = true

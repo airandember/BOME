@@ -93,7 +93,7 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 					ORDER BY sp.created_at DESC
 				) as plan_name
 			FROM stripe_prices sp
-			JOIN stripe_products prod ON sp.product_id = prod.stripe_id
+			JOIN stripe_products prod ON sp.product_id = prod.id
 			WHERE sp.unit_amount IS NOT NULL 
 			  AND prod.name IS NOT NULL
 			  AND prod.active = true
@@ -160,7 +160,8 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 				'stripe_fallback' as plan_source,
 				ss.stripe_id as plan_id,
 				COALESCE(
-					ss.product_name,
+					-- CORRECTED: Check for both NULL and empty string
+					CASE WHEN ss.product_name IS NOT NULL AND ss.product_name != '' THEN ss.product_name ELSE NULL END,
 					pm.plan_name,  -- Dynamic lookup from price_mapping
 					'Subscription Plan (' || COALESCE(ss.currency, 'USD') || ' ' || 
 					CASE WHEN ss.unit_amount IS NOT NULL 
