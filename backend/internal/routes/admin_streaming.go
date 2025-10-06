@@ -612,6 +612,14 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 		// Setup Stripe system management routes
 		RegisterStripeSystemRoutes(streaming, syncService)
 
+		// 👻 Setup Ghost Customer Detection routes
+		ghostHandler := NewGhostCustomerHandler(db.DB)
+		RegisterGhostCustomerRoutes(streaming, ghostHandler)
+
+		// 🔧 Setup Comprehensive Stripe Sync routes
+		comprehensiveSyncService := services.NewComprehensiveStripeSyncService(db.DB, stripeService)
+		RegisterComprehensiveSyncRoutes(streaming, comprehensiveSyncService)
+
 		// Start the cron service for scheduled syncs
 		go cronService.StartCronJobs()
 
