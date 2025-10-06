@@ -862,6 +862,22 @@ func (s *StripeSyncService) syncMonthlyMetrics(ctx context.Context, since time.T
 
 // Database operations with conflict resolution
 func (s *StripeSyncService) upsertProduct(prod *stripe.Product) error {
+	// 🛡️ GHOST DETECTION: Block known ghost product IDs
+	ghostProducts := map[string]bool{
+		"prod_HjYKGcWGP9r4EC": true,
+		"prod_HEmcX1PE8TO2CO": true,
+		"prod_FvNAeI348dup9w": true,
+		"prod_FvNAlEGGL452nN": true,
+		"prod_HF5YzcBH5Rwr0d": true,
+		"prod_GVV5efccnh13h9": true,
+		"prod_FvNAJgnw48hwpZ": true,
+	}
+
+	if ghostProducts[prod.ID] {
+		log.Printf("👻 GHOST BLOCKED: Product %s is a known ghost - REJECTED", prod.ID)
+		return nil // Skip this product silently
+	}
+
 	// Convert metadata to JSON
 	metadataJSON, err := json.Marshal(prod.Metadata)
 	if err != nil {
@@ -1015,6 +1031,22 @@ func (s *StripeSyncService) validateAndFixCustomerMetadata(cust *stripe.Customer
 }
 
 func (s *StripeSyncService) upsertPrice(pr *stripe.Price) error {
+	// 🛡️ GHOST DETECTION: Block prices for known ghost product IDs
+	ghostProducts := map[string]bool{
+		"prod_HjYKGcWGP9r4EC": true,
+		"prod_HEmcX1PE8TO2CO": true,
+		"prod_FvNAeI348dup9w": true,
+		"prod_FvNAlEGGL452nN": true,
+		"prod_HF5YzcBH5Rwr0d": true,
+		"prod_GVV5efccnh13h9": true,
+		"prod_FvNAJgnw48hwpZ": true,
+	}
+
+	if ghostProducts[pr.Product.ID] {
+		log.Printf("👻 GHOST BLOCKED: Price %s references ghost product %s - REJECTED", pr.ID, pr.Product.ID)
+		return nil // Skip this price silently
+	}
+
 	// Get product ID from our database
 	var productID sql.NullInt64
 	err := s.db.QueryRow("SELECT id FROM stripe_products WHERE stripe_id = $1", pr.Product.ID).Scan(&productID)
@@ -1250,6 +1282,29 @@ func parseFullName(fullName string) (string, string) {
 }
 
 func (s *StripeSyncService) upsertSubscription(sub *stripe.Subscription) error {
+	// 🛡️ GHOST DETECTION: Block known ghost product IDs
+	ghostProducts := map[string]bool{
+		"prod_HjYKGcWGP9r4EC": true,
+		"prod_HEmcX1PE8TO2CO": true,
+		"prod_FvNAeI348dup9w": true,
+		"prod_FvNAlEGGL452nN": true,
+		"prod_HF5YzcBH5Rwr0d": true,
+		"prod_GVV5efccnh13h9": true,
+		"prod_FvNAJgnw48hwpZ": true,
+	}
+
+	// Check if this subscription references a ghost product
+	if len(sub.Items.Data) > 0 {
+		firstItem := sub.Items.Data[0]
+		if firstItem.Price != nil && firstItem.Price.Product != nil {
+			productID := firstItem.Price.Product.ID
+			if ghostProducts[productID] {
+				log.Printf("👻 GHOST BLOCKED: Subscription %s references ghost product %s - REJECTED", sub.ID, productID)
+				return nil // Skip this subscription silently
+			}
+		}
+	}
+
 	// Get customer ID from our database
 	var customerID sql.NullInt64
 	err := s.db.QueryRow("SELECT id FROM stripe_customers WHERE stripe_id = $1", sub.Customer.ID).Scan(&customerID)
