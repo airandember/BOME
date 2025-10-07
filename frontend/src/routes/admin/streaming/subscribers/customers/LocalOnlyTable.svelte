@@ -79,7 +79,7 @@
 						</td>
 						<td>
 							<span class="stripe-id">
-								{customer.stripeCustomerId && typeof customer.stripeCustomerId === 'string' ? `#${customer.stripeCustomerId.slice(-8)}` : 'N/A'}
+								{customer.stripeCustomerId && typeof customer.stripeCustomerId === 'string' ? customer.stripeCustomerId : 'N/A'}
 							</span>
 						</td>
 						<td>

@@ -127,23 +127,24 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 			-- Subscription Status (Key Goals)
 			CASE 
 				WHEN (u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) 
-					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true) 
+					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND stripe_prod.video_approved = true) 
 				THEN true 
 				ELSE false 
 			END as has_active_plan,
 			
 			CASE 
 				WHEN (u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) 
-					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true)
+					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND stripe_prod.video_approved = true)
 					OR u.manual_video_access = true
 				THEN true 
 				ELSE false 
 			END as has_video_access,
 			
-			-- Plan Information
+			-- Plan Information - PRIORITIZE STRIPE PRODUCT NAMES
 			COALESCE(
-				sp.name, 
-				ss.product_name,
+				stripe_prod.name,           -- 🎯 STRIPE PRODUCT NAME FIRST (if user has any Stripe subscription)
+				sp.name,                    -- Legacy subscription plan name (fallback)
+				ss.product_name,            -- Fallback from stripe_subscriptions table
 				CASE 
 					WHEN ss.status = 'active' THEN 'Active Subscription'
 					WHEN ss.status = 'trialing' THEN 'Trial Subscription'
@@ -152,8 +153,8 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 			) as plan_name,
 			
 			CASE 
-				WHEN spr.legacy_product = true THEN 'Legacy'
-				WHEN spr.legacy_product = false THEN 'Current'
+				WHEN stripe_prod.legacy_product = true THEN 'Legacy'
+				WHEN stripe_prod.legacy_product = false THEN 'Current'
 				ELSE 'Unknown'
 			END as plan_legacy_status,
 			
@@ -236,8 +237,8 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
 		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing') AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
-		LEFT JOIN stripe_prices sp_price ON ss.price_id = sp_price.id
-		LEFT JOIN stripe_products spr ON sp_price.product_id = spr.id
+		LEFT JOIN stripe_prices sp_price ON ss.stripe_price_id = sp_price.stripe_id
+		LEFT JOIN stripe_products stripe_prod ON sp_price.product_id = stripe_prod.id
 		WHERE u.is_active = true
 	`
 
@@ -332,8 +333,8 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
 		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing') AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
-		LEFT JOIN stripe_prices sp_price ON ss.price_id = sp_price.id
-		LEFT JOIN stripe_products spr ON sp_price.product_id = spr.id
+		LEFT JOIN stripe_prices sp_price ON ss.stripe_price_id = sp_price.stripe_id
+		LEFT JOIN stripe_products stripe_prod ON sp_price.product_id = stripe_prod.id
 		WHERE u.is_active = true
 	`
 
@@ -534,12 +535,12 @@ func (s *EnhancedSubscriberService) GetKPIs() (*SubscriberKPIs, error) {
 			COUNT(DISTINCT u.id) as total_subscribers,
 			COUNT(DISTINCT CASE 
 				WHEN (u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) 
-					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true) 
+					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()) 
 				THEN u.id 
 			END) as active_subscribers,
 			COUNT(DISTINCT CASE 
 				WHEN (u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) 
-					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true)
+					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW())
 					OR u.manual_video_access = true
 				THEN u.id 
 			END) as video_access_users,
@@ -585,8 +586,8 @@ func (s *EnhancedSubscriberService) GetKPIs() (*SubscriberKPIs, error) {
 			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
 		)
 		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing') AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
-		LEFT JOIN stripe_prices sp_price ON ss.price_id = sp_price.id
-		LEFT JOIN stripe_products spr ON sp_price.product_id = spr.id
+		LEFT JOIN stripe_prices sp_price ON ss.stripe_price_id = sp_price.stripe_id
+		LEFT JOIN stripe_products stripe_prod ON sp_price.product_id = stripe_prod.id
 		WHERE u.is_active = true
 	`
 

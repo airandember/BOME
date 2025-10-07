@@ -52,6 +52,10 @@
 </script>
 
 {#if customers.length > 0}
+	<div class="customer-content">
+		<h1>💳 Stripe 0 Customer </h1>
+		{customers[0]}
+	</div>
 	<div class="table-section">
 		<div class="table-header">
 			<h2>💳 Stripe Only Customers ({customers.length})</h2>
@@ -75,7 +79,6 @@
 					<th>Customer</th>
 					<th>Email</th>
 					<th>Source</th>
-					<th>Local ID</th>
 					<th>Stripe ID</th>
 					<th>Subscriptions</th>
 					<th>Plan</th>
@@ -106,12 +109,10 @@
 								 customer.source === 'stripe' ? '💳 Stripe' : '🔗 Hybrid'}
 							</span>
 						</td>
-						<td>
-							<span class="local-id">{customer.localId || 'N/A'}</span>
-						</td>
+						
 						<td>
 							<span class="stripe-id">
-								{customer.stripeId ? `#${customer.stripeId.slice(-8)}` : 'N/A'}
+								{customer.stripeId || 'N/A'}
 							</span>
 						</td>
 						<td>

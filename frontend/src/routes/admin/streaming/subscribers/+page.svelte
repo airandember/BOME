@@ -5,12 +5,12 @@
 	import { subscriberCache } from '$lib/cache/subscriber-cache';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
-	import SubscriberFiltersComponent from './SubscriberFilters.svelte';
-	import SubscriberTable from './SubscriberTable.svelte';
-	import NonSubscriberTable from './NonSubscriberTable.svelte';
-	import SubscriberPagination from './SubscriberPagination.svelte';
+	// import SubscriberFiltersComponent from './SubscriberFilters.svelte.backup';
+	// import SubscriberTable from './SubscriberTable.svelte.backup';
+	// import NonSubscriberTable from './NonSubscriberTable.svelte.backup';
+	// import SubscriberPagination from './SubscriberPagination.svelte.backup';
 	import SubscriberEditModal from './SubscriberEditModal.svelte';
-	import EnhancedSubscribersPage from './EnhancedSubscribersPage.svelte';
+	import EnhancedSubscribersPageNew from './EnhancedSubscribersPageNew.svelte';
 	import { auth } from '$lib/auth';
 	import SendOfferModal from './SendOfferModal.svelte';
 	import type { SubscriptionOffer } from '$lib/services/subscription-offers';
@@ -190,8 +190,9 @@ async function loadStripeCustomers() {
 				const data = await response.json();
 				const customers = data.customers || [];
 				allCustomers = [...allCustomers, ...customers];
-				
+				// Debug: Show first customer structure
 				console.log(`✅ Loaded batch: ${customers.length} customers (offset: ${offset}, total so far: ${allCustomers.length})`);
+				console.log(`🐦‍🔥🔥🔥 ${JSON.stringify(customers[0])}`)
 				
 				// Check if we have more data
 				hasMore = customers.length === limit;
@@ -1250,8 +1251,11 @@ async function loadStripeSubsData() {
 	<!-- Tab Content -->
 	<div class="tab-content">
 	{#if activeTab === 'subscribers'}
-		<!-- Enhanced Subscribers Tab with Email Verification Accordions -->
-		<EnhancedSubscribersPage />
+		<!-- NEW: Enhanced Subscribers Tab with Client-Side Filtering -->
+		<EnhancedSubscribersPageNew />
+		
+		<!-- OLD: Legacy Enhanced Subscribers (commented out) -->
+		<!-- <EnhancedSubscribersPage /> -->
 		{:else if activeTab === 'stripe-subs'}
 			<!-- Stripe Subscribers Tab -->
 			<div class="stripe-subs-section">

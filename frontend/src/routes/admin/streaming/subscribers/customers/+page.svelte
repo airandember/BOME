@@ -59,7 +59,7 @@
 			// Use pre-loaded data from parent
 			summary = parentSummary;
 			customers = stripeData.customers || [];
-			
+			console.log(`🐦‍🔥🔥🔥 ${customers[0]}`)
 			// Load local users to compare against Stripe customers
 			const usersRes = await apiRequest('/admin/users?limit=3000');
 			let localUsers: any[] = [];

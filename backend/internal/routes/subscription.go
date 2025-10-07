@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"database/sql"
 	"net/http"
 	"strconv"
 	"time"
@@ -182,13 +181,37 @@ func GetSubscriptionHandler(db *database.DB) gin.HandlerFunc {
 			return
 		}
 
+		// First check legacy subscriptions table
 		subscription, err := db.GetSubscriptionByUserID(userID)
-		if err != nil {
-			// Check if user has manual video access as fallback
-			var manualVideoAccess sql.NullBool
-			err := db.QueryRow("SELECT manual_video_access FROM users WHERE id = $1", userID).Scan(&manualVideoAccess)
-			if err == nil && manualVideoAccess.Valid && manualVideoAccess.Bool {
-				// User has manual video access, return mock subscription
+		if err == nil && subscription != nil {
+			// User has legacy subscription
+			c.JSON(http.StatusOK, gin.H{"subscription": subscription})
+			return
+		}
+
+		// Check if user has active Stripe subscription with video access
+		hasVideoAccess, accessInfo, err := db.HasVideoAccess(userID)
+		if err == nil && hasVideoAccess {
+			// User has video access through Stripe subscription
+			if accessInfo.HasStripeAccess {
+				// Create a subscription-like response for Stripe users
+				c.JSON(http.StatusOK, gin.H{
+					"subscription": map[string]interface{}{
+						"id":                 "stripe_video_access",
+						"user_id":            userID,
+						"plan_id":            "stripe_subscription",
+						"status":             "active",
+						"tier":               "premium", // Grant premium access for Stripe subscription
+						"created_at":         "2024-01-01T00:00:00Z",
+						"current_period_end": "2099-12-31T23:59:59Z",
+						"access_source":      "stripe",
+					},
+				})
+				return
+			}
+
+			// User has manual video access
+			if accessInfo.HasManualAccess {
 				c.JSON(http.StatusOK, gin.H{
 					"subscription": map[string]interface{}{
 						"id":                 "manual_video_access",
@@ -198,16 +221,32 @@ func GetSubscriptionHandler(db *database.DB) gin.HandlerFunc {
 						"tier":               "premium", // Grant premium access for manual override
 						"created_at":         "2024-01-01T00:00:00Z",
 						"current_period_end": "2099-12-31T23:59:59Z",
+						"access_source":      "manual",
 					},
 				})
 				return
 			}
-			// User has no subscription and no manual access
-			c.JSON(http.StatusOK, gin.H{"subscription": nil})
-			return
+
+			// User has legacy access
+			if accessInfo.HasLegacyAccess {
+				c.JSON(http.StatusOK, gin.H{
+					"subscription": map[string]interface{}{
+						"id":                 "legacy_video_access",
+						"user_id":            userID,
+						"plan_id":            "legacy_subscription",
+						"status":             "active",
+						"tier":               "premium", // Grant premium access for legacy subscription
+						"created_at":         "2024-01-01T00:00:00Z",
+						"current_period_end": "2099-12-31T23:59:59Z",
+						"access_source":      "legacy",
+					},
+				})
+				return
+			}
 		}
 
-		c.JSON(http.StatusOK, gin.H{"subscription": subscription})
+		// User has no subscription and no video access
+		c.JSON(http.StatusOK, gin.H{"subscription": nil})
 	}
 }
 

@@ -79,7 +79,7 @@
 						</td>
 						<td>
 							<span class="stripe-id">
-								{customer.stripeId ? `#${customer.stripeId.slice(-8)}` : 'N/A'}
+								{customer.stripeId || 'N/A'}
 							</span>
 						</td>
 						<td>
