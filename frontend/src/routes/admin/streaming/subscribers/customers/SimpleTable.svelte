@@ -49,7 +49,7 @@
 		return customers.filter(customer => {
 			const name = (customer.name || '').toLowerCase();
 			const email = (customer.email || '').toLowerCase();
-			const stripeId = (customer.stripeId || customer.stripe_id || '').toLowerCase();
+			const stripeId = (customer.id || customer.stripe_id || '').toLowerCase();
 			
 			return name.includes(term) || 
 				   email.includes(term) || 
@@ -154,6 +154,7 @@
 </script>
 
 {#if customers.length > 0}
+
 	<div class="accordion-section">
 		<div class="accordion-header" onclick={toggleAccordion} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && toggleAccordion()}>
 			<div class="accordion-title">
@@ -256,7 +257,7 @@
 							</td>
 							<td>
 								<span class="stripe-id">
-									{customer.stripeId ? `#${customer.stripeId.slice(-8)}` : 'N/A'}
+									{customer.stripeId || 'N/A'}
 								</span>
 							</td>
 							{#if tableType !== 'local-only'}

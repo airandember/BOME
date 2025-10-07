@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -136,6 +137,32 @@ func SetupRoutes(
 			})
 		}
 		fmt.Printf("✅ Public Stripe webhook registered: POST /api/v1/webhooks/stripe\n")
+
+		// 🧪 PUBLIC TEST ENDPOINT FOR SIMPLE STRIPE SYNC (NO AUTH REQUIRED)
+		// This is for testing the new simple sync approach
+		simpleStripeSyncService := services.NewSimpleStripeSyncService(db, stripeService)
+		test := v1.Group("/test")
+		{
+			test.POST("/simple-stripe-sync", func(c *gin.Context) {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+				defer cancel()
+
+				err := simpleStripeSyncService.SyncAll(ctx)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{
+						"error":   "Failed to sync Stripe data",
+						"details": err.Error(),
+					})
+					return
+				}
+
+				c.JSON(http.StatusOK, gin.H{
+					"message": "✅ Simple Stripe sync completed successfully",
+					"status":  "success",
+				})
+			})
+		}
+		fmt.Printf("✅ Public test endpoint registered: POST /api/v1/test/simple-stripe-sync\n")
 
 		// Setup tag routes
 		SetupTagRoutes(router, db)

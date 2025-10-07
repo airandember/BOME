@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
 	import LoadingSpinner from './LoadingSpinner.svelte';
 	
 	interface Column {
@@ -22,32 +21,47 @@
 	}
 	
 	// Props
-	export let data: any[] = [];
-	export let columns: Column[] = [];
-	export let loading = false;
-	export let searchable = true;
-	export let exportable = true;
-	export let selectable = true;
-	export let bulkActions: BulkAction[] = [];
-	export let emptyMessage = 'No data available';
-	export let searchPlaceholder = 'Search...';
+	let {
+		data = $bindable([]),
+		columns = $bindable([]),
+		loading = $bindable(false),
+		searchable = $bindable(true),
+		exportable = $bindable(true),
+		selectable = $bindable(true),
+		bulkActions = $bindable([]),
+		emptyMessage = $bindable('No data available'),
+		searchPlaceholder = $bindable('Search...'),
+		onBulkAction,
+		onRowAction,
+		onExport
+	}: {
+		data?: any[];
+		columns?: Column[];
+		loading?: boolean;
+		searchable?: boolean;
+		exportable?: boolean;
+		selectable?: boolean;
+		bulkActions?: BulkAction[];
+		emptyMessage?: string;
+		searchPlaceholder?: string;
+		onBulkAction?: (event: { action: string; items: any[]; requiresConfirmation?: boolean }) => void;
+		onRowAction?: (event: { item: any; action: string }) => void;
+		onExport?: (event: { data: any[]; format: string }) => void;
+	} = $props();
 	
 	// State
-	let searchTerm = '';
-	let sortColumn = '';
-	let sortDirection: 'asc' | 'desc' = 'asc';
-	let selectedItems = new Set<any>();
-	let selectAll = false;
-	
-	// Event dispatcher
-	const dispatch = createEventDispatcher();
+	let searchTerm = $state('');
+	let sortColumn = $state('');
+	let sortDirection: 'asc' | 'desc' = $state('asc');
+	let selectedItems = $state(new Set<any>());
+	let selectAll = $state(false);
 	
 	// Computed values
-	$: filteredData = filterData(data, searchTerm);
-	$: sortedData = sortData(filteredData, sortColumn, sortDirection);
-	$: selectedCount = selectedItems.size;
-	$: allSelected = selectedCount > 0 && sortedData && selectedCount === sortedData.length;
-	$: someSelected = selectedCount > 0 && sortedData && selectedCount < sortedData.length;
+	let filteredData = $derived(filterData(data, searchTerm));
+	let sortedData = $derived(sortData(filteredData, sortColumn, sortDirection));
+	let selectedCount = $derived(selectedItems.size);
+	let allSelected = $derived(selectedCount > 0 && sortedData && selectedCount === sortedData.length);
+	let someSelected = $derived(selectedCount > 0 && sortedData && selectedCount < sortedData.length);
 	
 	function filterData(items: any[], search: string): any[] {
 		if (!items || !Array.isArray(items)) return [];
@@ -116,7 +130,7 @@
 	function handleBulkAction(action: BulkAction) {
 		if (selectedItems.size === 0) return;
 		
-		dispatch('bulkAction', {
+		onBulkAction?.({
 			action: action.id,
 			items: Array.from(selectedItems),
 			requiresConfirmation: action.requiresConfirmation
@@ -124,11 +138,11 @@
 	}
 	
 	function handleRowAction(item: any, action: string) {
-		dispatch('rowAction', { item, action });
+		onRowAction?.({ item, action });
 	}
 	
 	function handleExport() {
-		dispatch('export', { data: sortedData, format: 'csv' });
+		onExport?.({ data: sortedData, format: 'csv' });
 	}
 	
 	function formatValue(value: any, column: Column): string {

@@ -44,6 +44,13 @@ func SetupEnhancedSubscriberRoutes(router *gin.RouterGroup, db *database.DB) {
 		})
 		fmt.Printf("[GIN-debug] GET    %s/subscribers/enhanced --> Enhanced Subscribers Handler\n", router.BasePath())
 
+		// Enhanced subscribers ALL endpoint (no pagination for client-side processing)
+		enhanced.GET("/enhanced/all", func(c *gin.Context) {
+			log.Printf("🎯 Enhanced subscribers ALL endpoint called (no pagination)")
+			getEnhancedSubscribersAll(c, enhancedService)
+		})
+		fmt.Printf("[GIN-debug] GET    %s/subscribers/enhanced/all --> Enhanced Subscribers ALL Handler\n", router.BasePath())
+
 		// KPIs endpoint for dashboard summary cards
 		enhanced.GET("/kpis", func(c *gin.Context) {
 			log.Printf("🎯 Enhanced subscriber KPIs endpoint called")
@@ -156,6 +163,106 @@ func getEnhancedSubscribers(c *gin.Context, service *services.EnhancedSubscriber
 		})
 		return
 	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// getEnhancedSubscribersAll handles GET /admin/subscribers/enhanced/all (no pagination)
+func getEnhancedSubscribersAll(c *gin.Context, service *services.EnhancedSubscriberService) {
+	log.Printf("🎯 getEnhancedSubscribersAll handler called - Request: %s %s", c.Request.Method, c.Request.URL.Path)
+
+	// Parse filters (same as regular endpoint)
+	filters := &services.EnhancedSubscriberFilters{}
+
+	if search := c.Query("search"); search != "" {
+		filters.Search = search
+	}
+
+	if planType := c.Query("plan_type"); planType != "" {
+		filters.PlanType = &planType
+	}
+
+	if hasActivePlan := c.Query("has_active_plan"); hasActivePlan != "" {
+		if val, err := strconv.ParseBool(hasActivePlan); err == nil {
+			filters.HasActivePlan = &val
+		}
+	}
+
+	if hasVideoAccess := c.Query("has_video_access"); hasVideoAccess != "" {
+		if val, err := strconv.ParseBool(hasVideoAccess); err == nil {
+			filters.HasVideoAccess = &val
+		}
+	}
+
+	if isExpiringSoon := c.Query("is_expiring_soon"); isExpiringSoon != "" {
+		if val, err := strconv.ParseBool(isExpiringSoon); err == nil {
+			filters.IsExpiringSoon = &val
+		}
+	}
+
+	if emailVerified := c.Query("email_verified"); emailVerified != "" {
+		if val, err := strconv.ParseBool(emailVerified); err == nil {
+			filters.EmailVerified = &val
+		}
+	}
+
+	if role := c.Query("role"); role != "" {
+		filters.Role = &role
+	}
+
+	if createdDateFrom := c.Query("created_date_from"); createdDateFrom != "" {
+		if val, err := time.Parse("2006-01-02", createdDateFrom); err == nil {
+			filters.CreatedDateFrom = &val
+		}
+	}
+
+	if createdDateTo := c.Query("created_date_to"); createdDateTo != "" {
+		if val, err := time.Parse("2006-01-02", createdDateTo); err == nil {
+			filters.CreatedDateTo = &val
+		}
+	}
+
+	if lastLoginFrom := c.Query("last_login_from"); lastLoginFrom != "" {
+		if val, err := time.Parse("2006-01-02", lastLoginFrom); err == nil {
+			filters.LastLoginFrom = &val
+		}
+	}
+
+	if lastLoginTo := c.Query("last_login_to"); lastLoginTo != "" {
+		if val, err := time.Parse("2006-01-02", lastLoginTo); err == nil {
+			filters.LastLoginTo = &val
+		}
+	}
+
+	if minMRR := c.Query("min_mrr"); minMRR != "" {
+		if val, err := strconv.ParseFloat(minMRR, 64); err == nil {
+			filters.MinMRR = &val
+		}
+	}
+
+	if maxMRR := c.Query("max_mrr"); maxMRR != "" {
+		if val, err := strconv.ParseFloat(maxMRR, 64); err == nil {
+			filters.MaxMRR = &val
+		}
+	}
+
+	// Use a very high limit to get ALL records (effectively no pagination)
+	page := 1
+	limit := 100000 // Very high limit to get all records
+
+	log.Printf("🔄 Fetching ALL enhanced subscribers (limit=%d, no effective pagination)", limit)
+
+	// Get enhanced subscribers
+	response, err := service.GetEnhancedSubscribers(page, limit, filters)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to retrieve all enhanced subscribers",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	log.Printf("✅ Successfully fetched %d subscribers (total_count=%d)", len(response.Subscribers), response.TotalCount)
 
 	c.JSON(http.StatusOK, response)
 }
