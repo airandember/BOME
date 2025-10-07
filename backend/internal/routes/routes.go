@@ -444,7 +444,7 @@ func SetupRoutes(
 		fmt.Printf("Setting up video routes...\n")
 
 		// Get all videos with pagination and filtering
-		videos.GET("", middleware.AuthRequired(), middleware.SessionActivityTracker(db), func(c *gin.Context) {
+		videos.GET("", middleware.AuthRequired(), middleware.SubscriptionValidation(db), func(c *gin.Context) {
 			// Parse query parameters
 			page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))

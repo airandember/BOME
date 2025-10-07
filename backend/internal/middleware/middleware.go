@@ -327,7 +327,7 @@ func StreamingAdminRequired() gin.HandlerFunc {
 }
 
 // SubscriptionAccessRequired middleware that requires active subscription for protected content
-func SubscriptionAccessRequired() gin.HandlerFunc {
+func SubscriptionAccessRequired(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetInt("user_id")
 		if userID == 0 {
@@ -378,9 +378,42 @@ func SubscriptionAccessRequired() gin.HandlerFunc {
 			return
 		}
 
-		// For non-admin users, check subscription status
-		// TODO: Implement subscription status check from database
-		// For now, allow access (this should be implemented with actual subscription checking)
+		// For non-admin users, validate video access (active plan + video_approved OR manual override)
+		if db != nil {
+			hasVideoAccess, accessInfo, err := db.HasVideoAccess(userID)
+			if err != nil {
+				log.Printf("❌ [SubscriptionAccessRequired] Error checking video access for user %d: %v", userID, err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": "Video access check failed",
+					"code":  "VIDEO_ACCESS_CHECK_ERROR",
+				})
+				c.Abort()
+				return
+			}
+
+			if !hasVideoAccess {
+				log.Printf("❌ [SubscriptionAccessRequired] User %d denied video access - Stripe: %v, Legacy: %v, Manual: %v",
+					userID, accessInfo.HasStripeAccess, accessInfo.HasLegacyAccess, accessInfo.HasManualAccess)
+				c.JSON(http.StatusForbidden, gin.H{
+					"error":   "Video access required",
+					"code":    "VIDEO_ACCESS_REQUIRED",
+					"message": "You need an active video subscription or manual access to view this content",
+					"access_info": gin.H{
+						"stripe_access": accessInfo.HasStripeAccess,
+						"legacy_access": accessInfo.HasLegacyAccess,
+						"manual_access": accessInfo.HasManualAccess,
+					},
+				})
+				c.Abort()
+				return
+			}
+
+			// Store video access info in context for later use
+			c.Set("video_access_info", accessInfo)
+			log.Printf("✅ [SubscriptionAccessRequired] User %d has video access - Source: Stripe=%v, Legacy=%v, Manual=%v",
+				userID, accessInfo.HasStripeAccess, accessInfo.HasLegacyAccess, accessInfo.HasManualAccess)
+		}
+
 		c.Next()
 	}
 }
