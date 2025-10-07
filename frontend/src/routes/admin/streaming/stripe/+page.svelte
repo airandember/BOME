@@ -10,6 +10,7 @@
 	import AnalyticsOverview from './overview/AnalyticsOverview.svelte';
 	import MetadataHealth from './metadata/MetadataHealth.svelte';
 	import Setup from './setup/+page.svelte';
+	import SimpleSync from '../simple-sync/+page.svelte';
 	import EmailUsagePanel from './components/EmailUsagePanel.svelte';
 
 	// State variables using Svelte 5 runes
@@ -107,7 +108,8 @@
 	const allTabs = [
 		{ id: 'analytics', name: 'Analytics', icon: '📈', component: AnalyticsOverview, capability: null },
 		{ id: 'metadata', name: 'Metadata Health', icon: '🏥', component: MetadataHealth, capability: null },
-		{ id: 'setup', name: 'Setup', icon: '⚙️', component: Setup, capability: null }
+		{ id: 'setup', name: 'Setup', icon: '⚙️', component: Setup, capability: null },
+		{ id: 'simple-sync', name: 'Simple Sync', icon: '🔄', component: SimpleSync, capability: null }
 	];
 	
 	// Filter tabs based on capabilities for restricted keys
@@ -1970,15 +1972,15 @@
 						{@const isRestricted = keyType === 'rk' && tab.capability && summary?.capabilities?.[tab.capability] && !Object.values(summary.capabilities[tab.capability]).some(Boolean)}
 						<button 
 							class="tab-button {activeTab === tab.id ? 'active' : ''}"
-							class:disabled={!summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup'}
+							class:disabled={!summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup' && tab.id !== 'simple-sync'}
 							class:restricted={isRestricted}
 							onclick={() => switchTab(tab.id)}
-							disabled={!summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup'}
+							disabled={!summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup' && tab.id !== 'simple-sync'}
 							title={isRestricted ? 'This functionality is restricted by your Stripe key permissions' : ''}
 						>
 							<span class="tab-icon">{tab.icon}</span>
 							<span class="tab-name">{tab.name}</span>
-							{#if !summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup'}
+							{#if !summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup' && tab.id !== 'simple-sync'}
 								<span class="tab-lock">🔒</span>
 							{:else if isRestricted}
 								<span class="tab-restricted">⚠️</span>
@@ -2007,6 +2009,8 @@
 					<MetadataHealth />
 				{:else if activeTab === 'setup'}
 					<Setup {summary} onClearKey={() => showClearModal = true} />
+				{:else if activeTab === 'simple-sync'}
+					<SimpleSync />
 				{/if}
 			</div>
 		{/if}

@@ -110,23 +110,24 @@
 		console.log('🔍 After loadSubscribers - storeData:', storeData);
 		console.log('🔍 After loadSubscribers - subscribers.length:', storeData.subscribers.length);
 		
-		// Start webhook auto-sync for real-time updates
-		webhookAutoSync = StripeWebhookAutoSync.getInstance();
-		webhookAutoSync.startListening();
+		// TODO: Webhook auto-sync disabled - SSE endpoint not implemented in backend
+		// webhookAutoSync = StripeWebhookAutoSync.getInstance();
+		// webhookAutoSync.startListening();
 		
-		// Update connection status periodically
-		statusInterval = setInterval(() => {
-			if (webhookAutoSync) {
-				connectionStatus = webhookAutoSync.getConnectionStatus();
-			}
-		}, 1000);
+		// Update connection status periodically (disabled)
+		// statusInterval = setInterval(() => {
+		// 	if (webhookAutoSync) {
+		// 		connectionStatus = webhookAutoSync.getConnectionStatus();
+		// 	}
+		// }, 1000);
 	});
 	
 	// Cleanup on destroy
 	onDestroy(() => {
-		if (webhookAutoSync) {
-			webhookAutoSync.stopListening();
-		}
+		// TODO: Re-enable when webhook auto-sync is implemented
+		// if (webhookAutoSync) {
+		// 	webhookAutoSync.stopListening();
+		// }
 		if (statusInterval) {
 			clearInterval(statusInterval);
 		}
@@ -235,13 +236,7 @@
 		<div class="header-actions">
 			<!-- Real-time sync status -->
 			<div class="sync-status">
-				{#if connectionStatus.isConnected}
-					<span class="status-indicator connected">🟢 Live Sync</span>
-				{:else if connectionStatus.reconnectAttempts > 0}
-					<span class="status-indicator reconnecting">🟡 Reconnecting ({connectionStatus.reconnectAttempts}/{connectionStatus.maxReconnectAttempts})</span>
-				{:else}
-					<span class="status-indicator disconnected">🔴 Offline</span>
-				{/if}
+				<span class="status-indicator disconnected">🔴 Auto-sync Disabled</span>
 			</div>
 			
 			<button type="button" class="refresh-btn" onclick={refreshData} disabled={storeData.loading}>

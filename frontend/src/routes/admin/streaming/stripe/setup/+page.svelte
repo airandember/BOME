@@ -139,7 +139,9 @@
 		try {
 			const res = await apiRequest('/admin/streaming/stripe/webhooks/status');
 			if (res.ok) {
-				webhookStatus = await res.json();
+				const data = await res.json();
+				// The backend returns webhook data nested under "webhook" key
+				webhookStatus = data.webhook || data;
 			}
 		} catch (err) {
 			console.error('Failed to load webhook status:', err);
@@ -158,6 +160,34 @@
 		} catch (err) {
 			error = 'Failed to copy to clipboard';
 			setTimeout(() => error = '', 3000);
+		}
+	}
+
+	// Ping webhook endpoint to test connectivity
+	async function pingWebhook() {
+		webhookLoading = true;
+		try {
+			const res = await apiRequest('/admin/streaming/stripe/webhooks/ping', {
+				method: 'POST'
+			});
+			
+			if (res.ok) {
+				const result = await res.json();
+				success = result.message || 'Webhook ping successful! ✅';
+				// Reload webhook status to show the updated activity
+				await loadWebhookStatus();
+			} else {
+				error = 'Webhook ping failed';
+			}
+		} catch (err) {
+			console.error('Failed to ping webhook:', err);
+			error = 'Failed to ping webhook';
+		} finally {
+			webhookLoading = false;
+			setTimeout(() => {
+				success = '';
+				error = '';
+			}, 3000);
 		}
 	}
 
@@ -828,13 +858,16 @@
 							<div class="webhook-url-display">
 								<div class="url-container">
 									<code class="webhook-url">{webhookEndpointUrl}</code>
-									<button 
-										class="btn btn-outline btn-sm copy-btn" 
-										onclick={copyWebhookUrl}
-										title="Copy webhook URL"
-									>
-										📋 Copy
-									</button>
+									<div class="url-actions">
+										<button 
+											class="btn btn-outline btn-sm copy-btn" 
+											onclick={copyWebhookUrl}
+											title="Copy webhook URL"
+										>
+											📋 Copy
+										</button>
+										
+									</div>
 								</div>
 							</div>
 						</div>
@@ -2175,6 +2208,12 @@
 		border: 1px solid var(--border-color);
 		border-radius: 8px;
 		padding: 0.75rem;
+	}
+
+	.url-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
 	}
 
 	.webhook-url {
