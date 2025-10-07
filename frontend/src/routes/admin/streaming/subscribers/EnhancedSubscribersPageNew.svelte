@@ -16,6 +16,8 @@
 	let webhookAutoSync: StripeWebhookAutoSync | null = $state(null);
 	let connectionStatus = $state({ isConnected: false, reconnectAttempts: 0, maxReconnectAttempts: 5 });
 	let statusInterval: NodeJS.Timeout | null = $state(null);
+	let webhookStatus = $state<any>(null);
+	let webhookLoading = $state(false);
 	
 	// Filter state
 	let searchTerm = $state('');
@@ -110,6 +112,9 @@
 		console.log('🔍 After loadSubscribers - storeData:', storeData);
 		console.log('🔍 After loadSubscribers - subscribers.length:', storeData.subscribers.length);
 		
+		// Load webhook status
+		await loadWebhookStatus();
+		
 		// TODO: Webhook auto-sync disabled - SSE endpoint not implemented in backend
 		// webhookAutoSync = StripeWebhookAutoSync.getInstance();
 		// webhookAutoSync.startListening();
@@ -121,6 +126,29 @@
 		// 	}
 		// }, 1000);
 	});
+
+	// Load webhook status
+	async function loadWebhookStatus() {
+		webhookLoading = true;
+		try {
+			const res = await fetch('/api/v1/admin/streaming/stripe/webhooks/status', {
+				headers: {
+					'Authorization': `Bearer ${localStorage.getItem('token')}`,
+					'Content-Type': 'application/json'
+				}
+			});
+			
+			if (res.ok) {
+				const data = await res.json();
+				webhookStatus = data.webhook || data;
+			}
+		} catch (err) {
+			console.error('Failed to load webhook status:', err);
+			webhookStatus = { error: 'Failed to load webhook status' };
+		} finally {
+			webhookLoading = false;
+		}
+	}
 	
 	// Cleanup on destroy
 	onDestroy(() => {
@@ -220,6 +248,7 @@
 	
 	async function refreshData() {
 		await subscriberStoreActions.refresh();
+		await loadWebhookStatus(); // Also refresh webhook status
 	}
 </script>
 
@@ -236,7 +265,15 @@
 		<div class="header-actions">
 			<!-- Real-time sync status -->
 			<div class="sync-status">
-				<span class="status-indicator disconnected">🔴 Auto-sync Disabled</span>
+				{#if webhookLoading}
+					<span class="status-indicator reconnecting">⏳ Loading...</span>
+				{:else if webhookStatus?.active}
+					<span class="status-indicator connected">✅ Webhooks Active</span>
+				{:else if webhookStatus?.error}
+					<span class="status-indicator disconnected">❌ Webhook Error</span>
+				{:else}
+					<span class="status-indicator disconnected">🔴 Webhooks Inactive</span>
+				{/if}
 			</div>
 			
 			<button type="button" class="refresh-btn" onclick={refreshData} disabled={storeData.loading}>

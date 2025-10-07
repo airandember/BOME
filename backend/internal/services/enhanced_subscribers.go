@@ -127,14 +127,14 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 			-- Subscription Status (Key Goals)
 			CASE 
 				WHEN (u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) 
-					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND stripe_prod.video_approved = true) 
+					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()) 
 				THEN true 
 				ELSE false 
 			END as has_active_plan,
 			
 			CASE 
 				WHEN (u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) 
-					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND stripe_prod.video_approved = true)
+					OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW())
 					OR u.manual_video_access = true
 				THEN true 
 				ELSE false 
@@ -255,17 +255,17 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 
 		if filters.HasActivePlan != nil {
 			if *filters.HasActivePlan {
-				query += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true))"
+				query += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()))"
 			} else {
-				query += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true))"
+				query += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()))"
 			}
 		}
 
 		if filters.HasVideoAccess != nil {
 			if *filters.HasVideoAccess {
-				query += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true) OR u.manual_video_access = true)"
+				query += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()) OR u.manual_video_access = true)"
 			} else {
-				query += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true) OR u.manual_video_access = true)"
+				query += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()) OR u.manual_video_access = true)"
 			}
 		}
 
@@ -351,17 +351,17 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 
 		if filters.HasActivePlan != nil {
 			if *filters.HasActivePlan {
-				countQuery += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true))"
+				countQuery += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()))"
 			} else {
-				countQuery += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true))"
+				countQuery += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()))"
 			}
 		}
 
 		if filters.HasVideoAccess != nil {
 			if *filters.HasVideoAccess {
-				countQuery += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true) OR u.manual_video_access = true)"
+				countQuery += " AND ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()) OR u.manual_video_access = true)"
 			} else {
-				countQuery += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW() AND spr.video_approved = true) OR u.manual_video_access = true)"
+				countQuery += " AND NOT ((u.sub_id IS NOT NULL AND sp.is_active = true AND sp.deleted_at IS NULL) OR (ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()) OR u.manual_video_access = true)"
 			}
 		}
 
