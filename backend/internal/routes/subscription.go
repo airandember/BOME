@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -190,10 +191,21 @@ func GetSubscriptionHandler(db *database.DB) gin.HandlerFunc {
 		}
 
 		// Check if user has active Stripe subscription with video access
+		log.Printf("🔍 [GetSubscriptionHandler] Checking video access for user %d", userID)
 		hasVideoAccess, accessInfo, err := db.HasVideoAccess(userID)
+
+		// Enhanced logging for debugging
+		if err != nil {
+			log.Printf("❌ [GetSubscriptionHandler] Error checking video access for user %d: %v", userID, err)
+		} else {
+			log.Printf("🔍 [GetSubscriptionHandler] User %d video access check - HasAccess: %v, AccessInfo: Stripe=%v, Legacy=%v, Manual=%v, Source=%s",
+				userID, hasVideoAccess, accessInfo.HasStripeAccess, accessInfo.HasLegacyAccess, accessInfo.HasManualAccess, accessInfo.AccessSource)
+		}
+
 		if err == nil && hasVideoAccess {
 			// User has video access through Stripe subscription
 			if accessInfo.HasStripeAccess {
+				log.Printf("✅ [GetSubscriptionHandler] User %d granted Stripe video access", userID)
 				// Create a subscription-like response for Stripe users
 				c.JSON(http.StatusOK, gin.H{
 					"subscription": map[string]interface{}{
@@ -202,9 +214,9 @@ func GetSubscriptionHandler(db *database.DB) gin.HandlerFunc {
 						"plan_id":            "stripe_subscription",
 						"status":             "active",
 						"tier":               "premium", // Grant premium access for Stripe subscription
+						"access_source":      "stripe",
 						"created_at":         "2024-01-01T00:00:00Z",
 						"current_period_end": "2099-12-31T23:59:59Z",
-						"access_source":      "stripe",
 					},
 				})
 				return
@@ -246,6 +258,7 @@ func GetSubscriptionHandler(db *database.DB) gin.HandlerFunc {
 		}
 
 		// User has no subscription and no video access
+		log.Printf("❌ [GetSubscriptionHandler] User %d has no video access - returning null subscription", userID)
 		c.JSON(http.StatusOK, gin.H{"subscription": nil})
 	}
 }
