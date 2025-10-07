@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"log"
 )
 
 // VideoAccessInfo contains comprehensive video access information
@@ -46,10 +47,13 @@ func (db *DB) HasVideoAccess(userID int) (bool, *VideoAccessInfo, error) {
 			AND sp.video_approved = true
 		)
 	`
+	log.Printf("🔍 [HasVideoAccess] Checking Stripe access for user %d", userID)
 	err = db.QueryRow(stripeQuery, userID).Scan(&hasStripeAccess)
 	if err != nil {
+		log.Printf("❌ [HasVideoAccess] Stripe query error for user %d: %v", userID, err)
 		return false, accessInfo, fmt.Errorf("failed to check Stripe video access: %w", err)
 	}
+	log.Printf("🔍 [HasVideoAccess] User %d Stripe access result: %v", userID, hasStripeAccess)
 
 	accessInfo.HasStripeAccess = hasStripeAccess
 	if hasStripeAccess {
