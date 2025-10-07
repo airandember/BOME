@@ -156,17 +156,16 @@ func (s *SimpleStripeSyncService) syncPrices(ctx context.Context) error {
 			recurringInterval = string(pr.Recurring.Interval)
 		}
 
-		// Simple upsert - now includes stripe_product_id
+		// Simple upsert - using correct product_id column
 		query := `
-			INSERT INTO stripe_prices (stripe_id, product_id, currency, unit_amount, recurring_interval, created_at, stripe_product_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			INSERT INTO stripe_prices (stripe_id, product_id, currency, unit_amount, recurring_interval, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6)
 			ON CONFLICT (stripe_id) 
 			DO UPDATE SET 
 				product_id = EXCLUDED.product_id,
 				currency = EXCLUDED.currency,
 				unit_amount = EXCLUDED.unit_amount,
-				recurring_interval = EXCLUDED.recurring_interval,
-				stripe_product_id = EXCLUDED.stripe_product_id
+				recurring_interval = EXCLUDED.recurring_interval
 		`
 
 		_, err = s.db.Exec(query,
@@ -176,7 +175,6 @@ func (s *SimpleStripeSyncService) syncPrices(ctx context.Context) error {
 			pr.UnitAmount,
 			recurringInterval,
 			time.Unix(pr.Created, 0),
-			pr.Product.ID, // Add the Stripe product ID
 		)
 
 		if err != nil {
