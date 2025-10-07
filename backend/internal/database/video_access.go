@@ -37,8 +37,8 @@ func (db *DB) HasVideoAccess(userID int) (bool, *VideoAccessInfo, error) {
 	stripeQuery := `
 		SELECT EXISTS(
 			SELECT 1 FROM stripe_subscriptions ss
-			INNER JOIN stripe_prices sp_price ON ss.price_id = sp_price.id
-			INNER JOIN stripe_products sp ON sp_price.product_id = sp.id
+			INNER JOIN stripe_prices sp_price ON CAST(ss.price_id AS TEXT) = CAST(sp_price.id AS TEXT)
+			INNER JOIN stripe_products sp ON CAST(sp_price.product_id AS TEXT) = CAST(sp.id AS TEXT)
 			WHERE ss.customer_id = (
 				SELECT stripe_customer_id FROM users WHERE id = $1
 			)
