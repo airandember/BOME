@@ -198,7 +198,7 @@ func SetupRoutes(
 
 		fmt.Printf("Setting up subscriber history routes...\n")
 		SetupSubscriberHistoryRoutes(admin, db, subscriberHistoryService)
-		SetupSubscriptionRoutes(router, db, stripeService, analyticsService)
+		SetupSubscriptionRoutes(v1, db, stripeService, analyticsService)
 
 		// Setup email usage routes
 		fmt.Printf("Setting up email usage routes...\n")

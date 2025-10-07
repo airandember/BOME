@@ -36,9 +36,9 @@ type UpdateSubscriptionRequest struct {
 }
 
 // SetupSubscriptionRoutes sets up all subscription-related routes
-func SetupSubscriptionRoutes(router *gin.Engine, db *database.DB, stripeService *services.StripeService, analyticsService *services.SubscriptionAnalyticsService) {
+func SetupSubscriptionRoutes(v1 *gin.RouterGroup, db *database.DB, stripeService *services.StripeService, analyticsService *services.SubscriptionAnalyticsService) {
 	// Customer subscription routes
-	customer := router.Group("/api/subscriptions")
+	customer := v1.Group("/subscriptions")
 	customer.Use(middleware.AuthRequired())
 	{
 		// Get user's subscription
@@ -64,7 +64,7 @@ func SetupSubscriptionRoutes(router *gin.Engine, db *database.DB, stripeService 
 	}
 
 	// Admin subscription management routes
-	admin := router.Group("/api/admin/subscriptions")
+	admin := v1.Group("/admin/subscriptions")
 	admin.Use(middleware.AuthRequired())
 	admin.Use(middleware.AdminRequired())
 	{
@@ -91,7 +91,7 @@ func SetupSubscriptionRoutes(router *gin.Engine, db *database.DB, stripeService 
 	}
 
 	// Public routes
-	public := router.Group("/api/subscription")
+	public := v1.Group("/subscription")
 	{
 		// Get available subscription plans
 		public.GET("/plans", GetSubscriptionPlansHandler(stripeService))
