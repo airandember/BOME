@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { apiRequest } from '$lib/services/api';
+	import { apiRequest } from '$lib/auth';
 
 	interface GhostCustomer {
 		id: number;
