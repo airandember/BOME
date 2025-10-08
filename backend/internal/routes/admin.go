@@ -2786,6 +2786,17 @@ func CreateBulkUsersHandler(db *database.DB) gin.HandlerFunc {
 		log.Printf("✅ Bulk user creation completed: %d created, %d failed out of %d requested",
 			response.TotalCreated, response.TotalFailed, response.TotalRequested)
 
+		// If we created users with Stripe customer IDs, try to link their subscriptions
+		if response.TotalCreated > 0 {
+			log.Printf("🔗 Attempting to link subscriptions for newly created users...")
+			if err := linkSubscriptionsForNewUsers(db); err != nil {
+				log.Printf("⚠️ Warning: Failed to link subscriptions for new users: %v", err)
+				// Don't fail the entire operation, just log the warning
+			} else {
+				log.Printf("✅ Successfully linked subscriptions for newly created users")
+			}
+		}
+
 		// Return appropriate status code
 		if response.TotalCreated > 0 {
 			c.JSON(http.StatusCreated, response)
@@ -3092,4 +3103,34 @@ func cleanNameForStripeImport(name string) string {
 	}
 
 	return strings.Join(words, " ")
+}
+
+// linkSubscriptionsForNewUsers attempts to link active Stripe subscriptions to newly created users
+func linkSubscriptionsForNewUsers(db *database.DB) error {
+	// This is the same logic as LinkSubscriptionsToUsers but simplified for the admin context
+	query := `
+		UPDATE users 
+		SET sub_id = ss.stripe_id, has_subbed = true, updated_at = NOW()
+		FROM stripe_customers sc
+		INNER JOIN stripe_subscriptions ss ON sc.id = ss.customer_id
+		WHERE (
+			users.stripe_customer_id = sc.stripe_id OR 
+			sc.stripe_id = ANY(COALESCE(users.stripe_customer_ids, '{}'))
+		)
+		AND ss.status IN ('active', 'trialing')
+		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+		AND (users.sub_id IS NULL OR users.sub_id != ss.stripe_id)
+	`
+
+	result, err := db.Exec(query)
+	if err != nil {
+		return fmt.Errorf("failed to link subscriptions to users: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected > 0 {
+		log.Printf("🔗 Linked %d active subscriptions to users (populated sub_id)", rowsAffected)
+	}
+
+	return nil
 }

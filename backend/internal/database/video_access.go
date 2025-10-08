@@ -36,12 +36,15 @@ func (db *DB) HasVideoAccess(userID int) (bool, *VideoAccessInfo, error) {
 	var hasStripeAccess bool
 	stripeQuery := `
 		SELECT EXISTS(
-			SELECT 1 FROM stripe_subscriptions ss
+			SELECT 1 FROM users u
+			INNER JOIN stripe_customers sc ON (
+				u.stripe_customer_id = sc.stripe_id OR 
+				sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
+			)
+			INNER JOIN stripe_subscriptions ss ON sc.id = ss.customer_id
 			INNER JOIN stripe_prices sp_price ON CAST(ss.price_id AS TEXT) = CAST(sp_price.id AS TEXT)
 			INNER JOIN stripe_products sp ON CAST(sp_price.product_id AS TEXT) = CAST(sp.id AS TEXT)
-			WHERE ss.customer_id = (
-				SELECT stripe_customer_id FROM users WHERE id = $1
-			)
+			WHERE u.id = $1
 			AND ss.status IN ('active', 'trialing')
 			AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
 			AND sp.video_approved = true

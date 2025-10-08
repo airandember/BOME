@@ -55,6 +55,16 @@ func (s *SimpleStripeSyncService) SyncAll(ctx context.Context) error {
 		return fmt.Errorf("failed to sync subscriptions: %w", err)
 	}
 
+	// Step 5: Link customers to users by email
+	if err := s.LinkCustomersToUsers(ctx); err != nil {
+		return fmt.Errorf("failed to link customers to users: %w", err)
+	}
+
+	// Step 6: Link active subscriptions to users (populate sub_id)
+	if err := s.LinkSubscriptionsToUsers(ctx); err != nil {
+		return fmt.Errorf("failed to link subscriptions to users: %w", err)
+	}
+
 	log.Println("✅ Simple Stripe sync completed successfully")
 	return nil
 }
@@ -406,6 +416,64 @@ func (s *SimpleStripeSyncService) LinkCustomersToUsers(ctx context.Context) erro
 
 	rowsAffected, _ := result.RowsAffected()
 	log.Printf("✅ Linked %d customers to users", rowsAffected)
+
+	return nil
+}
+
+// LinkSubscriptionsToUsers populates users.sub_id with their active Stripe subscription ID
+func (s *SimpleStripeSyncService) LinkSubscriptionsToUsers(ctx context.Context) error {
+	log.Println("🔗 Linking active Stripe subscriptions to users...")
+
+	// Update users.sub_id with their active Stripe subscription ID
+	query := `
+		UPDATE users 
+		SET sub_id = ss.stripe_id, has_subbed = true, updated_at = NOW()
+		FROM stripe_customers sc
+		INNER JOIN stripe_subscriptions ss ON sc.id = ss.customer_id
+		WHERE (
+			users.stripe_customer_id = sc.stripe_id OR 
+			sc.stripe_id = ANY(COALESCE(users.stripe_customer_ids, '{}'))
+		)
+		AND ss.status IN ('active', 'trialing')
+		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+		AND (users.sub_id IS NULL OR users.sub_id != ss.stripe_id)
+	`
+
+	result, err := s.db.Exec(query)
+	if err != nil {
+		return fmt.Errorf("failed to link subscriptions to users: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	log.Printf("✅ Linked %d active subscriptions to users (populated sub_id)", rowsAffected)
+
+	// Also clear sub_id for users whose subscriptions are no longer active
+	clearQuery := `
+		UPDATE users 
+		SET sub_id = NULL, has_subbed = false, updated_at = NOW()
+		WHERE sub_id IS NOT NULL 
+		AND NOT EXISTS (
+			SELECT 1 FROM stripe_customers sc
+			INNER JOIN stripe_subscriptions ss ON sc.id = ss.customer_id
+			WHERE (
+				users.stripe_customer_id = sc.stripe_id OR 
+				sc.stripe_id = ANY(COALESCE(users.stripe_customer_ids, '{}'))
+			)
+			AND ss.status IN ('active', 'trialing')
+			AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+			AND ss.stripe_id = users.sub_id
+		)
+	`
+
+	clearResult, err := s.db.Exec(clearQuery)
+	if err != nil {
+		log.Printf("⚠️ Warning: Failed to clear inactive subscription links: %v", err)
+	} else {
+		clearRowsAffected, _ := clearResult.RowsAffected()
+		if clearRowsAffected > 0 {
+			log.Printf("🧹 Cleared %d inactive subscription links from users", clearRowsAffected)
+		}
+	}
 
 	return nil
 }
