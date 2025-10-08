@@ -323,6 +323,9 @@
 			loading
 		});
 		
+		// Load saved category states first
+		loadCategoryStates();
+		
 		// Load the comprehensive search index immediately for instant search
 		loadStaticSearchIndex();
 		
@@ -890,9 +893,44 @@
 		console.log('🏁 switchTab complete, final activeTab:', activeTab);
 	}
 
-	// Category section state for lazy loading - using Svelte 5 reactive approach
+	// Category section state for lazy loading - using Svelte 5 reactive approach with persistence
 	let categoryVideoStates = $state(new Map());
 	let categoryStateVersion = $state(0); // Force reactivity trigger
+	
+	// Persist category states in sessionStorage to survive navigation
+	function saveCategoryStates() {
+		if (typeof window !== 'undefined' && categoryVideoStates.size > 0) {
+			try {
+				const statesArray = Array.from(categoryVideoStates.entries()).map(([id, state]) => [
+					id, 
+					{
+						loading: state.loading,
+						data: state.data,
+						error: state.error ? { message: state.error.message } : null,
+						promise: null // Don't persist promises
+					}
+				]);
+				sessionStorage.setItem('categoryVideoStates', JSON.stringify(statesArray));
+			} catch (e) {
+				console.warn('Failed to save category states:', e);
+			}
+		}
+	}
+	
+	function loadCategoryStates() {
+		if (typeof window !== 'undefined') {
+			try {
+				const saved = sessionStorage.getItem('categoryVideoStates');
+				if (saved) {
+					const statesArray = JSON.parse(saved);
+					categoryVideoStates = new Map(statesArray);
+					console.log('🔄 Restored category states from session:', categoryVideoStates.size, 'categories');
+				}
+			} catch (e) {
+				console.warn('Failed to load category states:', e);
+			}
+		}
+	}
 	
 	function getCategoryVideoState(categoryId: number) {
 		if (!categoryVideoStates.has(categoryId)) {
@@ -926,11 +964,15 @@
 		console.log(`🏷️ Category has ${category.tagIds?.length || 0} tag IDs:`, category.tagIds);
 		console.log(`🏷️ Raw tag_ids (if exists):`, (category as any).tag_ids);
 		
-		// Set loading state
+		// Set loading state and force reactivity immediately
 		console.log(`🔄 Setting state.loading=true for category: ${category.name}`);
 		console.trace('📍 STACK TRACE: loadCategoryVideos setting state.loading=true');
 		state.loading = true;
 		state.error = null;
+		
+		// Force immediate reactivity update
+		categoryVideoStates = new Map(categoryVideoStates);
+		categoryStateVersion++;
 		
 		// Create and cache the loading promise
 		const loadingPromise = videoService.getVideosByTagCategory(category.id, 1, 10)
@@ -961,7 +1003,8 @@
 					console.log(`📄 Pagination for "${category.name}":`, response.pagination);
 				}
 				
-				// Update state
+				// Update state - CRITICAL: Set loading to false FIRST
+				console.log(`🔄 Setting state.loading=false for category: ${category.name}`);
 				state.loading = false;
 				state.data = response;
 				state.promise = null;
@@ -970,14 +1013,23 @@
 				categoryVideoStates = new Map(categoryVideoStates);
 				categoryStateVersion++;
 				
+				// Save states to sessionStorage
+				saveCategoryStates();
+				
 				console.log(`🔄 Updated state for ${category.name}, forcing reactivity (version: ${categoryStateVersion})`);
+				console.log(`🔍 Final state for ${category.name}:`, {
+					loading: state.loading,
+					hasData: !!state.data,
+					videoCount: state.data?.videos?.length || 0
+				});
 				
 				return response;
 			})
 			.catch(error => {
 				console.error(`❌ Failed to load videos for category: ${category.name}`, error);
 				
-				// Update error state
+				// Update error state - CRITICAL: Set loading to false FIRST
+				console.log(`🔄 Setting state.loading=false (error) for category: ${category.name}`);
 				state.loading = false;
 				state.error = error;
 				state.promise = null;
@@ -985,6 +1037,15 @@
 				// Force reactivity by creating new Map reference and incrementing version
 				categoryVideoStates = new Map(categoryVideoStates);
 				categoryStateVersion++;
+				
+				// Save states to sessionStorage
+				saveCategoryStates();
+				
+				console.log(`🔍 Error state for ${category.name}:`, {
+					loading: state.loading,
+					hasError: !!state.error,
+					errorMessage: error.message
+				});
 				
 				throw error;
 			});
@@ -1000,11 +1061,30 @@
 	
 	// Simple category loading when tab becomes active
 	$effect(() => {
+		console.log('🔄 Category loading effect triggered:', {
+			categoriesLength: categories.length,
+			activeTab,
+			isCategoriesTab: activeTab === 'categories'
+		});
+		
 		if (categories.length > 0 && activeTab === 'categories') {
+			console.log('🎬 Loading videos for all categories...');
 			categories.forEach(category => {
 				const state = getCategoryVideoState(category.id);
-				if (!state.data && !state.loading) {
-					loadCategoryVideos(category);
+				console.log(`📊 Category ${category.name} state:`, {
+					hasData: !!state.data,
+					isLoading: state.loading,
+					hasError: !!state.error,
+					hasPromise: !!state.promise
+				});
+				
+				if (!state.data && !state.loading && !state.promise) {
+					console.log(`🚀 Triggering load for category: ${category.name}`);
+					loadCategoryVideos(category).catch(error => {
+						console.error(`❌ Failed to load category ${category.name}:`, error);
+					});
+				} else {
+					console.log(`⏭️ Skipping category ${category.name} - already loaded/loading`);
 				}
 			});
 		}
@@ -1262,7 +1342,8 @@
 											condition1: !categoryState.data && !categoryState.loading && !categoryState.error,
 											condition2: categoryState.loading,
 											condition3: categoryState.error,
-											condition4: categoryState.data
+											condition4: categoryState.data,
+											stateVersion: categoryStateVersion
 										})}
 										<div class="category-section debug-category" data-category-id={category.id}>
 											<div class="category-header">
