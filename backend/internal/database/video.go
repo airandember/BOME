@@ -1,6 +1,7 @@
 package database
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -164,7 +165,7 @@ func (db *DB) GetAllVideos() ([]Video, error) {
 	var videos []Video
 	for rows.Next() {
 		video := Video{}
-		var tagsStr string
+		var tagsStr sql.NullString // Use sql.NullString to handle NULL tags
 		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
 		if err != nil {
 			return nil, err
@@ -174,10 +175,14 @@ func (db *DB) GetAllVideos() ([]Video, error) {
 		video.ThumbnailFileName = ""
 
 		// Parse tags from JSONB (master_video_list uses JSONB for tags)
-		if tagsStr != "" {
-			if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
+		// Handle NULL tags (videos that haven't been through the tagging system yet)
+		if tagsStr.Valid && tagsStr.String != "" {
+			if err := json.Unmarshal([]byte(tagsStr.String), &video.Tags); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
 			}
+		} else {
+			// Videos that haven't been tagged yet get empty tags array
+			video.Tags = []string{}
 		}
 
 		videos = append(videos, video)

@@ -794,10 +794,10 @@ func SetupRoutes(
 	})
 
 	// Bunny.net direct access endpoint (separate from videos to avoid conflicts)
-	v1.GET("/bunny-videos", GetVideosFromBunnyHandler(db, bunnyService))
+	v1.GET("/bunny-videos", middleware.AuthRequired(), middleware.SubscriptionValidation(db), GetVideosFromBunnyHandler(db, bunnyService))
 
 	// Add single video endpoint
-	v1.GET("/bunny-videos/:id", func(c *gin.Context) {
+	v1.GET("/bunny-videos/:id", middleware.AuthRequired(), middleware.SubscriptionValidation(db), func(c *gin.Context) {
 		videoID := c.Param("id")
 		if videoID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{

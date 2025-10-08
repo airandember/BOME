@@ -204,7 +204,7 @@ export class MasterVideoService {
 		message: string;
 		result: SyncResult;
 	}> {
-		const response = await apiRequest('/admin/sync/from-bunny', {
+		const response = await apiRequest('/admin/master-videos/sync/from-bunny', {
 			method: 'POST'
 		});
 		return response.json();
@@ -216,7 +216,7 @@ export class MasterVideoService {
 		message: string;
 		result: SyncResult;
 	}> {
-		const response = await apiRequest('/admin/sync/to-bunny', {
+		const response = await apiRequest('/admin/master-videos/sync/to-bunny', {
 			method: 'POST'
 		});
 		return response.json();
@@ -227,7 +227,7 @@ export class MasterVideoService {
 		success: boolean;
 		result: ConflictCheckResult;
 	}> {
-		const response = await apiRequest('/admin/sync/conflicts');
+		const response = await apiRequest('/admin/master-videos/sync/conflicts');
 		return response.json();
 	}
 
@@ -626,10 +626,10 @@ export class MasterVideoService {
 		try {
 			const response = await apiClient.get('/admin/master-videos/tags/analytics');
 			
-			if (response.data) {
+			if (response.data && (response.data as any).data) {
 				return {
 					success: true,
-					data: response.data.data
+					data: (response.data as any).data
 				};
 			} else {
 				return {
