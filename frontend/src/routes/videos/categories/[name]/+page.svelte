@@ -33,10 +33,12 @@
 					// Load category details from tag categories
 					const categoriesResponse = await videoService.getTagCategories();
 					category = categoriesResponse.categories.find(c => c.id === categoryId) || null;
+					console.log("🔴🔴🔴⚪🔴🔴🔴", category);
 				} else {
 					// It's a category name, find by name (fallback for old URLs)
 					const categoriesResponse = await videoService.getTagCategories();
 					category = categoriesResponse.categories.find(c => c.name === categoryParam) || null;
+					console.log("🔴🔴🔴⚪🔴🔴🔴", category);
 				}
 				
 				if (!category) {

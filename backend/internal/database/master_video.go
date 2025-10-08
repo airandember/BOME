@@ -13,46 +13,46 @@ import (
 
 // MasterVideo represents a video in the master list
 type MasterVideo struct {
-	ID                   int
-	BunnyVideoID         string
-	Title                string
-	Description          string
-	Category             string
-	Tags                 []string
-	TagIDs               []int `json:"tag_ids"`
-	Tagged               bool
-	Duration             int
-	FileSize             int64
-	Resolution           string
-	Framerate            float64
-	ThumbnailURL         string
-	VideoURL             string
-	IframeSrc            string
-	PlaybackURL          string
-	Status               string
-	Views                int
-	Likes                int
-	IsPublic             bool
-	EncodeProgress       int
-	AvailableResolutions []string
-	CollectionID         string
-	AverageWatchTime     int
-	TotalWatchTime       int64
+	ID                   int      `json:"id"`
+	BunnyVideoID         string   `json:"bunnyVideoId"`
+	Title                string   `json:"title"`
+	Description          string   `json:"description"`
+	Category             string   `json:"category"`
+	Tags                 []string `json:"tags"`
+	TagIDs               []int    `json:"tag_ids"`
+	Tagged               bool     `json:"tagged"`
+	Duration             int      `json:"duration"`
+	FileSize             int64    `json:"fileSize"`
+	Resolution           string   `json:"resolution"`
+	Framerate            float64  `json:"framerate"`
+	ThumbnailURL         string   `json:"thumbnailUrl"`
+	VideoURL             string   `json:"videoUrl"`
+	IframeSrc            string   `json:"iframeSrc"`
+	PlaybackURL          string   `json:"playbackUrl"`
+	Status               string   `json:"status"`
+	Views                int      `json:"views"`
+	Likes                int      `json:"likes"`
+	IsPublic             bool     `json:"isPublic"`
+	EncodeProgress       int      `json:"encodeProgress"`
+	AvailableResolutions []string `json:"availableResolutions"`
+	CollectionID         string   `json:"collectionId"`
+	AverageWatchTime     int      `json:"averageWatchTime"`
+	TotalWatchTime       int64    `json:"totalWatchTime"`
 
 	// Sync tracking
-	LastBunnySync    time.Time
-	LastMasterUpdate time.Time
-	SyncStatus       string // synced, needs_attention, conflict
-	SyncNotes        string
+	LastBunnySync    time.Time `json:"lastBunnySync"`
+	LastMasterUpdate time.Time `json:"lastMasterUpdate"`
+	SyncStatus       string    `json:"syncStatus"` // synced, needs_attention, conflict
+	SyncNotes        string    `json:"syncNotes"`
 
 	// Metadata
-	MetadataVersion int
-	CreatedBy       *int
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	MetadataVersion int       `json:"metadataVersion"`
+	CreatedBy       *int      `json:"createdBy"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 
 	// Vid Status - True or False Video is active or not
-	Vid_Status bool
+	Vid_Status bool `json:"vidStatus"`
 }
 
 // ArticleExclusion represents a word that should be excluded from tag generation
@@ -1455,6 +1455,14 @@ func (db *DB) RemoveTagFromCategory(subsite string, tagID int) error {
 		return fmt.Errorf("failed to get subsite ID for '%s': %v", subsite, err)
 	}
 
+	// Get the current category_id before removing it
+	var currentCategoryID sql.NullInt64
+	err = db.QueryRow("SELECT category_id FROM tags WHERE id = $1", tagID).Scan(&currentCategoryID)
+	if err != nil {
+		log.Printf("❌ Failed to get current category ID: %v", err)
+		return fmt.Errorf("failed to get current category ID: %v", err)
+	}
+
 	// Verify tag belongs to this subsite
 	var tagSubsiteIDOrigin sql.NullInt64
 	err = db.QueryRow("SELECT subsite_id_origin FROM tags WHERE id = $1", tagID).Scan(&tagSubsiteIDOrigin)
@@ -1477,6 +1485,21 @@ func (db *DB) RemoveTagFromCategory(subsite string, tagID int) error {
 	if err != nil {
 		log.Printf("❌ Failed to remove tag from category: %v", err)
 		return fmt.Errorf("failed to remove tag from category: %v", err)
+	}
+
+	// Remove the tag from the category's tag_ids array (if it was assigned to a category)
+	if currentCategoryID.Valid {
+		_, err = db.Exec(`
+			UPDATE tag_categories 
+			SET tag_ids = array_remove(COALESCE(tag_ids, '{}'), $2),
+			    updated_at = CURRENT_TIMESTAMP 
+			WHERE id = $1
+		`, int(currentCategoryID.Int64), tagID)
+		if err != nil {
+			log.Printf("❌ Failed to update category tag_ids array: %v", err)
+			return fmt.Errorf("failed to update category tag_ids array: %v", err)
+		}
+		log.Printf("✅ Removed tag ID %d from category ID %d's tag_ids array", tagID, int(currentCategoryID.Int64))
 	}
 
 	log.Printf("✅ Tag ID %d successfully removed from category in subsite '%s'", tagID, subsite)
@@ -1524,6 +1547,22 @@ func (db *DB) AssignSubsiteTagToCategory(subsite string, tagID, categoryID int) 
 	if err != nil {
 		log.Printf("❌ Failed to assign tag to category: %v", err)
 		return fmt.Errorf("failed to assign tag to category: %v", err)
+	}
+
+	// Update the category's tag_ids array to include this tag
+	_, err = db.Exec(`
+		UPDATE tag_categories 
+		SET tag_ids = CASE 
+			WHEN tag_ids IS NULL THEN ARRAY[$2::int]
+			WHEN NOT ($2 = ANY(tag_ids)) THEN array_append(tag_ids, $2)
+			ELSE tag_ids
+		END,
+		updated_at = CURRENT_TIMESTAMP 
+		WHERE id = $1
+	`, categoryID, tagID)
+	if err != nil {
+		log.Printf("❌ Failed to update category tag_ids array: %v", err)
+		return fmt.Errorf("failed to update category tag_ids array: %v", err)
 	}
 
 	log.Printf("✅ Tag ID %d successfully assigned to category ID %d in subsite '%s'", tagID, categoryID, subsite)
@@ -1858,7 +1897,7 @@ func (db *DB) GetVideosByTagCategory(categoryID int, page, limit int) ([]MasterV
 
 	// Query videos that have any of these tag IDs
 	query := `
-		SELECT id, title, description, video_url, thumbnail_url, duration, 
+		SELECT id, bunny_video_id, title, description, video_url, thumbnail_url, duration, 
 		       created_at, updated_at, tagged, COALESCE(tag_ids, '{}')
 		FROM master_video_list 
 		WHERE tag_ids && $1::INTEGER[]
@@ -1879,6 +1918,7 @@ func (db *DB) GetVideosByTagCategory(categoryID int, page, limit int) ([]MasterV
 
 		err := rows.Scan(
 			&video.ID,
+			&video.BunnyVideoID,
 			&video.Title,
 			&video.Description,
 			&video.VideoURL,

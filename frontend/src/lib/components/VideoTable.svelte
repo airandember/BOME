@@ -143,19 +143,19 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each videos as video (video.ID)}
+				{#each videos as video, index (video.id || video.bunnyVideoId || `video-${index}`)}
 					<tr class="video-row" in:fly={{ y: 20, duration: 300 }}>
-						<td>{video.ID}</td>
+						<td>{video.id || 'N/A'}</td>
 						<td class="thumbnail-cell">
-							{#if video.ThumbnailURL}
+							{#if video.thumbnailUrl}
 								<img 
-									src={video.ThumbnailURL} 
-									alt={video.Title} 
+									src={video.thumbnailUrl} 
+									alt={video.title} 
 									class="video-thumbnail" 
 									loading="lazy"
 									referrerpolicy="no-referrer"
 									on:error={(e) => {
-										console.warn('Thumbnail failed to load:', video.ThumbnailURL);
+										console.warn('Thumbnail failed to load:', video.thumbnailUrl);
 									}}
 								/>
 							{:else}
@@ -163,20 +163,20 @@
 							{/if}
 						</td>
 						<td class="title-cell">
-							<div class="video-title">{video.Title}</div>
+							<div class="video-title">{video.title}</div>
 						</td>
-						<td>{video.Category || 'Uncategorized'}</td>
+						<td>{video.category || 'Uncategorized'}</td>
 						<td class="td_cell">
-							<span class="status-badge {getSyncStatusBadge(video.SyncStatus).class}">
-								{getSyncStatusBadge(video.SyncStatus).text}
+							<span class="status-badge {getSyncStatusBadge(video.syncStatus).class}">
+								{getSyncStatusBadge(video.syncStatus).text}
 							</span>
 						</td>
-						<td>{video.Views?.toLocaleString() || 0}</td>
-						<td>{formatDuration(video.Duration)}</td>
-						<td>{formatDate(video.CreatedAt)}</td>
+						<td>{video.views?.toLocaleString() || 0}</td>
+						<td>{formatDuration(video.duration)}</td>
+						<td>{formatDate(video.createdAt)}</td>
 						<td>
-							<span class="status-badge {getVideoStatusBadge(video.Vid_Status).class}">
-								{getVideoStatusBadge(video.Vid_Status).text}
+							<span class="status-badge {getVideoStatusBadge(video.vidStatus).class}">
+								{getVideoStatusBadge(video.vidStatus).text}
 							</span>
 						</td>
 						<td class="actions-cell">
@@ -193,13 +193,13 @@
 							
 							<button 
 								aria-label="Toggle video status"
-								class="btn btn-sm {video.Vid_Status ? 'Vid_Inactive' : 'Vid_Active'}"
-								class:loading={togglingVideos.has(video.ID)}
-								disabled={togglingVideos.has(video.ID)}
+								class="btn btn-sm {video.vidStatus ? 'Vid_Inactive' : 'Vid_Active'}"
+								class:loading={togglingVideos.has(video.id || 0)}
+								disabled={togglingVideos.has(video.id || 0)}
 								on:click={() => handleToggleVideoStatus(video)}
-								title="{video.Vid_Status ? 'Deactivate video' : 'Activate video'}"
+								title="{video.vidStatus ? 'Deactivate video' : 'Activate video'}"
 							>
-								{#if togglingVideos.has(video.ID)}
+								{#if togglingVideos.has(video.id || 0)}
 									<svg class="animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 										<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="31.416" stroke-dashoffset="31.416">
 											<animate attributeName="stroke-dasharray" dur="2s" values="0 31.416;15.708 15.708;0 31.416" repeatCount="indefinite"/>
@@ -208,7 +208,7 @@
 									</svg>
 								{:else}
 									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										{#if video.Vid_Status}
+										{#if video.vidStatus}
 											<path d="M12 2v10M18.4 6.6a9 9 0 1 1-12.77.04"/>
 										{:else}
 											<path d="M12 2v10M18.4 6.6a9 9 0 1 1-12.77.04"/>

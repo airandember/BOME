@@ -176,8 +176,8 @@
 				setTimeout(() => {
 					const img = new Image();
 					
-					// Set crossOrigin to handle CORS properly
-					img.crossOrigin = 'anonymous';
+					// Remove crossOrigin to avoid CORS issues during preloading
+					// The actual images will load fine when displayed normally
 					
 					img.onload = () => {
 						// Thumbnail successfully preloaded
@@ -185,14 +185,16 @@
 					};
 					
 					img.onerror = () => {
-						// Only log errors for debugging, don't spam console
-						if (Math.random() < 0.1) { // Log only 10% of errors to avoid spam
-							console.warn('⚠️ Thumbnail preload failed (CDN/CORS):', thumbnailUrl);
+						// Silently handle preload failures - images will load fine when actually displayed
+						// This is normal for CDNs with access controls or CORS restrictions
+						// Only log errors occasionally for debugging purposes
+						if (Math.random() < 0.01) { // Log only 1% of errors to avoid spam
+							console.debug('🔇 Thumbnail preload skipped (CDN access control):', thumbnailUrl.split('/').pop());
 						}
 					};
 					
 					img.src = thumbnailUrl;
-				}, index * 50); // Stagger requests by 50ms each
+				}, index * 100); // Increased stagger to 100ms to be gentler on CDN
 			}
 		});
 	}

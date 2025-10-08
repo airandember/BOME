@@ -13,7 +13,7 @@
 
 	function handleClick() {
 		// Navigate to video page using bunny_video_id (UUID) for proper routing
-		const videoId = video.bunnyVideoId || video.id;
+		const videoId = video.bunnyVideoId || 404;		
 		window.location.href = `/videos/${videoId}`;
 	}
 
