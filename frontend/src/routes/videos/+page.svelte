@@ -121,26 +121,22 @@
 		
 		console.log('⚡ Fuzzy search completed in', Math.round(searchTime), 'ms for query:', query);
 		
-		// Sort by fuzzy match score first (lower score = better match), then by newest to oldest
-		const sortedResults = results.sort((a, b) => {
+		// Sort by fuzzy match score first, then by date within similar relevance tiers
+		const sortedResults = [...results].sort((a, b) => {
 			// Primary sort: by relevance score (lower is better in Fuse.js)
-			if (a.score !== b.score) {
-				return (a.score || 0) - (b.score || 0);
+			const scoreDiff = (a.score || 0) - (b.score || 0);
+			
+			// If scores are very similar (within 0.01), sort by date
+			if (Math.abs(scoreDiff) < 0.08) {
+				const dateA = new Date(a.item.createdAt || 0).getTime();
+				const dateB = new Date(b.item.createdAt || 0).getTime();
+				return dateB - dateA; // Newest first within similar relevance
 			}
 			
-			// Secondary sort: by creation date (newest first) when relevance is equal
-			// Handle both createdAt and created_at fields, and ensure proper date parsing
-			const dateA = new Date(a.item.createdAt || a.item.createdAt || 0).getTime();
-			const dateB = new Date(b.item.createdAt || b.item.createdAt || 0).getTime();
-			
-			// If dates are invalid, treat as very old (0)
-			const validDateA = isNaN(dateA) ? 0 : dateA;
-			const validDateB = isNaN(dateB) ? 0 : dateB;
-			
-			return validDateB - validDateA; // Newest first (higher timestamp first)
+			return scoreDiff; // Otherwise sort by relevance
 		});
 		
-		// Extract the actual video objects from sorted Fuse results
+		// Extract the actual video objects from sorted Fuse results (create new array for immutability)
 		const videos = sortedResults.map(result => result.item);
 		
 		console.log('🎯 Search results sorted:', {
@@ -151,8 +147,13 @@
 			searchTime: Math.round(searchTime),
 			firstFewDates: videos.slice(0, 5).map(v => ({
 				title: v.title?.substring(0, 30) + '...',
-				date: v.createdAt || v.createdAt,
-				parsed: new Date(v.createdAt || v.createdAt || 0).toISOString()
+				date: v.createdAt,
+				parsed: new Date(v.createdAt || 0).toISOString()
+			})),
+			firstFewScores: sortedResults.slice(0, 5).map(r => ({
+				title: r.item.title?.substring(0, 30) + '...',
+				score: r.score,
+				date: r.item.createdAt
 			}))
 		});
 		
@@ -276,17 +277,20 @@
 				allSearchResults: allSearchResults.length,
 				using: resultsToUse.length
 			});
-			currentVideos = resultsToUse;
+			// Create new array to ensure reactivity
+			currentVideos = [...resultsToUse];
 		}
 		// For allVideos tab, use videos array
 		else if (activeTab === 'allVideos') {
 			console.log('📺 Setting currentVideos to videos:', videos.length);
-			currentVideos = videos;
+			// Create new array to ensure reactivity
+			currentVideos = [...videos];
 		}
 		// For latest tab, use latestVideos array  
 		else if (activeTab === 'latest') {
 			console.log('📺 Setting currentVideos to latestVideos:', latestVideos.length);
-			currentVideos = latestVideos;
+			// Create new array to ensure reactivity
+			currentVideos = [...latestVideos];
 		}
 		// For other tabs (categories, collections), use empty
 		else {
