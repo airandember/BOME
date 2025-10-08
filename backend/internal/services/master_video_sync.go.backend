@@ -26,7 +26,7 @@ func NewMasterVideoSyncService(db *database.DB, bunnyService *BunnyService) *Mas
 }
 
 // SyncFromBunny syncs all videos from Bunny.net to the master list
-func (s *MasterVideoSyncService) SyncFromBunny(userID int) (*SyncResult, error) {
+func (s *MasterVideoSyncService) SyncFromBunny() (*SyncResult, error) {
 	log.Println("Starting sync from Bunny.net to master list...")
 
 	result := &SyncResult{
@@ -40,7 +40,7 @@ func (s *MasterVideoSyncService) SyncFromBunny(userID int) (*SyncResult, error) 
 	}
 
 	// Fetch all videos from Bunny.net
-	bunnyVideos, err := s.bunnyService.FetchAllVideos()
+	bunnyVideos, err := s.fetchAllBunnyVideos()
 	if err != nil {
 		result.ErrorDetails = append(result.ErrorDetails, fmt.Sprintf("Failed to fetch Bunny videos: %v", err))
 		return result, err
@@ -49,22 +49,11 @@ func (s *MasterVideoSyncService) SyncFromBunny(userID int) (*SyncResult, error) 
 	result.TotalVideos = len(bunnyVideos)
 
 	// Process each video
-	for i, bunnyVideo := range bunnyVideos {
-		log.Printf("🔄 [Sync %d/%d] Processing video: %s (%s)", i+1, len(bunnyVideos), bunnyVideo.GUID, bunnyVideo.Title)
-		err := s.processBunnyVideo(bunnyVideo, result, userID)
+	for _, bunnyVideo := range bunnyVideos {
+		err := s.processBunnyVideo(bunnyVideo, result)
 		if err != nil {
 			result.Errors++
-			errorMsg := fmt.Sprintf("Video %s (%s): %v", bunnyVideo.GUID, bunnyVideo.Title, err)
-			result.ErrorDetails = append(result.ErrorDetails, errorMsg)
-			log.Printf("❌ [Sync Error %d/%d] %s", result.Errors, len(bunnyVideos), errorMsg)
-		} else {
-			log.Printf("✅ [Sync Success %d/%d] Video %s processed successfully", i+1, len(bunnyVideos), bunnyVideo.GUID)
-		}
-
-		// Log progress every 100 videos
-		if (i+1)%100 == 0 {
-			log.Printf("📊 [Sync Progress] %d/%d videos processed - %d synced, %d updated, %d errors",
-				i+1, len(bunnyVideos), result.Synced, result.Updated, result.Errors)
+			result.ErrorDetails = append(result.ErrorDetails, fmt.Sprintf("Video %s: %v", bunnyVideo.GUID, err))
 		}
 	}
 
@@ -276,38 +265,53 @@ func fetchBunnyVideos(libraryID, apiKey string, page int, itemsPerPage int, sear
 	return response.Items, response.TotalItems, nil
 }
 
-func (s *MasterVideoSyncService) processBunnyVideo(bunnyVideo BunnyVideo, result *SyncResult, userID int) error {
-	// Check if video exists in master list
-	_, err := s.db.GetMasterVideoByBunnyID(bunnyVideo.GUID)
-	if err != nil {
-		// Video doesn't exist, create it
-		return s.createMasterVideoFromBunny(bunnyVideo, result, userID)
+func (s *MasterVideoSyncService) fetchAllBunnyVideos() ([]BunnyVideo, error) {
+	var allVideos []BunnyVideo
+	page := 1
+	perPage := 100
+
+	for {
+		videos, totalItems, err := fetchBunnyVideos(s.bunnyService.GetStreamLibrary(), s.bunnyService.GetStreamAPIKey(), page, perPage, "")
+		if err != nil {
+			return nil, err
+		}
+
+		allVideos = append(allVideos, videos...)
+
+		if page*perPage >= totalItems {
+			break
+		}
+		page++
 	}
 
-	// Video exists, skip it (or update if needed)
-	log.Printf("🔄 Video %s already exists, skipping", bunnyVideo.GUID)
-	return nil
+	return allVideos, nil
 }
 
-func (s *MasterVideoSyncService) createMasterVideoFromBunny(bunnyVideo BunnyVideo, result *SyncResult, userID int) error {
-	log.Printf("🔄 [CreateMasterVideo] Starting creation for video: %s (%s)", bunnyVideo.GUID, bunnyVideo.Title)
+func (s *MasterVideoSyncService) processBunnyVideo(bunnyVideo BunnyVideo, result *SyncResult) error {
+	// Check if video exists in master list
+	masterVideo, err := s.db.GetMasterVideoByBunnyID(bunnyVideo.GUID)
+	if err != nil {
+		// Video doesn't exist, create it
+		return s.createMasterVideoFromBunny(bunnyVideo, result)
+	}
 
+	// Video exists, check for conflicts and update
+	return s.updateMasterVideoFromBunny(masterVideo, bunnyVideo, result)
+}
+
+func (s *MasterVideoSyncService) createMasterVideoFromBunny(bunnyVideo BunnyVideo, result *SyncResult) error {
 	// Parse available resolutions from string
 	var availableResolutions []string
 	if bunnyVideo.AvailableResolutions != "" {
 		availableResolutions = strings.Split(bunnyVideo.AvailableResolutions, ",")
-		log.Printf("🔄 [CreateMasterVideo] Parsed %d resolutions: %v", len(availableResolutions), availableResolutions)
 	}
 
-	// Create master video in the master_video_list table
 	masterVideo := &database.MasterVideo{
 		BunnyVideoID:         bunnyVideo.GUID,
 		Title:                s.cleanTitleFromFileExtension(bunnyVideo.Title),
 		Description:          s.getBunnyDescription(bunnyVideo),
 		Category:             bunnyVideo.Category,
 		Tags:                 s.extractTagsFromBunny(bunnyVideo),
-		TagIDs:               []int{}, // Default empty
-		Tagged:               false,   // Default not tagged
 		Duration:             bunnyVideo.Length,
 		FileSize:             bunnyVideo.StorageSize,
 		Resolution:           fmt.Sprintf("%dx%d", bunnyVideo.Width, bunnyVideo.Height),
@@ -318,27 +322,24 @@ func (s *MasterVideoSyncService) createMasterVideoFromBunny(bunnyVideo BunnyVide
 		PlaybackURL:          s.bunnyService.GetStreamURL(bunnyVideo.GUID),
 		Status:               s.mapBunnyStatus(bunnyVideo.Status),
 		Views:                bunnyVideo.Views,
-		Likes:                0, // Default
 		IsPublic:             bunnyVideo.IsPublic,
 		EncodeProgress:       bunnyVideo.EncodeProgress,
 		AvailableResolutions: availableResolutions,
 		CollectionID:         bunnyVideo.CollectionID,
 		AverageWatchTime:     bunnyVideo.AverageWatchTime,
-		TotalWatchTime:       bunnyVideo.TotalWatchTime,
+		TotalWatchTime:       int64(bunnyVideo.TotalWatchTime),
 		SyncStatus:           "synced",
-		SyncNotes:            "",
+		LastBunnySync:        time.Now(),
+		LastMasterUpdate:     time.Now(),
 		MetadataVersion:      1,
-		CreatedBy:            &userID, // Use authenticated user ID
-		Vid_Status:           true,    // Default active
+		CreatedBy:            1, // System user
 	}
 
-	createdVideo, err := s.db.CreateMasterVideo(masterVideo)
+	_, err := s.db.CreateMasterVideo(masterVideo)
 	if err != nil {
-		log.Printf("❌ [CreateMasterVideo] Database creation failed for %s: %v", bunnyVideo.GUID, err)
 		return fmt.Errorf("failed to create master video: %v", err)
 	}
 
-	log.Printf("✅ [CreateMasterVideo] Successfully created video %s with ID %d", bunnyVideo.GUID, createdVideo.ID)
 	result.Synced++
 	return nil
 }
@@ -583,7 +584,6 @@ func (s *MasterVideoSyncService) extractTagsFromBunny(bunnyVideo BunnyVideo) []s
 		tags = append(tags, "public")
 	}
 
-	log.Printf("🏷️ [ExtractTags] Video %s generated %d tags: %v", bunnyVideo.GUID, len(tags), tags)
 	return tags
 }
 

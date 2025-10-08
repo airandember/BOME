@@ -735,3 +735,57 @@ func (b *BunnyService) GetVideosByCollection(collectionID string, page, itemsPer
 
 	return paginatedVideos, len(collectionVideos), nil
 }
+
+// FetchAllVideos fetches all videos from Bunny.net (used by sync service)
+func (b *BunnyService) FetchAllVideos() ([]BunnyVideo, error) {
+	var allVideos []BunnyVideo
+	page := 1
+	perPage := 100
+
+	for {
+		url := fmt.Sprintf("https://video.bunnycdn.com/library/%s/videos?page=%d&itemsPerPage=%d&orderBy=date",
+			b.streamLibrary, page, perPage)
+
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("AccessKey", b.streamAPIKey)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := b.makeRequestWithRetry(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to make request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response body: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+		}
+
+		var response struct {
+			Items      []BunnyVideo `json:"items"`
+			TotalItems int          `json:"totalItems"`
+		}
+
+		if err := json.Unmarshal(body, &response); err != nil {
+			return nil, fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		allVideos = append(allVideos, response.Items...)
+
+		// If we have no more videos, break
+		if len(response.Items) == 0 || page*perPage >= response.TotalItems {
+			break
+		}
+		page++
+	}
+
+	return allVideos, nil
+}

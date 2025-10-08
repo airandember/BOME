@@ -35,6 +35,8 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 		fmt.Printf("  GET /master-videos/tags/untagged\n")
 		// Get all master videos with filtering and pagination
 		masterVideos.GET("", func(c *gin.Context) {
+			log.Printf("🎬 [MASTER-VIDEOS] GET request received")
+
 			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 			page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 			category := c.Query("category")
@@ -45,6 +47,9 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 			sortField := c.DefaultQuery("sort_field", "id")
 			sortDirection := c.DefaultQuery("sort_direction", "desc")
 
+			log.Printf("🎬 [MASTER-VIDEOS] Query params - page: %d, limit: %d, category: %s, status: %s, syncStatus: %s, vidStatus: %s, search: %s, sortField: %s, sortDirection: %s",
+				page, limit, category, status, syncStatus, vidStatus, search, sortField, sortDirection)
+
 			offset := (page - 1) * limit
 
 			var videos []*database.MasterVideo
@@ -52,38 +57,61 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 			var totalCount int
 
 			if search != "" {
+				log.Printf("🎬 [MASTER-VIDEOS] Executing search query for: %s", search)
 				videos, err = db.SearchMasterVideos(search, limit, offset, sortField, sortDirection)
+				if err != nil {
+					log.Printf("❌ [MASTER-VIDEOS] SearchMasterVideos failed: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{
+						"error":   "Failed to search master videos",
+						"details": err.Error(),
+					})
+					return
+				}
+				log.Printf("🎬 [MASTER-VIDEOS] SearchMasterVideos returned %d videos", len(videos))
+
 				// For search, we need to get total count separately
+				log.Printf("🎬 [MASTER-VIDEOS] Getting search count for: %s", search)
 				totalCount, err = db.GetMasterVideoSearchCount(search)
 				if err != nil {
+					log.Printf("❌ [MASTER-VIDEOS] GetMasterVideoSearchCount failed: %v", err)
 					c.JSON(http.StatusInternalServerError, gin.H{
 						"error":   "Failed to get search count",
 						"details": err.Error(),
 					})
 					return
 				}
+				log.Printf("🎬 [MASTER-VIDEOS] GetMasterVideoSearchCount returned: %d", totalCount)
 			} else {
+				log.Printf("🎬 [MASTER-VIDEOS] Executing GetMasterVideos query")
 				videos, err = db.GetMasterVideos(limit, offset, category, status, syncStatus, vidStatus, sortField, sortDirection)
+				if err != nil {
+					log.Printf("❌ [MASTER-VIDEOS] GetMasterVideos failed: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{
+						"error":   "Failed to fetch master videos",
+						"details": err.Error(),
+					})
+					return
+				}
+				log.Printf("🎬 [MASTER-VIDEOS] GetMasterVideos returned %d videos", len(videos))
+
 				// Get total count for filtered results
+				log.Printf("🎬 [MASTER-VIDEOS] Getting total count")
 				totalCount, err = db.GetMasterVideoCount(category, status, syncStatus, vidStatus)
 				if err != nil {
+					log.Printf("❌ [MASTER-VIDEOS] GetMasterVideoCount failed: %v", err)
 					c.JSON(http.StatusInternalServerError, gin.H{
 						"error":   "Failed to get video count",
 						"details": err.Error(),
 					})
 					return
 				}
-			}
-
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"error":   "Failed to fetch master videos",
-					"details": err.Error(),
-				})
-				return
+				log.Printf("🎬 [MASTER-VIDEOS] GetMasterVideoCount returned: %d", totalCount)
 			}
 
 			totalPages := (totalCount + limit - 1) / limit
+
+			log.Printf("🎬 [MASTER-VIDEOS] Preparing response - videos: %d, totalCount: %d, totalPages: %d, currentPage: %d",
+				len(videos), totalCount, totalPages, page)
 
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
@@ -96,6 +124,8 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 					"has_more":     page < totalPages,
 				},
 			})
+
+			log.Printf("🎬 [MASTER-VIDEOS] Response sent successfully")
 		})
 
 		// Get master video by ID
@@ -349,12 +379,21 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 		})
 	}
 
-	// Sync routes
-	sync := router.Group("/sync")
+	// Sync routes - these should be under /master-videos/sync/ to match frontend expectations
+	sync := masterVideos.Group("/sync")
 	{
 		// Sync from Bunny.net to master list
 		sync.POST("/from-bunny", func(c *gin.Context) {
-			result, err := masterVideoService.SyncFromBunny()
+			// Get authenticated user ID from context
+			userID := c.GetInt("user_id")
+			if userID == 0 {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"error": "Authentication required",
+				})
+				return
+			}
+
+			result, err := masterVideoService.SyncFromBunny(userID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"error":   "Sync failed",
@@ -407,7 +446,7 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 	}
 
 	// Conflict resolution routes
-	conflicts := router.Group("/conflicts")
+	conflicts := masterVideos.Group("/conflicts")
 	{
 		// Get all conflicts
 		conflicts.GET("", func(c *gin.Context) {

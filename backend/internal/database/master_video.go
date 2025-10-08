@@ -47,7 +47,7 @@ type MasterVideo struct {
 
 	// Metadata
 	MetadataVersion int
-	CreatedBy       int
+	CreatedBy       *int
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 
@@ -97,78 +97,142 @@ type SyncAuditLog struct {
 
 // CreateMasterVideo creates a new video in the master list
 func (db *DB) CreateMasterVideo(video *MasterVideo) (*MasterVideo, error) {
-	tagsJSON, err := json.Marshal(video.Tags)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal tags: %v", err)
+	log.Printf("🔄 [DB CreateMasterVideo] Starting creation for video: %s", video.BunnyVideoID)
+	log.Printf("🔍 [DB CreateMasterVideo] Input data - Tags: %v (len=%d), Resolutions: %v (len=%d), TagIDs: %v (len=%d)",
+		video.Tags, len(video.Tags), video.AvailableResolutions, len(video.AvailableResolutions), video.TagIDs, len(video.TagIDs))
+
+	// For JSONB columns, we need to handle empty slices specially
+	// Pass NULL for empty slices to let PostgreSQL use the column default
+	var tagsValue, resolutionsValue, tagIDsValue interface{}
+
+	if len(video.Tags) == 0 {
+		tagsValue = nil // Let PostgreSQL use default '[]'::jsonb
+	} else {
+		tagsJSON, err := json.Marshal(video.Tags)
+		if err != nil {
+			log.Printf("❌ [DB CreateMasterVideo] Failed to marshal tags for %s: %v", video.BunnyVideoID, err)
+			return nil, fmt.Errorf("failed to marshal tags: %v", err)
+		}
+		tagsValue = string(tagsJSON)
 	}
 
-	resolutionsJSON, err := json.Marshal(video.AvailableResolutions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal resolutions: %v", err)
+	if len(video.AvailableResolutions) == 0 {
+		resolutionsValue = nil // Let PostgreSQL use default '[]'::jsonb
+	} else {
+		resolutionsJSON, err := json.Marshal(video.AvailableResolutions)
+		if err != nil {
+			log.Printf("❌ [DB CreateMasterVideo] Failed to marshal resolutions for %s: %v", video.BunnyVideoID, err)
+			return nil, fmt.Errorf("failed to marshal resolutions: %v", err)
+		}
+		resolutionsValue = string(resolutionsJSON)
 	}
+
+	if len(video.TagIDs) == 0 {
+		tagIDsValue = nil // Let PostgreSQL use default '[]'::jsonb
+	} else {
+		tagIDsJSON, err := json.Marshal(video.TagIDs)
+		if err != nil {
+			log.Printf("❌ [DB CreateMasterVideo] Failed to marshal tag IDs for %s: %v", video.BunnyVideoID, err)
+			return nil, fmt.Errorf("failed to marshal tag IDs: %v", err)
+		}
+		tagIDsValue = string(tagIDsJSON)
+	}
+
+	log.Printf("🔄 [DB CreateMasterVideo] Using NULL for empty slices - Tags: %v, Resolutions: %v, TagIDs: %v",
+		tagsValue, resolutionsValue, tagIDsValue)
 
 	var id int
-	err = db.QueryRow(`
+	err := db.QueryRow(`
 		INSERT INTO master_video_list (
 			bunny_video_id, title, description, category, tags, duration, file_size,
 			resolution, framerate, thumbnail_url, video_url, iframe_src, playback_url,
 			status, views, likes, is_public, encode_progress, available_resolutions,
-			collection_id, average_watch_time, total_watch_time, sync_status,
+			collection_id, average_watch_time, total_watch_time, vid_status, tagged, tag_ids, sync_status,
 			sync_notes, metadata_version, created_by
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
 		RETURNING id`,
-		video.BunnyVideoID, video.Title, video.Description, video.Category, string(tagsJSON),
+		video.BunnyVideoID, video.Title, video.Description, video.Category, nil,
 		video.Duration, video.FileSize, video.Resolution, video.Framerate, video.ThumbnailURL,
 		video.VideoURL, video.IframeSrc, video.PlaybackURL, video.Status, video.Views,
-		video.Likes, video.IsPublic, video.EncodeProgress, string(resolutionsJSON),
-		video.CollectionID, video.AverageWatchTime, video.TotalWatchTime, video.SyncStatus,
+		video.Likes, video.IsPublic, video.EncodeProgress, resolutionsValue,
+		video.CollectionID, video.AverageWatchTime, video.TotalWatchTime, video.Vid_Status, video.Tagged, tagIDsValue, video.SyncStatus,
 		video.SyncNotes, video.MetadataVersion, video.CreatedBy,
 	).Scan(&id)
 	if err != nil {
+		log.Printf("❌ [DB CreateMasterVideo] INSERT query failed for %s: %v", video.BunnyVideoID, err)
+		log.Printf("🔍 [DB CreateMasterVideo] Query values - Title: %s, Category: %s, Status: %s, Vid_Status: %t, Tagged: %t",
+			video.Title, video.Category, video.Status, video.Vid_Status, video.Tagged)
+		log.Printf("🔍 [DB CreateMasterVideo] Interface values - Tags: %v, Resolutions: %v, TagIDs: %v",
+			tagsValue, resolutionsValue, tagIDsValue)
 		return nil, err
 	}
 
-	return db.GetMasterVideoByID(id)
+	log.Printf("✅ [DB CreateMasterVideo] INSERT successful for %s, got ID: %d", video.BunnyVideoID, id)
+
+	result, err := db.GetMasterVideoByID(id)
+	if err != nil {
+		log.Printf("❌ [DB CreateMasterVideo] Failed to retrieve created video %s (ID: %d): %v", video.BunnyVideoID, id, err)
+		return nil, err
+	}
+
+	log.Printf("✅ [DB CreateMasterVideo] Successfully created and retrieved video %s (ID: %d)", video.BunnyVideoID, id)
+	return result, nil
 }
 
 // GetMasterVideoByID retrieves a master video by ID
 func (db *DB) GetMasterVideoByID(id int) (*MasterVideo, error) {
 	video := &MasterVideo{}
-	var tagsStr, resolutionsStr string
+	var tagsStr, resolutionsStr, tagIDsStr sql.NullString
+	var createdBy sql.NullInt64
 
 	err := db.QueryRow(`
-		SELECT id, bunny_video_id, title, description, category, tags, tagged, duration, file_size,
+		SELECT id, bunny_video_id, title, description, category, tags, duration, file_size,
 		       resolution, framerate, thumbnail_url, video_url, iframe_src, playback_url,
 		       status, views, likes, is_public, encode_progress, available_resolutions,
 		       collection_id, average_watch_time, total_watch_time, last_bunny_sync,
 		       last_master_update, sync_status, sync_notes, metadata_version, created_by,
-		       created_at, updated_at, vid_status
+		       created_at, updated_at, vid_status, tag_ids, tagged, tag_ids
 		FROM master_video_list WHERE id = $1`,
 		id,
 	).Scan(
 		&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
-		&tagsStr, &video.Tagged, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
+		&tagsStr, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
 		&video.ThumbnailURL, &video.VideoURL, &video.IframeSrc, &video.PlaybackURL,
 		&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 		&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 		&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-		&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status,
+		&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &video.Tagged, &tagIDsStr,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse tags from JSON
-	if tagsStr != "" {
-		if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
+	// Convert sql.NullInt64 to *int
+	if createdBy.Valid {
+		createdByInt := int(createdBy.Int64)
+		video.CreatedBy = &createdByInt
+	} else {
+		video.CreatedBy = nil
+	}
+
+	// Parse tags from JSON (handle NULL)
+	if tagsStr.Valid && tagsStr.String != "" {
+		if err := json.Unmarshal([]byte(tagsStr.String), &video.Tags); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
 		}
 	}
 
-	// Parse resolutions from JSON
-	if resolutionsStr != "" {
-		if err := json.Unmarshal([]byte(resolutionsStr), &video.AvailableResolutions); err != nil {
+	// Parse resolutions from JSON (handle NULL)
+	if resolutionsStr.Valid && resolutionsStr.String != "" {
+		if err := json.Unmarshal([]byte(resolutionsStr.String), &video.AvailableResolutions); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal resolutions: %v", err)
+		}
+	}
+
+	// Parse tag IDs from JSON (handle NULL)
+	if tagIDsStr.Valid && tagIDsStr.String != "" {
+		if err := json.Unmarshal([]byte(tagIDsStr.String), &video.TagIDs); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal tag IDs: %v", err)
 		}
 	}
 
@@ -178,41 +242,57 @@ func (db *DB) GetMasterVideoByID(id int) (*MasterVideo, error) {
 // GetMasterVideoByBunnyID retrieves a master video by Bunny.net ID
 func (db *DB) GetMasterVideoByBunnyID(bunnyVideoID string) (*MasterVideo, error) {
 	video := &MasterVideo{}
-	var tagsStr, resolutionsStr string
+	var tagsStr, resolutionsStr, tagIDsStr sql.NullString
+	var createdBy sql.NullInt64
 
 	err := db.QueryRow(`
-		SELECT id, bunny_video_id, title, description, category, tags, tagged, duration, file_size,
+		SELECT id, bunny_video_id, title, description, category, tags, duration, file_size,
 		       resolution, framerate, thumbnail_url, video_url, iframe_src, playback_url,
 		       status, views, likes, is_public, encode_progress, available_resolutions,
 		       collection_id, average_watch_time, total_watch_time, last_bunny_sync,
 		       last_master_update, sync_status, sync_notes, metadata_version, created_by,
-		       created_at, updated_at, vid_status
+		       created_at, updated_at, vid_status, tag_ids, tagged, tag_ids
 		FROM master_video_list WHERE bunny_video_id = $1`,
 		bunnyVideoID,
 	).Scan(
 		&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
-		&tagsStr, &video.Tagged, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
+		&tagsStr, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
 		&video.ThumbnailURL, &video.VideoURL, &video.IframeSrc, &video.PlaybackURL,
 		&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 		&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 		&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-		&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status,
+		&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &video.Tagged, &tagIDsStr,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse tags from JSON
-	if tagsStr != "" {
-		if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
+	// Convert sql.NullInt64 to *int
+	if createdBy.Valid {
+		createdByInt := int(createdBy.Int64)
+		video.CreatedBy = &createdByInt
+	} else {
+		video.CreatedBy = nil
+	}
+
+	// Parse tags from JSON (handle NULL)
+	if tagsStr.Valid && tagsStr.String != "" {
+		if err := json.Unmarshal([]byte(tagsStr.String), &video.Tags); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
 		}
 	}
 
-	// Parse resolutions from JSON
-	if resolutionsStr != "" {
-		if err := json.Unmarshal([]byte(resolutionsStr), &video.AvailableResolutions); err != nil {
+	// Parse resolutions from JSON (handle NULL)
+	if resolutionsStr.Valid && resolutionsStr.String != "" {
+		if err := json.Unmarshal([]byte(resolutionsStr.String), &video.AvailableResolutions); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal resolutions: %v", err)
+		}
+	}
+
+	// Parse tag IDs from JSON (handle NULL)
+	if tagIDsStr.Valid && tagIDsStr.String != "" {
+		if err := json.Unmarshal([]byte(tagIDsStr.String), &video.TagIDs); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal tag IDs: %v", err)
 		}
 	}
 
@@ -221,13 +301,16 @@ func (db *DB) GetMasterVideoByBunnyID(bunnyVideoID string) (*MasterVideo, error)
 
 // GetMasterVideos retrieves videos from the master list with filtering and pagination
 func (db *DB) GetMasterVideos(limit, offset int, category, status, syncStatus, vidStatus, sortField, sortDirection string) ([]*MasterVideo, error) {
+	log.Printf("🎬 [DB-GetMasterVideos] Called with limit=%d, offset=%d, category='%s', status='%s', syncStatus='%s', vidStatus='%s', sortField='%s', sortDirection='%s'",
+		limit, offset, category, status, syncStatus, vidStatus, sortField, sortDirection)
+
 	query := `
 		SELECT id, bunny_video_id, title, description, category, tags, tagged, duration, file_size,
 		       resolution, framerate, thumbnail_url, video_url, iframe_src, playback_url,
 		       status, views, likes, is_public, encode_progress, available_resolutions,
 		       collection_id, average_watch_time, total_watch_time, last_bunny_sync,
 		       last_master_update, sync_status, sync_notes, metadata_version, created_by,
-		       created_at, updated_at, vid_status
+		       created_at, updated_at, vid_status, tag_ids
 		FROM master_video_list WHERE 1=1`
 	args := []interface{}{}
 	argCount := 0
@@ -276,16 +359,28 @@ func (db *DB) GetMasterVideos(limit, offset int, category, status, syncStatus, v
 	query += fmt.Sprintf(` ORDER BY %s %s LIMIT $%d OFFSET $%d`, sortColumn, sortDirection, argCount, argCount+1)
 	args = append(args, limit, offset)
 
+	log.Printf("🎬 [DB-GetMasterVideos] Final query: %s", query)
+	log.Printf("🎬 [DB-GetMasterVideos] Query args: %v", args)
+
 	rows, err := db.Query(query, args...)
 	if err != nil {
+		log.Printf("❌ [DB-GetMasterVideos] Query execution failed: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
 
+	log.Printf("🎬 [DB-GetMasterVideos] Query executed successfully, processing rows...")
+
 	var videos []*MasterVideo
+	rowCount := 0
 	for rows.Next() {
+		rowCount++
+		log.Printf("🎬 [DB-GetMasterVideos] Processing row %d", rowCount)
 		video := &MasterVideo{}
-		var tagsStr, resolutionsStr string
+		var tagsStr, resolutionsStr, tagIDsStr sql.NullString
+
+		// Initialize CreatedBy as a sql.NullInt64 to handle potential NULL values
+		var createdBy sql.NullInt64
 
 		err := rows.Scan(
 			&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
@@ -294,29 +389,51 @@ func (db *DB) GetMasterVideos(limit, offset int, category, status, syncStatus, v
 			&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 			&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 			&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-			&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status,
+			&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsStr,
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		// Parse tags from JSON
-		if tagsStr != "" {
-			if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
+		// Convert sql.NullInt64 to *int
+		if createdBy.Valid {
+			createdByInt := int(createdBy.Int64)
+			video.CreatedBy = &createdByInt
+		} else {
+			video.CreatedBy = nil
+		}
+
+		// Parse tags from JSON (handle NULL)
+		if tagsStr.Valid && tagsStr.String != "" {
+			if err := json.Unmarshal([]byte(tagsStr.String), &video.Tags); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
 			}
 		}
 
-		// Parse resolutions from JSON
-		if resolutionsStr != "" {
-			if err := json.Unmarshal([]byte(resolutionsStr), &video.AvailableResolutions); err != nil {
+		// Parse resolutions from JSON (handle NULL)
+		if resolutionsStr.Valid && resolutionsStr.String != "" {
+			if err := json.Unmarshal([]byte(resolutionsStr.String), &video.AvailableResolutions); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal resolutions: %v", err)
 			}
 		}
 
+		// Parse tag IDs from JSON (handle NULL)
+		if tagIDsStr.Valid && tagIDsStr.String != "" {
+			if err := json.Unmarshal([]byte(tagIDsStr.String), &video.TagIDs); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tag IDs: %v", err)
+			}
+		}
+
 		videos = append(videos, video)
+		log.Printf("🎬 [DB-GetMasterVideos] Video %d added to results", video.ID)
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Printf("❌ [DB-GetMasterVideos] Rows iteration error: %v", err)
+		return nil, err
+	}
+
+	log.Printf("🎬 [DB-GetMasterVideos] Completed successfully - returned %d videos", len(videos))
 	return videos, nil
 }
 
@@ -521,7 +638,7 @@ func (db *DB) SearchMasterVideos(query string, limit, offset int, sortField, sor
 		       status, views, likes, is_public, encode_progress, available_resolutions,
 		       collection_id, average_watch_time, total_watch_time, last_bunny_sync,
 		       last_master_update, sync_status, sync_notes, metadata_version, created_by,
-		       created_at, updated_at, vid_status
+		       created_at, updated_at, vid_status, tag_ids
 		FROM master_video_list 
 		WHERE title ILIKE $1 OR description ILIKE $1 OR category ILIKE $1`
 
@@ -553,7 +670,8 @@ func (db *DB) SearchMasterVideos(query string, limit, offset int, sortField, sor
 	var videos []*MasterVideo
 	for rows.Next() {
 		video := &MasterVideo{}
-		var tagsStr, resolutionsStr string
+		var tagsStr, resolutionsStr, tagIDsStr sql.NullString
+		var createdBy sql.NullInt64
 
 		err := rows.Scan(
 			&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
@@ -562,23 +680,38 @@ func (db *DB) SearchMasterVideos(query string, limit, offset int, sortField, sor
 			&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 			&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 			&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-			&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status,
+			&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsStr,
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		// Parse tags from JSON
-		if tagsStr != "" {
-			if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
+		// Convert sql.NullInt64 to *int
+		if createdBy.Valid {
+			createdByInt := int(createdBy.Int64)
+			video.CreatedBy = &createdByInt
+		} else {
+			video.CreatedBy = nil
+		}
+
+		// Parse tags from JSON (handle NULL)
+		if tagsStr.Valid && tagsStr.String != "" {
+			if err := json.Unmarshal([]byte(tagsStr.String), &video.Tags); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
 			}
 		}
 
-		// Parse resolutions from JSON
-		if resolutionsStr != "" {
-			if err := json.Unmarshal([]byte(resolutionsStr), &video.AvailableResolutions); err != nil {
+		// Parse resolutions from JSON (handle NULL)
+		if resolutionsStr.Valid && resolutionsStr.String != "" {
+			if err := json.Unmarshal([]byte(resolutionsStr.String), &video.AvailableResolutions); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal resolutions: %v", err)
+			}
+		}
+
+		// Parse tag IDs from JSON (handle NULL)
+		if tagIDsStr.Valid && tagIDsStr.String != "" {
+			if err := json.Unmarshal([]byte(tagIDsStr.String), &video.TagIDs); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tag IDs: %v", err)
 			}
 		}
 
@@ -970,7 +1103,7 @@ func (db *DB) GetUntaggedVideos(limit int) ([]*MasterVideo, error) {
 	var videos []*MasterVideo
 	for rows.Next() {
 		video := &MasterVideo{}
-		var tagsStr, resolutionsStr string
+		var tagsStr, resolutionsStr, tagIDsStr sql.NullString
 
 		err := rows.Scan(
 			&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
@@ -979,23 +1112,30 @@ func (db *DB) GetUntaggedVideos(limit int) ([]*MasterVideo, error) {
 			&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 			&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 			&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-			&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status,
+			&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsStr,
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		// Parse tags from JSON
-		if tagsStr != "" {
-			if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
+		// Parse tags from JSON (handle NULL)
+		if tagsStr.Valid && tagsStr.String != "" {
+			if err := json.Unmarshal([]byte(tagsStr.String), &video.Tags); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
 			}
 		}
 
-		// Parse resolutions from JSON
-		if resolutionsStr != "" {
-			if err := json.Unmarshal([]byte(resolutionsStr), &video.AvailableResolutions); err != nil {
+		// Parse resolutions from JSON (handle NULL)
+		if resolutionsStr.Valid && resolutionsStr.String != "" {
+			if err := json.Unmarshal([]byte(resolutionsStr.String), &video.AvailableResolutions); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal resolutions: %v", err)
+			}
+		}
+
+		// Parse tag IDs from JSON (handle NULL)
+		if tagIDsStr.Valid && tagIDsStr.String != "" {
+			if err := json.Unmarshal([]byte(tagIDsStr.String), &video.TagIDs); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tag IDs: %v", err)
 			}
 		}
 

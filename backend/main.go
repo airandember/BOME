@@ -183,7 +183,7 @@ func main() {
 
 	// Setup routes
 	log.Println("Setting up routes...")
-	routes.SetupRoutes(router, cfg, db, redis, optimizedBunnyService.GetBunnyService(), stripeService, spacesService, emailService, biService)
+	routes.SetupRoutes(router, cfg, db, redis, bunnyService, stripeService, spacesService, emailService, biService)
 	log.Println("Routes setup completed successfully")
 
 	// Create HTTP server with optimized settings for high traffic

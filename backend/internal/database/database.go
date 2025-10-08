@@ -253,6 +253,7 @@ func (db *DB) RunMigrations() error {
 		addPriceIdToStripeSubscriptions,   // Add price_id to stripe_subscriptions table
 		enhanceStripeSubscriptionsTable,   // Add direct Stripe data columns to stripe_subscriptions
 		addManualVideoAccessColumn,        // Add manual_video_access column to users table
+		addVidStatusToMasterVideoList,     // Add vid_status column to master_video_list table
 	}
 
 	for i, migration := range migrations {
@@ -1566,6 +1567,7 @@ CREATE TABLE IF NOT EXISTS master_video_list (
     collection_id VARCHAR(255),
     average_watch_time INTEGER DEFAULT 0,
     total_watch_time BIGINT DEFAULT 0,
+    vid_status BOOLEAN DEFAULT true,
     
     -- Sync tracking fields
     last_bunny_sync TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -2263,6 +2265,44 @@ BEGIN
             
             -- Log the migration
             RAISE NOTICE 'Added manual_video_access column to users table';
+        END IF;
+    END IF;
+END $$;
+`
+
+const addVidStatusToMasterVideoList = `
+-- Migration: Add vid_status and tag_ids columns to master_video_list table
+-- These columns track video status and tag associations
+
+DO $$ 
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'master_video_list') THEN
+        -- Add vid_status column
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'master_video_list' AND column_name = 'vid_status'
+        ) THEN
+            ALTER TABLE master_video_list ADD COLUMN vid_status BOOLEAN DEFAULT TRUE;
+            
+            -- Add index for better performance on video status queries
+            CREATE INDEX IF NOT EXISTS idx_master_video_vid_status ON master_video_list(vid_status) WHERE vid_status = TRUE;
+            
+            -- Log the migration
+            RAISE NOTICE 'Added vid_status column to master_video_list table';
+        END IF;
+        
+        -- Add tag_ids column
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = 'master_video_list' AND column_name = 'tag_ids'
+        ) THEN
+            ALTER TABLE master_video_list ADD COLUMN tag_ids JSONB DEFAULT '[]';
+            
+            -- Add index for better performance on tag queries
+            CREATE INDEX IF NOT EXISTS idx_master_video_tag_ids ON master_video_list USING gin(tag_ids);
+            
+            -- Log the migration
+            RAISE NOTICE 'Added tag_ids column to master_video_list table';
         END IF;
     END IF;
 END $$;
