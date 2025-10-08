@@ -83,9 +83,13 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 				log.Printf("🎬 [MASTER-VIDEOS] GetMasterVideoSearchCount returned: %d", totalCount)
 			} else {
 				log.Printf("🎬 [MASTER-VIDEOS] Executing GetMasterVideos query")
+				log.Printf("🔍 [CONSOLE-LOG] GetMasterVideos() called with params: limit=%d, offset=%d, category='%s', status='%s', syncStatus='%s', vidStatus='%s', sortField='%s', sortDirection='%s'",
+					limit, offset, category, status, syncStatus, vidStatus, sortField, sortDirection)
 				videos, err = db.GetMasterVideos(limit, offset, category, status, syncStatus, vidStatus, sortField, sortDirection)
+				log.Printf("🎬 [MASTER-VIDEOS] GetMasterVideos returned: %v", videos)
 				if err != nil {
 					log.Printf("❌ [MASTER-VIDEOS] GetMasterVideos failed: %v", err)
+					log.Printf("🔍 [CONSOLE-LOG] GetMasterVideos() ERROR: %v", err)
 					c.JSON(http.StatusInternalServerError, gin.H{
 						"error":   "Failed to fetch master videos",
 						"details": err.Error(),
@@ -93,6 +97,7 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 					return
 				}
 				log.Printf("🎬 [MASTER-VIDEOS] GetMasterVideos returned %d videos", len(videos))
+				log.Printf("🔍 [CONSOLE-LOG] GetMasterVideos() SUCCESS: returned %d videos", len(videos))
 
 				// Get total count for filtered results
 				log.Printf("🎬 [MASTER-VIDEOS] Getting total count")

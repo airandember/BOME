@@ -182,8 +182,9 @@ func (db *DB) CreateMasterVideo(video *MasterVideo) (*MasterVideo, error) {
 // GetMasterVideoByID retrieves a master video by ID
 func (db *DB) GetMasterVideoByID(id int) (*MasterVideo, error) {
 	video := &MasterVideo{}
-	var tagsStr, resolutionsStr, tagIDsStr sql.NullString
+	var tagsStr, resolutionsStr sql.NullString
 	var createdBy sql.NullInt64
+	var tagIDsArray pq.Int64Array
 
 	err := db.QueryRow(`
 		SELECT id, bunny_video_id, title, description, category, tags, tagged, duration, file_size,
@@ -201,7 +202,7 @@ func (db *DB) GetMasterVideoByID(id int) (*MasterVideo, error) {
 		&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 		&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 		&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-		&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsStr,
+		&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsArray,
 	)
 	if err != nil {
 		return nil, err
@@ -229,11 +230,10 @@ func (db *DB) GetMasterVideoByID(id int) (*MasterVideo, error) {
 		}
 	}
 
-	// Parse tag IDs from JSON (handle NULL)
-	if tagIDsStr.Valid && tagIDsStr.String != "" {
-		if err := json.Unmarshal([]byte(tagIDsStr.String), &video.TagIDs); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal tag IDs: %v", err)
-		}
+	// Convert pq.Int64Array to []int
+	video.TagIDs = make([]int, len(tagIDsArray))
+	for i, val := range tagIDsArray {
+		video.TagIDs[i] = int(val)
 	}
 
 	return video, nil
@@ -242,8 +242,9 @@ func (db *DB) GetMasterVideoByID(id int) (*MasterVideo, error) {
 // GetMasterVideoByBunnyID retrieves a master video by Bunny.net ID
 func (db *DB) GetMasterVideoByBunnyID(bunnyVideoID string) (*MasterVideo, error) {
 	video := &MasterVideo{}
-	var tagsStr, resolutionsStr, tagIDsStr sql.NullString
+	var tagsStr, resolutionsStr sql.NullString
 	var createdBy sql.NullInt64
+	var tagIDsArray pq.Int64Array
 
 	err := db.QueryRow(`
 		SELECT id, bunny_video_id, title, description, category, tags, tagged, duration, file_size,
@@ -261,7 +262,7 @@ func (db *DB) GetMasterVideoByBunnyID(bunnyVideoID string) (*MasterVideo, error)
 		&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 		&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 		&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-		&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsStr,
+		&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsArray,
 	)
 	if err != nil {
 		return nil, err
@@ -289,11 +290,10 @@ func (db *DB) GetMasterVideoByBunnyID(bunnyVideoID string) (*MasterVideo, error)
 		}
 	}
 
-	// Parse tag IDs from JSON (handle NULL)
-	if tagIDsStr.Valid && tagIDsStr.String != "" {
-		if err := json.Unmarshal([]byte(tagIDsStr.String), &video.TagIDs); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal tag IDs: %v", err)
-		}
+	// Convert pq.Int64Array to []int
+	video.TagIDs = make([]int, len(tagIDsArray))
+	for i, val := range tagIDsArray {
+		video.TagIDs[i] = int(val)
 	}
 
 	return video, nil
@@ -377,7 +377,8 @@ func (db *DB) GetMasterVideos(limit, offset int, category, status, syncStatus, v
 		rowCount++
 		log.Printf("🎬 [DB-GetMasterVideos] Processing row %d", rowCount)
 		video := &MasterVideo{}
-		var tagsStr, resolutionsStr, tagIDsStr sql.NullString
+		var tagsStr, resolutionsStr sql.NullString
+		var tagIDsArray pq.Int64Array
 
 		// Initialize CreatedBy as a sql.NullInt64 to handle potential NULL values
 		var createdBy sql.NullInt64
@@ -389,7 +390,7 @@ func (db *DB) GetMasterVideos(limit, offset int, category, status, syncStatus, v
 			&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 			&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 			&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-			&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsStr,
+			&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsArray,
 		)
 		if err != nil {
 			return nil, err
@@ -417,11 +418,10 @@ func (db *DB) GetMasterVideos(limit, offset int, category, status, syncStatus, v
 			}
 		}
 
-		// Parse tag IDs from JSON (handle NULL)
-		if tagIDsStr.Valid && tagIDsStr.String != "" {
-			if err := json.Unmarshal([]byte(tagIDsStr.String), &video.TagIDs); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal tag IDs: %v", err)
-			}
+		// Convert pq.Int64Array to []int
+		video.TagIDs = make([]int, len(tagIDsArray))
+		for i, val := range tagIDsArray {
+			video.TagIDs[i] = int(val)
 		}
 
 		videos = append(videos, video)
@@ -670,8 +670,9 @@ func (db *DB) SearchMasterVideos(query string, limit, offset int, sortField, sor
 	var videos []*MasterVideo
 	for rows.Next() {
 		video := &MasterVideo{}
-		var tagsStr, resolutionsStr, tagIDsStr sql.NullString
+		var tagsStr, resolutionsStr sql.NullString
 		var createdBy sql.NullInt64
+		var tagIDsArray pq.Int64Array
 
 		err := rows.Scan(
 			&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
@@ -680,7 +681,7 @@ func (db *DB) SearchMasterVideos(query string, limit, offset int, sortField, sor
 			&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 			&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 			&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-			&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsStr,
+			&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsArray,
 		)
 		if err != nil {
 			return nil, err
@@ -708,11 +709,10 @@ func (db *DB) SearchMasterVideos(query string, limit, offset int, sortField, sor
 			}
 		}
 
-		// Parse tag IDs from JSON (handle NULL)
-		if tagIDsStr.Valid && tagIDsStr.String != "" {
-			if err := json.Unmarshal([]byte(tagIDsStr.String), &video.TagIDs); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal tag IDs: %v", err)
-			}
+		// Convert pq.Int64Array to []int
+		video.TagIDs = make([]int, len(tagIDsArray))
+		for i, val := range tagIDsArray {
+			video.TagIDs[i] = int(val)
 		}
 
 		videos = append(videos, video)
@@ -1103,8 +1103,9 @@ func (db *DB) GetUntaggedVideos(limit int) ([]*MasterVideo, error) {
 	var videos []*MasterVideo
 	for rows.Next() {
 		video := &MasterVideo{}
-		var tagsStr, resolutionsStr, tagIDsStr sql.NullString
+		var tagsStr, resolutionsStr sql.NullString
 		var createdBy sql.NullInt64
+		var tagIDsArray pq.Int64Array
 
 		err := rows.Scan(
 			&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
@@ -1113,7 +1114,7 @@ func (db *DB) GetUntaggedVideos(limit int) ([]*MasterVideo, error) {
 			&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 			&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 			&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-			&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsStr,
+			&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsArray,
 		)
 		if err != nil {
 			return nil, err
@@ -1141,11 +1142,10 @@ func (db *DB) GetUntaggedVideos(limit int) ([]*MasterVideo, error) {
 			}
 		}
 
-		// Parse tag IDs from JSON (handle NULL)
-		if tagIDsStr.Valid && tagIDsStr.String != "" {
-			if err := json.Unmarshal([]byte(tagIDsStr.String), &video.TagIDs); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal tag IDs: %v", err)
-			}
+		// Convert pq.Int64Array to []int
+		video.TagIDs = make([]int, len(tagIDsArray))
+		for i, val := range tagIDsArray {
+			video.TagIDs[i] = int(val)
 		}
 
 		videos = append(videos, video)
