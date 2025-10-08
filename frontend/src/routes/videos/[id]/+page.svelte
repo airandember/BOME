@@ -56,7 +56,7 @@
 
 	async function loadVideo() {
 		try {
-			const videoId = $page.params.id;
+			const videoId: any = $page.params.id;
 			const loadedVideo = await videoService.getVideo(videoId);
 			video = loadedVideo;
 			
