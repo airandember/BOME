@@ -277,6 +277,7 @@ For now, you can sync data manually using the subscription plans interface or di
 								<li>✅ Product and pricing information</li>
 								<li>✅ Payment and invoice records</li>
 								<li>✅ Database relationships and integrity</li>
+								<li>🆕 <strong>Users.sub_id population for active subscriptions</strong></li>
 							</ul>
 						</div>
 
