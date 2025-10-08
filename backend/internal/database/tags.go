@@ -347,8 +347,13 @@ func (db *DB) AddTagToCategory(tagID, categoryID int) error {
 	// Add tag to category's tag_ids array (if not already present)
 	_, err = tx.Exec(`
 		UPDATE tag_categories 
-		SET tag_ids = array_append(tag_ids, $1), updated_at = NOW()
-		WHERE id = $2 AND NOT ($1 = ANY(tag_ids))
+		SET tag_ids = CASE 
+			WHEN tag_ids IS NULL THEN ARRAY[$1::int]
+			WHEN NOT ($1 = ANY(tag_ids)) THEN array_append(tag_ids, $1)
+			ELSE tag_ids
+		END,
+		updated_at = NOW()
+		WHERE id = $2
 	`, tagID, categoryID)
 	if err != nil {
 		return fmt.Errorf("failed to add tag to category tag_ids: %v", err)
@@ -386,7 +391,7 @@ func (db *DB) TagRemoveFromCategory(tagID, categoryID int) error {
 	// Remove tag from category's tag_ids array
 	_, err = tx.Exec(`
 		UPDATE tag_categories 
-		SET tag_ids = array_remove(tag_ids, $1), updated_at = NOW()
+		SET tag_ids = array_remove(COALESCE(tag_ids, '{}'), $1), updated_at = NOW()
 		WHERE id = $2
 	`, tagID, categoryID)
 	if err != nil {
@@ -425,8 +430,8 @@ func (db *DB) RemoveTagFromAllCategories(tagID int) error {
 	// Remove tag from all categories' tag_ids arrays
 	_, err = tx.Exec(`
 		UPDATE tag_categories 
-		SET tag_ids = array_remove(tag_ids, $1), updated_at = NOW()
-		WHERE $1 = ANY(tag_ids)
+		SET tag_ids = array_remove(COALESCE(tag_ids, '{}'), $1), updated_at = NOW()
+		WHERE tag_ids IS NOT NULL AND $1 = ANY(tag_ids)
 	`, tagID)
 	if err != nil {
 		return fmt.Errorf("failed to remove tag from all categories: %v", err)

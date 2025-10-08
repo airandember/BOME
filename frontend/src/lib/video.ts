@@ -594,7 +594,7 @@ export const videoService = {
 				status: backendVideo.Status || backendVideo.status || '',
 				createdAt: backendVideo.CreatedAt || backendVideo.created_at || '',
 				updatedAt: backendVideo.UpdatedAt || backendVideo.updated_at || '',
-				bunnyVideoId: backendVideo.BunnyVideoID || backendVideo.bunny_video_id,
+				bunnyVideoId: backendVideo.bunnyVideoId || backendVideo.BunnyVideoID || backendVideo.bunny_video_id,
 				encodeProgress: backendVideo.EncodeProgress || backendVideo.encode_progress,
 				iframeSrc: backendVideo.IframeSrc || backendVideo.iframe_src
 			}));
