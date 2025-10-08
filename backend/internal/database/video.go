@@ -279,7 +279,7 @@ func (db *DB) UpdateVideo(videoID int, updateData map[string]interface{}) error 
 	}
 
 	argCount++
-	setParts = append(setParts, fmt.Sprintf("updated_at = NOW()"))
+	setParts = append(setParts, "updated_at = NOW()")
 
 	query := fmt.Sprintf("UPDATE videos SET %s WHERE id = $%d", strings.Join(setParts, ", "), argCount)
 	args = append(args, videoID)
