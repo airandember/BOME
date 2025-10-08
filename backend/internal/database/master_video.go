@@ -186,22 +186,22 @@ func (db *DB) GetMasterVideoByID(id int) (*MasterVideo, error) {
 	var createdBy sql.NullInt64
 
 	err := db.QueryRow(`
-		SELECT id, bunny_video_id, title, description, category, tags, duration, file_size,
+		SELECT id, bunny_video_id, title, description, category, tags, tagged, duration, file_size,
 		       resolution, framerate, thumbnail_url, video_url, iframe_src, playback_url,
 		       status, views, likes, is_public, encode_progress, available_resolutions,
 		       collection_id, average_watch_time, total_watch_time, last_bunny_sync,
 		       last_master_update, sync_status, sync_notes, metadata_version, created_by,
-		       created_at, updated_at, vid_status, tag_ids, tagged, tag_ids
+		       created_at, updated_at, vid_status, tag_ids
 		FROM master_video_list WHERE id = $1`,
 		id,
 	).Scan(
 		&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
-		&tagsStr, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
+		&tagsStr, &video.Tagged, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
 		&video.ThumbnailURL, &video.VideoURL, &video.IframeSrc, &video.PlaybackURL,
 		&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 		&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 		&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-		&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &video.Tagged, &tagIDsStr,
+		&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsStr,
 	)
 	if err != nil {
 		return nil, err
@@ -246,22 +246,22 @@ func (db *DB) GetMasterVideoByBunnyID(bunnyVideoID string) (*MasterVideo, error)
 	var createdBy sql.NullInt64
 
 	err := db.QueryRow(`
-		SELECT id, bunny_video_id, title, description, category, tags, duration, file_size,
+		SELECT id, bunny_video_id, title, description, category, tags, tagged, duration, file_size,
 		       resolution, framerate, thumbnail_url, video_url, iframe_src, playback_url,
 		       status, views, likes, is_public, encode_progress, available_resolutions,
 		       collection_id, average_watch_time, total_watch_time, last_bunny_sync,
 		       last_master_update, sync_status, sync_notes, metadata_version, created_by,
-		       created_at, updated_at, vid_status, tag_ids, tagged, tag_ids
+		       created_at, updated_at, vid_status, tag_ids
 		FROM master_video_list WHERE bunny_video_id = $1`,
 		bunnyVideoID,
 	).Scan(
 		&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
-		&tagsStr, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
+		&tagsStr, &video.Tagged, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
 		&video.ThumbnailURL, &video.VideoURL, &video.IframeSrc, &video.PlaybackURL,
 		&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 		&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 		&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-		&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &video.Tagged, &tagIDsStr,
+		&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsStr,
 	)
 	if err != nil {
 		return nil, err
@@ -1089,7 +1089,7 @@ func (db *DB) GetUntaggedVideos(limit int) ([]*MasterVideo, error) {
 		       playback_url, status, views, likes, is_public, encode_progress, 
 		       available_resolutions, collection_id, average_watch_time, total_watch_time,
 		       last_bunny_sync, last_master_update, sync_status, sync_notes, 
-		       metadata_version, created_by, created_at, updated_at, vid_status
+		       metadata_version, created_by, created_at, updated_at, vid_status, tag_ids
 		FROM master_video_list 
 		WHERE tagged = false 
 		ORDER BY created_at DESC 
@@ -1104,6 +1104,7 @@ func (db *DB) GetUntaggedVideos(limit int) ([]*MasterVideo, error) {
 	for rows.Next() {
 		video := &MasterVideo{}
 		var tagsStr, resolutionsStr, tagIDsStr sql.NullString
+		var createdBy sql.NullInt64
 
 		err := rows.Scan(
 			&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
@@ -1112,10 +1113,18 @@ func (db *DB) GetUntaggedVideos(limit int) ([]*MasterVideo, error) {
 			&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
 			&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
 			&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
-			&video.MetadataVersion, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsStr,
+			&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsStr,
 		)
 		if err != nil {
 			return nil, err
+		}
+
+		// Convert sql.NullInt64 to *int
+		if createdBy.Valid {
+			createdByInt := int(createdBy.Int64)
+			video.CreatedBy = &createdByInt
+		} else {
+			video.CreatedBy = nil
 		}
 
 		// Parse tags from JSON (handle NULL)
