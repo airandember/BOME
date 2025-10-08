@@ -28,13 +28,13 @@
 	let loadingMore = $state(false);
 	let authChecking = $state(true);
 	let initialDataLoaded = $state(false);
-	let activeTab = $state<'latest' | 'collections' | 'categories' | 'allVideos'>('categories');
+	let activeTab = $state<'latest' | 'collections' | 'categories' | 'allVideos'>('latest');
 
 	let scrollThreshold = 800; // pixels from bottom to trigger auto-load (accounts for footer height)
 	let isSearching = $state(false);
 	let searchTimeout: ReturnType<typeof setTimeout> | null = null; // For debounced search
 	
-	// Hybrid fuzzy search with Fuse.js - static index + dynamic updates
+	// Hybrid fuzzy search with Fuse.js - static index only (no rebuilding)
 	import Fuse from 'fuse.js';
 	
 	let fuseIndex: Fuse<Video> | null = null;
@@ -92,8 +92,11 @@
 				generatedAt: data.generatedAt
 			});
 			
-			// Build the initial Fuse index with comprehensive data
-			updateSearchIndex();
+			// Build the Fuse index ONCE from the static JSON (never rebuild)
+			if (staticSearchIndex.length > 0) {
+				fuseIndex = new Fuse(staticSearchIndex, fuseOptions);
+				console.log('🔍 Static Fuse.js index built ONCE with', staticSearchIndex.length, 'videos');
+			}
 			
 			// Preload thumbnails for the most recent/popular videos for instant display
 			const recentVideos = staticSearchIndex
@@ -103,41 +106,13 @@
 			setTimeout(() => preloadThumbnails(recentVideos), 1000); // Delay to not block initial load
 			
 		} catch (error) {
-			console.warn('⚠️ Failed to load static search index, falling back to dynamic only:', error);
+			console.warn('⚠️ Failed to load static search index:', error);
 			searchIndexLoaded = false;
-			// Still try to build index with available videos
-			updateSearchIndex();
 		}
 	}
 	
-	// Build or update the Fuse search index (hybrid approach)
-	function updateSearchIndex() {
-		// Combine static index with dynamically loaded videos
-		const dynamicVideos = [...videos, ...latestVideos];
-		
-		// Merge static and dynamic, removing duplicates
-		const allVideos = [...staticSearchIndex];
-		const existingIds = new Set(staticSearchIndex.map(v => v.id));
-		
-		// Add dynamic videos that aren't in the static index
-		dynamicVideos.forEach(video => {
-			if (!existingIds.has(video.id)) {
-				allVideos.push(video);
-			}
-		});
-		
-		if (allVideos.length > 0) {
-			fuseIndex = new Fuse(allVideos, fuseOptions);
-			console.log('🔍 Hybrid search index updated:', {
-				staticVideos: staticSearchIndex.length,
-				dynamicVideos: dynamicVideos.length,
-				totalSearchable: allVideos.length
-			});
-		}
-	}
-	
-	// Lightning-fast fuzzy search function with thumbnail preloading
-	function fuzzySearch(query: string): Video[] {
+	// Lightning-fast fuzzy search function with conditional thumbnail preloading
+	function fuzzySearch(query: string, shouldPreloadThumbnails: boolean = false): Video[] {
 		if (!query.trim() || !fuseIndex) return [];
 		
 		const startTime = performance.now();
@@ -146,11 +121,45 @@
 		
 		console.log('⚡ Fuzzy search completed in', Math.round(searchTime), 'ms for query:', query);
 		
-		// Extract the actual video objects from Fuse results
-		const videos = results.map(result => result.item);
+		// Sort by fuzzy match score first (lower score = better match), then by newest to oldest
+		const sortedResults = results.sort((a, b) => {
+			// Primary sort: by relevance score (lower is better in Fuse.js)
+			if (a.score !== b.score) {
+				return (a.score || 0) - (b.score || 0);
+			}
+			
+			// Secondary sort: by creation date (newest first) when relevance is equal
+			// Handle both createdAt and created_at fields, and ensure proper date parsing
+			const dateA = new Date(a.item.createdAt || a.item.createdAt || 0).getTime();
+			const dateB = new Date(b.item.createdAt || b.item.createdAt || 0).getTime();
+			
+			// If dates are invalid, treat as very old (0)
+			const validDateA = isNaN(dateA) ? 0 : dateA;
+			const validDateB = isNaN(dateB) ? 0 : dateB;
+			
+			return validDateB - validDateA; // Newest first (higher timestamp first)
+		});
 		
-		// Preload thumbnails for the first few results for instant display
-		preloadThumbnails(videos.slice(0, 12)); // Preload first 12 thumbnails
+		// Extract the actual video objects from sorted Fuse results
+		const videos = sortedResults.map(result => result.item);
+		
+		console.log('🎯 Search results sorted:', {
+			query,
+			totalResults: videos.length,
+			bestMatch: videos[0]?.title,
+			bestScore: results[0]?.score,
+			searchTime: Math.round(searchTime),
+			firstFewDates: videos.slice(0, 5).map(v => ({
+				title: v.title?.substring(0, 30) + '...',
+				date: v.createdAt || v.createdAt,
+				parsed: new Date(v.createdAt || v.createdAt || 0).toISOString()
+			}))
+		});
+		
+		// Only preload thumbnails on final search, not during typing
+		if (shouldPreloadThumbnails) {
+			preloadThumbnails(videos.slice(0, 12)); // Preload first 12 thumbnails
+		}
 		
 		return videos;
 	}
@@ -209,20 +218,31 @@
 		});
 	}
 
-	// Handle search input with debouncing for better UX
+	// Handle search input with optimizations
 	function handleSearchInput() {
 		// Clear existing timeout
 		if (searchTimeout) {
 			clearTimeout(searchTimeout);
 		}
 		
+		// If empty, clear search immediately
+		if (searchQuery.trim() === '') {
+			clearSearch();
+			return;
+		}
+		
+		// Don't search for queries < 2 characters
+		if (searchQuery.trim().length < 2) {
+			// Clear results but don't show error toast yet
+			searchResults = [];
+			allSearchResults = [];
+			updateCurrentVideos();
+			return;
+		}
+		
 		// Debounce search for 300ms
 		searchTimeout = setTimeout(() => {
-			if (searchQuery.trim()) {
-				handleOptimizedSearch();
-			} else {
-				clearSearch();
-			}
+			handleOptimizedSearch();
 		}, 300);
 	}
 	
@@ -445,9 +465,6 @@
 			// Update currentVideos after loading data
 			updateCurrentVideos();
 			
-			// Build search index with all loaded videos
-			updateSearchIndex();
-			
 			console.log('✅ loadInitialData completed successfully');
 		} catch (err: any) {
 			console.error('❌ loadInitialData failed:', err);
@@ -558,9 +575,6 @@
 			// Update currentVideos after loading more videos
 			updateCurrentVideos();
 			
-			// Update search index with new videos
-			updateSearchIndex();
-			
 			// Clear any previous errors on success
 			error = '';
 		} catch (err: any) {
@@ -622,14 +636,15 @@
 		searchResults = [];
 		allSearchResults = [];
 		
-		// Ensure search index is up to date
+		// Ensure static search index is loaded
 		if (!fuseIndex) {
-			updateSearchIndex();
+			console.warn('⚠️ Fuse index not ready, search may not work');
+			return;
 		}
 		
 		// INSTANT fuzzy search - no API calls needed!
 		const startTime = performance.now();
-		const results = fuzzySearch(query);
+		const results = fuzzySearch(query, true); // Enable thumbnail preloading for final search
 		const searchTime = performance.now() - startTime;
 		
 		// Store results
@@ -1031,15 +1046,14 @@
 
 						<!-- Navigation Tabs -->
 						<div class="hub-tabs">
-								
-							
 							<button 
-								class="tab-button {activeTab === 'categories' ? 'active' : ''}" 
-								onclick={() => switchTab('categories')}
+								class="tab-button {activeTab === 'latest' ? 'active' : ''}" 
+								onclick={() => switchTab('latest')}
 							>
-								Categories
-							</button>
-						
+								Latest Videos
+							</button>	
+							
+				
 							<button
 								class="tab-button {activeTab === 'allVideos' ? 'active' : ''}"
 								onclick={() => switchTab('allVideos')}
@@ -1047,10 +1061,10 @@
 								All Videos
 							</button>
 							<button 
-								class="tab-button {activeTab === 'latest' ? 'active' : ''}" 
-								onclick={() => switchTab('latest')}
+								class="tab-button {activeTab === 'categories' ? 'active' : ''}" 
+								onclick={() => switchTab('categories')}
 							>
-								Latest Videos
+								Categories
 							</button>
 							<button 
 								class="tab-button {activeTab === 'collections' ? 'active' : ''}" 
@@ -1063,7 +1077,7 @@
 						{#if activeTab === 'allVideos'}
 						
 							<section class="all-videos">
-								<h2>Book of Mormon Evidence Videos</h2>
+								<!--<h2>Book of Mormon Evidence Videos</h2>-->
 								<div class="filters-section">
 									<div class="search-bar">
 										<div class="search-input-container">
@@ -1095,7 +1109,13 @@
 
 								{#if currentVideos.length === 0 && !loading && !loadingMore && !isSearching}
 									<div class="no-results">
-										<p>No videos found{searchQuery ? ` for "${searchQuery}"` : ''}.</p>
+										{#if searchQuery && searchQuery.trim().length >= 2}
+											<p>No videos found for "{searchQuery}".</p>
+										{:else if searchQuery && searchQuery.trim().length < 2}
+											<!-- Only show Clear Search button for queries under 2 characters -->
+										{:else}
+											<p>No videos found.</p>
+										{/if}
 										{#if searchQuery}
 											<button class="btn-secondary" onclick={handleClearSearch}>
 												Clear Search
@@ -1124,7 +1144,7 @@
 						<!-- Latest Videos Section -->
 						{#if activeTab === 'latest'}
 							<section class="latest-videos">
-								<h2>Latest Uploads</h2>
+								<!--<h2>Latest Uploads</h2>-->
 								<div class="filters-section">
 									<div class="search-bar">
 										<div class="search-input-container">
@@ -1151,7 +1171,13 @@
 
 								{#if currentVideos.length === 0 && !loading && !loadingMore && !isSearching}
 									<div class="no-results">
-										<p>No videos found{searchQuery ? ` for "${searchQuery}"` : ''}.</p>
+										{#if searchQuery && searchQuery.trim().length >= 2}
+											<p>No videos found for "{searchQuery}".</p>
+										{:else if searchQuery && searchQuery.trim().length < 2}
+											<!-- Only show Clear Search button for queries under 2 characters -->
+										{:else}
+											<p>No videos found.</p>
+										{/if}
 										{#if searchQuery}
 											<button class="btn-secondary" onclick={handleClearSearch}>
 												Clear Search
@@ -1179,7 +1205,7 @@
 						<!-- Collections Section -->
 						{#if activeTab === 'collections'}
 							<section class="collections">
-								<h2>Video Collections</h2>
+								<!--<h2>Video Collections</h2>-->
 								<div class="collections-grid">
 									{#each collections as collection (collection.guid)}
 										<a 
@@ -1212,8 +1238,8 @@
 						<!-- Categories Section -->
 						{#if activeTab === 'categories'}
 							<section class="categories">
-								<h2>Browse by Category</h2>
-								<!--<div class="debug-info">
+								<!--<h2>Browse by Category</h2>
+								<div class="debug-info">
 									<p><strong>Debug Info:</strong></p>
 									<p>Categories loaded: {categories.length}</p>
 									<p>Active tab: {activeTab}</p>
