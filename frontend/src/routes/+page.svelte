@@ -847,10 +847,10 @@
 		transform: translateX(-50%);
 		text-align: center;
 		z-index: 15;
-		max-width: 2000px;
+		max-width: clamp(1200px, 90vw, 2000px);
 		background: rgba(14, 18, 70, 0.75);
 		border-radius: 25px;
-		padding: 1rem 5rem 0 5rem;
+		padding: clamp(1rem, 2vw, 1rem) clamp(2rem, 5vw, 5rem) 0 clamp(2rem, 5vw, 5rem);
 	}
 
 	.hero-title {
@@ -865,15 +865,15 @@
 	}
 
 	.hero-title-book {
-		font-size: 4.5rem;
+		font-size: clamp(3rem, 5vw, 4.5rem);
 	}
 
 	.hero-title-evidence {
-		font-size: 13.5rem;
+		font-size: clamp(8rem, 15vw, 13.5rem);
 	}
 
 	.hero-title-beta {
-		font-size: 6.5rem;
+		font-size: clamp(4rem, 7vw, 6.5rem);
 		background: linear-gradient(45deg,#8a7658 , #ffed4e , #ffffff, #ffed4e , #daa30cdd , #7a5926	);
 		-webkit-background-clip: text;
 		-webkit-text-fill-color: transparent;
@@ -888,12 +888,12 @@
 			font-size: 0rem;
 		}
 		100% {
-			font-size: 6.5rem;
+			font-size: clamp(4rem, 7vw, 6.5rem);
 		}
 	}
 
 	.hero-quote {
-		font-size: 1.4rem;
+		font-size: clamp(1.1rem, 1.5vw, 1.4rem);
 		color: rgba(255, 255, 255, 0.95);
 		text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
 		font-style: italic;
@@ -920,7 +920,7 @@
 		left: 50%;
 		transform: translateX(-50%);
 		display: flex;
-		gap: 5rem;
+		gap: clamp(3rem, 5vw, 5rem);
 		z-index: 15;
 	}
 
@@ -938,8 +938,8 @@
 					-10px -10px 20px rgba(13, 3, 41, 0.5),
 					inset 0 0 10px rgba(255, 255, 255, 0.5),
 					inset 0 0 10px rgba(0, 0, 0, 0.2);
-		width: 400px;
-		min-height: 300px;
+		width: clamp(300px, 25vw, 400px);
+		min-height: clamp(250px, 20vw, 300px);
 		display: flex;
 		flex-direction: column;
 		justify-content: flex-start;
@@ -961,7 +961,7 @@
 	}
 
 	.card-action {
-		font-size: 3.1rem;
+		font-size: clamp(2rem, 3vw, 3.1rem);
 		font-weight: 900;
 		color: #ffd700;
 		text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.9);
@@ -1143,7 +1143,93 @@
 		z-index: 50;
 	}
 	/* Responsive Design */
+	
+	/* High Resolution Displays (2K+) - 1440p and above */
+	@media (min-height: 1440px) {
+		.main-title-container {
+			padding: 2rem 6rem 0 6rem;
+			max-width: 2200px;
+		}
+		
+		.hero-title {
+			padding: 1.5rem 2rem;
+			margin-bottom: 3rem;
+		}
+		
+		.navigation-cards {
+			gap: 6rem;
+			bottom: 8%;
+		}
+		
+		.nav-card {
+			width: 450px;
+			min-height: 350px;
+		}
+	}
+
+	/* Standard 1080p Displays */
+	@media (max-height: 1080px) and (min-width: 1024px) {
+		.main-title-container {
+			padding: 1rem 4rem 0 4rem;
+			max-width: 1800px;
+			top: 8%;
+		}
+		
+		.hero-title {
+			padding: 0.8rem 1.2rem;
+			margin-bottom: 1.5rem;
+		}
+		
+		.hero-title-book {
+			font-size: clamp(2.5rem, 4vw, 3.5rem);
+		}
+
+		.hero-title-evidence {
+			font-size: clamp(6rem, 12vw, 10rem);
+		}
+
+		.hero-title-beta {
+			font-size: clamp(3rem, 5.5vw, 5rem);
+		}
+		
+		.hero-quote {
+			font-size: 1.2rem;
+			margin-bottom: 2rem;
+		}
+		
+		.navigation-cards {
+			gap: 4rem;
+			bottom: 12%;
+			left: 50%;
+		}
+		
+		.nav-card {
+			width: 550px;
+			min-height: 80px;
+			padding: 0.5rem;
+		}
+
+		.nav-card-content {
+			padding: 0.25rem
+		}
+		
+		.card-action {
+			font-size: 2.5rem;
+		}
+		
+		.nav-card h3 {
+			font-size: clamp(1rem, 1.5vw, 1.1rem);
+		}
+		
+		.nav-card p {
+			font-size: 0.9rem;
+		}
+	}
+
 	@media (max-width: 768px) {
+		.main-title-container {
+			top: 5%;
+		}
 		.main-title {
 			font-size: 2.5rem;
 		}
@@ -1205,11 +1291,6 @@
 
 		.nav-card p {
 			font-size: 0.9rem;
-		}
-
-		.book-image {
-			width: 400px;
-			height: 300px;
 		}
 
 		.globe {
