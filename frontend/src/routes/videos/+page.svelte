@@ -1310,7 +1310,7 @@
 									</div>
 								{:else if currentVideos.length === 0 && !loading && !loadingMore && searchQuery.trim().length >= 3}
 									<div class="no-results">
-										<p>No videos found for "{searchQuery}".</p>
+										<p>Confirm search by pressing Search or Enter</p>
 										<button class="btn-secondary" onclick={handleClearSearch}>
 											Clear Search
 										</button>
@@ -1318,6 +1318,8 @@
 								{:else if currentVideos.length === 0 && !loading && !loadingMore && searchQuery.trim().length > 0 && searchQuery.trim().length < 3}
 									<div class="no-results">
 										<!-- Only show Clear Search button for queries under 3 characters -->
+										<p>Confirm search by pressing Search or Enter</p>
+
 										<button class="btn-secondary" onclick={handleClearSearch}>
 											Clear Search
 										</button>
