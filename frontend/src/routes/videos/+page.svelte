@@ -2179,6 +2179,22 @@
 	}
 
 	@media (max-width: 480px) {
+		.video-hub {
+			margin: 0;
+			padding: 0;
+			width: 100vw;
+		}
+		.video-hub .container {
+			margin: 0;
+			padding: 0;
+			width: 100%;
+		}
+		.latest-videos {
+			margin: 0;
+			padding:0;
+			width: 100%;
+		}
+
 		.hub-header h1 {
 			font-size: 1.8rem;
 		}

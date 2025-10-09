@@ -77,13 +77,15 @@
 			<!-- Video Dropdown -->
 			<div class="nav-dropdown">
 				<button 
-					class="nav-link dropdown-trigger" 
+					class="nav-link mobile-video-dropdown-menu-trigger dropdown-trigger" 
 					on:click={() => isVideoDropdownOpen = !isVideoDropdownOpen}
-				>
+				> 
+				<div class="wordSymbolCombiner">
 					<span>Videos</span>
 					<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 						<polyline points="6,9 12,15 18,9"></polyline>
 					</svg>
+				</div>	
 				</button>
 				
 				<div class="nav-dropdown-menu" class:open={isVideoDropdownOpen}>
@@ -775,6 +777,27 @@
 	}
 
 	@media (max-width: 480px) {
+		.wordSymbolCombiner {
+			width: 100%;
+		}
+
+		.nav-dropdown-menu {
+			width: 90vw;
+			margin: 0 auto;
+			position: relative;
+			left: 0;
+		}
+
+		.nav-dropdown {
+			text-align: center;
+			display: flex;
+			flex-direction: column;
+		}
+		
+		.mobile-video-dropdown-menu-trigger {
+			transform: none;
+		}
+
 		.nav-container {
 			padding: 0 var(--space-md);
 		}
