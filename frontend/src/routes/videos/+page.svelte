@@ -234,8 +234,8 @@
 			return;
 		}
 		
-		// Don't search for queries < 2 characters
-		if (searchQuery.trim().length < 2) {
+		// Don't search for queries < 3 characters
+		if (searchQuery.trim().length < 3) {
 			// Clear results but don't show error toast yet
 			searchResults = [];
 			allSearchResults = [];
