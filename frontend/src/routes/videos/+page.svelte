@@ -221,7 +221,7 @@
 		});
 	}
 
-	// Handle search input with optimizations
+	// Handle search input with mobile optimization
 	function handleSearchInput() {
 		// Clear existing timeout
 		if (searchTimeout) {
@@ -243,18 +243,52 @@
 			return;
 		}
 		
-		// Debounce search for 300ms
+		// Mobile optimization: Don't auto-search on mobile devices
+		// Users must press Enter or click Search button
+		const isMobile = isMobileDevice();
+		
+		if (isMobile) {
+			console.log('📱 Mobile device detected - skipping auto-search, user must press Enter or Search');
+			return;
+		}
+		
+		console.log('💻 Desktop device - starting auto-search with debounce');
+		// Desktop: Debounce search for 300ms
 		searchTimeout = setTimeout(() => {
+			console.log('🔍 Auto-search triggered after debounce');
 			handleOptimizedSearch();
 		}, 300);
+	}
+	
+	// Detect if user is on mobile device
+	function isMobileDevice(): boolean {
+		if (typeof window === 'undefined') return false;
+		
+		// Check screen width (mobile-first approach)
+		const isMobileWidth = window.innerWidth <= 768;
+		
+		// Check user agent for mobile devices
+		const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+		
+		// Check for touch capability
+		const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+		
+		// Consider it mobile if it meets width criteria OR is a touch device with mobile UA
+		return isMobileWidth || (isTouchDevice && isMobileUA);
 	}
 	
 	// Handle Enter key press for search
 	function handleSearchKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter') {
 			event.preventDefault();
+			// Always trigger search on Enter, regardless of device
 			handleOptimizedSearch();
 		}
+	}
+	
+	// Handle search button click - always triggers search
+	function handleSearchButtonClick() {
+		handleOptimizedSearch();
 	}
 
 	// Direct state approach - no derived state complexity
@@ -606,9 +640,10 @@
 		}
 	}
 
-	// Lightning-fast fuzzy search function
+	// Lightning-fast fuzzy search function - shows spinner on both mobile and desktop
 	function handleOptimizedSearch() {
 		const query = searchQuery.trim();
+		
 		if (query.length === 0) {
 			clearSearch();
 			return;
@@ -633,6 +668,7 @@
 		}
 
 		console.log('🔍 Starting fuzzy search for:', query);
+		// Set loading state - this will show spinner on both mobile and desktop
 		isSearching = true;
 		
 		// Show searching toast
@@ -644,6 +680,7 @@
 		// Clear previous search results
 		searchResults = [];
 		allSearchResults = [];
+		// Don't update currentVideos here - let the loading spinner show
 		
 		// Ensure static search index is loaded
 		if (!fuseIndex) {
@@ -1169,7 +1206,7 @@
 										<div class="search-input-container">
 											<input
 												type="text"
-												placeholder="Search videos"
+												placeholder={isMobileDevice() ? "Search videos (press Enter or Search)" : "Search videos"}
 												bind:value={searchQuery}
 												oninput={handleSearchInput}
 												onkeydown={handleSearchKeydown}
@@ -1181,7 +1218,7 @@
 												</button>
 											{/if}
 										</div>
-										<button class="btn-primary" onclick={handleOptimizedSearch} disabled={isSearching}>
+										<button class="btn-primary" onclick={handleSearchButtonClick} disabled={isSearching}>
 											{#if isSearching}
 												<LoadingSpinner size="small" />
 											{:else}
@@ -1193,20 +1230,31 @@
 									<!-- Search status now handled by toast notifications -->
 								</div>
 
-								{#if currentVideos.length === 0 && !loading && !loadingMore && !isSearching}
+								{#if isSearching}
+									<div class="search-loading">
+										<LoadingSpinner size="medium" />
+										<p>Searching for "{searchQuery}"...</p>
+									</div>
+								{:else if currentVideos.length === 0 && !loading && !loadingMore && searchQuery.trim().length >= 3}
 									<div class="no-results">
-										{#if searchQuery && searchQuery.trim().length >= 2}
-											<p>No videos found for "{searchQuery}".</p>
-										{:else if searchQuery && searchQuery.trim().length < 2}
-											<!-- Only show Clear Search button for queries under 2 characters -->
-										{:else}
-											<p>No videos found.</p>
-										{/if}
-										{#if searchQuery}
-											<button class="btn-secondary" onclick={handleClearSearch}>
-												Clear Search
-											</button>
-										{/if}
+										<!--<p>No videos found for "{searchQuery}".</p>-->
+										<LoadingSpinner size="medium" />
+
+										<button class="btn-secondary" onclick={handleClearSearch}>
+											Clear Search
+										</button>
+									</div>
+								{:else if currentVideos.length === 0 && !loading && !loadingMore && searchQuery.trim().length > 0 && searchQuery.trim().length < 3}
+									<div class="no-results">
+										<!-- Only show Clear Search button for queries under 3 characters -->
+										 <p>Confirm search by pressing Enter or Search</p>
+										<button class="btn-secondary" onclick={handleClearSearch}>
+											Clear Search
+										</button>
+									</div>
+								{:else if currentVideos.length === 0 && !loading && !loadingMore && !searchQuery}
+									<div class="no-results">
+										<p>No videos found.</p>
 									</div>
 								{:else}
 									<div class="video-grid">
@@ -1236,7 +1284,7 @@
 										<div class="search-input-container">
 											<input
 												type="text"
-												placeholder="Search videos"
+												placeholder={isMobileDevice() ? "Search videos (press Enter or Search)" : "Search videos"}
 												bind:value={searchQuery}
 												oninput={handleSearchInput}
 												onkeydown={handleSearchKeydown}
@@ -1248,27 +1296,35 @@
 												</button>
 											{/if}
 										</div>
-										<button class="btn-primary" onclick={handleOptimizedSearch} disabled={isSearching}>
+										<button class="btn-primary" onclick={handleSearchButtonClick} disabled={isSearching}>
 											🔍 Search
 										</button>
 									</div>
 									<!-- Search status now handled by toast notifications -->
 								</div>
 
-								{#if currentVideos.length === 0 && !loading && !loadingMore && !isSearching}
+								{#if isSearching}
+									<div class="search-loading">
+										<LoadingSpinner size="medium" />
+										<p>Searching for "{searchQuery}"...</p>
+									</div>
+								{:else if currentVideos.length === 0 && !loading && !loadingMore && searchQuery.trim().length >= 3}
 									<div class="no-results">
-										{#if searchQuery && searchQuery.trim().length >= 2}
-											<p>No videos found for "{searchQuery}".</p>
-										{:else if searchQuery && searchQuery.trim().length < 2}
-											<!-- Only show Clear Search button for queries under 2 characters -->
-										{:else}
-											<p>No videos found.</p>
-										{/if}
-										{#if searchQuery}
-											<button class="btn-secondary" onclick={handleClearSearch}>
-												Clear Search
-											</button>
-										{/if}
+										<p>No videos found for "{searchQuery}".</p>
+										<button class="btn-secondary" onclick={handleClearSearch}>
+											Clear Search
+										</button>
+									</div>
+								{:else if currentVideos.length === 0 && !loading && !loadingMore && searchQuery.trim().length > 0 && searchQuery.trim().length < 3}
+									<div class="no-results">
+										<!-- Only show Clear Search button for queries under 3 characters -->
+										<button class="btn-secondary" onclick={handleClearSearch}>
+											Clear Search
+										</button>
+									</div>
+								{:else if currentVideos.length === 0 && !loading && !loadingMore && !searchQuery}
+									<div class="no-results">
+										<p>No videos found.</p>
 									</div>
 								{:else}
 									<div class="video-grid">
@@ -1864,14 +1920,19 @@
 
 	.search-loading {
 		display: flex;
+		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		gap: 0.5rem;
-		margin-bottom: 0.5rem;
+		gap: 1rem;
+		padding: 3rem 2rem;
+		color: var(--color-text-secondary);
+		text-align: center;
 	}
 
 	.search-loading p {
 		margin: 0;
+		font-size: 1.1rem;
+		font-weight: 500;
 	}
 
 	.no-results {
@@ -2091,6 +2152,27 @@
 		.container {
 			width: 98vw;
 			padding: 0 0.5rem;
+		}
+		
+		/* Mobile-specific search optimizations */
+		.search-bar {
+			flex-direction: column;
+			gap: 0.75rem;
+		}
+		
+		.search-input-container {
+			width: 100%;
+		}
+		
+		.search-input {
+			font-size: 16px; /* Prevent zoom on iOS */
+		}
+		
+		.btn-primary {
+			width: 100%;
+			padding: 0.875rem 1.5rem;
+			font-size: 1rem;
+			font-weight: 600;
 		}
 	}
 
