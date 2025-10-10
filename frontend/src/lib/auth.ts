@@ -579,6 +579,12 @@ function isTokenValid(tokens: AuthTokens): boolean {
 }
 
 function clearAuthData() {
+	// Clear any scheduled token refresh
+	if (refreshTimeout) {
+		clearTimeout(refreshTimeout);
+		refreshTimeout = null;
+	}
+	
 	if (browser) {
 		SecureTokenStorage.clearTokens();
 	}
@@ -619,6 +625,17 @@ export function storeAuthData(tokens: AuthTokens, user: User) {
 function scheduleTokenRefresh(tokens: AuthTokens) {
 	if (refreshTimeout) {
 		clearTimeout(refreshTimeout);
+	}
+	
+	// Check if we're on an admin path and user doesn't have admin role
+	if (browser) {
+		const currentPath = window.location.pathname;
+		const isAdminPath = currentPath.includes('/admin');
+		
+		if (isAdminPath && !isAdmin()) {
+			console.log('🚫 Not scheduling token refresh for non-admin user on admin path');
+			return;
+		}
 	}
 	
 	// Refresh 30 minutes before expiration for better user experience
@@ -722,6 +739,15 @@ export async function apiRequest(endpoint: string, options: RequestInit & { onPr
 				// Refresh failed, redirect to login
 				await goto('/login');
 				throw new Error('Authentication required');
+			}
+		}
+		
+		// Handle 403 - admin access denied: Cancel token refresh to prevent retry loops
+		if (response.status === 403 && endpoint.includes('/admin')) {
+			console.log('🚫 Admin access denied - cancelling token refresh to prevent retry loops');
+			if (refreshTimeout) {
+				clearTimeout(refreshTimeout);
+				refreshTimeout = null;
 			}
 		}
 		
