@@ -119,7 +119,7 @@
 					
 					// Redirect to dashboard after a short delay
 					setTimeout(() => {
-						goto('/dashboard');
+						goto('/videos');
 					}, 2000);
 				} else {
 					// Fallback if no tokens returned
