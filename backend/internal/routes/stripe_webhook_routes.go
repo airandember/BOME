@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -112,6 +113,9 @@ func RegisterStripeWebhookRoutes(router *gin.RouterGroup, stripeService *service
 
 		// Webhook ping/test endpoint for admin dashboard
 		webhooks.POST("/ping", func(c *gin.Context) { pingWebhook(c, syncService) })
+
+		// Webhook logs endpoint for admin dashboard
+		webhooks.GET("/logs", func(c *gin.Context) { getWebhookLogs(c, syncService) })
 	}
 }
 
@@ -513,4 +517,50 @@ func pluralize(count int) string {
 		return ""
 	}
 	return "s"
+}
+
+// getWebhookLogs retrieves webhook event logs from the database
+func getWebhookLogs(c *gin.Context, syncService *services.StripeSyncService) {
+	// Get query parameters
+	page := 1
+	limit := 50
+	eventType := c.Query("event_type")
+	status := c.Query("status")
+
+	// Parse page parameter
+	if pageStr := c.Query("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	// Parse limit parameter
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	// Get database connection
+	db := syncService.GetDB()
+	if db == nil {
+		log.Printf("❌ No database connection available for webhook logs")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Database connection not available",
+		})
+		return
+	}
+
+	// Fetch webhook events
+	response, err := db.GetWebhookEventsWithPagination(page, limit, eventType, status)
+	if err != nil {
+		log.Printf("❌ Failed to get webhook events: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve webhook events",
+		})
+		return
+	}
+
+	log.Printf("📋 Webhook logs requested: page=%d, limit=%d, total=%d", page, limit, response.Total)
+	c.JSON(http.StatusOK, response)
 }

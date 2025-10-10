@@ -11,6 +11,7 @@
 	import MetadataHealth from './metadata/MetadataHealth.svelte';
 	import Setup from './setup/+page.svelte';
 	import SimpleSync from '../simple-sync/+page.svelte';
+	import WebhookConfig from './webhooks/+page.svelte';
 	import EmailUsagePanel from './components/EmailUsagePanel.svelte';
 
 	// State variables using Svelte 5 runes
@@ -107,6 +108,7 @@
 	// Tab configuration - dynamically filtered based on capabilities
 	const allTabs = [
 		{ id: 'analytics', name: 'Analytics', icon: '📈', component: AnalyticsOverview, capability: null },
+		{ id: 'webhooks', name: 'Webhooks', icon: '🔗', component: WebhookConfig, capability: null },
 		{ id: 'metadata', name: 'Metadata Health', icon: '🏥', component: MetadataHealth, capability: null },
 		{ id: 'setup', name: 'Setup', icon: '⚙️', component: Setup, capability: null },
 		{ id: 'simple-sync', name: 'Simple Sync', icon: '🔄', component: SimpleSync, capability: null }
@@ -1972,15 +1974,15 @@
 						{@const isRestricted = keyType === 'rk' && tab.capability && summary?.capabilities?.[tab.capability] && !Object.values(summary.capabilities[tab.capability]).some(Boolean)}
 						<button 
 							class="tab-button {activeTab === tab.id ? 'active' : ''}"
-							class:disabled={!summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup' && tab.id !== 'simple-sync'}
+							class:disabled={!summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup' && tab.id !== 'simple-sync' && tab.id !== 'webhooks'}
 							class:restricted={isRestricted}
 							onclick={() => switchTab(tab.id)}
-							disabled={!summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup' && tab.id !== 'simple-sync'}
+							disabled={!summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup' && tab.id !== 'simple-sync' && tab.id !== 'webhooks'}
 							title={isRestricted ? 'This functionality is restricted by your Stripe key permissions' : ''}
 						>
 							<span class="tab-icon">{tab.icon}</span>
 							<span class="tab-name">{tab.name}</span>
-							{#if !summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup' && tab.id !== 'simple-sync'}
+							{#if !summary?.enabled && tab.id !== 'analytics' && tab.id !== 'setup' && tab.id !== 'simple-sync' && tab.id !== 'webhooks'}
 								<span class="tab-lock">🔒</span>
 							{:else if isRestricted}
 								<span class="tab-restricted">⚠️</span>
@@ -2005,6 +2007,8 @@
 			<div class="tab-content">
 				{#if activeTab === 'analytics'}
 					<AnalyticsOverview {summary} {stripeData} />
+				{:else if activeTab === 'webhooks'}
+					<WebhookConfig />
 				{:else if activeTab === 'metadata'}
 					<MetadataHealth />
 				{:else if activeTab === 'setup'}
@@ -2020,7 +2024,7 @@
 <!-- Clear Key Confirmation Modal -->
 {#if showClearModal}
 	<div class="modal-overlay" onclick={closeClearModal} onkeydown={(e) => e.key === 'Escape' && closeClearModal()} role="dialog" aria-modal="true" tabindex="-1">
-		<div class="modal-content" role="document" onclick={(e) => e.stopPropagation()}>
+		<div class="modal-content" role="document" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
 			<div class="modal-header">
 				<h3>⚠️ Clear Stripe Key</h3>
 				<button class="modal-close" onclick={closeClearModal}>&times;</button>
