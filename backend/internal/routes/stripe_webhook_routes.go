@@ -65,37 +65,38 @@ func recordWebhookFailure() {
 }
 
 // logWebhookEventToDB logs webhook events to the webhook_events database table
-func logWebhookEventToDB(db interface{}, eventType, endpoint, status string, responseTime int, payloadSize int, statusCode int, errorMessage string) {
-	// Type assert to get the database connection
-	// We'll need to pass the database connection to this function
-	if dbConn, ok := db.(interface {
-		Exec(query string, args ...interface{}) (interface{}, error)
-	}); ok {
-		query := `
-			INSERT INTO webhook_events (
-				event_type, subsite, endpoint, status, response_time, 
-				payload_size, status_code, error_message, retry_count, created_at
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		`
+func logWebhookEventToDB(syncService *services.StripeSyncService, eventType, endpoint, status string, responseTime int, payloadSize int, statusCode int, errorMessage string) {
+	// Get the database connection from the sync service
+	db := syncService.GetDB()
+	if db == nil {
+		log.Printf("❌ No database connection available for webhook logging")
+		return
+	}
 
-		_, err := dbConn.Exec(query,
-			eventType,
-			"streaming",
-			endpoint,
-			status,
-			responseTime,
-			payloadSize,
-			statusCode,
-			errorMessage,
-			0, // retry_count
-			time.Now(),
-		)
+	query := `
+		INSERT INTO webhook_events (
+			event_type, subsite, endpoint, status, response_time, 
+			payload_size, status_code, error_message, retry_count, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`
 
-		if err != nil {
-			log.Printf("❌ Failed to log webhook event to database: %v", err)
-		} else {
-			log.Printf("📝 Logged webhook event to database: %s (%s)", eventType, status)
-		}
+	_, err := db.Exec(query,
+		eventType,
+		"streaming",
+		endpoint,
+		status,
+		responseTime,
+		payloadSize,
+		statusCode,
+		errorMessage,
+		0, // retry_count
+		time.Now(),
+	)
+
+	if err != nil {
+		log.Printf("❌ Failed to log webhook event to database: %v", err)
+	} else {
+		log.Printf("📝 Logged webhook event to database: %s (%s)", eventType, status)
 	}
 }
 
@@ -175,7 +176,7 @@ func HandleStripeWebhook(c *gin.Context, stripeService *services.StripeService, 
 		switch eventType {
 		case "v2.core.event_destination.ping":
 			log.Printf("📍 Webhook: v2 ping event - endpoint is healthy")
-			logWebhookEventToDB(syncService.GetDB(), eventType, c.Request.RequestURI, "success", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusOK, "")
+			logWebhookEventToDB(syncService, eventType, c.Request.RequestURI, "success", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusOK, "")
 			c.JSON(http.StatusOK, gin.H{
 				"received":  true,
 				"type":      "v2_ping",
@@ -212,13 +213,13 @@ func HandleStripeWebhook(c *gin.Context, stripeService *services.StripeService, 
 		if err != nil {
 			log.Printf("❌ Webhook: Failed to process v1 event %s: %v", event.Type, err)
 			recordWebhookFailure()
-			logWebhookEventToDB(syncService.GetDB(), event.Type, c.Request.RequestURI, "failed", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusInternalServerError, err.Error())
+			logWebhookEventToDB(syncService, event.Type, c.Request.RequestURI, "failed", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusInternalServerError, err.Error())
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process webhook"})
 			return
 		}
 
 		log.Printf("✅ Webhook: Successfully processed v1 event %s", event.Type)
-		logWebhookEventToDB(syncService.GetDB(), event.Type, c.Request.RequestURI, "success", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusOK, "")
+		logWebhookEventToDB(syncService, event.Type, c.Request.RequestURI, "success", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusOK, "")
 		c.JSON(http.StatusOK, gin.H{"received": true, "processed": true, "type": "v1_event"})
 	}
 }
