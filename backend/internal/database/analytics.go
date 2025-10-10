@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -416,6 +417,16 @@ func (db *DB) GetSystemMetrics(startTime, endTime time.Time) ([]*SystemMetrics, 
 	return metrics, nil
 }
 
+// WebhookEventsResponse represents the response structure for webhook events
+type WebhookEventsResponse struct {
+	Events     []*WebhookEvent `json:"events"`
+	Total      int             `json:"total"`
+	Page       int             `json:"page"`
+	Limit      int             `json:"limit"`
+	HasMore    bool            `json:"has_more"`
+	TotalPages int             `json:"total_pages"`
+}
+
 // GetWebhookEvents returns webhook events for a specific time range
 func (db *DB) GetWebhookEvents(startTime, endTime time.Time, limit int) ([]*WebhookEvent, error) {
 	// Check if table exists first
@@ -467,6 +478,127 @@ func (db *DB) GetWebhookEvents(startTime, endTime time.Time, limit int) ([]*Webh
 	}
 
 	return events, nil
+}
+
+// GetWebhookEventsWithPagination retrieves webhook events with pagination and filtering
+func (db *DB) GetWebhookEventsWithPagination(page, limit int, eventType, status string) (*WebhookEventsResponse, error) {
+	// Check if table exists first
+	var tableExists bool
+	err := db.QueryRow(`
+		SELECT EXISTS (
+			SELECT FROM information_schema.tables 
+			WHERE table_schema = 'public' 
+			AND table_name = 'webhook_events'
+		)
+	`).Scan(&tableExists)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to check if webhook_events table exists: %w", err)
+	}
+
+	if !tableExists {
+		// Return empty response if table doesn't exist
+		return &WebhookEventsResponse{
+			Events:     []*WebhookEvent{},
+			Total:      0,
+			Page:       page,
+			Limit:      limit,
+			HasMore:    false,
+			TotalPages: 0,
+		}, nil
+	}
+
+	offset := (page - 1) * limit
+
+	// Build the base query
+	whereClause := "WHERE 1=1"
+	args := []interface{}{}
+	argIndex := 1
+
+	// Add filters
+	if eventType != "" {
+		whereClause += " AND event_type = $" + fmt.Sprintf("%d", argIndex)
+		args = append(args, eventType)
+		argIndex++
+	}
+
+	if status != "" {
+		whereClause += " AND status = $" + fmt.Sprintf("%d", argIndex)
+		args = append(args, status)
+		argIndex++
+	}
+
+	// Get total count
+	countQuery := "SELECT COUNT(*) FROM webhook_events " + whereClause
+	var total int
+	err = db.QueryRow(countQuery, args...).Scan(&total)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get webhook events count: %w", err)
+	}
+
+	// Get paginated events (newest first)
+	eventsQuery := `
+		SELECT id, event_type, subsite, endpoint, status, response_time, 
+		       payload_size, status_code, error_message, retry_count, created_at
+		FROM webhook_events 
+		` + whereClause + `
+		ORDER BY created_at DESC 
+		LIMIT $` + fmt.Sprintf("%d", argIndex) + ` OFFSET $` + fmt.Sprintf("%d", argIndex+1)
+
+	args = append(args, limit, offset)
+
+	rows, err := db.Query(eventsQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query webhook events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []*WebhookEvent
+	for rows.Next() {
+		event := &WebhookEvent{}
+		var errorMessage sql.NullString
+
+		err := rows.Scan(
+			&event.ID,
+			&event.EventType,
+			&event.Subsite,
+			&event.Endpoint,
+			&event.Status,
+			&event.ResponseTime,
+			&event.PayloadSize,
+			&event.StatusCode,
+			&errorMessage,
+			&event.RetryCount,
+			&event.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan webhook event: %w", err)
+		}
+
+		// Handle nullable error message
+		if errorMessage.Valid {
+			event.ErrorMessage = errorMessage.String
+		}
+
+		events = append(events, event)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating webhook events: %w", err)
+	}
+
+	// Calculate pagination info
+	totalPages := (total + limit - 1) / limit
+	hasMore := page < totalPages
+
+	return &WebhookEventsResponse{
+		Events:     events,
+		Total:      total,
+		Page:       page,
+		Limit:      limit,
+		HasMore:    hasMore,
+		TotalPages: totalPages,
+	}, nil
 }
 
 // GetAlerts returns system alerts
