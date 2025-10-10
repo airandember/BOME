@@ -117,7 +117,7 @@
 					
 					showToast('Password setup successful! Welcome to BOME!', 'success');
 					
-					// Redirect to dashboard after a short delay
+					// Redirect to videos after a short delay
 					setTimeout(() => {
 						goto('/videos');
 					}, 2000);
