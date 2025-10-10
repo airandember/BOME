@@ -377,7 +377,7 @@
 	{/each}
 </div>
 
-<!-- Scroll Indicator -->
+<!-- Scroll Indicator 
 <div class="scroll-indicator" class:hidden={currentSection === 5}>
 	<div class="scroll-text">Scroll to explore</div>
 	<div class="scroll-arrow">
@@ -386,9 +386,9 @@
 			<path d="M7 6l3 3 7-3"></path>
 		</svg>
 	</div>
-</div>
+</div>-->
 
-<Footer />
+<!--<Footer />-->
 
 <style>
 	:global(html) {
@@ -1172,7 +1172,7 @@
 		.main-title-container {
 			padding: 1rem 4rem 0 4rem;
 			max-width: 1800px;
-			top: 8%;
+			top: 10%;
 		}
 		
 		.hero-title {
