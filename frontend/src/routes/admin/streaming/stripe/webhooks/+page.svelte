@@ -36,6 +36,7 @@
 			
 			if (response.ok) {
 				const data = await response.json();
+				console.log('🔍🔍🔍🔍🔍 Webhook status data:', data);
 				webhookStatus = data.webhook || null;
 				console.log('✅ Webhook status loaded:', webhookStatus);
 			} else {
