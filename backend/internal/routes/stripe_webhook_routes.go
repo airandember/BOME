@@ -574,11 +574,28 @@ func getWebhookStatus(c *gin.Context, syncService *services.StripeSyncService) {
 	}
 
 	// Build the public webhook endpoint URL
-	scheme := "https"
-	if c.Request.TLS == nil {
-		scheme = "http"
+	// Check X-Forwarded-Proto header first (for reverse proxy setups like Nginx)
+	scheme := "https" // Default to HTTPS for production
+	forwardedProto := c.GetHeader("X-Forwarded-Proto")
+
+	log.Printf("🔍 [WEBHOOK-URL] Building webhook URL - Host: %s, X-Forwarded-Proto: '%s', TLS: %v",
+		c.Request.Host, forwardedProto, c.Request.TLS != nil)
+
+	if forwardedProto != "" {
+		scheme = forwardedProto
+		log.Printf("✅ [WEBHOOK-URL] Using X-Forwarded-Proto: %s", scheme)
+	} else if c.Request.TLS != nil {
+		scheme = "https"
+		log.Printf("✅ [WEBHOOK-URL] Using TLS: %s", scheme)
+	} else if c.Request.Host == "localhost:8080" || strings.Contains(c.Request.Host, "127.0.0.1") {
+		scheme = "http" // Only use HTTP for localhost
+		log.Printf("✅ [WEBHOOK-URL] Using localhost: %s", scheme)
+	} else {
+		log.Printf("✅ [WEBHOOK-URL] Using default (production): %s", scheme)
 	}
+
 	webhookEndpoint := fmt.Sprintf("%s://%s/api/v1/webhooks/stripe", scheme, c.Request.Host)
+	log.Printf("🔗 [WEBHOOK-URL] Final webhook endpoint: %s", webhookEndpoint)
 
 	status := gin.H{
 		"active":            isActive,
@@ -619,10 +636,20 @@ func pingWebhook(c *gin.Context, syncService *services.StripeSyncService) {
 
 // getScheme determines the scheme (http/https) based on the request
 func getScheme(c *gin.Context) string {
+	// Check X-Forwarded-Proto header first (for reverse proxy setups like Nginx)
+	if proto := c.GetHeader("X-Forwarded-Proto"); proto != "" {
+		return proto
+	}
+	// Check if direct TLS connection
 	if c.Request.TLS != nil {
 		return "https"
 	}
-	return "http"
+	// Check for localhost
+	if c.Request.Host == "localhost:8080" || strings.Contains(c.Request.Host, "127.0.0.1") {
+		return "http"
+	}
+	// Default to HTTPS for production
+	return "https"
 }
 
 // pluralize helper function
