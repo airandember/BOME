@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"bome-backend/internal/database"
@@ -16,6 +17,133 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// AdminAccessAttempt tracks failed admin access attempts
+type AdminAccessAttempt struct {
+	Count     int
+	FirstTime time.Time
+	LastTime  time.Time
+	Blocked   bool
+	BlockedAt time.Time
+}
+
+// AdminRateLimiter manages rate limiting for admin access attempts
+type AdminRateLimiter struct {
+	attempts map[string]*AdminAccessAttempt
+	mutex    sync.RWMutex
+}
+
+var globalAdminRateLimiter = &AdminRateLimiter{
+	attempts: make(map[string]*AdminAccessAttempt),
+}
+
+const (
+	maxAdminAttempts = 5
+	blockDuration    = 30 * time.Minute // Block for 30 minutes
+	resetWindow      = 10 * time.Minute // Reset attempts after 10 minutes of no activity
+)
+
+// IsBlocked checks if a user is currently blocked from admin access
+func (arl *AdminRateLimiter) IsBlocked(userKey string) bool {
+	arl.mutex.RLock()
+	defer arl.mutex.RUnlock()
+
+	attempt, exists := arl.attempts[userKey]
+	if !exists {
+		return false
+	}
+
+	// Check if block has expired
+	if attempt.Blocked && time.Since(attempt.BlockedAt) > blockDuration {
+		// Block expired, reset the attempt
+		delete(arl.attempts, userKey)
+		return false
+	}
+
+	return attempt.Blocked
+}
+
+// RecordFailedAttempt records a failed admin access attempt
+func (arl *AdminRateLimiter) RecordFailedAttempt(userKey string) bool {
+	arl.mutex.Lock()
+	defer arl.mutex.Unlock()
+
+	now := time.Now()
+	attempt, exists := arl.attempts[userKey]
+
+	if !exists {
+		arl.attempts[userKey] = &AdminAccessAttempt{
+			Count:     1,
+			FirstTime: now,
+			LastTime:  now,
+			Blocked:   false,
+		}
+		return false // Not blocked yet
+	}
+
+	// Check if we should reset the attempt window
+	if time.Since(attempt.LastTime) > resetWindow {
+		attempt.Count = 1
+		attempt.FirstTime = now
+		attempt.LastTime = now
+		attempt.Blocked = false
+		return false
+	}
+
+	// Increment attempt count
+	attempt.Count++
+	attempt.LastTime = now
+
+	// Check if we should block
+	if attempt.Count >= maxAdminAttempts {
+		attempt.Blocked = true
+		attempt.BlockedAt = now
+		log.Printf("🚫 SECURITY ALERT: User %s blocked from admin access after %d failed attempts", userKey, attempt.Count)
+		return true // Now blocked
+	}
+
+	log.Printf("⚠️ Admin access attempt %d/%d for user: %s", attempt.Count, maxAdminAttempts, userKey)
+	return false // Not blocked yet
+}
+
+// GetAttemptInfo returns current attempt information for a user
+func (arl *AdminRateLimiter) GetAttemptInfo(userKey string) (int, time.Time, bool) {
+	arl.mutex.RLock()
+	defer arl.mutex.RUnlock()
+
+	attempt, exists := arl.attempts[userKey]
+	if !exists {
+		return 0, time.Time{}, false
+	}
+
+	return attempt.Count, attempt.BlockedAt, attempt.Blocked
+}
+
+// CleanupExpired removes expired entries to prevent memory leaks
+func (arl *AdminRateLimiter) CleanupExpired() {
+	arl.mutex.Lock()
+	defer arl.mutex.Unlock()
+
+	now := time.Now()
+	for userKey, attempt := range arl.attempts {
+		// Remove if block expired or no activity for reset window
+		if (attempt.Blocked && now.Sub(attempt.BlockedAt) > blockDuration) ||
+			(!attempt.Blocked && now.Sub(attempt.LastTime) > resetWindow) {
+			delete(arl.attempts, userKey)
+		}
+	}
+}
+
+// Start cleanup routine
+func init() {
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			globalAdminRateLimiter.CleanupExpired()
+		}
+	}()
+}
 
 // Logger returns a gin.HandlerFunc for logging
 func Logger() gin.HandlerFunc {
@@ -270,10 +398,57 @@ func AdminRequired() gin.HandlerFunc {
 
 		if !isAdmin {
 			userEmail, _ := c.Get("user_email")
+			userID, _ := c.Get("user_id")
+
+			// Create a unique key for rate limiting (prefer email, fallback to user ID + IP)
+			var userKey string
+			if userEmail != nil {
+				userKey = fmt.Sprintf("email:%v", userEmail)
+			} else if userID != nil {
+				userKey = fmt.Sprintf("user:%v:ip:%s", userID, c.ClientIP())
+			} else {
+				userKey = fmt.Sprintf("ip:%s", c.ClientIP())
+			}
+
+			// Check if user is already blocked
+			if globalAdminRateLimiter.IsBlocked(userKey) {
+				count, blockedAt, _ := globalAdminRateLimiter.GetAttemptInfo(userKey)
+				timeRemaining := blockDuration - time.Since(blockedAt)
+
+				log.Printf("🚫 BLOCKED: Admin access attempt from %s (blocked %d attempts, %v remaining)",
+					userKey, count, timeRemaining.Round(time.Minute))
+
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error":               "Too many failed admin access attempts. Access temporarily blocked.",
+					"retry_after_minutes": int(timeRemaining.Minutes()) + 1,
+					"blocked_until":       blockedAt.Add(blockDuration).Format(time.RFC3339),
+				})
+				c.Abort()
+				return
+			}
+
+			// Record this failed attempt
+			nowBlocked := globalAdminRateLimiter.RecordFailedAttempt(userKey)
+
 			log.Printf("Admin access denied for user: %v (role: %s)", userEmail, roleStr)
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "Admin access required",
-			})
+
+			if nowBlocked {
+				// User just got blocked
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error":               "Too many failed admin access attempts. Access blocked for 30 minutes.",
+					"retry_after_minutes": int(blockDuration.Minutes()),
+					"blocked_until":       time.Now().Add(blockDuration).Format(time.RFC3339),
+				})
+			} else {
+				// Regular denial with attempt count
+				count, _, _ := globalAdminRateLimiter.GetAttemptInfo(userKey)
+				remaining := maxAdminAttempts - count
+
+				c.JSON(http.StatusForbidden, gin.H{
+					"error":   "Admin access required",
+					"warning": fmt.Sprintf("Warning: %d more failed attempts will result in temporary blocking", remaining),
+				})
+			}
 			c.Abort()
 			return
 		}

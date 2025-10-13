@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { apiRequest } from '$lib/auth';
 	import { toastStore } from '$lib/stores/toast';
+	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 
 	// State variables
 	let webhookStatus = $state<any>(null);
@@ -11,7 +12,8 @@
 	let error = $state('');
 	let pinging = $state(false);
 	let refreshing = $state(false);
-	let showLogs = $state(false);
+	let showLogs = $state(true);
+	let retryingEvents = $state(new Set<number>()); // Track which events are being retried
 	
 	// Pagination and filtering
 	let currentPage = $state(1);
@@ -144,6 +146,46 @@
 		return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 	}
 
+	function getHealthStatusClass(healthStatus: string): string {
+		switch (healthStatus) {
+			case 'healthy':
+				return 'status-healthy';
+			case 'degraded':
+				return 'status-degraded';
+			case 'unhealthy':
+				return 'status-unhealthy';
+			case 'monitoring':
+				return 'status-monitoring';
+			case 'inactive':
+				return 'status-inactive';
+			case 'no_activity':
+				return 'status-no-activity';
+			default:
+				// Fallback to inactive for professional appearance
+				return 'status-inactive';
+		}
+	}
+
+	function getHealthStatusLabel(healthStatus: string): string {
+		switch (healthStatus) {
+			case 'healthy':
+				return '🟢 Healthy';
+			case 'degraded':
+				return '🟡 Degraded';
+			case 'unhealthy':
+				return '🔴 Unhealthy';
+			case 'monitoring':
+				return '🔵 Monitoring';
+			case 'inactive':
+				return '⚫ Inactive';
+			case 'no_activity':
+				return '🟣 No Recent Activity';
+			default:
+				// Fallback to inactive for professional appearance
+				return '⚫ Inactive';
+		}
+	}
+
 	async function pingWebhook() {
 		try {
 			pinging = true;
@@ -180,6 +222,40 @@
 			});
 		} finally {
 			pinging = false;
+		}
+	}
+
+	async function retryWebhookEvent(eventId: number) {
+		try {
+			retryingEvents.add(eventId);
+			
+			const response = await apiRequest(`/admin/streaming/stripe/webhooks/retry/${eventId}`, {
+				method: 'POST'
+			});
+			
+			if (response.ok) {
+				const data = await response.json();
+				console.log('🔄 Retry response:', data);
+				
+				toastStore.success(`Webhook event retried successfully! Attempt ${data.retry_count}`, {
+					duration: 4000
+				});
+				
+				// Refresh logs to show updated status
+				setTimeout(() => {
+					loadWebhookLogs(currentPage);
+				}, 500);
+			} else {
+				const errorData = await response.json().catch(() => ({}));
+				throw new Error(errorData.error || `Retry failed: ${response.status}`);
+			}
+		} catch (err: any) {
+			console.error('❌ Webhook retry failed:', err);
+			toastStore.error(`Webhook retry failed: ${err.message}`, {
+				duration: 5000
+			});
+		} finally {
+			retryingEvents.delete(eventId);
 		}
 	}
 </script>
@@ -229,9 +305,9 @@
 			<div class="status-card">
 				<div class="card-header">
 					<h2>📊 Webhook Status</h2>
-					<div class="status-indicator {webhookStatus?.enabled ? 'active' : 'inactive'}">
+					<div class="status-indicator {getHealthStatusClass(webhookStatus?.health_status)}">
 						<div class="status-dot"></div>
-						<span>{webhookStatus?.enabled ? 'Active' : 'Inactive'}</span>
+						<span>{getHealthStatusLabel(webhookStatus?.health_status)}</span>
 					</div>
 				</div>
 
@@ -241,36 +317,49 @@
 							<div class="detail-item">
 								<span class="detail-label">Endpoint URL:</span>
 								<span class="detail-value">
-									{webhookStatus.endpoint_url || 'Not configured'}
+									{webhookStatus.endpoint || 'Not configured'}
 								</span>
 							</div>
 							
 							<div class="detail-item">
 								<span class="detail-label">Last Event:</span>
 								<span class="detail-value">
-									{webhookStatus.last_event_received 
-										? new Date(webhookStatus.last_event_received).toLocaleString()
-										: 'No events received'
-									}
+									{webhookStatus.lastEvent || 'Never'}
 								</span>
 							</div>
 							
 							<div class="detail-item">
-								<span class="detail-label">Events Processed:</span>
+								<span class="detail-label">Events Today:</span>
 								<span class="detail-value">
-									{webhookStatus.total_events || 0} events
+									{webhookStatus.eventsToday || 0} events
+								</span>
+							</div>
+							
+							<div class="detail-item">
+								<span class="detail-label">Total Events:</span>
+								<span class="detail-value">
+									{webhookStatus.totalEvents || 0} events
 								</span>
 							</div>
 							
 							<div class="detail-item">
 								<span class="detail-label">Success Rate:</span>
 								<span class="detail-value">
-									{webhookStatus.success_rate !== undefined 
-										? `${(webhookStatus.success_rate * 100).toFixed(1)}%`
-										: 'N/A'
+									{webhookStatus.successRate !== undefined 
+										? `${webhookStatus.successRate}%`
+										: '100%'
 									}
 								</span>
 							</div>
+
+							{#if webhookStatus.recentFailureRate > 0}
+							<div class="detail-item">
+								<span class="detail-label">Recent Failures:</span>
+								<span class="detail-value error-rate">
+									{webhookStatus.recentFailureRate}%
+								</span>
+							</div>
+							{/if}
 						</div>
 					</div>
 				{:else}
@@ -415,6 +504,7 @@
 										<th>Payload Size</th>
 										<th>Status Code</th>
 										<th>Error</th>
+										<th>Actions</th>
 									</tr>
 								</thead>
 								<tbody>
@@ -442,7 +532,7 @@
 													{log.status_code}
 												</span>
 											</td>
-											<td class="error-message">
+											<td class="error-message status-{Math.floor(log.status_code / 100)}xx">
 												{#if log.error_message}
 													<span class="error" title={log.error_message}>
 														{log.error_message.length > 50 
@@ -451,6 +541,29 @@
 													</span>
 												{:else}
 													<span class="no-error">-</span>
+												{/if}
+											</td>
+											<td class="actions">
+												{#if log.status === 'failed' && log.retry_count < 5}
+													<button 
+														class="btn-retry" 
+														onclick={() => retryWebhookEvent(log.id)}
+														disabled={retryingEvents.has(log.id)}
+														title="Retry failed webhook event"
+													>
+														{#if retryingEvents.has(log.id)}
+															<LoadingSpinner size="small" />
+														{:else}
+															🔄
+														{/if}
+														Retry
+													</button>
+												{:else if log.status === 'failed' && log.retry_count >= 5}
+													<span class="max-retries" title="Maximum retry attempts exceeded">
+														⚠️ Max retries
+													</span>
+												{:else}
+													<span class="no-action">-</span>
 												{/if}
 											</td>
 										</tr>
@@ -688,6 +801,37 @@
 		color: var(--error-dark);
 	}
 
+	.status-healthy {
+		background: var(--success-light);
+		color: var(--success-dark);
+	}
+
+	.status-degraded {
+		background: var(--warning-light);
+		color: var(--warning-dark);
+	}
+
+	.status-unhealthy {
+		background: var(--error-light);
+		color: var(--error-dark);
+	}
+
+	.status-monitoring {
+		background: var(--primary-light);
+		color: var(--primary-dark);
+	}
+
+	.status-inactive {
+		background: #6b7280;
+		color: #f9fafb;
+	}
+
+	.status-no-activity {
+		background: #f3e8ff;
+		color: #7c3aed;
+		border: 1px solid #c4b5fd;
+	}
+
 	.status-dot {
 		width: 8px;
 		height: 8px;
@@ -722,6 +866,11 @@
 		color: var(--text);
 		font-weight: 600;
 		word-break: break-all;
+	}
+
+	.error-rate {
+		color: var(--error) !important;
+		font-weight: 700;
 	}
 
 	.no-webhook {
@@ -1138,6 +1287,30 @@
 		color: var(--error-dark);
 	}
 
+	.error-message {
+		position: relative;
+	}
+
+	.error-message.status-2xx {
+		border-left: 4px solid var(--success);
+		background: var(--success-light);
+	}
+
+	.error-message.status-3xx {
+		border-left: 4px solid var(--primary);
+		background: var(--primary-light);
+	}
+
+	.error-message.status-4xx {
+		border-left: 4px solid var(--warning);
+		background: var(--warning-light);
+	}
+
+	.error-message.status-5xx {
+		border-left: 4px solid var(--error);
+		background: var(--error-light);
+	}
+
 	.error {
 		color: var(--error);
 		font-size: 0.85rem;
@@ -1147,6 +1320,48 @@
 	.no-error {
 		color: var(--text-muted);
 		font-style: italic;
+	}
+
+	.actions {
+		text-align: center;
+		min-width: 100px;
+	}
+
+	.btn-retry {
+		background: var(--primary);
+		color: white;
+		border: none;
+		padding: 0.25rem 0.5rem;
+		border-radius: 4px;
+		font-size: 0.75rem;
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		transition: all 0.2s ease;
+	}
+
+	.btn-retry:hover:not(:disabled) {
+		background: var(--primary-dark);
+		transform: translateY(-1px);
+	}
+
+	.btn-retry:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none;
+	}
+
+	.max-retries {
+		color: var(--warning);
+		font-size: 0.75rem;
+		font-weight: 500;
+	}
+
+	.no-action {
+		color: var(--text-muted);
+		font-style: italic;
+		font-size: 0.75rem;
 	}
 
 	.logs-pagination {

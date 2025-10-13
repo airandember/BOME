@@ -751,6 +751,40 @@ export async function apiRequest(endpoint: string, options: RequestInit & { onPr
 			}
 		}
 		
+		// Handle 429 - rate limited admin access: Stop all requests and show blocking message
+		if (response.status === 429 && endpoint.includes('/admin')) {
+			try {
+				const errorData = await response.json();
+				const retryAfter = errorData.retry_after_minutes || 30;
+				const blockedUntil = errorData.blocked_until || 'unknown';
+				
+				console.log('🚫 RATE LIMITED: Admin access blocked', {
+					retryAfter,
+					blockedUntil,
+					endpoint
+				});
+				
+				// Cancel token refresh to prevent further attempts
+				if (refreshTimeout) {
+					clearTimeout(refreshTimeout);
+					refreshTimeout = null;
+				}
+				
+				// Show user-friendly blocking message
+				if (typeof window !== 'undefined') {
+					const message = `Admin access temporarily blocked due to multiple failed attempts.\n\nAccess will be restored in ${retryAfter} minutes.\n\nBlocked until: ${new Date(blockedUntil).toLocaleString()}`;
+					alert(message);
+					
+					// Redirect to main page to prevent further admin attempts
+					setTimeout(() => {
+						window.location.href = '/videos';
+					}, 2000);
+				}
+			} catch (e) {
+				console.warn('Failed to parse rate limit response:', e);
+			}
+		}
+		
 		return response;
 	} catch (error) {
 		console.error('Auth: Network error during API request:', error);
