@@ -120,7 +120,11 @@ ehthumbs.db
 *.dylib
 *.test
 *.out
-go.work 
+go.work
+
+# Go module cache
+backend/.gomodcache/
+.gomodcache/ 
 data/database_sql.sql
 data/schema_only.sql
 .gitignore
