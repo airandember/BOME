@@ -1,0 +1,66 @@
+{
+  "Passed": 10,
+  "Tests": [
+    {
+      "Message": "Found 2 CORS headers",
+      "Duration": 4,
+      "Name": "CORS Headers Present",
+      "Success": true
+    },
+    {
+      "Message": "Preflight accepted",
+      "Duration": 3,
+      "Name": "CORS Preflight",
+      "Success": true
+    },
+    {
+      "Message": "Correct 404 response",
+      "Duration": 34,
+      "Name": "404 Not Found",
+      "Success": true
+    },
+    {
+      "Message": "Correct 400 response",
+      "Duration": 3,
+      "Name": "400 Bad Request",
+      "Success": true
+    },
+    {
+      "Message": "Auth required (correct)",
+      "Duration": 2,
+      "Name": "401 Unauthorized",
+      "Success": true
+    },
+    {
+      "Message": "Returns 404 (acceptable)",
+      "Duration": 2,
+      "Name": "405 Method Not Allowed",
+      "Success": true
+    },
+    {
+      "Message": "High limit or per-IP (acceptable)",
+      "Duration": 72,
+      "Name": "Rate Limiting Active",
+      "Success": true
+    },
+    {
+      "Message": "Found 4 security headers",
+      "Duration": 2,
+      "Name": "Security Headers",
+      "Success": true
+    },
+    {
+      "Message": "Consistent error format",
+      "Duration": 2,
+      "Name": "Error Response Format",
+      "Success": true
+    },
+    {
+      "Message": "application/json",
+      "Duration": 2,
+      "Name": "Content-Type Header",
+      "Success": true
+    }
+  ],
+  "Failed": 0
+}

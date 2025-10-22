@@ -1,0 +1,193 @@
+{
+  "version": "1.0.0",
+  "description": "Architecture rules for BOME backend - Enforces clean architecture patterns",
+  "rules": [
+    {
+      "id": "BRAID-001",
+      "name": "No cross-braid imports in handlers",
+      "severity": "error",
+      "description": "Handlers in one braid cannot import from another braid's packages",
+      "pattern": {
+        "from": "*/handlers/*.go",
+        "cannot_import": [
+          "authentication/*",
+          "subscription/*",
+          "video-streaming/*",
+          "user-management/*",
+          "content/*",
+          "admin/*",
+          "analytics/*",
+          "communication/*",
+          "infrastructure/*"
+        ],
+        "except_own_braid": true
+      },
+      "rationale": "Braids should be independent. Handlers should only use shared services, not other braids."
+    },
+    {
+      "id": "BRAID-002",
+      "name": "Handlers must use services through ports",
+      "severity": "error",
+      "description": "Handlers should depend on service interfaces (ports), not concrete implementations",
+      "pattern": {
+        "from": "*/handlers/*.go",
+        "must_import_through": "services/*/ports.go",
+        "for_services": true
+      },
+      "rationale": "Dependency Inversion Principle - depend on abstractions, not concretions."
+    },
+    {
+      "id": "BRAID-003",
+      "name": "Use cases cannot import HTTP packages",
+      "severity": "error",
+      "description": "Use cases are pure business logic and should not depend on HTTP/Gin",
+      "pattern": {
+        "from": "*/usecases/*.go",
+        "cannot_import": [
+          "github.com/gin-gonic/gin",
+          "net/http",
+          "*/handlers/*"
+        ]
+      },
+      "rationale": "Use cases should be protocol-agnostic and testable without HTTP."
+    },
+    {
+      "id": "BRAID-004",
+      "name": "Models cannot import services",
+      "severity": "error",
+      "description": "Models/repositories should not depend on business services",
+      "pattern": {
+        "from": "*/models/*.go",
+        "cannot_import": [
+          "*/services/*",
+          "*/usecases/*",
+          "*/handlers/*"
+        ]
+      },
+      "rationale": "Data layer should be independent of business logic layer."
+    },
+    {
+      "id": "SHARED-001",
+      "name": "Shared services must be domain-organized",
+      "severity": "warning",
+      "description": "All shared services should be organized under their domain directory",
+      "pattern": {
+        "services_must_be_in": [
+          "services/security/*",
+          "services/payment/*",
+          "services/media/*",
+          "services/communication/*",
+          "services/analytics/*"
+        ]
+      },
+      "rationale": "Discoverability and maintainability - services grouped by domain."
+    },
+    {
+      "id": "SHARED-002",
+      "name": "Services must have port interfaces",
+      "severity": "warning",
+      "description": "Each service domain should have a ports.go file defining interfaces",
+      "pattern": {
+        "each_service_domain_must_have": "ports.go"
+      },
+      "rationale": "Enables dependency injection and testability."
+    },
+    {
+      "id": "INFRA-001",
+      "name": "Infrastructure only in infrastructure package",
+      "severity": "error",
+      "description": "Database, config, and infrastructure code should be in infrastructure package",
+      "pattern": {
+        "from": [
+          "*/handlers/*.go",
+          "*/usecases/*.go"
+        ],
+        "cannot_import": [
+          "database/sql",
+          "gorm.io/*"
+        ],
+        "must_use_instead": "infrastructure/database"
+      },
+      "rationale": "Infrastructure concerns should be abstracted and centralized."
+    },
+    {
+      "id": "LAYER-001",
+      "name": "Respect layering hierarchy",
+      "severity": "error",
+      "description": "Lower layers cannot import from higher layers",
+      "pattern": {
+        "hierarchy": [
+          "handlers",
+          "usecases",
+          "services",
+          "models",
+          "infrastructure"
+        ],
+        "lower_cannot_import_higher": true
+      },
+      "rationale": "Prevents circular dependencies and maintains clean architecture."
+    },
+    {
+      "id": "TEST-001",
+      "name": "Use case tests should be pure",
+      "severity": "warning",
+      "description": "Use case tests should not require HTTP server or database",
+      "pattern": {
+        "from": "*/usecases/*_test.go",
+        "should_not_import": [
+          "github.com/gin-gonic/gin",
+          "net/http/httptest",
+          "database/sql"
+        ]
+      },
+      "rationale": "Use case tests should be fast and isolated."
+    },
+    {
+      "id": "NAMING-001",
+      "name": "Use case naming convention",
+      "severity": "info",
+      "description": "Use cases should be named as verbs (RegisterUser, LoginUser, etc.)",
+      "pattern": {
+        "files_in": "*/usecases/*.go",
+        "must_match": "^[a-z]+_[a-z]+\\.go$"
+      },
+      "rationale": "Consistent naming improves readability and discoverability."
+    },
+    {
+      "id": "CIRCULAR-001",
+      "name": "No circular dependencies",
+      "severity": "error",
+      "description": "Packages cannot have circular import dependencies",
+      "pattern": {
+        "detect_circular_imports": true
+      },
+      "rationale": "Circular dependencies indicate poor architecture and cause compilation issues."
+    }
+  ],
+  "exceptions": [
+    {
+      "rule_id": "BRAID-001",
+      "file_pattern": "*/handlers/*_test.go",
+      "reason": "Test files may need to import test helpers from other braids"
+    },
+    {
+      "rule_id": "INFRA-001",
+      "file_pattern": "infrastructure/*",
+      "reason": "Infrastructure package itself can use raw database libraries"
+    }
+  ],
+  "enforcement": {
+    "on_commit": false,
+    "on_push": false,
+    "on_pr": true,
+    "on_ci": true,
+    "fail_on_error": true,
+    "fail_on_warning": false
+  },
+  "reporting": {
+    "format": "json",
+    "output_file": "architecture-violations.json",
+    "verbose": true
+  }
+}
+

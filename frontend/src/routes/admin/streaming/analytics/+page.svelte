@@ -70,31 +70,16 @@
 				period: selectedPeriod
 			});
 
-			const response = await apiRequest(`/admin/streaming/analytics/executive-summary?${params}`);
-			
-			if (response.ok) {
-				executiveSummaryData = await response.json();
-			} else {
-				// Fallback to mock data for now
-				executiveSummaryData = {
-					revenue_impact: {
-						promotional_revenue: 12450,
-						standard_revenue: 45200,
-						total_mrr: 57650,
-						growth_rate: 15
-					},
-					customer_impact: {
-						new_customers_promos: 234,
-						standard_conversions: 156,
-						overall_growth: 18
-					},
-					funnel_performance: {
-						promo_conversion: 3.2,
-						standard_conversion: 1.8,
-						conversion_lift: 78
-					}
-				};
-			}
+		const response = await apiRequest(`/admin/streaming/analytics/executive-summary?${params}`);
+		
+		if (response.ok) {
+			executiveSummaryData = await response.json();
+		} else {
+			// ❌ NO MOCK DATA! Show real error or null
+			console.error('❌ Failed to load executive summary - API returned error');
+			executiveSummaryData = null;
+			throw new Error('Failed to load executive summary data');
+		}
 		} catch (err: any) {
 			console.error('Error loading executive summary data:', err);
 		}
@@ -107,26 +92,15 @@
 				period: selectedPeriod
 			});
 
-			const response = await apiRequest(`/admin/streaming/analytics/funnel-analysis?${params}`);
+			const response = await apiRequest(`/admin/streaming/analytics/funnel?${params}`);
 			
 			if (response.ok) {
 				funnelAnalysisData = await response.json();
 			} else {
-				// Fallback to mock data for now
-				funnelAnalysisData = {
-					stages: [
-						{ name: 'Awareness', standard: 10000, promotional: 15000, lift: 50 },
-						{ name: 'Interest', standard: 2500, promotional: 4500, lift: 80 },
-						{ name: 'Consideration', standard: 1250, promotional: 2700, lift: 116 },
-						{ name: 'Conversion', standard: 180, promotional: 432, lift: 140 },
-						{ name: 'Retention', standard: 162, promotional: 389, lift: 140 }
-					],
-					conversion_rates: {
-						standard: 1.8,
-						promotional: 2.9,
-						lift: 61
-					}
-				};
+				// ❌ NO MOCK DATA! Show real error or null
+				console.error('❌ Failed to load funnel analysis - API returned error');
+				funnelAnalysisData = null;
+				throw new Error('Failed to load funnel analysis data');
 			}
 		} catch (err: any) {
 			console.error('Error loading funnel analysis data:', err);
@@ -145,23 +119,10 @@
 			if (response.ok) {
 				revenueImpactData = await response.json();
 			} else {
-				// Fallback to mock data for now
-				revenueImpactData = {
-					revenue_breakdown: {
-						standard_plans: 45200,
-						promotional_plans: 12450,
-						total_revenue: 57650
-					},
-					promotional_performance: [
-						{ name: 'Plan Share!', revenue: 8200, percentage: 66 },
-						{ name: '3 for 4', revenue: 4250, percentage: 34 }
-					],
-					baseline_comparison: {
-						pre_promo_mrr: 42000,
-						current_mrr: 57650,
-						promotional_lift: 37
-					}
-				};
+				// ❌ NO MOCK DATA! Show real error or null
+				console.error('❌ Failed to load revenue impact - API returned error');
+				revenueImpactData = null;
+				throw new Error('Failed to load revenue impact data');
 			}
 		} catch (err: any) {
 			console.error('Error loading revenue impact data:', err);
@@ -180,17 +141,10 @@
 			if (response.ok) {
 				customerJourneyData = await response.json();
 			} else {
-				// Fallback to mock data for now
-				customerJourneyData = {
-					journey_metrics: [
-						{ metric: 'Time to Convert', standard: 14, promotional: 7, improvement: 50 },
-						{ metric: 'Avg Order Value', standard: 29.99, promotional: 19.99, difference: -33 },
-						{ metric: 'Retention Rate', standard: 85, promotional: 78, difference: -7 },
-						{ metric: 'Upgrade Rate', standard: 12, promotional: 18, improvement: 50 },
-						{ metric: 'LTV', standard: 450, promotional: 380, difference: -16 }
-					],
-					net_impact: 'positive'
-				};
+				// ❌ NO MOCK DATA! Show real error or null
+				console.error('❌ Failed to load customer journey - API returned error');
+				customerJourneyData = null;
+				throw new Error('Failed to load customer journey data');
 			}
 		} catch (err: any) {
 			console.error('Error loading customer journey data:', err);
@@ -477,6 +431,7 @@
 	<title>Analytics - Streaming Admin</title>
 </svelte:head>
 
+<div class="analytics-page">
 {#if isLoading}
 	<div class="flex items-center justify-center py-12">
 		<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -526,49 +481,49 @@
 		<div class="border-b border-gray-200">
 			<nav class="-mb-px flex space-x-8 overflow-x-auto">
 				<button
-					class="py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'overview' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
+					class="neu-button py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'overview' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
 					on:click={() => selectedTab = 'overview'}
 				>
 					Overview
 				</button>
 				<button
-					class="py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'executive-summary' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
+					class="neu-button py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'executive-summary' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
 					on:click={() => { selectedTab = 'executive-summary'; handleTabChange(); }}
 				>
 					Executive Summary
 				</button>
 				<button
-					class="py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'funnel-analysis' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
+					class="neu-button py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'funnel-analysis' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
 					on:click={() => { selectedTab = 'funnel-analysis'; handleTabChange(); }}
 				>
 					Funnel Analysis
 				</button>
 				<button
-					class="py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'revenue-impact' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
+					class="neu-button py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'revenue-impact' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
 					on:click={() => { selectedTab = 'revenue-impact'; handleTabChange(); }}
 				>
 					Revenue Impact
 				</button>
 				<button
-					class="py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'customer-journey' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
+					class="neu-button py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'customer-journey' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
 					on:click={() => { selectedTab = 'customer-journey'; handleTabChange(); }}
 				>
 					Customer Journey
 				</button>
 				<button
-					class="py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'promotions' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
+					class="neu-button py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'promotions' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
 					on:click={() => { selectedTab = 'promotions'; handleTabChange(); }}
 				>
 					Promotion Analytics
 				</button>
 				<button
-					class="py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'timeline' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
+					class="neu-button py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'timeline' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
 					on:click={() => selectedTab = 'timeline'}
 				>
 					Change Timeline
 				</button>
 				<button
-					class="py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'audit' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
+					class="neu-button py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap {selectedTab === 'audit' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
 					on:click={() => { selectedTab = 'audit'; handleTabChange(); }}
 				>
 					Audit Log
@@ -812,4 +767,120 @@
 			<PromotionAnalytics promotionPlans={promotionPlans} period={selectedPeriod} />
 		{/if}
 	</div>
-{/if} 
+{/if}
+</div>
+
+<style>
+	/* 🎨 Glassmorphic Neumorphic Design - Matches Site Standard */
+	:global(.analytics-page) {
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		min-height: 100vh;
+	}
+
+	/* Override Tailwind classes with glassmorphic design */
+	:global(.analytics-page .bg-white) {
+		background: var(--bg-glass, rgba(255, 255, 255, 0.05)) !important;
+		backdrop-filter: blur(20px);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		transition: all 0.3s ease;
+	}
+
+	:global(.analytics-page .bg-white:hover) {
+		background: var(--bg-glass-hover, rgba(255, 255, 255, 0.08)) !important;
+		transform: translateY(-2px);
+		box-shadow: 
+			0 12px 40px 0 rgba(31, 38, 135, 0.2),
+			inset 0 1px 3px rgba(255, 255, 255, 0.1);
+	}
+
+	/* Text colors for dark theme */
+	:global(.analytics-page .text-gray-900) {
+		color: var(--text-primary, #ffffff) !important;
+	}
+
+	:global(.analytics-page .text-gray-500),
+	:global(.analytics-page .text-gray-600) {
+		color: var(--text-secondary, rgba(255, 255, 255, 0.7)) !important;
+	}
+
+	/* Form elements glassmorphic */
+	:global(.analytics-page select),
+	:global(.analytics-page input) {
+		background: var(--bg-primary, rgba(255, 255, 255, 0.05)) !important;
+		border: 2px solid var(--border-color, rgba(255, 255, 255, 0.2)) !important;
+		color: var(--text-primary, #ffffff) !important;
+		border-radius: 8px;
+		transition: all 0.3s ease;
+		padding: 1rem;
+		margin: 0 1rem;
+	}
+
+	:global(.analytics-page select:focus),
+	:global(.analytics-page input:focus) {
+		border-color: var(--primary-color) !important;
+		box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+		background: var(--bg-primary, rgba(255, 255, 255, 0.08)) !important;
+	}
+
+	/* Tab navigation glassmorphic */
+	:global(.analytics-page .border-b) {
+		border-color: var(--border-color, rgba(255, 255, 255, 0.1)) !important;
+	}
+
+	:global(.analytics-page button) {
+		transition: all 0.3s ease;
+		padding: 1rem;
+		margin: 0 0.5rem;
+		border-radius: 49px;
+background: linear-gradient(145deg, #ffffff, #e3e3e3);
+box-shadow:  5px 5px 10px #8d8d8d,
+             -5px -5px 10px #ffffff;
+	}
+
+	:global(.analytics-page .border-blue-500) {
+		border-color: var(--primary, #3b82f6) !important;
+		color: var(--primary, #3b82f6) !important;
+	}
+
+	:global(.analytics-page .text-blue-600) {
+		color: var(--primary, #3b82f6) !important;
+	}
+
+	:global(.analytics-page .neu-button) {
+		background: var(--bg-glass, rgba(255, 255, 255, 0.05)) !important;
+		backdrop-filter: blur(20px);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		transition: all 0.3s ease;
+	}
+
+	/* Card icon backgrounds glassmorphic */
+	:global(.analytics-page .bg-blue-100),
+	:global(.analytics-page .bg-green-100),
+	:global(.analytics-page .bg-purple-100),
+	:global(.analytics-page .bg-yellow-100) {
+		background: rgba(255, 255, 255, 0.1) !important;
+		backdrop-filter: blur(10px);
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		box-shadow: 
+			0 8px 32px 0 rgba(31, 38, 135, 0.15),
+			inset 0 1px 3px rgba(255, 255, 255, 0.05);
+	}
+
+	/* Spinner styling */
+	:global(.analytics-page .animate-spin) {
+		border-color: var(--primary, #3b82f6);
+	}
+
+	/* Shadow enhancements for glassmorphism */
+	:global(.analytics-page .shadow) {
+		box-shadow: 
+			0 8px 32px 0 rgba(31, 38, 135, 0.15),
+			inset 0 1px 3px rgba(255, 255, 255, 0.05) !important;
+	}
+
+	/* Responsive spacing */
+	:global(.analytics-page .space-y-6 > * + *) {
+		margin-top: 1.5rem;
+	}
+</style> 

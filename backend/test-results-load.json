@@ -1,0 +1,57 @@
+{
+  "ResponseTimes": {
+    "Minimum": 2.0,
+    "Maximum": 175.0,
+    "P95": 61,
+    "Average": 16.73
+  },
+  "ByEndpoint": [
+    {
+      "SuccessRate": "81.7%",
+      "Requests": 3088,
+      "AvgResponseTime": "16.7ms",
+      "Endpoint": "/api/v1/performance/metrics",
+      "Success": 2522
+    },
+    {
+      "SuccessRate": "81.4%",
+      "Requests": 4012,
+      "AvgResponseTime": "16.4ms",
+      "Endpoint": "/api/v1/subscription-plans/active",
+      "Success": 3264
+    },
+    {
+      "SuccessRate": "81.6%",
+      "Requests": 3970,
+      "AvgResponseTime": "16.9ms",
+      "Endpoint": "/api/v1/videos/test",
+      "Success": 3238
+    },
+    {
+      "SuccessRate": "79.9%",
+      "Requests": 6033,
+      "AvgResponseTime": "16.5ms",
+      "Endpoint": "/health",
+      "Success": 4821
+    },
+    {
+      "SuccessRate": "79.9%",
+      "Requests": 3022,
+      "AvgResponseTime": "17.4ms",
+      "Endpoint": "/health/ready",
+      "Success": 2416
+    }
+  ],
+  "Summary": {
+    "SuccessfulRequests": 16261,
+    "SuccessRate": 80.8,
+    "FailedRequests": 3864,
+    "TotalRequests": 20125,
+    "RequestsPerSecond": 399.16
+  },
+  "Configuration": {
+    "Duration": 50.4178594,
+    "ConcurrentUsers": 100,
+    "BaseUrl": "http://localhost:8080"
+  }
+}

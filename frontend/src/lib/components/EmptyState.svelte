@@ -3,7 +3,7 @@
 
 	export let videos: any[];
 	export let searchTerm: string;
-	export let statusFilter: string;
+	// REMOVED: statusFilter - redundant with vidStatusFilter
 	export let categoryFilter: string;
 	export let syncStatusFilter: string;
 	export let vidStatusFilter: string;
@@ -23,13 +23,13 @@
 		</svg>
 		<h3>No videos found</h3>
 		<p>
-			{#if searchTerm || statusFilter !== 'all' || categoryFilter !== 'all' || syncStatusFilter !== 'all' || vidStatusFilter !== 'all'}
+			{#if searchTerm || categoryFilter !== 'all' || syncStatusFilter !== 'all' || vidStatusFilter !== 'all'}
 				No videos match your current filters. Try adjusting your search criteria.
 			{:else}
 				Get started by creating your first video or using batch upload for multiple videos.
 			{/if}
 		</p>
-		{#if !searchTerm && statusFilter === 'all' && categoryFilter === 'all' && syncStatusFilter === 'all' && vidStatusFilter === 'all'}
+		{#if !searchTerm && categoryFilter === 'all' && syncStatusFilter === 'all' && vidStatusFilter === 'all'}
 			<div class="flex justify-center space-x-3">
 				<button
 					class="btn btn-primary"

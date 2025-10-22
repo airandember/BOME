@@ -1,0 +1,98 @@
+[
+  {
+    "Status": "✅ PASS",
+    "StatusCode": 200,
+    "ResponseTime": "16ms",
+    "Success": true,
+    "Name": "Main Health Check"
+  },
+  {
+    "Status": "✅ PASS",
+    "StatusCode": 200,
+    "ResponseTime": "3ms",
+    "Success": true,
+    "Name": "Liveness Probe"
+  },
+  {
+    "Status": "✅ PASS",
+    "StatusCode": 200,
+    "ResponseTime": "2ms",
+    "Success": true,
+    "Name": "Readiness Probe"
+  },
+  {
+    "Success": false,
+    "Status": "❌ FAIL",
+    "Name": "Login Endpoint",
+    "ResponseTime": "133ms",
+    "Error": "Response status code does not indicate success: 401 (Unauthorized).",
+    "StatusCode": 401
+  },
+  {
+    "Success": false,
+    "Status": "❌ FAIL",
+    "Name": "Register Endpoint",
+    "ResponseTime": "4ms",
+    "Error": "Response status code does not indicate success: 400 (Bad Request).",
+    "StatusCode": 400
+  },
+  {
+    "Success": false,
+    "Status": "❌ FAIL",
+    "Name": "Logout Endpoint",
+    "ResponseTime": "3ms",
+    "Error": "Response status code does not indicate success: 400 (Bad Request).",
+    "StatusCode": 400
+  },
+  {
+    "Status": "✅ PASS",
+    "StatusCode": 200,
+    "ResponseTime": "3ms",
+    "Success": true,
+    "Name": "Subscription Plans (Active)"
+  },
+  {
+    "Success": false,
+    "Status": "❌ FAIL",
+    "Name": "Subscription Plans (Promoted)",
+    "ResponseTime": "3ms",
+    "Error": "Response status code does not indicate success: 501 (Not Implemented).",
+    "StatusCode": 501
+  },
+  {
+    "Success": false,
+    "Status": "❌ FAIL",
+    "Name": "Videos List",
+    "ResponseTime": "8ms",
+    "Error": "Response status code does not indicate success: 401 (Unauthorized).",
+    "StatusCode": 401
+  },
+  {
+    "Status": "✅ PASS",
+    "StatusCode": 200,
+    "ResponseTime": "2ms",
+    "Success": true,
+    "Name": "Videos Test"
+  },
+  {
+    "Status": "✅ PASS",
+    "StatusCode": 200,
+    "ResponseTime": "2ms",
+    "Success": true,
+    "Name": "Optimization Test"
+  },
+  {
+    "Status": "✅ PASS",
+    "StatusCode": 200,
+    "ResponseTime": "3ms",
+    "Success": true,
+    "Name": "Performance Metrics"
+  },
+  {
+    "Status": "✅ PASS",
+    "StatusCode": 200,
+    "ResponseTime": "2ms",
+    "Success": true,
+    "Name": "Stripe Webhook"
+  }
+]

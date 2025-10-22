@@ -4,15 +4,28 @@
 	import { auth } from '$lib/auth';
 	import { page } from '$app/stores';
 	import { theme } from '$lib/theme';
+	import { sidebarCollapsed } from '$lib/stores/sidebar';
 
-	let isAdmin = false;
-	let userRole = '';
-	let isSuperAdmin = false;
-	let isDark = false;
+	let isAdmin = $state(false);
+	let userRole = $state('');
+	let isSuperAdmin = $state(false);
+	let isDark = $state(false);
+	let authChecked = $state(false); // Track if auth has been checked at least once
 
 	// Subscribe to theme changes
 	theme.subscribe(state => {
 		isDark = state.isDark;
+	});
+
+	// Auto-collapse sidebar when entering subsites
+	$effect(() => {
+		const isSubsite = $page.url.pathname.includes('/admin/streaming') ||
+		                  $page.url.pathname.includes('/admin/#') ||
+		                  $page.url.pathname.includes('/admin/#') ||
+		                  $page.url.pathname.includes('/admin/analytics') ||
+		                  $page.url.pathname.includes('/admin/ads');
+		
+		sidebarCollapsed.set(isSubsite);
 	});
 
 	// Subsites configuration
@@ -29,7 +42,7 @@
 			id: 'articles',
 			name: 'Articles',
 			icon: 'file-text',
-			path: '/admin/articles',
+			path: '/admin/#',
 			description: 'Blog and articles platform',
 			status: 'under_construction'
 		},
@@ -37,7 +50,7 @@
 			id: 'expo',
 			name: 'Expo & Tours',
 			icon: 'map-pin',
-			path: '/admin/expo',
+			path: '/admin/#',
 			description: 'Events and tours platform',
 			status: 'under_construction'
 		}
@@ -46,32 +59,46 @@
 	onMount(() => {
 		// Initial setup will be handled by reactive statements
 	});
+	
+	// Use $effect instead of $: for runes compatibility
+	$effect(() => {
+		// Only update auth state if not loading (prevents HMR flicker)
+		if (!$auth.loading) {
+			authChecked = true; // Mark that we've checked auth at least once
+			
+			if ($auth.isAuthenticated && $auth.user) {
+				const adminRoles = [
+					'super_admin', 'system_admin', 'content_manager', 
+					'articles_manager', 'youtube_manager', 'streaming_manager',
+					'events_manager', 'advertisement_manager', 'user_manager',
+					'analytics_manager', 'financial_admin', 'admin'
+				];
+				isAdmin = adminRoles.includes($auth.user.role);
+				userRole = $auth.user.role;
+				isSuperAdmin = $auth.user.role === 'super_admin';
+			} else {
+				isAdmin = false;
+				userRole = '';
+				isSuperAdmin = false;
+			}
+		}
+	});
 
-	// Reactive statements to handle auth state changes
-	$: if ($auth.isAuthenticated && $auth.user) {
-		const adminRoles = [
-			'super_admin', 'system_admin', 'content_manager', 
-			'articles_manager', 'youtube_manager', 'streaming_manager',
-			'events_manager', 'advertisement_manager', 'user_manager',
-			'analytics_manager', 'financial_admin', 'admin'
-		];
-		isAdmin = adminRoles.includes($auth.user.role);
-		userRole = $auth.user.role;
-		isSuperAdmin = $auth.user.role === 'super_admin';
-	} else {
-		isAdmin = false;
-		userRole = '';
-		isSuperAdmin = false;
-	}
-
-	// Reactive redirect logic
-	$: if ($page.url.pathname !== '/admin' && !isAdmin && $auth.isAuthenticated) {
-		// User is authenticated but not admin, redirect to login
-		goto('/admin');
-	} else if ($page.url.pathname !== '/admin' && !$auth.isAuthenticated) {
-		// User is not authenticated, redirect to login
-		goto('/admin');
-	}
+	// Reactive redirect logic using $effect for runes compatibility
+	$effect(() => {
+		// Only redirect if auth has been checked and not loading (prevents HMR redirects)
+		if (authChecked && !$auth.loading) {
+			if ($page.url.pathname !== '/admin' && !isAdmin && !$auth.isAuthenticated) {
+				// User is not authenticated, redirect to login
+				console.log('🔐 Not authenticated - redirecting to login');
+				goto('/admin');
+			} else if ($page.url.pathname !== '/admin' && !isAdmin && $auth.isAuthenticated) {
+				// User is authenticated but not admin, redirect to main dashboard
+				console.log('⚠️ Authenticated but not admin - redirecting to main dashboard');
+				goto('/admin');
+			}
+		}
+	});
 
 	function isAdminUser(user: any): boolean {
 		if (!user) return false;
@@ -154,11 +181,16 @@
 {#if $page.url.pathname === '/admin'}
 	<!-- Login page - no navigation -->
 	<slot />
+{:else if $auth.loading || !authChecked}
+	<!-- Loading auth state - show nothing to prevent flicker -->
+	<div class="loading-state">
+		<div class="loading-spinner"></div>
+	</div>
 {:else if isAdmin}
 	<!-- Admin pages with navigation -->
 	<div class="admin-layout">
 		<!-- Sidebar Navigation -->
-		<nav class="admin-sidebar">
+		<nav class="admin-sidebar" class:collapsed={$sidebarCollapsed}>
 			<div class="sidebar-header">
 				<div class="brand-logo">
 					<a href="/" aria-label="BOME Admin">
@@ -218,7 +250,9 @@
 					
 					{#each subsites as subsite}
 						<a href={subsite.path} class="nav-item subsite-item" class:active={$page.url.pathname.startsWith(subsite.path)} class:under-construction={subsite.status === 'under_construction'}>
-							<div class="subsite-icon" style="innerHTML={getSubsiteIcon(subsite.icon)}"></div>
+							<div class="subsite-icon">
+								{@html getSubsiteIcon(subsite.icon)}
+							</div>
 							<div class="subsite-info">
 								<div class="subsite-name">{subsite.name}</div>
 								<div class="subsite-status {subsite.status}">
@@ -373,7 +407,7 @@
 		</nav>
 
 		<!-- Main Content -->
-		<main class="admin-main">
+		<main class="admin-main" class:sidebar-collapsed={$sidebarCollapsed}>
 			<slot />
 		</main>
 	</div>
@@ -402,6 +436,137 @@
 		height: 100vh;
 		z-index: 100;
 		overflow-y: auto;
+		transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+
+	.admin-sidebar.collapsed {
+		width: 80px;
+		overflow: hidden;
+	}
+
+	.admin-sidebar.collapsed .nav-item svg {
+		color: var(--text-secondary);
+		stroke: var(--text-muted);
+		width: 40px !important;
+		height: 40px !important;
+		padding: 0.15rem !important;
+	}
+
+
+	/* Hide all text elements when collapsed */
+	.admin-sidebar.collapsed .brand-text,
+	.admin-sidebar.collapsed .nav-item span,
+	.admin-sidebar.collapsed .role-badge,
+	.admin-sidebar.collapsed .subsite-info,
+	.admin-sidebar.collapsed .subsite-name,
+	.admin-sidebar.collapsed .subsite-status,
+	.admin-sidebar.collapsed .section-header {
+		display: none;
+	}
+
+	/* Center icons when collapsed and hide text nodes */
+	.admin-sidebar.collapsed .nav-item {
+		padding: 0.75rem;
+		justify-content: center;
+		margin-right: 0.5rem;
+		margin-left: 0.5rem;
+		font-size: 0; /* This hides the text nodes! */
+	}
+
+	/* Restore icon size and add neumorphic styling when collapsed */
+	.admin-sidebar.collapsed .nav-item svg {
+		width: 20px;
+		height: 20px;
+		padding: 10px;
+		
+		/* 🎨 NEUMORPHIC GLASSMORPHIC EFFECT */
+		background: rgba(255, 255, 255, 0.05);
+		backdrop-filter: blur(10px);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 12px;
+		box-shadow: 
+			0 8px 32px 0 rgba(31, 38, 135, 0.15),
+			inset 0 1px 3px rgba(255, 255, 255, 0.05);
+	}
+
+	.admin-sidebar.collapsed .nav-item:hover svg {
+		background: rgba(255, 255, 255, 0.08);
+		transform: translateY(-2px);
+		box-shadow: 
+			0 12px 40px 0 rgba(31, 38, 135, 0.25),
+			inset 0 1px 3px rgba(255, 255, 255, 0.1);
+		border-color: rgba(255, 255, 255, 0.15);
+	}
+
+	.admin-sidebar.collapsed .nav-item.active svg {
+		background: var(--primary);
+		border-color: var(--primary);
+		box-shadow: 
+			0 8px 32px 0 rgba(59, 130, 246, 0.4),
+			inset 0 1px 3px rgba(255, 255, 255, 0.2);
+	}
+
+	.admin-sidebar.collapsed .subsite-item {
+		padding: 0.75rem;
+		justify-content: center;
+	}
+
+	/* Center brand logo when collapsed with neumorphic styling */
+	.admin-sidebar.collapsed .sidebar-header {
+		padding: 1.5rem 0.5rem;
+		justify-content: center;
+	}
+
+	.admin-sidebar.collapsed .brand-logo {
+		width: 48px;
+		height: 48px;
+		
+		/* 🎨 ENHANCED NEUMORPHIC STYLING */
+		background: var(--primary-gradient);
+		backdrop-filter: blur(10px);
+		border: 2px solid rgba(255, 255, 255, 0.15);
+		box-shadow: 
+			0 8px 32px 0 rgba(59, 130, 246, 0.4),
+			inset 0 1px 3px rgba(255, 255, 255, 0.2);
+	}
+
+	/* Center footer and logout button when collapsed */
+	.admin-sidebar.collapsed .sidebar-footer {
+		padding: 1rem 0.5rem;
+	}
+
+	.admin-sidebar.collapsed .logout-button {
+		padding: 0.75rem;
+		justify-content: center;
+		font-size: 0; /* Hide logout text */
+	}
+
+	.admin-sidebar.collapsed .logout-button svg {
+		width: 18px;
+		height: 18px;
+		padding: 10px;
+		
+		/* 🎨 NEUMORPHIC GLASSMORPHIC EFFECT */
+		background: rgba(239, 68, 68, 0.1);
+		backdrop-filter: blur(10px);
+		border: 1px solid rgba(239, 68, 68, 0.2);
+		border-radius: 12px;
+		box-shadow: 
+			0 8px 32px 0 rgba(239, 68, 68, 0.15),
+			inset 0 1px 3px rgba(255, 255, 255, 0.05);
+	}
+
+	.admin-sidebar.collapsed .logout-button:hover svg {
+		background: rgba(239, 68, 68, 0.2);
+		transform: translateY(-2px);
+		box-shadow: 
+			0 12px 40px 0 rgba(239, 68, 68, 0.3),
+			inset 0 1px 3px rgba(255, 255, 255, 0.1);
+		border-color: rgba(239, 68, 68, 0.3);
+	}
+
+	.admin-sidebar.collapsed .logout-button span {
+		display: none;
 	}
 
 	.sidebar-header {
@@ -678,14 +843,16 @@
 	}
 
 	.nav-item.active {
-		background: var(--primary);
-		color: white;
+		/*background: var(--primary);*/
+		color: var(--primary-gold-dark);
+		
 	}
 
 	.nav-item svg {
-		width: 18px;
-		height: 18px;
+		width: 25px;
+		height: 25px;
 		flex-shrink: 0;
+		margin: 0.5rem;
 	}
 
 	/* Subsites styling */
@@ -697,14 +864,39 @@
 	}
 
 	.subsite-icon {
-		width: 32px;
-		height: 32px;
-		background: var(--bg-glass-dark);
-		border-radius: 8px;
+		width: 40px;
+		height: 40px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
+		
+		/* 🎨 NEUMORPHIC GLASSMORPHIC STYLING */
+		background: rgba(255, 255, 255, 0.05);
+		backdrop-filter: blur(10px);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 12px;
+		box-shadow: 
+			0 8px 32px 0 rgba(31, 38, 135, 0.15),
+			inset 0 1px 3px rgba(255, 255, 255, 0.05);
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		padding: 0.25rem;
+	}
+
+	.subsite-icon:hover {
+		background: rgba(255, 255, 255, 0.08);
+		transform: translateY(-2px);
+		box-shadow: 
+			0 12px 40px 0 rgba(31, 38, 135, 0.25),
+			inset 0 1px 3px rgba(255, 255, 255, 0.1);
+		border-color: rgba(255, 255, 255, 0.15);
+	}
+
+	/* Make subsite icons larger when collapsed for better visibility */
+	.admin-sidebar.collapsed .subsite-icon {
+		width: 40px;
+		height: 40px;
+		margin: 0 auto;
 	}
 
 	.subsite-icon svg {
@@ -834,6 +1026,35 @@
 		flex: 1;
 		margin-left: 320px;
 		overflow-y: auto;
+		transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+
+	/* Adjust main content when sidebar is collapsed */
+	.admin-main.sidebar-collapsed {
+		margin-left: 80px;
+	}
+
+	.loading-state {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 100vh;
+		background: var(--bg-primary);
+	}
+
+	.loading-spinner {
+		width: 40px;
+		height: 40px;
+		border: 4px solid rgba(255, 255, 255, 0.1);
+		border-top-color: var(--primary);
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	.redirect-message {

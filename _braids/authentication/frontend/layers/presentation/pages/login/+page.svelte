@@ -1,0 +1,261 @@
+<script lang="ts">
+	import { auth, isAdmin } from '$lib/auth';
+	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import Navigation from '$lib/components/Navigation.svelte';
+	import OAuth2Login from '$lib/components/OAuth2Login.svelte';
+
+	let email = '';
+	let password = '';
+	let loading = false;
+	let error = '';
+
+	onMount(() => {
+		// Check if already logged in, but don't redirect immediately
+		auth.subscribe((state) => {
+			if (state.isAuthenticated && !state.loading) {
+				// Show a message instead of immediate redirect
+				console.log('User already authenticated');
+			}
+		});
+	});
+
+	async function handleLogin() {
+		if (!email || !password) {
+			error = 'Please fill in all fields';
+			return;
+		}
+
+		loading = true;
+		error = '';
+
+		const result = await auth.login(email, password);
+		
+		if (result.success) {
+			// Check user role and redirect accordingly
+			if (isAdmin()) {
+				goto('/admin');
+			} else {
+				goto('/');
+			}
+		} else {
+			error = result.error || 'Login failed';
+		}
+
+		loading = false;
+	}
+</script>
+
+<svelte:head>
+	<title>Login - Book of Mormon Evidences</title>
+</svelte:head>
+<Navigation />
+<div class="auth-container">
+	<div class="auth-card">
+		<div class="auth-header">
+			<h1>Welcome Back</h1>
+			<p>Sign in to your account to continue</p>
+		</div>
+
+		<!-- OAuth2 Login Options -->
+		<OAuth2Login />
+		<hr>
+        <br>
+		<form on:submit|preventDefault={handleLogin} class="auth-form">
+			<div class="form-group">
+				<label for="email">Email</label>
+				<input
+					type="email"
+					id="email"
+					bind:value={email}
+					placeholder="Enter your email"
+					required
+				/>
+			</div>
+
+			<div class="form-group">
+				<label for="password">Password</label>
+				<input
+					type="password"
+					id="password"
+					bind:value={password}
+					placeholder="Enter your password"
+					autocomplete="current-password"
+					required
+				/>
+			</div>
+
+			{#if error}
+				<div class="error-message">
+					{error}
+				</div>
+			{/if}
+
+			<button type="submit" class="btn-primary" disabled={loading}>
+				{loading ? 'Signing in...' : 'Sign In'}
+			</button>
+		</form>
+
+		
+		<div class="auth-footer">
+			<p>
+				Don't have an account?
+				<a href="/register" class="link">Sign up</a>
+			</p>
+			<p>
+				<a href="/forgot-password" class="link">Forgot your password?</a>
+			</p>
+		</div>
+	</div>
+</div>
+
+<style>
+	
+
+	.auth-container {
+		min-height: 100vh;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 2rem;
+		background: var(--bg-color);
+	}
+
+	.auth-card {
+		width: 100%;
+		max-width: 650px;
+		min-height: 650px;
+		padding: 2.5rem;
+		background: var(--card-bg);
+	    border-radius: 18px;
+        background: linear-gradient(145deg, var(--primary-gold), var(--primary-gold-dark));
+box-shadow:  20px 20px 60px var(--bg-glass-dark),
+             -20px -20px 60px var(--bg-glass);
+	}
+
+	.auth-header {
+		text-align: center;
+		margin-bottom: 2rem;
+	}
+
+	.auth-header h1 {
+		font-size: 2rem;
+		font-weight: 700;
+		color: var(--text-primary);
+		margin-bottom: 0.5rem;
+	}
+
+	.auth-header p {
+		color: var(--text-inverse);
+		font-size: 0.9rem;
+	}
+
+	.auth-form {
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
+	}
+
+	.form-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.form-group label {
+		font-weight: 600;
+		color: var(--text-primary);
+		font-size: 0.9rem;
+	}
+
+	.form-group input {
+		padding: 0.75rem 1rem;
+		min-height: 70px;
+		border: none;
+		border-radius: 12px;
+		background: var(--input-bg);
+		color: var(--text-primary);
+		font-size: 1rem;
+		box-shadow: 
+			inset 2px 2px 4px var(--shadow-dark),
+			inset -2px -2px 4px var(--shadow-light);
+		transition: all 0.2s ease;
+	}
+
+	.form-group input:focus {
+		outline: none;
+		box-shadow: 
+			inset 2px 2px 4px var(--shadow-dark),
+			inset -2px -2px 4px var(--shadow-light),
+			0 0 0 2px var(--accent-color);
+	}
+
+	.btn-primary {
+		padding: 0.75rem 1.5rem;
+		min-height: 70px;
+		border: none;
+		border-radius: 12px;
+		background: var(--bg-glass-dark);
+		color: white;
+		font-size: 1rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		box-shadow: 
+			4px 4px 8px var(--shadow-dark),
+			-2px -2px 4px var(--shadow-light);
+	}
+
+	.btn-primary:hover:not(:disabled) {
+		transform: translateY(-2px);
+		box-shadow: 
+			6px 6px 12px var(--shadow-dark),
+			-3px -3px 6px var(--shadow-light);
+		background: var(--secondary-gradient);
+		color: var(--text-primary);
+	}
+
+	.btn-primary:active:not(:disabled) {
+		transform: translateY(0);
+		box-shadow: 
+			2px 2px 4px var(--shadow-dark),
+			-1px -1px 2px var(--shadow-light);
+	}
+
+	.btn-primary:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none;
+	}
+
+	.error-message {
+		padding: 0.75rem;
+		background: var(--error-bg);
+		color: var(--error-text);
+		border-radius: 8px;
+		font-size: 0.9rem;
+		text-align: center;
+	}
+
+	.auth-footer {
+		margin-top: 2rem;
+		text-align: center;
+	}
+
+	.auth-footer p {
+		margin: 0.5rem 0;
+		color: var(--text-primary);
+		font-size: 0.9rem;
+	}
+
+	.link {
+		color: var(--accent-color);
+		text-decoration: none;
+		font-weight: 600;
+		transition: color 0.2s ease;
+	}
+
+	.link:hover {
+		color: var(--accent-hover);
+	}
+</style> 

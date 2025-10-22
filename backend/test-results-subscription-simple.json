@@ -1,0 +1,54 @@
+{
+  "Passed": 8,
+  "Tests": [
+    {
+      "Message": "Retrieved 1 plans",
+      "Duration": 3,
+      "Name": "Get All Plans",
+      "Success": true
+    },
+    {
+      "Message": "Retrieved 1 active plans",
+      "Duration": 2,
+      "Name": "Get Active Plans",
+      "Success": true
+    },
+    {
+      "Message": "Not configured",
+      "Duration": 2,
+      "Name": "Get Promoted Plans",
+      "Success": true
+    },
+    {
+      "Message": "Not configured",
+      "Duration": 2,
+      "Name": "Get Single Plan",
+      "Success": true
+    },
+    {
+      "Message": "Endpoint accessible",
+      "Duration": 2,
+      "Name": "Stripe Webhook Endpoint",
+      "Success": true
+    },
+    {
+      "Message": "No plans to validate",
+      "Duration": 0,
+      "Name": "Plan Data Structure",
+      "Success": true
+    },
+    {
+      "Message": "Error handled",
+      "Duration": 2,
+      "Name": "404 for Non-Existent Plan",
+      "Success": true
+    },
+    {
+      "Message": "Error handled",
+      "Duration": 2,
+      "Name": "Invalid Plan ID Format",
+      "Success": true
+    }
+  ],
+  "Failed": 0
+}
