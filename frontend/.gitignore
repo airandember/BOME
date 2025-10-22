@@ -1,5 +1,9 @@
 node_modules
 
+# Go module cache
+backend/.gomodcache/
+.gomodcache/
+
 # Output
 .output
 .vercel
