@@ -1,13 +1,15 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
 
-	"bome-backend/internal/database"
-	authModels "bome-backend/internal/models/authentication"
-	"bome-backend/internal/services/security/crypto"
+	authModels "bome-backend/authentication/models"
+	authServices "bome-backend/authentication/services"
+	"bome-backend/infrastructure/config"
+	"bome-backend/infrastructure/database"
 
 	"github.com/joho/godotenv"
 )
@@ -32,33 +34,17 @@ func main() {
 	log.Printf("Creating test user: %s", email)
 
 	// Initialize database
-	db, err := database.InitDB()
+	cfg := config.New()
+	db, err := database.New(cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer db.Close()
 
-	// Initialize crypto service
-	cryptoService := crypto.GetGlobalCryptoService()
-	if cryptoService == nil {
-		log.Fatal("Crypto service not initialized")
-	}
-
 	// Hash password
-	hashedPassword, err := cryptoService.HashPassword(password)
+	hashedPassword, err := authServices.HashPassword(password)
 	if err != nil {
 		log.Fatalf("Failed to hash password: %v", err)
-	}
-
-	// Create user
-	user := &authModels.User{
-		Email:         email,
-		FirstName:     firstName,
-		LastName:      lastName,
-		Password:      hashedPassword,
-		Role:          "user",
-		EmailVerified: true, // Mark as verified for testing
-		IsActive:      true,
 	}
 
 	// Check if user already exists
@@ -68,10 +54,16 @@ func main() {
 
 		// Update to ensure verified and has password
 		existingUser.EmailVerified = true
-		existingUser.Password = hashedPassword
-		existingUser.IsActive = true
+		existingUser.PasswordHash = hashedPassword
+		existingUser.IsActive = sql.NullBool{Bool: true, Valid: true}
 
-		if err := authModels.UpdateUser(db, existingUser); err != nil {
+		// Use UpdateUserProfile for updates
+		updates := map[string]interface{}{
+			"email_verified": true,
+			"password_hash":  hashedPassword,
+			"is_active":      true,
+		}
+		if err := authModels.UpdateUserProfile(db, existingUser.ID, updates); err != nil {
 			log.Fatalf("Failed to update existing user: %v", err)
 		}
 
@@ -83,12 +75,13 @@ func main() {
 	}
 
 	// Create new user
-	if err := authModels.CreateUser(db, user); err != nil {
+	userID, err := authModels.CreateUser(db, email, firstName, lastName, hashedPassword, "user")
+	if err != nil {
 		log.Fatalf("Failed to create user: %v", err)
 	}
 
-	log.Printf("✅ Test user created successfully: %s (ID: %d)", email, user.ID)
+	log.Printf("✅ Test user created successfully: %s (ID: %d)", email, userID)
 	fmt.Printf("EMAIL=%s\n", email)
 	fmt.Printf("PASSWORD=%s\n", password)
-	fmt.Printf("USER_ID=%d\n", user.ID)
+	fmt.Printf("USER_ID=%d\n", userID)
 }
