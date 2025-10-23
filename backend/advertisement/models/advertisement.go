@@ -1,6 +1,7 @@
 package models
 
-import (`n`t"bome-backend/infrastructure/database"
+import (
+	"bome-backend/infrastructure/database"
 	"database/sql"
 	"time"
 )
@@ -173,7 +174,7 @@ type AdAuditLog struct {
 // Note: Migration constants are now defined in database.go for unified management
 
 // SeedAdPlacements inserts default ad placements
-func (db *database.DB) SeedAdPlacements() error {
+func SeedAdPlacements(db *database.DB) error {
 	placements := []struct {
 		Name        string
 		Description string
