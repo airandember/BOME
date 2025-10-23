@@ -120,6 +120,7 @@
 						<div 
 							class="content-card {row.type}" 
 							on:click={() => handleContentClick(item)}
+							on:keydown={(e) => e.key === 'Enter' && handleContentClick(item)}
 							role="button"
 							tabindex="0"
 						>
@@ -131,7 +132,7 @@
 										<polyline points="21,15 16,10 5,21"/>
 									</svg>
 								</div>
-								{#if item.progress && item.progress > 0}
+								{#if 'progress' in item && item.progress && (item.progress as number) > 0}
 									<div class="progress-bar">
 										<div class="progress-fill" style="width: {item.progress}%"></div>
 									</div>
@@ -149,27 +150,15 @@
 <Footer />
 
 <style>
-	:root {
-		--bg-primary: #0f0f0f;
-		--bg-secondary: #1a1a1a;
-		--bg-card: #2a2a2a;
-		--text-primary: #ffffff;
-		--text-secondary: #b3b3b3;
-		--accent-blue: #0071eb;
-		--accent-blue-dark: #0056b3;
-		--border-color: #333333;
-		--shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-	}
-
 	.videos-page {
-		background: var(--bg-primary);
+		background: var(--bg-color);
 		min-height: 100vh;
 		color: var(--text-primary);
 	}
 
 	/* Hero Section */
 	.hero-section {
-		background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+		background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--card-bg) 100%);
 		padding: 4rem 2rem;
 		min-height: 60vh;
 		display: flex;
@@ -194,7 +183,7 @@
 	.hero-title {
 		font-size: 3.5rem;
 		font-weight: 700;
-		color: var(--accent-blue);
+		color: var(--primary-color);
 		text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
 		margin: 0;
 		line-height: 1.1;
@@ -229,7 +218,7 @@
 
 	.btn {
 		padding: 0.875rem 2rem;
-		border-radius: 8px;
+		border-radius: var(--radius-md);
 		font-size: 1rem;
 		font-weight: 600;
 		cursor: pointer;
@@ -242,14 +231,14 @@
 	}
 
 	.btn-primary {
-		background: var(--accent-blue);
+		background: var(--primary-color);
 		color: white;
 	}
 
 	.btn-primary:hover {
-		background: var(--accent-blue-dark);
+		background: var(--primary-color-dark);
 		transform: translateY(-2px);
-		box-shadow: 0 8px 16px rgba(0, 113, 235, 0.3);
+		box-shadow: var(--shadow);
 	}
 
 	.btn-secondary {
@@ -322,12 +311,12 @@
 	}
 
 	.content-carousel::-webkit-scrollbar-thumb {
-		background: var(--accent-blue);
+		background: var(--primary-color);
 		border-radius: 4px;
 	}
 
 	.content-carousel::-webkit-scrollbar-thumb:hover {
-		background: var(--accent-blue-dark);
+		background: var(--primary-color-dark);
 	}
 
 	.content-card {
@@ -335,7 +324,7 @@
 		cursor: pointer;
 		transition: transform 0.2s ease;
 		background: var(--bg-card);
-		border-radius: 8px;
+		border-radius: var(--radius-md);
 		overflow: hidden;
 		box-shadow: var(--shadow);
 	}
@@ -388,7 +377,7 @@
 
 	.progress-fill {
 		height: 100%;
-		background: var(--accent-blue);
+		background: var(--primary-color);
 		transition: width 0.3s ease;
 	}
 
