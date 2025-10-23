@@ -46,7 +46,7 @@
 
 	const handleLogout = async () => {
 		await auth.logout();
-		goto('/login');
+		goto('/auth/login');
 		closeMenu();
 	};
 </script>
@@ -237,8 +237,8 @@
 				</div>
 			{:else}
 				<div class="auth-buttons">
-					<a href="/login" class="btn btn-ghost">Login</a>
-					<a href="/register" class="btn btn-primary">Sign Up</a>
+					<a href="/auth/login" class="btn btn-ghost">Login</a>
+					<a href="/auth/register" class="btn btn-primary">Sign Up</a>
 				</div>
 			{/if}
 

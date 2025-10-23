@@ -39,7 +39,7 @@ type Subscription struct {
 	UnitAmount         int64     `json:"unit_amount,omitempty"`
 	Currency           string    `json:"currency,omitempty"`
 	ProductID          string    `json:"stripe_product_id,omitempty"`
-	ProductName        string    `json:"product_name,omitempty"`
+	ProductName        string    `json:"product_name"`
 }
 
 // DatabaseStats represents statistics about cached Stripe data
@@ -111,10 +111,12 @@ func (s *StripeDatabaseService) GetCustomers(limit, offset int, includeSubscript
 
 		// Get subscriptions if requested
 		if includeSubscriptions {
+			log.Printf("🔍 DEBUG: Getting subscriptions for customer %s", stripeID.String)
 			subs, err := s.getCustomerSubscriptions(stripeID.String)
 			if err != nil {
 				log.Printf("Error getting subscriptions for customer %s: %v", stripeID.String, err)
 			} else {
+				log.Printf("🔍 DEBUG: Found %d subscriptions for customer %s", len(subs), stripeID.String)
 				customer.Subscriptions = subs
 			}
 		}
@@ -345,6 +347,10 @@ func (s *StripeDatabaseService) getCustomerSubscriptions(customerStripeID string
 			log.Printf("Error scanning subscription: %v", err)
 			continue
 		}
+
+		// DEBUG: Log what we scanned
+		log.Printf("🔍 DEBUG: Scanned subscription for %s: stripePriceID=%s, unitAmount=%d, currency=%s, stripeProductID=%s, productName=%s",
+			customerStripeID, stripePriceID.String, unitAmount.Int64, currency.String, stripeProductID.String, productName.String)
 
 		sub.CustomerID = customerStripeID
 

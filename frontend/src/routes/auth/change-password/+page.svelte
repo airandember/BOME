@@ -14,7 +14,7 @@
 		// Check if user is authenticated
 		auth.subscribe((state) => {
 			if (!state.isAuthenticated && !state.loading) {
-				goto('/login');
+				goto('/auth/login');
 			}
 		});
 	});

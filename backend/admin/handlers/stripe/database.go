@@ -19,6 +19,7 @@ func SetupStripeDatabaseRoutes(router *gin.RouterGroup, db *database.DB) {
 	{
 		// GET /admin/streaming/stripe/database/customers
 		database.GET("/customers", func(c *gin.Context) {
+			log.Println("🚨 ROUTE HIT: /admin/streaming/stripe/database/customers")
 			GetDatabaseCustomersHandler(c, service)
 		})
 
@@ -46,7 +47,11 @@ func GetDatabaseCustomersHandler(c *gin.Context, service *stripeServices.StripeD
 	// Parse query parameters
 	limitStr := c.DefaultQuery("limit", "100")
 	offsetStr := c.DefaultQuery("offset", "0")
-	includeSubscriptions := c.DefaultQuery("include_subscriptions", "true") == "true"
+	includeSubscriptionsRaw := c.DefaultQuery("include_subscriptions", "true")
+	includeSubscriptions := includeSubscriptionsRaw == "true"
+
+	log.Printf("🔍 DEBUG: Query params - limit=%s, offset=%s, include_subscriptions=%s (parsed: %t)",
+		limitStr, offsetStr, includeSubscriptionsRaw, includeSubscriptions)
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil || limit <= 0 {

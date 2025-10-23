@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { creatorPayoutService } from '$lib/services/creatorPayoutService';
+	import { creatorPayoutService } from '$lib/services/creator-payout-service';
 	import type { PresenterStats, PayoutSummary, Presenter, PresenterPayout, PayoutFormula } from '$lib/types/creatorPayout';
 	
 	// State

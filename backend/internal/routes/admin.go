@@ -454,7 +454,7 @@ func GetAnalyticsHandler(db *database.DB) gin.HandlerFunc {
 			log.Printf("Error getting total videos: %v", err)
 			totalVideos = 0
 		}
-		
+
 		// Get total views (sum of all video views)
 		err = db.DB.QueryRow("SELECT COALESCE(SUM(views), 0) FROM master_video_list").Scan(&totalViews)
 		if err != nil {
@@ -484,7 +484,7 @@ func GetAnalyticsHandler(db *database.DB) gin.HandlerFunc {
 			log.Printf("Error getting active subscriptions: %v", err)
 			activeSubscriptions = 0
 		}
-		
+
 		// Calculate MRR from active subscriptions by joining with subscription_plans
 		var mrrFromDB float64
 		err = db.DB.QueryRow(`
@@ -499,11 +499,11 @@ func GetAnalyticsHandler(db *database.DB) gin.HandlerFunc {
 		} else {
 			mrr = mrrFromDB
 		}
-		
+
 		// Calculate monthly and yearly revenue
 		totalMonthlyRevenue = mrr
 		totalYearlyRevenue = mrr * 12
-		
+
 		// Calculate growth rate (simplified)
 		var subscriptionsLastMonth int64
 		lastMonth := time.Now().AddDate(0, -1, 0)

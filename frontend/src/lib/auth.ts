@@ -314,7 +314,7 @@ function createAuthStore() {
 				SecureTokenStorage.clearTokens();
 				clearAuthData();
 				if (browser) {
-					goto('/login');
+					goto('/auth/login');
 				}
 			}
 		},
@@ -683,17 +683,18 @@ export async function apiRequest(endpoint: string, options: RequestInit & { onPr
 				if (expirationTime < now) {
 					console.warn('🔴 Token expired BEFORE request - clearing auth');
 					SecureTokenStorage.clearTokens();
-					authState.set({
+					auth.set({
 						isAuthenticated: false,
 						user: null,
+						token: null,
 						loading: false,
 						error: null
 					});
 					authTokens.set(null);
 					
 					// Redirect to login if not already there
-					if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-						window.location.href = '/login?expired=true';
+					if (typeof window !== 'undefined' && !window.location.pathname.includes('/auth/login')) {
+						window.location.href = '/auth/login?expired=true';
 					}
 					
 					throw new Error('Token expired - please login again');
@@ -703,9 +704,10 @@ export async function apiRequest(endpoint: string, options: RequestInit & { onPr
 			console.warn('🔴 Error checking token expiration:', e);
 			// If we can't decode the token, clear it
 			SecureTokenStorage.clearTokens();
-			authState.set({
+			auth.set({
 				isAuthenticated: false,
 				user: null,
+				token: null,
 				loading: false,
 				error: null
 			});
@@ -766,9 +768,10 @@ export async function apiRequest(endpoint: string, options: RequestInit & { onPr
 			
 			// IMMEDIATELY clear tokens to stop the spam
 			SecureTokenStorage.clearTokens();
-			authState.set({
+			auth.set({
 				isAuthenticated: false,
 				user: null,
+				token: null,
 				loading: false,
 				error: null
 			});
@@ -781,8 +784,8 @@ export async function apiRequest(endpoint: string, options: RequestInit & { onPr
 			}
 			
 			// Redirect to login ONCE
-			if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-				window.location.href = '/login?expired=true';
+			if (typeof window !== 'undefined' && !window.location.pathname.includes('/auth/login')) {
+				window.location.href = '/auth/login?expired=true';
 			}
 			
 			throw new Error('Token expired - please login again');
@@ -911,7 +914,7 @@ export function requireAuth() {
     if (browser) {
         const user = getCurrentUser();
         if (!user) {
-            goto('/login');
+            goto('/auth/login');
         }
     }
 }
@@ -929,7 +932,7 @@ export function requireEmailVerification() {
     if (browser) {
         const user = getCurrentUser();
         if (!user || !user.email_verified) {
-            goto('/verify-email');
+            goto('/auth/verify-email');
         }
     }
 }

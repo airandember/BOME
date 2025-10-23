@@ -17,7 +17,7 @@
 
 	async function handleLogout() {
 		await auth.logout();
-		goto('/login');
+		goto('/auth/login');
 		mobileMenuOpen = false;
 		userMenuOpen = false;
 	}

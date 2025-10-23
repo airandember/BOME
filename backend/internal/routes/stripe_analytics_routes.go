@@ -644,7 +644,8 @@ func getCustomerSubscriptions(db *database.DB, stripeCustomerID string) ([]map[s
 	query := `
 		SELECT 
 			s.stripe_id, s.status, s.current_period_start, s.current_period_end,
-			s.created_at
+			s.created_at, s.stripe_price_id, s.unit_amount, s.currency,
+			s.stripe_product_id, s.product_name
 		FROM stripe_subscriptions s
 		INNER JOIN stripe_customers c ON s.customer_id = c.id
 		WHERE c.stripe_id = $1 
@@ -660,12 +661,14 @@ func getCustomerSubscriptions(db *database.DB, stripeCustomerID string) ([]map[s
 	var subscriptions []map[string]interface{}
 	for rows.Next() {
 		var subscription map[string]interface{} = make(map[string]interface{})
-		var stripeID, status sql.NullString
+		var stripeID, status, stripePriceID, currency, stripeProductID, productName sql.NullString
 		var currentPeriodStart, currentPeriodEnd, createdAt sql.NullTime
+		var unitAmount sql.NullInt64
 
 		err := rows.Scan(
 			&stripeID, &status, &currentPeriodStart, &currentPeriodEnd,
-			&createdAt,
+			&createdAt, &stripePriceID, &unitAmount, &currency,
+			&stripeProductID, &productName,
 		)
 		if err != nil {
 			continue
@@ -676,6 +679,11 @@ func getCustomerSubscriptions(db *database.DB, stripeCustomerID string) ([]map[s
 		subscription["current_period_start"] = currentPeriodStart.Time
 		subscription["current_period_end"] = currentPeriodEnd.Time
 		subscription["created_at"] = createdAt.Time
+		subscription["stripe_price_id"] = stripePriceID.String
+		subscription["unit_amount"] = unitAmount.Int64
+		subscription["currency"] = currency.String
+		subscription["stripe_product_id"] = stripeProductID.String
+		subscription["product_name"] = productName.String
 
 		subscriptions = append(subscriptions, subscription)
 	}

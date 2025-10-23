@@ -97,7 +97,7 @@
 
 			// Redirect to login page after showing error
 			setTimeout(() => {
-				goto('/login');
+				goto('/auth/login');
 			}, 3000);
 		}
 	}
@@ -126,7 +126,7 @@
 				<h2>Authentication Failed</h2>
 				<p class="error-message">{error}</p>
 				<p class="redirect-message">Redirecting to login page...</p>
-				<button class="btn btn-primary" onclick={() => goto('/login')}>
+				<button class="btn btn-primary" onclick={() => goto('/auth/login')}>
 					Return to Login
 				</button>
 			</div>

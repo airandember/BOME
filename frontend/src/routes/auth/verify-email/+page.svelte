@@ -83,7 +83,7 @@
 
 		// If no email provided, redirect to login
 		if (!userEmail && !success && !error) {
-			goto('/login');
+			goto('/auth/login');
 			return;
 		}
 
