@@ -1,6 +1,7 @@
 package models
 
-import (`n`t"bome-backend/infrastructure/database"
+import (
+	"bome-backend/infrastructure/database"
 	"database/sql"
 	"time"
 )
