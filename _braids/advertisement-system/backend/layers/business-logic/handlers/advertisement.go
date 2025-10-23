@@ -13,6 +13,47 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// GetRevenueAnalyticsHandler handles retrieving comprehensive revenue analytics
+func GetRevenueAnalyticsHandler(adService *services.AdvertisementService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		period := c.DefaultQuery("period", "30d")
+		campaignID := c.Query("campaign_id")
+
+		// Track analytics access
+		trackAdAnalyticsAccess(c, "revenue_analytics", map[string]interface{}{
+			"period":      period,
+			"campaign_id": campaignID,
+			"timestamp":   time.Now().Unix(),
+		})
+
+		analytics := map[string]interface{}{
+			"period":      period,
+			"campaign_id": campaignID,
+			"revenue_metrics": map[string]interface{}{
+				"total_revenue":            getTotalAdRevenue(adService, period, campaignID),
+				"revenue_by_campaign":      getRevenueByCampaign(adService, period),
+				"revenue_by_ad":            getRevenueByAd(adService, period, campaignID),
+				"revenue_trends":           getRevenueTrends(adService, period),
+				"average_revenue_per_user": getAverageRevenuePerUser(adService, period),
+			},
+			"performance_metrics": map[string]interface{}{
+				"top_performing_campaigns": getTopPerformingCampaigns(adService, period),
+				"top_performing_ads":       getTopPerformingAds(adService, period, campaignID),
+				"conversion_funnel":        getAdConversionFunnel(adService, period),
+				"attribution_analysis":     getAttributionAnalysis(adService, period),
+			},
+			"optimization_insights": map[string]interface{}{
+				"optimal_timing":        getOptimalAdTiming(adService, period),
+				"audience_segments":     getAudienceSegmentPerformance(adService, period),
+				"placement_performance": getPlacementPerformance(adService, period),
+				"recommendations":       getAdOptimizationRecommendations(adService, period),
+			},
+		}
+
+		c.JSON(http.StatusOK, gin.H{"data": analytics})
+	}
+}
+
 // SetupAdvertisementRoutes configures advertisement-related routes
 func SetupAdvertisementRoutes(
 	router *gin.RouterGroup,
@@ -656,7 +697,7 @@ func serveAdHandler(adService *services.AdvertisementService) gin.HandlerFunc {
 
 		// Create the proper response structure that matches AdServeResponse
 		responseData := gin.H{
-			"ad": ad,
+			"ad":        ad,
 			"placement": placement,
 			"tracking_data": gin.H{
 				"impression_url": fmt.Sprintf("/api/v1/ads/impression/%d", getAdID(ad)),
@@ -677,7 +718,7 @@ func getAdID(ad interface{}) int {
 	if ad == nil {
 		return 0
 	}
-	
+
 	// Type assertion to get the ID field
 	if adMap, ok := ad.(map[string]interface{}); ok {
 		if id, exists := adMap["id"]; exists {
@@ -689,7 +730,7 @@ func getAdID(ad interface{}) int {
 			}
 		}
 	}
-	
+
 	return 0
 }
 
@@ -829,4 +870,222 @@ func getClientIP(c *gin.Context) string {
 	}
 	// Fall back to ClientIP
 	return c.ClientIP()
+}
+
+// Revenue Analytics Helper Functions
+
+func getTotalAdRevenue(adService *services.AdvertisementService, period string, campaignID string) float64 {
+	// This would query the database for total revenue in the period
+	// For now, return a mock value
+	return 1250.75
+}
+
+func getRevenueByCampaign(adService *services.AdvertisementService, period string) map[string]float64 {
+	// This would query campaign revenue breakdown
+	return map[string]float64{
+		"campaign_1": 450.25,
+		"campaign_2": 380.50,
+		"campaign_3": 420.00,
+	}
+}
+
+func getRevenueByAd(adService *services.AdvertisementService, period string, campaignID string) map[string]float64 {
+	// This would query ad-level revenue breakdown
+	return map[string]float64{
+		"ad_1": 150.25,
+		"ad_2": 200.50,
+		"ad_3": 100.00,
+	}
+}
+
+func getRevenueTrends(adService *services.AdvertisementService, period string) []map[string]interface{} {
+	// This would query daily/weekly revenue trends
+	return []map[string]interface{}{
+		{"date": "2025-01-01", "revenue": 45.25},
+		{"date": "2025-01-02", "revenue": 52.75},
+		{"date": "2025-01-03", "revenue": 48.50},
+		{"date": "2025-01-04", "revenue": 61.25},
+		{"date": "2025-01-05", "revenue": 55.00},
+	}
+}
+
+func getAverageRevenuePerUser(adService *services.AdvertisementService, period string) float64 {
+	// This would calculate ARPU from ad interactions
+	return 2.45
+}
+
+func getTopPerformingCampaigns(adService *services.AdvertisementService, period string) []map[string]interface{} {
+	// This would query top campaigns by revenue/performance
+	return []map[string]interface{}{
+		{
+			"campaign_id":     1,
+			"name":            "Holiday Sale Campaign",
+			"revenue":         450.25,
+			"ctr":             3.2,
+			"conversion_rate": 8.5,
+		},
+		{
+			"campaign_id":     2,
+			"name":            "Product Launch",
+			"revenue":         380.50,
+			"ctr":             2.8,
+			"conversion_rate": 7.2,
+		},
+	}
+}
+
+func getTopPerformingAds(adService *services.AdvertisementService, period string, campaignID string) []map[string]interface{} {
+	// This would query top ads by performance
+	return []map[string]interface{}{
+		{
+			"ad_id":       1,
+			"title":       "Premium Subscription Ad",
+			"revenue":     200.50,
+			"ctr":         4.1,
+			"impressions": 5000,
+		},
+		{
+			"ad_id":       2,
+			"title":       "Free Trial Offer",
+			"revenue":     150.25,
+			"ctr":         3.8,
+			"impressions": 4000,
+		},
+	}
+}
+
+func getAdConversionFunnel(adService *services.AdvertisementService, period string) map[string]int {
+	// This would analyze the conversion funnel from impression to purchase
+	return map[string]int{
+		"impressions":        10000,
+		"clicks":             320,
+		"landing_page_views": 280,
+		"signups":            45,
+		"conversions":        12,
+	}
+}
+
+func getAttributionAnalysis(adService *services.AdvertisementService, period string) map[string]interface{} {
+	// This would analyze attribution across different touchpoints
+	return map[string]interface{}{
+		"first_touch": map[string]float64{
+			"social_media": 35.2,
+			"search":       28.5,
+			"direct":       22.1,
+			"email":        14.2,
+		},
+		"last_touch": map[string]float64{
+			"search":       42.3,
+			"direct":       31.7,
+			"social_media": 18.5,
+			"email":        7.5,
+		},
+		"multi_touch": map[string]float64{
+			"search_social": 15.8,
+			"email_search":  12.3,
+			"direct_social": 8.9,
+		},
+	}
+}
+
+func getOptimalAdTiming(adService *services.AdvertisementService, period string) map[string]interface{} {
+	// This would analyze optimal timing for ad delivery
+	return map[string]interface{}{
+		"best_hours": []int{9, 10, 11, 14, 15, 16, 19, 20},
+		"best_days":  []string{"Tuesday", "Wednesday", "Thursday"},
+		"peak_performance": map[string]interface{}{
+			"hour":           15,
+			"day":            "Wednesday",
+			"ctr_multiplier": 1.8,
+		},
+	}
+}
+
+func getAudienceSegmentPerformance(adService *services.AdvertisementService, period string) map[string]interface{} {
+	// This would analyze performance by audience segments
+	return map[string]interface{}{
+		"age_groups": map[string]float64{
+			"18-24": 2.1,
+			"25-34": 3.8,
+			"35-44": 4.2,
+			"45-54": 3.5,
+			"55+":   2.8,
+		},
+		"interests": map[string]float64{
+			"technology":    4.5,
+			"entertainment": 3.8,
+			"lifestyle":     3.2,
+			"business":      4.1,
+		},
+		"geographic": map[string]float64{
+			"North America": 4.2,
+			"Europe":        3.8,
+			"Asia":          3.5,
+			"Other":         2.9,
+		},
+	}
+}
+
+func getPlacementPerformance(adService *services.AdvertisementService, period string) map[string]interface{} {
+	// This would analyze performance by ad placement
+	return map[string]interface{}{
+		"homepage_banner": map[string]interface{}{
+			"revenue":     450.25,
+			"ctr":         2.8,
+			"impressions": 15000,
+		},
+		"video_pre_roll": map[string]interface{}{
+			"revenue":     380.50,
+			"ctr":         4.2,
+			"impressions": 9000,
+		},
+		"sidebar": map[string]interface{}{
+			"revenue":     200.00,
+			"ctr":         1.5,
+			"impressions": 13000,
+		},
+		"in_content": map[string]interface{}{
+			"revenue":     220.00,
+			"ctr":         3.1,
+			"impressions": 7000,
+		},
+	}
+}
+
+func getAdOptimizationRecommendations(adService *services.AdvertisementService, period string) []map[string]interface{} {
+	// This would generate optimization recommendations
+	return []map[string]interface{}{
+		{
+			"type":             "timing",
+			"priority":         "high",
+			"title":            "Increase ad frequency during peak hours",
+			"description":      "CTR increases by 80% during 2-4 PM",
+			"potential_impact": "+25% revenue",
+		},
+		{
+			"type":             "audience",
+			"priority":         "medium",
+			"title":            "Expand targeting to 25-34 age group",
+			"description":      "This segment shows highest conversion rates",
+			"potential_impact": "+15% conversions",
+		},
+		{
+			"type":             "creative",
+			"priority":         "low",
+			"title":            "A/B test new ad creative",
+			"description":      "Current creative has been running for 30 days",
+			"potential_impact": "+10% CTR",
+		},
+	}
+}
+
+func trackAdAnalyticsAccess(c *gin.Context, activity string, metadata map[string]interface{}) {
+	// This would track analytics access for audit purposes
+	userID, exists := c.Get("user_id")
+	if !exists {
+		return
+	}
+
+	// Log analytics access
+	fmt.Printf("Analytics access: User %v accessed %s with metadata %+v\n", userID, activity, metadata)
 }

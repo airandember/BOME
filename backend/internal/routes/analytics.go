@@ -46,6 +46,7 @@ func SetupAnalyticsRoutes(router *gin.RouterGroup, db *database.DB, planHistoryS
 	router.GET("/analytics/export", handler.ExportAnalyticsData)
 }
 
+
 // GetAnalyticsOverview returns general analytics overview
 func (h *AnalyticsHandler) GetAnalyticsOverview(c *gin.Context) {
 	period := c.Query("period")

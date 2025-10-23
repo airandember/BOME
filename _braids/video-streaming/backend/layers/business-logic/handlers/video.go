@@ -14,6 +14,46 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// GetVideoEngagementAnalyticsHandler handles retrieving video engagement analytics
+func GetVideoEngagementAnalyticsHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		period := c.DefaultQuery("period", "30d")
+		videoID := c.Param("id")
+		
+		// Track analytics access
+		trackVideoAnalyticsAccess(db, c, videoID, "engagement_analytics", map[string]interface{}{
+			"period": period,
+			"timestamp": time.Now().Unix(),
+		})
+		
+		analytics := map[string]interface{}{
+			"video_id": videoID,
+			"period": period,
+			"engagement_metrics": map[string]interface{}{
+				"total_views": getVideoTotalViews(db, videoID),
+				"unique_viewers": getVideoUniqueViewers(db, videoID, period),
+				"avg_watch_time": getVideoAverageWatchTime(db, videoID, period),
+				"completion_rate": getVideoCompletionRate(db, videoID, period),
+				"engagement_score": getVideoEngagementScore(db, videoID, period),
+			},
+			"content_performance": map[string]interface{}{
+				"views_by_hour": getVideoViewsByHour(db, videoID, period),
+				"views_by_device": getVideoViewsByDevice(db, videoID, period),
+				"views_by_location": getVideoViewsByLocation(db, videoID, period),
+				"traffic_sources": getVideoTrafficSources(db, videoID, period),
+			},
+			"user_behavior": map[string]interface{}{
+				"drop_off_points": getVideoDropOffPoints(db, videoID, period),
+				"rewatch_rate": getVideoRewatchRate(db, videoID, period),
+				"share_rate": getVideoShareRate(db, videoID, period),
+				"like_rate": getVideoLikeRate(db, videoID, period),
+			},
+		}
+		
+		c.JSON(http.StatusOK, gin.H{"data": analytics})
+	}
+}
+
 // GetVideosFromBunnyHandler fetches videos directly from Bunny.net library
 func GetVideosFromBunnyHandler(db *database.DB, bunnyService *services.BunnyService) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -374,4 +414,328 @@ func syncVideoToDatabase(db *database.DB, bunnyService *services.BunnyService, b
 		true, // vid_status
 	)
 	return err
+}
+
+// Video Engagement Analytics Helper Functions
+
+func getVideoTotalViews(db *database.DB, videoID string) int {
+	if db == nil {
+		return 0
+	}
+	var count int
+	db.QueryRow("SELECT COALESCE(view_count, 0) FROM videos WHERE id = $1", videoID).Scan(&count)
+	return count
+}
+
+func getVideoUniqueViewers(db *database.DB, videoID string, period string) int {
+	if db == nil {
+		return 0
+	}
+	var count int
+	query := "SELECT COUNT(DISTINCT user_id) FROM video_access_log WHERE video_id = $1 AND created_at > NOW() - INTERVAL '" + period + "'"
+	db.QueryRow(query, videoID).Scan(&count)
+	return count
+}
+
+func getVideoAverageWatchTime(db *database.DB, videoID string, period string) float64 {
+	if db == nil {
+		return 0.0
+	}
+	var avgTime float64
+	query := "SELECT AVG(watch_duration) FROM video_access_log WHERE video_id = $1 AND created_at > NOW() - INTERVAL '" + period + "' AND watch_duration IS NOT NULL"
+	db.QueryRow(query, videoID).Scan(&avgTime)
+	return avgTime
+}
+
+func getVideoCompletionRate(db *database.DB, videoID string, period string) float64 {
+	if db == nil {
+		return 0.0
+	}
+	var totalViews, completedViews int
+	
+	// Get total views
+	db.QueryRow("SELECT COUNT(*) FROM video_access_log WHERE video_id = $1 AND created_at > NOW() - INTERVAL '" + period + "'", videoID).Scan(&totalViews)
+	
+	// Get completed views (assuming completion means watching 90%+ of video)
+	db.QueryRow("SELECT COUNT(*) FROM video_access_log WHERE video_id = $1 AND created_at > NOW() - INTERVAL '" + period + "' AND completion_percentage >= 90", videoID).Scan(&completedViews)
+	
+	if totalViews == 0 {
+		return 0.0
+	}
+	return float64(completedViews) / float64(totalViews) * 100
+}
+
+func getVideoEngagementScore(db *database.DB, videoID string, period string) float64 {
+	if db == nil {
+		return 0.0
+	}
+	
+	// Calculate engagement score based on multiple factors
+	completionRate := getVideoCompletionRate(db, videoID, period)
+	rewatchRate := getVideoRewatchRate(db, videoID, period)
+	likeRate := getVideoLikeRate(db, videoID, period)
+	shareRate := getVideoShareRate(db, videoID, period)
+	
+	// Weighted engagement score
+	engagementScore := (completionRate * 0.4) + (rewatchRate * 0.3) + (likeRate * 0.2) + (shareRate * 0.1)
+	return engagementScore
+}
+
+func getVideoViewsByHour(db *database.DB, videoID string, period string) map[string]int {
+	if db == nil {
+		return map[string]int{}
+	}
+	
+	hourlyViews := map[string]int{}
+	rows, err := db.Query(`
+		SELECT EXTRACT(HOUR FROM created_at) as hour, COUNT(*) as views
+		FROM video_access_log 
+		WHERE video_id = $1 AND created_at > NOW() - INTERVAL '` + period + `'
+		GROUP BY EXTRACT(HOUR FROM created_at)
+		ORDER BY hour
+	`, videoID)
+	
+	if err != nil {
+		return hourlyViews
+	}
+	defer rows.Close()
+	
+	for rows.Next() {
+		var hour int
+		var views int
+		rows.Scan(&hour, &views)
+		hourlyViews[fmt.Sprintf("%02d:00", hour)] = views
+	}
+	
+	return hourlyViews
+}
+
+func getVideoViewsByDevice(db *database.DB, videoID string, period string) map[string]int {
+	if db == nil {
+		return map[string]int{}
+	}
+	
+	deviceViews := map[string]int{}
+	rows, err := db.Query(`
+		SELECT device_type, COUNT(*) as views
+		FROM video_access_log 
+		WHERE video_id = $1 AND created_at > NOW() - INTERVAL '` + period + `'
+		GROUP BY device_type
+	`, videoID)
+	
+	if err != nil {
+		return deviceViews
+	}
+	defer rows.Close()
+	
+	for rows.Next() {
+		var deviceType string
+		var views int
+		rows.Scan(&deviceType, &views)
+		deviceViews[deviceType] = views
+	}
+	
+	return deviceViews
+}
+
+func getVideoViewsByLocation(db *database.DB, videoID string, period string) map[string]int {
+	if db == nil {
+		return map[string]int{}
+	}
+	
+	locationViews := map[string]int{}
+	rows, err := db.Query(`
+		SELECT country, COUNT(*) as views
+		FROM video_access_log 
+		WHERE video_id = $1 AND created_at > NOW() - INTERVAL '` + period + `'
+		GROUP BY country
+		ORDER BY views DESC
+		LIMIT 10
+	`, videoID)
+	
+	if err != nil {
+		return locationViews
+	}
+	defer rows.Close()
+	
+	for rows.Next() {
+		var country string
+		var views int
+		rows.Scan(&country, &views)
+		locationViews[country] = views
+	}
+	
+	return locationViews
+}
+
+func getVideoTrafficSources(db *database.DB, videoID string, period string) map[string]int {
+	if db == nil {
+		return map[string]int{}
+	}
+	
+	trafficSources := map[string]int{}
+	rows, err := db.Query(`
+		SELECT referrer, COUNT(*) as views
+		FROM video_access_log 
+		WHERE video_id = $1 AND created_at > NOW() - INTERVAL '` + period + `'
+		GROUP BY referrer
+		ORDER BY views DESC
+		LIMIT 10
+	`, videoID)
+	
+	if err != nil {
+		return trafficSources
+	}
+	defer rows.Close()
+	
+	for rows.Next() {
+		var referrer string
+		var views int
+		rows.Scan(&referrer, &views)
+		if referrer == "" {
+			referrer = "Direct"
+		}
+		trafficSources[referrer] = views
+	}
+	
+	return trafficSources
+}
+
+func getVideoDropOffPoints(db *database.DB, videoID string, period string) map[string]float64 {
+	if db == nil {
+		return map[string]float64{}
+	}
+	
+	dropOffPoints := map[string]float64{}
+	rows, err := db.Query(`
+		SELECT 
+			CASE 
+				WHEN completion_percentage < 25 THEN '0-25%'
+				WHEN completion_percentage < 50 THEN '25-50%'
+				WHEN completion_percentage < 75 THEN '50-75%'
+				WHEN completion_percentage < 90 THEN '75-90%'
+				ELSE '90-100%'
+			END as segment,
+			COUNT(*) as views
+		FROM video_access_log 
+		WHERE video_id = $1 AND created_at > NOW() - INTERVAL '` + period + `'
+		GROUP BY segment
+		ORDER BY 
+			CASE 
+				WHEN completion_percentage < 25 THEN 1
+				WHEN completion_percentage < 50 THEN 2
+				WHEN completion_percentage < 75 THEN 3
+				WHEN completion_percentage < 90 THEN 4
+				ELSE 5
+			END
+	`, videoID)
+	
+	if err != nil {
+		return dropOffPoints
+	}
+	defer rows.Close()
+	
+	var totalViews int
+	segments := make(map[string]int)
+	
+	for rows.Next() {
+		var segment string
+		var views int
+		rows.Scan(&segment, &views)
+		segments[segment] = views
+		totalViews += views
+	}
+	
+	// Calculate percentages
+	for segment, views := range segments {
+		if totalViews > 0 {
+			dropOffPoints[segment] = float64(views) / float64(totalViews) * 100
+		}
+	}
+	
+	return dropOffPoints
+}
+
+func getVideoRewatchRate(db *database.DB, videoID string, period string) float64 {
+	if db == nil {
+		return 0.0
+	}
+	var totalViews, rewatches int
+	
+	// Get total unique viewers
+	db.QueryRow("SELECT COUNT(DISTINCT user_id) FROM video_access_log WHERE video_id = $1 AND created_at > NOW() - INTERVAL '" + period + "'", videoID).Scan(&totalViews)
+	
+	// Get users who watched multiple times
+	db.QueryRow(`
+		SELECT COUNT(*) FROM (
+			SELECT user_id, COUNT(*) as view_count
+			FROM video_access_log 
+			WHERE video_id = $1 AND created_at > NOW() - INTERVAL '` + period + `'
+			GROUP BY user_id
+			HAVING COUNT(*) > 1
+		) as rewatchers
+	`, videoID).Scan(&rewatches)
+	
+	if totalViews == 0 {
+		return 0.0
+	}
+	return float64(rewatches) / float64(totalViews) * 100
+}
+
+func getVideoShareRate(db *database.DB, videoID string, period string) float64 {
+	if db == nil {
+		return 0.0
+	}
+	var totalViews, shares int
+	
+	// Get total views
+	db.QueryRow("SELECT COUNT(*) FROM video_access_log WHERE video_id = $1 AND created_at > NOW() - INTERVAL '" + period + "'", videoID).Scan(&totalViews)
+	
+	// Get shares (assuming shares are tracked in a separate table or field)
+	db.QueryRow("SELECT COUNT(*) FROM video_shares WHERE video_id = $1 AND created_at > NOW() - INTERVAL '" + period + "'", videoID).Scan(&shares)
+	
+	if totalViews == 0 {
+		return 0.0
+	}
+	return float64(shares) / float64(totalViews) * 100
+}
+
+func getVideoLikeRate(db *database.DB, videoID string, period string) float64 {
+	if db == nil {
+		return 0.0
+	}
+	var totalViews, likes int
+	
+	// Get total views
+	db.QueryRow("SELECT COUNT(*) FROM video_access_log WHERE video_id = $1 AND created_at > NOW() - INTERVAL '" + period + "'", videoID).Scan(&totalViews)
+	
+	// Get likes
+	db.QueryRow("SELECT COALESCE(like_count, 0) FROM videos WHERE id = $1", videoID).Scan(&likes)
+	
+	if totalViews == 0 {
+		return 0.0
+	}
+	return float64(likes) / float64(totalViews) * 100
+}
+
+func trackVideoAnalyticsAccess(db *database.DB, c *gin.Context, videoID string, activity string, metadata map[string]interface{}) {
+	if db == nil {
+		return
+	}
+	
+	userID, exists := c.Get("user_id")
+	if !exists {
+		return
+	}
+	
+	metadataJSON, _ := json.Marshal(metadata)
+	
+	_, err := db.Exec(`
+		INSERT INTO user_activity_log (user_id, activity_type, metadata, ip_address, user_agent, created_at)
+		VALUES ($1, $2, $3, $4, $5, NOW())
+	`, userID, activity, string(metadataJSON), c.ClientIP(), c.GetHeader("User-Agent"))
+	
+	if err != nil {
+		fmt.Printf("Failed to track video analytics access: %v\n", err)
+	}
 }

@@ -45,10 +45,50 @@ type CreateUserRequest struct {
 	StripeCustomerID string `json:"stripe_customer_id"`
 }
 
+// GetUserEngagementAnalyticsHandler handles retrieving user engagement analytics
+func GetUserEngagementAnalyticsHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		period := c.DefaultQuery("period", "30d")
+
+		// Track admin analytics access
+		trackAdminActivity(db, c, "user_engagement_analytics", map[string]interface{}{
+			"period":    period,
+			"timestamp": time.Now().Unix(),
+		})
+
+		analytics := map[string]interface{}{
+			"period": period,
+			"user_engagement": map[string]interface{}{
+				"total_users":             getTotalUsers(db),
+				"active_users":            getActiveUsers(db, period),
+				"new_registrations":       getNewRegistrations(db, period),
+				"profile_completion_rate": getProfileCompletionRate(db),
+				"email_verification_rate": getEmailVerificationRate(db),
+				"last_login_distribution": getLastLoginDistribution(db),
+				"user_retention":          getUserRetentionMetrics(db, period),
+			},
+			"conversion_funnel": map[string]interface{}{
+				"registrations":          getRegistrationCount(db, period),
+				"email_verified":         getEmailVerifiedCount(db, period),
+				"profile_completed":      getProfileCompletedCount(db, period),
+				"first_login":            getFirstLoginCount(db, period),
+				"subscription_converted": getSubscriptionConversionCount(db, period),
+			},
+			"user_behavior": map[string]interface{}{
+				"avg_session_duration": getAverageSessionDuration(db, period),
+				"login_frequency":      getLoginFrequency(db, period),
+				"preference_adoption":  getPreferenceAdoptionRate(db),
+				"role_distribution":    getRoleDistribution(db),
+			},
+		}
+
+		c.JSON(http.StatusOK, gin.H{"data": analytics})
+	}
+}
+
 // GetUsersHandler handles retrieving users for admin
 func GetUsersHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Mock user data for development mode or when database is not available
 		if db == nil {
 			log.Println("Database not available, returning mock user data")
 			users := []map[string]interface{}{
@@ -3133,4 +3173,262 @@ func linkSubscriptionsForNewUsers(db *database.DB) error {
 	}
 
 	return nil
+}
+
+// User Engagement Analytics Helper Functions
+
+func getTotalUsers(db *database.DB) int {
+	if db == nil {
+		return 0
+	}
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+	return count
+}
+
+func getActiveUsers(db *database.DB, period string) int {
+	if db == nil {
+		return 0
+	}
+	var count int
+	query := "SELECT COUNT(*) FROM users WHERE last_login > NOW() - INTERVAL '" + period + "'"
+	db.QueryRow(query).Scan(&count)
+	return count
+}
+
+func getNewRegistrations(db *database.DB, period string) int {
+	if db == nil {
+		return 0
+	}
+	var count int
+	query := "SELECT COUNT(*) FROM users WHERE created_at > NOW() - INTERVAL '" + period + "'"
+	db.QueryRow(query).Scan(&count)
+	return count
+}
+
+func getProfileCompletionRate(db *database.DB) float64 {
+	if db == nil {
+		return 0.0
+	}
+	var totalUsers, completedProfiles int
+	db.QueryRow("SELECT COUNT(*) FROM users").Scan(&totalUsers)
+	db.QueryRow("SELECT COUNT(*) FROM users WHERE bio IS NOT NULL AND bio != '' AND avatar_url IS NOT NULL").Scan(&completedProfiles)
+
+	if totalUsers == 0 {
+		return 0.0
+	}
+	return float64(completedProfiles) / float64(totalUsers) * 100
+}
+
+func getEmailVerificationRate(db *database.DB) float64 {
+	if db == nil {
+		return 0.0
+	}
+	var totalUsers, verifiedUsers int
+	db.QueryRow("SELECT COUNT(*) FROM users").Scan(&totalUsers)
+	db.QueryRow("SELECT COUNT(*) FROM users WHERE email_verified = true").Scan(&verifiedUsers)
+
+	if totalUsers == 0 {
+		return 0.0
+	}
+	return float64(verifiedUsers) / float64(totalUsers) * 100
+}
+
+func getLastLoginDistribution(db *database.DB) map[string]int {
+	if db == nil {
+		return map[string]int{}
+	}
+
+	distribution := map[string]int{
+		"last_24h": 0,
+		"last_7d":  0,
+		"last_30d": 0,
+		"older":    0,
+	}
+
+	// Last 24 hours
+	var last24h int
+	db.QueryRow("SELECT COUNT(*) FROM users WHERE last_login > NOW() - INTERVAL '24 hours'").Scan(&last24h)
+	distribution["last_24h"] = last24h
+
+	// Last 7 days
+	var last7d int
+	db.QueryRow("SELECT COUNT(*) FROM users WHERE last_login > NOW() - INTERVAL '7 days'").Scan(&last7d)
+	distribution["last_7d"] = last7d
+
+	// Last 30 days
+	var last30d int
+	db.QueryRow("SELECT COUNT(*) FROM users WHERE last_login > NOW() - INTERVAL '30 days'").Scan(&last30d)
+	distribution["last_30d"] = last30d
+
+	// Older than 30 days
+	var older int
+	db.QueryRow("SELECT COUNT(*) FROM users WHERE last_login < NOW() - INTERVAL '30 days' OR last_login IS NULL").Scan(&older)
+	distribution["older"] = older
+
+	return distribution
+}
+
+func getUserRetentionMetrics(db *database.DB, period string) map[string]interface{} {
+	if db == nil {
+		return map[string]interface{}{}
+	}
+
+	var newUsers, returningUsers int
+
+	// Users who registered in the period
+	db.QueryRow("SELECT COUNT(*) FROM users WHERE created_at > NOW() - INTERVAL '" + period + "'").Scan(&newUsers)
+
+	// Users who logged in during the period but registered before
+	db.QueryRow("SELECT COUNT(*) FROM users WHERE last_login > NOW() - INTERVAL '" + period + "' AND created_at < NOW() - INTERVAL '" + period + "'").Scan(&returningUsers)
+
+	retentionRate := 0.0
+	if newUsers > 0 {
+		retentionRate = float64(returningUsers) / float64(newUsers) * 100
+	}
+
+	return map[string]interface{}{
+		"new_users":       newUsers,
+		"returning_users": returningUsers,
+		"retention_rate":  retentionRate,
+	}
+}
+
+func getRegistrationCount(db *database.DB, period string) int {
+	return getNewRegistrations(db, period)
+}
+
+func getEmailVerifiedCount(db *database.DB, period string) int {
+	if db == nil {
+		return 0
+	}
+	var count int
+	query := "SELECT COUNT(*) FROM users WHERE email_verified = true AND created_at > NOW() - INTERVAL '" + period + "'"
+	db.QueryRow(query).Scan(&count)
+	return count
+}
+
+func getProfileCompletedCount(db *database.DB, period string) int {
+	if db == nil {
+		return 0
+	}
+	var count int
+	query := "SELECT COUNT(*) FROM users WHERE bio IS NOT NULL AND bio != '' AND created_at > NOW() - INTERVAL '" + period + "'"
+	db.QueryRow(query).Scan(&count)
+	return count
+}
+
+func getFirstLoginCount(db *database.DB, period string) int {
+	if db == nil {
+		return 0
+	}
+	var count int
+	query := "SELECT COUNT(*) FROM users WHERE last_login IS NOT NULL AND created_at > NOW() - INTERVAL '" + period + "'"
+	db.QueryRow(query).Scan(&count)
+	return count
+}
+
+func getSubscriptionConversionCount(db *database.DB, period string) int {
+	if db == nil {
+		return 0
+	}
+	var count int
+	query := "SELECT COUNT(*) FROM users WHERE has_subbed = true AND created_at > NOW() - INTERVAL '" + period + "'"
+	db.QueryRow(query).Scan(&count)
+	return count
+}
+
+func getAverageSessionDuration(db *database.DB, period string) float64 {
+	if db == nil {
+		return 0.0
+	}
+	var avgDuration float64
+	query := "SELECT AVG(EXTRACT(EPOCH FROM (last_activity - created_at))) FROM user_sessions WHERE created_at > NOW() - INTERVAL '" + period + "'"
+	db.QueryRow(query).Scan(&avgDuration)
+	return avgDuration / 60 // Convert to minutes
+}
+
+func getLoginFrequency(db *database.DB, period string) map[string]int {
+	if db == nil {
+		return map[string]int{}
+	}
+
+	frequency := map[string]int{
+		"daily":   0,
+		"weekly":  0,
+		"monthly": 0,
+		"rarely":  0,
+	}
+
+	// This is a simplified version - in production you'd want more sophisticated analysis
+	var daily, weekly, monthly int
+
+	db.QueryRow("SELECT COUNT(*) FROM users WHERE last_login > NOW() - INTERVAL '1 day'").Scan(&daily)
+	db.QueryRow("SELECT COUNT(*) FROM users WHERE last_login > NOW() - INTERVAL '7 days'").Scan(&weekly)
+	db.QueryRow("SELECT COUNT(*) FROM users WHERE last_login > NOW() - INTERVAL '30 days'").Scan(&monthly)
+
+	frequency["daily"] = daily
+	frequency["weekly"] = weekly - daily
+	frequency["monthly"] = monthly - weekly
+	frequency["rarely"] = getTotalUsers(db) - monthly
+
+	return frequency
+}
+
+func getPreferenceAdoptionRate(db *database.DB) float64 {
+	if db == nil {
+		return 0.0
+	}
+	var totalUsers, usersWithPrefs int
+	db.QueryRow("SELECT COUNT(*) FROM users").Scan(&totalUsers)
+	db.QueryRow("SELECT COUNT(*) FROM users WHERE preferences IS NOT NULL AND preferences != ''").Scan(&usersWithPrefs)
+
+	if totalUsers == 0 {
+		return 0.0
+	}
+	return float64(usersWithPrefs) / float64(totalUsers) * 100
+}
+
+func getRoleDistribution(db *database.DB) map[string]int {
+	if db == nil {
+		return map[string]int{}
+	}
+
+	distribution := map[string]int{}
+	rows, err := db.Query("SELECT role, COUNT(*) FROM users GROUP BY role")
+	if err != nil {
+		return distribution
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var role string
+		var count int
+		rows.Scan(&role, &count)
+		distribution[role] = count
+	}
+
+	return distribution
+}
+
+func trackAdminActivity(db *database.DB, c *gin.Context, activity string, metadata map[string]interface{}) {
+	if db == nil {
+		return
+	}
+
+	userID, exists := c.Get("user_id")
+	if !exists {
+		return
+	}
+
+	metadataJSON, _ := json.Marshal(metadata)
+
+	_, err := db.Exec(`
+		INSERT INTO user_activity_log (user_id, activity_type, metadata, ip_address, user_agent, created_at)
+		VALUES ($1, $2, $3, $4, $5, NOW())
+	`, userID, activity, string(metadataJSON), c.ClientIP(), c.GetHeader("User-Agent"))
+
+	if err != nil {
+		log.Printf("Failed to track admin activity: %v", err)
+	}
 }
