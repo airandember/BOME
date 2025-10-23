@@ -1,0 +1,50 @@
+[
+  {
+    "Duration": 34,
+    "Message": "All health endpoints operational",
+    "Success": true,
+    "Name": "Health Check Flow"
+  },
+  {
+    "Duration": 46,
+    "Message": "Failed to retrieve plans",
+    "Success": false,
+    "Name": "Subscription Plans Retrieval"
+  },
+  {
+    "Duration": 23,
+    "Message": "Correctly rejected invalid credentials",
+    "Success": true,
+    "Name": "Auth Error Handling (Invalid Credentials)"
+  },
+  {
+    "Duration": 19,
+    "Message": "Correctly requires authentication",
+    "Success": true,
+    "Name": "Video Endpoint Auth Protection"
+  },
+  {
+    "Duration": 20,
+    "Message": "Webhook endpoint operational",
+    "Success": true,
+    "Name": "Stripe Webhook Endpoint"
+  },
+  {
+    "Duration": 20,
+    "Message": "Metrics endpoint operational",
+    "Success": true,
+    "Name": "Performance Metrics"
+  },
+  {
+    "Duration": 1765,
+    "Message": "10/10 concurrent requests succeeded",
+    "Success": true,
+    "Name": "Concurrent Request Handling (10 requests)"
+  },
+  {
+    "Duration": 52,
+    "Message": "Avg: 2.2ms, Max: 4ms",
+    "Success": true,
+    "Name": "Response Time Consistency"
+  }
+]

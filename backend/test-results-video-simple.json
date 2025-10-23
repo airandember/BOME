@@ -1,0 +1,36 @@
+{
+  "Passed": 5,
+  "Tests": [
+    {
+      "Message": "Video test endpoint working",
+      "Duration": 3,
+      "Name": "Video Test Endpoint",
+      "Success": true
+    },
+    {
+      "Message": "Retrieved True collections",
+      "Duration": 1850,
+      "Name": "Bunny Collections",
+      "Success": true
+    },
+    {
+      "Message": "Endpoint accessible",
+      "Duration": 2,
+      "Name": "Video Stream Endpoint",
+      "Success": true
+    },
+    {
+      "Message": "Endpoint accessible",
+      "Duration": 3,
+      "Name": "Performance Metrics",
+      "Success": true
+    },
+    {
+      "Message": "Optimization test endpoint working",
+      "Duration": 2,
+      "Name": "Optimization Test",
+      "Success": true
+    }
+  ],
+  "Failed": 0
+}

@@ -53,7 +53,20 @@
 	let error: string | null = null;
 	let refreshInterval: NodeJS.Timeout | null = null;
 	let lastUpdated = new Date();
-let visibilityHandler: (() => void) | null = null;
+	let visibilityHandler: (() => void) | null = null;
+	
+	// Streaming Analytics Data
+	let streamingAnalytics: any = null;
+	let subscriptionMetrics: any = null;
+	let revenueMetrics: any = null;
+	let userEngagementMetrics: any = null;
+	let videoEngagementMetrics: any = null;
+	let adRevenueMetrics: any = null;
+	
+	// Analytics tabs
+	let activeTab = 'overview'; // overview, subscriptions, users, videos, ads, system
+	let selectedPeriod = '30d';
+	let selectedMetric = 'revenue';
 
 onMount(async () => {
     // Check authentication first
@@ -72,10 +85,14 @@ onMount(async () => {
     }
 
     await loadDashboard();
+    await loadStreamingAnalytics();
 
     const startPolling = () => {
         if (refreshInterval) clearInterval(refreshInterval);
-        refreshInterval = setInterval(loadDashboard, 15000); // 15s for dashboard
+        refreshInterval = setInterval(async () => {
+            await loadDashboard();
+            await loadStreamingAnalytics();
+        }, 15000); // 15s for dashboard
     };
     const stopPolling = () => {
         if (refreshInterval) {
@@ -153,41 +170,41 @@ onDestroy(() => {
 			// Transform the data into our dashboard format
 			dashboardData = {
 				users: {
-					total: data.data?.users?.total || 0,
-					new_today: data.data?.users?.new_today || 0,
-					active_today: data.data?.users?.active_today || 0,
-					growth_rate: data.data?.users?.growth_rate || 0
+					total: data.users?.total || 0,
+					new_today: data.users?.new_today || 0,
+					active_today: data.users?.active_today || 0,
+					growth_rate: data.users?.growth_rate || 0
 				},
 				content: {
-					total_videos: data.data?.videos?.total || 0,
-					total_articles: 0, // Will be populated from articles subsite
-					total_events: 0,   // Will be populated from expo subsite
-					total_views: data.data?.videos?.total_views || 0
+					total_videos: data.content?.total_videos || 0,
+					total_articles: data.content?.total_articles || 0,
+					total_events: data.content?.total_events || 0,
+					total_views: data.content?.total_views || 0
 				},
 				revenue: {
-					total_monthly: data.data?.subscriptions?.revenue_month || 0,
-					total_yearly: data.data?.subscriptions?.revenue_year || 0,
-					mrr: data.data?.subscriptions?.mrr || 0,
-					growth_rate: 0.15 // Mock growth rate
+					total_monthly: data.revenue?.total_monthly || 0,
+					total_yearly: data.revenue?.total_yearly || 0,
+					mrr: data.revenue?.mrr || 0,
+					growth_rate: data.revenue?.growth_rate || 0
 				},
 				system_health: {
-					status: systemHealth?.status || 'unknown',
-					uptime: systemHealth?.uptime || 'Unknown',
-					response_time: systemHealth?.response_time || 'Unknown',
-					error_rate: systemHealth?.error_rate || 'Unknown',
-					active_sessions: systemHealth?.active_sessions || data.data?.real_time?.active_users || 0
+					status: data.system_health?.status || 'unknown',
+					uptime: data.system_health?.uptime || 'Unknown',
+					response_time: data.system_health?.response_time || 'Unknown',
+					error_rate: data.system_health?.error_rate || 'Unknown',
+					active_sessions: data.system_health?.active_sessions || 0
 				},
 				real_time: {
-					active_users: data.data?.real_time?.active_users || 0,
-					current_streams: data.data?.real_time?.current_streams || 0,
-					server_load: data.data?.real_time?.server_load || 0,
-					bandwidth_usage: data.data?.real_time?.bandwidth_usage || '0 MB/s'
+					active_users: data.real_time?.active_users || 0,
+					current_streams: data.real_time?.current_streams || 0,
+					server_load: data.real_time?.server_load || 0,
+					bandwidth_usage: data.real_time?.bandwidth_usage || '0 MB/s'
 				},
 				bottlenecks: {
-					high_error_rate: parseFloat(systemHealth?.error_rate || '0') > 5,
-					slow_response: parseInt(systemHealth?.response_time || '0') > 1000,
-					high_cpu: (systemHealth?.cpu?.usage || 0) > 80,
-					disk_space: (systemHealth?.disk?.percent || 0) > 90
+					high_error_rate: data.bottlenecks?.high_error_rate || false,
+					slow_response: data.bottlenecks?.slow_response || false,
+					high_cpu: data.bottlenecks?.high_cpu || false,
+					disk_space: data.bottlenecks?.disk_space || false
 				}
 			};
 
@@ -206,6 +223,52 @@ onDestroy(() => {
 			showToast('Failed to load dashboard', 'error');
 		} finally {
 			loading = false;
+		}
+	}
+
+	// Load streaming analytics data
+	async function loadStreamingAnalytics() {
+		try {
+			// For now, we'll use the main analytics data and extract what we need
+			// The individual braid analytics endpoints will be implemented later
+			
+			if (dashboardData) {
+				// Extract subscription metrics from main analytics
+				subscriptionMetrics = {
+					total_revenue: dashboardData.revenue.total_monthly,
+					active_subscriptions: Math.floor(dashboardData.revenue.total_monthly / 10), // Estimate
+					mrr: dashboardData.revenue.mrr,
+					churn_rate: 2.5 // Placeholder
+				};
+
+				// Extract user engagement metrics from main analytics
+				userEngagementMetrics = {
+					total_users: dashboardData.users.total,
+					active_users: dashboardData.users.active_today,
+					profile_completion_rate: 85, // Placeholder
+					email_verification_rate: 92 // Placeholder
+				};
+
+				// Extract video engagement metrics from main analytics
+				videoEngagementMetrics = {
+					total_views: dashboardData.content.total_views,
+					unique_viewers: Math.floor(dashboardData.content.total_views * 0.7), // Estimate
+					avg_watch_time: 4.5, // Placeholder
+					completion_rate: 78 // Placeholder
+				};
+
+				// Extract ad revenue metrics from main analytics
+				adRevenueMetrics = {
+					total_revenue: dashboardData.revenue.total_monthly * 0.3, // Estimate 30% from ads
+					average_revenue_per_user: dashboardData.revenue.total_monthly / dashboardData.users.total,
+					top_performing_campaigns: [], // Placeholder
+					conversion_funnel: {} // Placeholder
+				};
+			}
+
+		} catch (err: any) {
+			console.error('Failed to load streaming analytics:', err);
+			// Don't show error toast for streaming analytics - it's supplementary
 		}
 	}
 
@@ -265,6 +328,52 @@ onDestroy(() => {
 		</div>
 	</div>
 
+	<!-- Analytics Tabs -->
+	<div class="analytics-tabs">
+		<button 
+			class="tab-button" 
+			class:active={activeTab === 'overview'}
+			on:click={() => activeTab = 'overview'}
+		>
+			📊 Overview
+		</button>
+		<button 
+			class="tab-button" 
+			class:active={activeTab === 'subscriptions'}
+			on:click={() => activeTab = 'subscriptions'}
+		>
+			💰 Subscriptions
+		</button>
+		<button 
+			class="tab-button" 
+			class:active={activeTab === 'users'}
+			on:click={() => activeTab = 'users'}
+		>
+			👥 Users
+		</button>
+		<button 
+			class="tab-button" 
+			class:active={activeTab === 'videos'}
+			on:click={() => activeTab = 'videos'}
+		>
+			🎥 Videos
+		</button>
+		<button 
+			class="tab-button" 
+			class:active={activeTab === 'ads'}
+			on:click={() => activeTab = 'ads'}
+		>
+			📈 Ads
+		</button>
+		<button 
+			class="tab-button" 
+			class:active={activeTab === 'system'}
+			on:click={() => activeTab = 'system'}
+		>
+			⚙️ System
+		</button>
+	</div>
+
 	{#if loading && !dashboardData}
 		<div class="loading-container">
 			<LoadingSpinner />
@@ -278,30 +387,33 @@ onDestroy(() => {
 			<button class="retry-btn" on:click={loadDashboard}>Try Again</button>
 		</div>
 	{:else if dashboardData}
-		<!-- System Health Alert -->
-		{#if dashboardData && dashboardData.system_health && dashboardData.system_health.status !== 'healthy'}
-			<div class="alert {dashboardData.system_health.status || 'warning'}">
-				<div class="alert-icon">
-					{getStatusIcon(dashboardData.system_health.status || 'warning')}
+		<!-- Tab Content -->
+		{#if activeTab === 'overview'}
+			<!-- System Health Alert -->
+			{#if dashboardData && dashboardData.system_health && dashboardData.system_health.status !== 'healthy'}
+				<div class="alert {dashboardData.system_health.status || 'warning'}">
+					<div class="alert-icon">
+						{getStatusIcon(dashboardData.system_health.status || 'warning')}
+					</div>
+					<div class="alert-content">
+						<h3>System Health Alert</h3>
+						<p>System status: {(dashboardData.system_health.status || 'unknown').toUpperCase()}</p>
+					</div>
+					<a href="/admin/monitoring" class="alert-action">View Details</a>
 				</div>
-				<div class="alert-content">
-					<h3>System Health Alert</h3>
-					<p>System status: {(dashboardData.system_health.status || 'unknown').toUpperCase()}</p>
-				</div>
-				<a href="/admin/monitoring" class="alert-action">View Details</a>
-			</div>
-		{/if}
+			{/if}
 
-		<!-- Bottlenecks Alert -->
-		{#if getBottleneckCount() > 0}
-			<div class="alert warning">
-				<div class="alert-icon">⚠</div>
-				<div class="alert-content">
-					<h3>Performance Bottlenecks Detected</h3>
-					<p>{getBottleneckCount()} performance issue{getBottleneckCount() > 1 ? 's' : ''} detected</p>
+			<!-- Bottlenecks Alert -->
+			{#if getBottleneckCount() > 0}
+				<div class="alert warning">
+					<div class="alert-icon">⚠</div>
+					<div class="alert-content">
+						<h3>Performance Bottlenecks Detected</h3>
+						<p>{getBottleneckCount()} performance issue{getBottleneckCount() > 1 ? 's' : ''} detected</p>
+					</div>
+					<a href="/admin/monitoring" class="alert-action">Investigate</a>
 				</div>
-				<a href="/admin/monitoring" class="alert-action">Investigate</a>
-			</div>
+			{/if}
 		{/if}
 
 		<!-- Key Metrics Grid -->
@@ -393,17 +505,20 @@ onDestroy(() => {
 		<div class="actions-section">
 			<h2>Quick Actions</h2>
 			<div class="actions-grid">
-				<a href="/admin/streaming/analytics" class="action-card">
+				<!-- Streaming Analytics now integrated into main dashboard tabs -->
+				<div class="action-card">
 					<div class="action-icon">🎥</div>
 					<h3>Streaming Analytics</h3>
-					<p>Video performance, engagement, and user metrics</p>
-				</a>
-				<a href="/admin/articles/analytics" class="action-card">
+					<p>Now integrated into main dashboard tabs above</p>
+				</div>
+				<!--future link /admin/articles/analytics-->
+				<a href="#" class="disabled action-card">
 					<div class="action-icon">📝</div>
 					<h3>Articles Analytics</h3>
 					<p>Content performance and reader engagement</p>
 				</a>
-				<a href="/admin/expo/analytics" class="action-card">
+				<!--future link /admin/expo/analytics-->
+				<a href="#" class="disabled action-card">
 					<div class="action-icon">🎪</div>
 					<h3>Expo Analytics</h3>
 					<p>Event performance and attendee metrics</p>
@@ -425,7 +540,275 @@ onDestroy(() => {
 				</a>
 			</div>
 		</div>
-	{/if}
+		{/if}
+
+		<!-- Subscription Analytics Tab -->
+		{#if activeTab === 'subscriptions'}
+			<div class="tab-content">
+				<h2>💰 Subscription Analytics</h2>
+				{#if subscriptionMetrics}
+					<div class="metrics-grid">
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Total Revenue</h3>
+								<span class="metric-icon">💰</span>
+							</div>
+							<div class="metric-value">
+								{formatCurrency(subscriptionMetrics.total_revenue || 0)}
+							</div>
+							<div class="metric-change positive">
+								+{subscriptionMetrics.revenue_growth || 0}%
+							</div>
+						</div>
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Active Subscriptions</h3>
+								<span class="metric-icon">👥</span>
+							</div>
+							<div class="metric-value">
+								{formatNumber(subscriptionMetrics.active_subscriptions || 0)}
+							</div>
+							<div class="metric-change positive">
+								+{subscriptionMetrics.subscription_growth || 0}%
+							</div>
+						</div>
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>MRR</h3>
+								<span class="metric-icon">📈</span>
+							</div>
+							<div class="metric-value">
+								{formatCurrency(subscriptionMetrics.mrr || 0)}
+							</div>
+							<div class="metric-change positive">
+								+{subscriptionMetrics.mrr_growth || 0}%
+							</div>
+						</div>
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Churn Rate</h3>
+								<span class="metric-icon">📉</span>
+							</div>
+							<div class="metric-value">
+								{subscriptionMetrics.churn_rate || 0}%
+							</div>
+							<div class="metric-change negative">
+								{subscriptionMetrics.churn_change || 0}%
+							</div>
+						</div>
+					</div>
+				{:else}
+					<div class="no-data">
+						<p>No subscription data available</p>
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- User Analytics Tab -->
+		{#if activeTab === 'users'}
+			<div class="tab-content">
+				<h2>👥 User Engagement Analytics</h2>
+				{#if userEngagementMetrics}
+					<div class="metrics-grid">
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Total Users</h3>
+								<span class="metric-icon">👥</span>
+							</div>
+							<div class="metric-value">
+								{formatNumber(userEngagementMetrics.user_engagement?.total_users || 0)}
+							</div>
+						</div>
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Active Users</h3>
+								<span class="metric-icon">🟢</span>
+							</div>
+							<div class="metric-value">
+								{formatNumber(userEngagementMetrics.user_engagement?.active_users || 0)}
+							</div>
+						</div>
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Profile Completion</h3>
+								<span class="metric-icon">📝</span>
+							</div>
+							<div class="metric-value">
+								{userEngagementMetrics.user_engagement?.profile_completion_rate || 0}%
+							</div>
+						</div>
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Email Verification</h3>
+								<span class="metric-icon">✅</span>
+							</div>
+							<div class="metric-value">
+								{userEngagementMetrics.user_engagement?.email_verification_rate || 0}%
+							</div>
+						</div>
+					</div>
+				{:else}
+					<div class="no-data">
+						<p>No user engagement data available</p>
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Video Analytics Tab -->
+		{#if activeTab === 'videos'}
+			<div class="tab-content">
+				<h2>🎥 Video Engagement Analytics</h2>
+				{#if videoEngagementMetrics}
+					<div class="metrics-grid">
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Total Views</h3>
+								<span class="metric-icon">👁️</span>
+							</div>
+							<div class="metric-value">
+								{formatNumber(videoEngagementMetrics.engagement_metrics?.total_views || 0)}
+							</div>
+						</div>
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Unique Viewers</h3>
+								<span class="metric-icon">👤</span>
+							</div>
+							<div class="metric-value">
+								{formatNumber(videoEngagementMetrics.engagement_metrics?.unique_viewers || 0)}
+							</div>
+						</div>
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Avg Watch Time</h3>
+								<span class="metric-icon">⏱️</span>
+							</div>
+							<div class="metric-value">
+								{Math.round(videoEngagementMetrics.engagement_metrics?.avg_watch_time || 0)}m
+							</div>
+						</div>
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Completion Rate</h3>
+								<span class="metric-icon">🎯</span>
+							</div>
+							<div class="metric-value">
+								{videoEngagementMetrics.engagement_metrics?.completion_rate || 0}%
+							</div>
+						</div>
+					</div>
+				{:else}
+					<div class="no-data">
+						<p>No video engagement data available</p>
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Ad Analytics Tab -->
+		{#if activeTab === 'ads'}
+			<div class="tab-content">
+				<h2>📈 Advertisement Revenue Analytics</h2>
+				{#if adRevenueMetrics}
+					<div class="metrics-grid">
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Total Ad Revenue</h3>
+								<span class="metric-icon">💰</span>
+							</div>
+							<div class="metric-value">
+								{formatCurrency(adRevenueMetrics.revenue_metrics?.total_revenue || 0)}
+							</div>
+						</div>
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>ARPU</h3>
+								<span class="metric-icon">📊</span>
+							</div>
+							<div class="metric-value">
+								{formatCurrency(adRevenueMetrics.revenue_metrics?.average_revenue_per_user || 0)}
+							</div>
+						</div>
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Top Campaign</h3>
+								<span class="metric-icon">🏆</span>
+							</div>
+							<div class="metric-value">
+								{adRevenueMetrics.performance_metrics?.top_performing_campaigns?.[0]?.name || 'N/A'}
+							</div>
+						</div>
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Conversion Rate</h3>
+								<span class="metric-icon">🎯</span>
+							</div>
+							<div class="metric-value">
+								{adRevenueMetrics.performance_metrics?.conversion_funnel?.conversions || 0}%
+							</div>
+						</div>
+					</div>
+				{:else}
+					<div class="no-data">
+						<p>No advertisement revenue data available</p>
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- System Analytics Tab -->
+		{#if activeTab === 'system'}
+			<div class="tab-content">
+				<h2>⚙️ System Health & Performance</h2>
+				{#if dashboardData?.system_health}
+					<div class="metrics-grid">
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>System Status</h3>
+								<span class="metric-icon">🔧</span>
+							</div>
+							<div class="metric-value {getStatusColor(dashboardData.system_health.status)}">
+								{dashboardData.system_health.status?.toUpperCase() || 'UNKNOWN'}
+							</div>
+						</div>
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Uptime</h3>
+								<span class="metric-icon">⏰</span>
+							</div>
+							<div class="metric-value">
+								{dashboardData.system_health.uptime || 'N/A'}
+							</div>
+						</div>
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Response Time</h3>
+								<span class="metric-icon">⚡</span>
+							</div>
+							<div class="metric-value">
+								{dashboardData.system_health.response_time || 'N/A'}
+							</div>
+						</div>
+						<div class="metric-card">
+							<div class="metric-header">
+								<h3>Active Sessions</h3>
+								<span class="metric-icon">👥</span>
+							</div>
+							<div class="metric-value">
+								{formatNumber(dashboardData.system_health.active_sessions || 0)}
+							</div>
+						</div>
+					</div>
+				{:else}
+					<div class="no-data">
+						<p>No system health data available</p>
+					</div>
+				{/if}
+			</div>
+		{/if}
+	
 </div>
 
 <style>
@@ -457,6 +840,66 @@ onDestroy(() => {
 	.subtitle {
 		color: var(--text-secondary);
 		margin: var(--space-xs) 0 0 0;
+	}
+
+	/* Analytics Tabs */
+	.analytics-tabs {
+		display: flex;
+		gap: var(--space-sm);
+		margin-bottom: var(--space-xl);
+		border-bottom: 1px solid var(--border-color);
+		padding-bottom: var(--space-sm);
+	}
+
+	.tab-button {
+		padding: var(--space-sm) var(--space-md);
+		border: none;
+		background: transparent;
+		color: var(--text-secondary);
+		cursor: pointer;
+		border-radius: var(--radius-md);
+		font-size: var(--text-sm);
+		font-weight: 500;
+		transition: all 0.2s ease;
+		display: flex;
+		align-items: center;
+		gap: var(--space-xs);
+	}
+
+	.tab-button:hover {
+		background: var(--bg-secondary);
+		color: var(--text-primary);
+	}
+
+	.tab-button.active {
+		background: var(--primary-color);
+		color: white;
+	}
+
+	.tab-content {
+		margin-top: var(--space-lg);
+	}
+
+	.tab-content h2 {
+		font-size: var(--text-xl);
+		font-weight: 600;
+		color: var(--text-primary);
+		margin: 0 0 var(--space-lg) 0;
+	}
+
+	.no-data {
+		text-align: center;
+		padding: var(--space-xl);
+		color: var(--text-secondary);
+		background: var(--bg-secondary);
+		border-radius: var(--radius-lg);
+		border: 1px dashed var(--border-color);
+	}
+
+	.action-card.disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		background: var(--bg-secondary);
 	}
 
 	.header-actions {

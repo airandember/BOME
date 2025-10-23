@@ -1,0 +1,358 @@
+package models
+
+import (
+	"bome-backend/infrastructure/database"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+)
+
+// Video represents a video in the system
+type Video struct {
+	ID                   int        `json:"id"`
+	Title                string     `json:"title"`
+	Description          string     `json:"description"`
+	BunnyVideoID         string     `json:"bunnyVideoId"`
+	ThumbnailURL         string     `json:"thumbnailUrl"`
+	ThumbnailFileName    string     `json:"thumbnailFileName"`
+	Duration             int        `json:"duration"`
+	FileSize             int64      `json:"fileSize"`
+	Status               string     `json:"status"`
+	Category             string     `json:"category"`
+	Tags                 []string   `json:"tags"`
+	ViewCount            int        `json:"viewCount"`
+	LikeCount            int        `json:"likeCount"`
+	CreatedBy            int        `json:"createdBy"`
+	ScheduledPublishDate *time.Time `json:"scheduledPublishDate,omitempty"`
+	CreatedAt            time.Time  `json:"createdAt"`
+	UpdatedAt            time.Time  `json:"updatedAt"`
+	Vid_Status           bool       `json:"vidStatus"`
+
+	// Bunny.net play data
+	PlayData      map[string]interface{} `json:"playData,omitempty"`
+	IframeSrc     string                 `json:"iframeSrc,omitempty"`
+	DirectPlayURL string                 `json:"directPlayUrl,omitempty"`
+	PlaybackURL   string                 `json:"playbackUrl,omitempty"`
+	Resolutions   []string               `json:"resolutions,omitempty"`
+}
+
+// CreateVideo inserts a new video into the database
+func CreateVideo(db *database.DB, title, description, bunnyVideoID, thumbnailURL, category string, duration int, fileSize int64, tags []string, createdBy int, vid_status bool) (*Video, error) {
+	// Convert tags to JSON string
+	tagsJSON, err := json.Marshal(tags)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal tags: %v", err)
+	}
+
+	var id int
+	err = db.QueryRow(
+		`INSERT INTO videos (title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, created_by, vid_status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW()) RETURNING id`,
+		title, description, bunnyVideoID, thumbnailURL, duration, fileSize, "processing", category, string(tagsJSON), createdBy, vid_status,
+	).Scan(&id)
+	if err != nil {
+		return nil, err
+	}
+	return GetVideoByID(db, id)
+}
+
+// GetVideoByID retrieves a video by ID
+func GetVideoByID(db *database.DB, id int) (*Video, error) {
+	video := &Video{}
+	var tagsStr string
+	err := db.QueryRow(
+		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, views, likes, created_by, created_at, updated_at FROM master_video_list WHERE id = $1`,
+		id,
+	).Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse tags from JSON string (master_video_list uses JSONB for tags)
+	if tagsStr != "" {
+		if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
+		}
+	}
+
+	return video, nil
+}
+
+// GetVideoByBunnyID retrieves a video by Bunny video ID
+func GetVideoByBunnyID(db *database.DB, bunnyVideoID string) (*Video, error) {
+	video := &Video{}
+	var tagsStr string
+	err := db.QueryRow(
+		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at, vid_status FROM videos WHERE bunny_video_id = $1`,
+		bunnyVideoID,
+	).Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse tags from JSON string
+	if tagsStr != "" {
+		if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
+		}
+	}
+
+	return video, nil
+}
+
+// GetVideos retrieves videos with pagination and filtering
+func GetVideos(db *database.DB, limit, offset int, category, status string) ([]*Video, error) {
+	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, views, likes, created_by, created_at, updated_at FROM master_video_list WHERE 1=1`
+	args := []interface{}{}
+	argCount := 0
+
+	if category != "" {
+		argCount++
+		query += fmt.Sprintf(` AND category = $%d`, argCount)
+		args = append(args, category)
+	}
+
+	if status != "" {
+		argCount++
+		query += fmt.Sprintf(` AND status = $%d`, argCount)
+		args = append(args, status)
+	}
+
+	argCount++
+	query += fmt.Sprintf(` ORDER BY created_at DESC LIMIT $%d`, argCount)
+	args = append(args, limit)
+
+	argCount++
+	query += fmt.Sprintf(` OFFSET $%d`, argCount)
+	args = append(args, offset)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var videos []*Video
+	for rows.Next() {
+		video := &Video{}
+		var tagsStr string
+		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+		// Parse tags from JSONB (master_video_list uses JSONB for tags)
+		if tagsStr != "" {
+			if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
+			}
+		}
+		videos = append(videos, video)
+	}
+
+	return videos, nil
+}
+
+// GetAllVideos retrieves all videos from the database for search index generation
+func GetAllVideos(db *database.DB) ([]Video, error) {
+	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, views, likes, created_by, created_at, updated_at FROM master_video_list ORDER BY created_at DESC`
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var videos []Video
+	for rows.Next() {
+		video := Video{}
+		var tagsStr sql.NullString // Use sql.NullString to handle NULL tags
+		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		// Set ThumbnailFileName to empty string since it's not in the database yet
+		video.ThumbnailFileName = ""
+
+		// Parse tags from JSONB (master_video_list uses JSONB for tags)
+		// Handle NULL tags (videos that haven't been through the tagging system yet)
+		if tagsStr.Valid && tagsStr.String != "" {
+			if err := json.Unmarshal([]byte(tagsStr.String), &video.Tags); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
+			}
+		} else {
+			// Videos that haven't been tagged yet get empty tags array
+			video.Tags = []string{}
+		}
+
+		videos = append(videos, video)
+	}
+
+	return videos, nil
+}
+
+// UpdateVideoStatus updates a video's status
+func UpdateVideoStatus(db *database.DB, videoID int, status string) error {
+	_, err := db.Exec(`UPDATE videos SET status = $1, updated_at = NOW() WHERE id = $2`, status, videoID)
+	return err
+}
+
+// UpdateVideoViews updates a video's view count
+func UpdateVideoViews(db *database.DB, videoID int, views int) error {
+	_, err := db.Exec(`UPDATE videos SET view_count = $1, updated_at = NOW() WHERE id = $2`, views, videoID)
+	return err
+}
+
+// IncrementViewCount increments a video's view count
+func IncrementViewCount(db *database.DB, videoID int) error {
+	_, err := db.Exec(`UPDATE videos SET view_count = view_count + 1, updated_at = NOW() WHERE id = $1`, videoID)
+	return err
+}
+
+// GetVideoCategories retrieves all video categories
+func GetVideoCategories(db *database.DB) ([]string, error) {
+	rows, err := db.Query(`SELECT DISTINCT category FROM videos WHERE category IS NOT NULL AND category != '' ORDER BY category`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var categories []string
+	for rows.Next() {
+		var category string
+		if err := rows.Scan(&category); err != nil {
+			return nil, err
+		}
+		categories = append(categories, category)
+	}
+
+	return categories, nil
+}
+
+// SearchVideos searches videos by title and description
+func SearchVideos(db *database.DB, query string, limit, offset int) ([]*Video, error) {
+	searchQuery := `%` + query + `%`
+	rows, err := db.Query(
+		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at, vid_status FROM videos WHERE (title ILIKE $1 OR description ILIKE $1) AND status = 'ready' ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		searchQuery, limit, offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var videos []*Video
+	for rows.Next() {
+		video := &Video{}
+		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &video.Tags, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
+		if err != nil {
+			return nil, err
+		}
+		videos = append(videos, video)
+	}
+
+	return videos, nil
+}
+
+// UpdateVideo updates video details
+func UpdateVideo(db *database.DB, videoID int, updateData map[string]interface{}) error {
+	// Build dynamic update query
+	setParts := []string{}
+	args := []interface{}{}
+	argCount := 0
+
+	for field, value := range updateData {
+		switch field {
+		case "title", "description", "category", "status":
+			argCount++
+			setParts = append(setParts, fmt.Sprintf("%s = $%d", field, argCount))
+			args = append(args, value)
+		case "tags":
+			argCount++
+			setParts = append(setParts, fmt.Sprintf("tags = $%d", argCount))
+			args = append(args, value)
+		}
+	}
+
+	if len(setParts) == 0 {
+		return fmt.Errorf("no valid fields to update")
+	}
+
+	argCount++
+	setParts = append(setParts, "updated_at = NOW()")
+
+	query := fmt.Sprintf("UPDATE videos SET %s WHERE id = $%d", strings.Join(setParts, ", "), argCount)
+	args = append(args, videoID)
+
+	_, err := db.Exec(query, args...)
+	return err
+}
+
+// DeleteVideo deletes a video from the database
+func DeleteVideo(db *database.DB, videoID int) error {
+	_, err := db.Exec(`DELETE FROM videos WHERE id = $1`, videoID)
+	return err
+}
+
+// ScheduleVideo schedules a video to be published at a specific time
+func ScheduleVideo(db *database.DB, videoID int, publishDate time.Time) error {
+	_, err := db.Exec(`UPDATE videos SET scheduled_publish_date = $1, status = 'scheduled', updated_at = NOW() WHERE id = $2`, publishDate, videoID)
+	return err
+}
+
+// GetScheduledVideos retrieves videos scheduled to be published before the given time
+func GetScheduledVideos(db *database.DB, beforeTime time.Time) ([]*Video, error) {
+	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, scheduled_publish_date, created_at, updated_at, vid_status FROM videos WHERE status = 'scheduled' AND scheduled_publish_date <= $1`
+
+	rows, err := db.Query(query, beforeTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var videos []*Video
+	for rows.Next() {
+		video := &Video{}
+		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &video.Tags, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.ScheduledPublishDate, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
+		if err != nil {
+			return nil, err
+		}
+		videos = append(videos, video)
+	}
+
+	return videos, nil
+}
+
+// UnscheduleVideo removes the scheduled publish date and sets status back to draft
+func UnscheduleVideo(db *database.DB, videoID int) error {
+	_, err := db.Exec(`UPDATE videos SET scheduled_publish_date = NULL, status = 'draft', updated_at = NOW() WHERE id = $1`, videoID)
+	return err
+}
+
+// GetVideoCount returns the total count of videos (stub for analytics)
+func GetVideoCount(db *database.DB) (int, error) {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM master_video_list").Scan(&count)
+	return count, err
+}
+
+// GetTotalViews returns the total views across all videos (stub for analytics)
+func GetTotalViews(db *database.DB) (int, error) {
+	var total int
+	err := db.QueryRow("SELECT COALESCE(SUM(views), 0) FROM master_video_list").Scan(&total)
+	return total, err
+}
+
+// GetTotalLikes returns the total likes across all videos (stub for analytics)
+func GetTotalLikes(db *database.DB) (int, error) {
+	var total int
+	err := db.QueryRow("SELECT COALESCE(SUM(likes), 0) FROM master_video_list").Scan(&total)
+	return total, err
+}
+
+// HasVideoAccess checks if a user has access to a video (stub for middleware)
+func HasVideoAccess(db *database.DB, userID, videoID int) (bool, error) {
+	// For now, return true - implement proper access control later
+	return true, nil
+}

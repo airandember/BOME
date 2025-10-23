@@ -1,0 +1,314 @@
+<script lang="ts">
+	import { auth } from '$lib/auth';
+	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import Navigation from '$lib/components/Navigation.svelte';
+	import OAuth2Login from '$lib/components/OAuth2Login.svelte';
+
+	let email = '';
+	let firstName = '';
+	let lastName = '';
+	let loading = false;
+	let error = '';
+	let success = false;
+
+	onMount(() => {
+		// Redirect if already logged in
+		auth.subscribe((state) => {
+			if (state.isAuthenticated) {
+				goto('/');
+			}
+		});
+	});
+
+	async function handleRegister() {
+		if (!email || !firstName || !lastName) {
+			error = 'Please fill in all fields';
+			return;
+		}
+
+		loading = true;
+		error = '';
+
+		const result = await auth.register({
+			email,
+			first_name: firstName,
+			last_name: lastName
+		});
+		
+		if (result.success) {
+			success = true;
+			// Redirect to email verification page instead of login
+			setTimeout(() => {
+				const verifyUrl = `/auth/verify-email?email=${encodeURIComponent(email)}&user_id=${result.user_id || ''}`;
+				goto(verifyUrl);
+			}, 2000);
+		} else {
+			error = result.error || 'Registration failed';
+		}
+
+		loading = false;
+	}
+</script>
+
+<svelte:head>
+	<title>Register - Book of Mormon Evidences</title>
+</svelte:head>
+<Navigation />
+<div class="auth-container">
+	<div class="auth-card">
+		<div class="auth-header">
+			<h1>Get Started with BOME</h1>
+			<p>Join us to explore Book of Mormon evidences - we'll help you set up your account!</p>
+		</div>
+
+		{#if success}
+			<div class="success-message">
+				<h3>Welcome to BOME!</h3>
+				<p>Please check your email to complete your account setup. We'll help you create a secure password in the next step!</p>
+			</div>
+		{:else}
+			<!-- OAuth2 Registration Options -->
+		{#if !success}
+		<OAuth2Login />
+	    {/if}
+            <hr>
+			<form on:submit|preventDefault={handleRegister} class="auth-form">
+				<div class="form-row">
+					<div class="form-group">
+						<label for="firstName">First Name</label>
+						<input
+							type="text"
+							id="firstName"
+							bind:value={firstName}
+							placeholder="Enter your first name"
+							required
+						/>
+					</div>
+
+					<div class="form-group">
+						<label for="lastName">Last Name</label>
+						<input
+							type="text"
+							id="lastName"
+							bind:value={lastName}
+							placeholder="Enter your last name"
+							required
+						/>
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label for="email">Email</label>
+					<input
+						type="email"
+						id="email"
+						bind:value={email}
+						placeholder="Enter your email"
+						required
+					/>
+				</div>
+
+				{#if error}
+					<div class="error-message">
+						{error}
+					</div>
+				{/if}
+
+				<button type="submit" class="btn-primary" disabled={loading}>
+					{loading ? 'Getting Started...' : 'Get Started'}
+				</button>
+			</form>
+		{/if}
+
+		
+
+		<div class="auth-footer">
+			<p>
+				Already have an account?
+				<a href="/login" class="link">Log in</a>
+			</p>
+		</div>
+	</div>
+</div>
+
+<style>
+	.auth-container {
+		min-height: 100vh;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 2rem;
+		background: var(--bg-color);
+		
+	}
+
+	.auth-card {
+		width: 100%;
+		max-width: 650px;
+		padding: 2.5rem;
+		border-radius: 50px;
+		/*box-shadow:  10px 10px 30px var(--primary-gold),
+             -10px -10px 30px var(--primary-gold-dark);*/
+		background: linear-gradient(145deg, var(--primary-gold), var(--primary-gold-dark));
+	}
+
+	.auth-card input {
+		background: white !important;
+	}
+
+	.auth-header {
+		text-align: center;
+		margin-bottom: 2rem;
+	}
+
+	.auth-header h1 {
+		font-size: 2rem;
+		font-weight: 700;
+		color: var(--text-primary);
+		margin-bottom: 0.5rem;
+	}
+
+	.auth-header p {
+		color: var(--text-primary);
+		font-size: 0.9rem;
+	}
+
+	.auth-form {
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
+	}
+
+	.form-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem;
+	}
+
+	.form-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.form-group label {
+		font-weight: 600;
+		color: var(--text-primary);
+		font-size: 0.9rem;
+	}
+
+	.form-group input {
+		padding: 0.75rem 1rem;
+		min-height: 70px;
+		border: none;
+		border-radius: 12px;
+		background: var(--input-bg);
+		color: var(--text-secondary);
+		font-size: 1rem;
+		box-shadow: 
+			inset 2px 2px 4px var(--shadow-dark),
+			inset -2px -2px 4px var(--shadow-light);
+		transition: all 0.2s ease;
+		border-radius: 14px;
+        box-shadow: inset 5px 5px 10px var(--bg-quaternary),
+            inset -5px -5px 10px var(--bg-secondary);
+	}
+
+	.form-group input:focus {
+		outline: none;
+		box-shadow: 
+			inset 2px 2px 4px var(--shadow-dark),
+			inset -2px -2px 4px var(--shadow-light),
+			0 0 0 2px var(--accent-color);
+	}
+
+	.btn-primary {
+		padding: 0.75rem 1.5rem;
+		min-height: 70px;
+		border: none;
+		border-radius: 12px;
+		background: var(--bg-glass-dark);
+		color: var(--text-primary);
+		font-size: 1rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		box-shadow: 
+			4px 4px 8px var(--shadow-dark),
+			-2px -2px 4px var(--shadow-light);
+	}
+
+	.btn-primary:hover:not(:disabled) {
+		transform: translateY(-2px);
+		box-shadow: 
+			6px 6px 12px var(--shadow-dark),
+			-3px -3px 6px var(--shadow-light);
+		background: var(--secondary-gradient);
+		color: var(--text-primary);
+	}
+
+	.btn-primary:active:not(:disabled) {
+		transform: translateY(0);
+		box-shadow: 
+			2px 2px 4px var(--shadow-dark),
+			-1px -1px 2px var(--shadow-light);
+	}
+
+	.btn-primary:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+		transform: none;
+	}
+
+	.error-message {
+		padding: 0.75rem;
+		background: var(--error-bg);
+		color: var(--error-text);
+		border-radius: 8px;
+		font-size: 0.9rem;
+		text-align: center;
+	}
+
+	.success-message {
+		padding: 1.5rem;
+		background: var(--success-bg);
+		color: var(--success-text);
+		border-radius: 12px;
+		text-align: center;
+		margin-bottom: 1.5rem;
+	}
+
+	.success-message h3 {
+		margin-bottom: 0.5rem;
+		font-size: 1.2rem;
+	}
+
+	.auth-footer {
+		margin-top: 2rem;
+		text-align: center;
+	}
+
+	.auth-footer p {
+		margin: 0.5rem 0;
+		color: var(--text-primary);
+		font-size: 0.9rem;
+	}
+
+	.link {
+		color: var(--accent-color);
+		text-decoration: none;
+		font-weight: 600;
+		transition: color 0.2s ease;
+	}
+
+	.link:hover {
+		color: var(--accent-hover);
+	}
+
+	@media (max-width: 480px) {
+		.form-row {
+			grid-template-columns: 1fr;
+		}
+	}
+</style> 

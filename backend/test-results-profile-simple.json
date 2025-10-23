@@ -1,0 +1,54 @@
+{
+  "Passed": 8,
+  "Tests": [
+    {
+      "Message": "Auth required",
+      "Duration": 4,
+      "Name": "GET /users/me Auth",
+      "Success": true
+    },
+    {
+      "Message": "Auth required",
+      "Duration": 2,
+      "Name": "PUT /users/me Auth",
+      "Success": true
+    },
+    {
+      "Message": "Auth required",
+      "Duration": 2,
+      "Name": "GET /users/profile Auth",
+      "Success": true
+    },
+    {
+      "Message": "Auth required",
+      "Duration": 2,
+      "Name": "PUT /users/profile Auth",
+      "Success": true
+    },
+    {
+      "Message": "Invalid token rejected",
+      "Duration": 2,
+      "Name": "Invalid Token Handling",
+      "Success": true
+    },
+    {
+      "Message": "Malformed header rejected",
+      "Duration": 3,
+      "Name": "Malformed Auth Header",
+      "Success": true
+    },
+    {
+      "Message": "Auth checked first",
+      "Duration": 2,
+      "Name": "Invalid Data Handling",
+      "Success": true
+    },
+    {
+      "Message": "Method rejected correctly",
+      "Duration": 2,
+      "Name": "Unsupported Method",
+      "Success": true
+    }
+  ],
+  "Failed": 0
+}

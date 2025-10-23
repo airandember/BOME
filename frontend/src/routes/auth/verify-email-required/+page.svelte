@@ -66,7 +66,7 @@
 
 	function logout() {
 		auth.logout();
-		goto('/login');
+		goto('/auth/login');
 	}
 </script>
 

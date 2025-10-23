@@ -81,7 +81,7 @@ class ApiClient {
 				
 				// Redirect to login for auth endpoints
 				if (browser && !endpoint.includes('/auth/')) {
-					goto('/login');
+					goto('/auth/login');
 				}
 				
 				return { error: 'Authentication required' };

@@ -2,7 +2,7 @@
 	import { createEventDispatcher } from 'svelte';
 
 	export let searchTerm: string;
-	export let statusFilter: string;
+	// REMOVED: statusFilter - redundant with vidStatusFilter (vid_status boolean)
 	export let categoryFilter: string;
 	export let syncStatusFilter: string;
 	export let vidStatusFilter: string;
@@ -46,20 +46,7 @@
 				</button>
 			</div>
 		</div>
-		<div class="form-group">
-			<label for="status-filter">Status</label>
-			<select
-				id="status-filter"
-				bind:value={statusFilter}
-				on:change={handleFilterChange}
-			>
-				<option value="all">All Status</option>
-				<option value="active">Active</option>
-				<option value="processing">Processing</option>
-				<option value="draft">Draft</option>
-				<option value="archived">Archived</option>
-			</select>
-		</div>
+		<!-- REMOVED: Status Filter - redundant with Video Status (vid_status boolean) -->
 		<div class="form-group">
 			<label for="category-filter">Category</label>
 			<select
@@ -211,18 +198,6 @@
 		cursor: pointer;
 		transition: all 0.3s ease;
 		text-decoration: none;
-	}
-
-	.btn-secondary {
-		background: var(--bg-glass, rgba(255, 255, 255, 0.1));
-		color: var(--text-primary);
-		border: 1px solid rgba(255, 255, 255, 0.2);
-		backdrop-filter: blur(20px);
-	}
-
-	.btn-secondary:hover {
-		background: rgba(255, 255, 255, 0.2);
-		transform: translateY(-2px);
 	}
 
 	.bg-gray-100 {

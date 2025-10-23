@@ -1,0 +1,54 @@
+{
+  "Passed": 8,
+  "Tests": [
+    {
+      "Message": "Endpoint exists and validates",
+      "Duration": 131,
+      "Name": "POST /verify-email Endpoint",
+      "Success": true
+    },
+    {
+      "Message": "Endpoint exists and validates",
+      "Duration": 2,
+      "Name": "GET /verify-email/:token Endpoint",
+      "Success": true
+    },
+    {
+      "Message": "Endpoint exists",
+      "Duration": 3,
+      "Name": "POST /resend-verification Endpoint",
+      "Success": true
+    },
+    {
+      "Message": "Endpoint exists",
+      "Duration": 2,
+      "Name": "POST /request-verification Endpoint",
+      "Success": true
+    },
+    {
+      "Message": "Endpoint exists",
+      "Duration": 4046,
+      "Name": "GET /verify-email-link Endpoint",
+      "Success": true
+    },
+    {
+      "Message": "Email required",
+      "Duration": 3,
+      "Name": "Missing Email Validation",
+      "Success": true
+    },
+    {
+      "Message": "Email format validated",
+      "Duration": 2,
+      "Name": "Invalid Email Format",
+      "Success": true
+    },
+    {
+      "Message": "Token required",
+      "Duration": 2,
+      "Name": "Empty Token Validation",
+      "Success": true
+    }
+  ],
+  "Failed": 0
+}

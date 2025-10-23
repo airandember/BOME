@@ -125,7 +125,7 @@
 					// Fallback if no tokens returned
 					showToast('Password setup successful! Please login with your new password.', 'success');
 					setTimeout(() => {
-						goto('/login');
+						goto('/auth/login');
 					}, 2000);
 				}
 			} else {
@@ -141,7 +141,7 @@
 	}
 
 	function goToLogin() {
-		goto('/login');
+		goto('/auth/login');
 	}
 
 	function goToHome() {

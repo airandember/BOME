@@ -256,8 +256,22 @@
 		allStripeCustomers.slice(0, 3).forEach((customer, index) => {
 			console.log(`Stripe Customer ${index + 1}:`, {
 				email: customer.email || customer.Email,
-				stripe_id: customer.stripe_id || customer.ID
+				stripe_id: customer.stripe_id || customer.ID,
+				subscriptions: customer.subscriptions,
+				subscriptions_count: customer.subscriptions?.length || 0
 			});
+			
+			// Debug subscription data specifically
+			if (customer.subscriptions && customer.subscriptions.length > 0) {
+				console.log(`  📋 Subscriptions for ${customer.email}:`);
+				customer.subscriptions.forEach((sub: any, subIndex: number) => {
+					console.log(`    Sub ${subIndex + 1}:`, {
+						status: sub.status,
+						product_name: sub.product_name,
+						stripe_price_id: sub.stripe_price_id
+					});
+				});
+			}
 		});
 		
 		let totalStripeIdsMapped = 0;
@@ -375,23 +389,40 @@
 				keptAsStripeOnly++;
 				return true; // Keep as Stripe-only
 			}
-		}).map((customer: any) => ({
-			id: `stripe_${customer.stripe_id || customer.ID}`,
-			source: 'stripe',
-			name: customer.name || customer.Name || 'Unnamed Customer',
-			email: customer.email || customer.Email,
-			localId: null,
-			role: null,
-			planName: null,
-			stripePriceId: null,
-			stripeId: customer.stripe_id || customer.ID,
-			stripeCreatedAt: customer.created_at || customer.CreatedAt,
-			stripeMetadata: customer.metadata || customer.Metadata,
-			createdAt: customer.created_at || customer.CreatedAt,
-			stripeCustomerId: customer.stripe_id || customer.ID,
-			subscriptions: customer.subscriptions || [],
-			syncStatus: 'stripe_only'
-		}));
+		}).map((customer: any) => {
+			// Extract plan name from active subscriptions
+			let planName = null;
+			let stripePriceId = null;
+			
+			if (customer.subscriptions && customer.subscriptions.length > 0) {
+				// Find the first active subscription
+				const activeSub = customer.subscriptions.find((sub: any) => 
+					sub.status === 'active' || sub.status === 'trialing'
+				);
+				if (activeSub) {
+					planName = activeSub.product_name || activeSub.productName;
+					stripePriceId = activeSub.stripe_price_id || activeSub.stripePriceId;
+				}
+			}
+			
+			return {
+				id: `stripe_${customer.stripe_id || customer.ID}`,
+				source: 'stripe',
+				name: customer.name || customer.Name || 'Unnamed Customer',
+				email: customer.email || customer.Email,
+				localId: null,
+				role: null,
+				planName: planName,
+				stripePriceId: stripePriceId,
+				stripeId: customer.stripe_id || customer.ID,
+				stripeCreatedAt: customer.created_at || customer.CreatedAt,
+				stripeMetadata: customer.metadata || customer.Metadata,
+				createdAt: customer.created_at || customer.CreatedAt,
+				stripeCustomerId: customer.stripe_id || customer.ID,
+				subscriptions: customer.subscriptions || [],
+				syncStatus: 'stripe_only'
+			};
+		});
 
 		// Set up pagination for Stripe Only customers
 		stripeOnlyCount = allStripeOnlyCustomers.length;
@@ -436,6 +467,37 @@
 			const stripeId = stripeCustomer.stripe_id || stripeCustomer.ID;
 			const localUser = usersByStripeId.get(stripeId) || usersByEmail.get(email);
 			
+			// Extract plan name from Stripe subscriptions if not available from local user
+			let planName = localUser.plan_name || null;
+			let stripePriceId = localUser.stripe_price_id || null;
+			
+			// Check if local plan_name is empty, null, or "N/A" and use Stripe data as fallback
+			if ((!planName || planName === 'N/A' || planName === '') && stripeCustomer.subscriptions && stripeCustomer.subscriptions.length > 0) {
+				// Find the first active subscription
+				const activeSub = stripeCustomer.subscriptions.find((sub: any) => 
+					sub.status === 'active' || sub.status === 'trialing'
+				);
+				if (activeSub) {
+					console.log(`🔍 FULL activeSub object for ${email}:`, activeSub);
+					planName = activeSub.product_name || activeSub.productName;
+					stripePriceId = activeSub.stripe_price_id || activeSub.stripePriceId;
+					console.log(`🔍 Found active subscription for ${email}:`, {
+						status: activeSub.status,
+						product_name: activeSub.product_name,
+						planName: planName,
+						
+					});
+				} else {
+					console.log(`⚠️ No active subscription found for ${email}`);
+				}
+			} else {
+				console.log(`🔍 Plan name for ${email}:`, {
+					localPlanName: localUser.plan_name,
+					hasSubscriptions: stripeCustomer.subscriptions?.length || 0,
+					finalPlanName: planName
+				});
+			}
+			
 			return {
 				id: `hybrid_${stripeId}`,
 				source: 'hybrid',
@@ -443,8 +505,8 @@
 				email: stripeCustomer.email || stripeCustomer.Email,
 				localId: localUser.ID || localUser.id,
 				role: localUser.Role || localUser.role,
-				planName: localUser.plan_name || null,
-				stripePriceId: localUser.stripe_price_id || null,
+				planName: planName,
+				stripePriceId: stripePriceId,
 				stripeId: stripeId,
 				stripeCreatedAt: stripeCustomer.created_at || stripeCustomer.CreatedAt,
 				stripeMetadata: stripeCustomer.metadata || stripeCustomer.Metadata,

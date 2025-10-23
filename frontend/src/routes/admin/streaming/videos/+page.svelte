@@ -74,7 +74,7 @@
 
 	// Filter and search
 	let searchTerm = '';
-	let statusFilter = 'all';
+	// REMOVED: statusFilter - redundant with vidStatusFilter
 	let categoryFilter = 'all';
 	let syncStatusFilter = 'all';
 	let vidStatusFilter = 'all';
@@ -140,7 +140,7 @@
 				page: currentPage,
 				limit: pageSize,
 				search: searchTerm || undefined,
-				status: statusFilter !== 'all' ? statusFilter : undefined,
+				// REMOVED: status (statusFilter) - redundant with vid_status
 				category: categoryFilter !== 'all' ? categoryFilter : undefined,
 				sync_status: syncStatusFilter !== 'all' ? syncStatusFilter : undefined,
 				vid_status: vidStatusFilter !== 'all' ? vidStatusFilter : undefined,
@@ -270,11 +270,11 @@
 	function editVideo(video: MasterVideo) {
 		selectedVideo = video;
 		editForm = {
-			title: video.Title,
-			description: video.Description,
-			category: video.Category,
-			tags: video.Tags?.join(', ') || '',
-			status: video.Status
+			title: video.title,
+			description: video.description,
+			category: video.category,
+			tags: video.tags?.join(', ') || '',
+			status: video.status
 		};
 		showEditModal = true;
 	}
@@ -284,12 +284,12 @@
 		if (!selectedVideo) return;
 
 		try {
-			const response = await masterVideoService.updateMasterVideo(selectedVideo.ID, {
-				Title: editForm.title,
-				Description: editForm.description,
-				Category: editForm.category,
-				Tags: editForm.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0),
-				Status: editForm.status
+			const response = await masterVideoService.updateMasterVideo(selectedVideo.id, {
+				title: editForm.title,
+				description: editForm.description,
+				category: editForm.category,
+				tags: editForm.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0),
+				status: editForm.status
 			});
 
 			if (response.success) {
@@ -307,20 +307,20 @@
 
 	// Toggle video status (vid_status) - Immutable update approach
 	async function toggleVideoStatus(video: MasterVideo) {
-		const newStatus = !video.Vid_Status;
+		const newStatus = !video.vidStatus;
 		const statusText = newStatus ? 'activate' : 'deactivate';
 
 		// Add to loading set
-		togglingVideos.add(video.ID);
+		togglingVideos.add(video.id);
 
 		try {
-			const response = await masterVideoService.toggleVideoStatus(video.ID, newStatus);
+			const response = await masterVideoService.toggleVideoStatus(video.id, newStatus);
 			
 			if (response.success) {
 				// IMMUTABLE UPDATE - This prevents page jumping!
 				videos = videos.map(v => 
-					v.ID === video.ID 
-						? { ...v, Vid_Status: newStatus }
+					v.id === video.id 
+						? { ...v, vidStatus: newStatus }
 						: v
 				);
 				showToast(`Video ${statusText}d successfully`, 'success');
@@ -332,7 +332,7 @@
 			showToast(err instanceof Error ? err.message : `${statusText} failed`, 'error');
 		} finally {
 			// Remove from loading set
-			togglingVideos.delete(video.ID);
+			togglingVideos.delete(video.id);
 		}
 	}
 
@@ -481,13 +481,13 @@
 		const { video: updatedVideo, tags } = event.detail;
 		
 		// Update the video in the list
-		const videoIndex = videos.findIndex(v => v.ID === updatedVideo.ID);
+		const videoIndex = videos.findIndex(v => v.id === updatedVideo.id);
 		if (videoIndex !== -1) {
 			videos[videoIndex] = updatedVideo;
 			videos = [...videos]; // Trigger reactivity
 		}
 		
-		showToast(`✅ Video "${updatedVideo.Title}" tagged with ${tags.length} tags`, 'success');
+		showToast(`✅ Video "${updatedVideo.title}" tagged with ${tags.length} tags`, 'success');
 	}
 </script>
 
@@ -521,10 +521,14 @@
 			on:showTagAnalytics={showTagAnalyticsModal}
 		/>
 
-		<!-- Video Filters -->
+		<!-- Video Filters 
+		 Removed:
+		 bind:statusFilter <-- Removed because it was not being used and is redundant to he vidStatusFilter
+		
+		-->
 		<VideoFilters
 			bind:searchTerm
-			bind:statusFilter
+			
 			bind:categoryFilter
 			bind:syncStatusFilter
 			bind:vidStatusFilter
@@ -555,7 +559,6 @@
 		<EmptyState
 			{videos}
 			{searchTerm}
-			{statusFilter}
 			{categoryFilter}
 			{syncStatusFilter}
 			{vidStatusFilter}
@@ -605,31 +608,6 @@
 		background: var(--bg-primary);
 		color: var(--text-primary);
 		padding: 0;
-	}
-
-	/* Loading and Error States */
-	.loading-container {
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		min-height: 400px;
-	}
-
-	.error-container {
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		min-height: 400px;
-	}
-
-	.error-content {
-		text-align: center;
-		padding: var(--space-xl);
-	}
-
-	.error-content h2 {
-		color: var(--error);
-		margin-bottom: var(--space-md);
 	}
 
 	/* Responsive Design */

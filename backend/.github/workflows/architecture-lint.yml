@@ -1,0 +1,78 @@
+name: Architecture Linting
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**.go'
+      - 'architecture-rules.json'
+  push:
+    branches: [ main ]
+    paths:
+      - '**.go'
+      - 'architecture-rules.json'
+
+jobs:
+  architecture-lint:
+    name: Check Architecture Rules
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+          
+      - name: Build architecture linter
+        run: |
+          cd backend/tools/arch-lint
+          go build -o arch-lint main.go
+          
+      - name: Run architecture linter
+        run: |
+          cd backend
+          ./tools/arch-lint/arch-lint \
+            -rules=architecture-rules.json \
+            -output=architecture-violations.json \
+            -verbose
+            
+      - name: Upload violations report
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: architecture-violations
+          path: backend/architecture-violations.json
+          
+      - name: Comment PR with violations
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('backend/architecture-violations.json', 'utf8'));
+            
+            let comment = '## 🏗️ Architecture Violations Found\n\n';
+            comment += `**Errors:** ${report.errors} | **Warnings:** ${report.warnings}\n\n`;
+            comment += '### Violations:\n\n';
+            
+            for (const v of report.violations) {
+              const icon = v.severity === 'error' ? '❌' : '⚠️';
+              comment += `${icon} **${v.rule_id}** - \`${v.file}\`\n`;
+              comment += `> ${v.message}\n`;
+              comment += `> 💡 ${v.rationale}\n\n`;
+            }
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+            
+      - name: Fail on errors
+        if: failure()
+        run: exit 1
+

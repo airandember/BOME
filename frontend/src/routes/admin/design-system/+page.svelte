@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { designTokenService, type StyleTheme, type DesignToken } from '$lib/services/designTokenService';
+	import { designTokenService, type StyleTheme, type DesignToken } from '$lib/services/design-token-service';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	
 	// Simple toast implementation for now

@@ -1,0 +1,38 @@
+[
+  {
+    "Duration": 21,
+    "Message": "Endpoint exists and validates tokens (401)",
+    "Success": true,
+    "Name": "1. Token Refresh Endpoint (Structure Test)"
+  },
+  {
+    "Duration": 21,
+    "Message": "Endpoint exists and requires auth (400)",
+    "Success": true,
+    "Name": "2. Logout Endpoint (Structure Test)"
+  },
+  {
+    "Duration": 19,
+    "Message": "Correctly requires refresh_token (400)",
+    "Success": true,
+    "Name": "3. Token Refresh Without Token"
+  },
+  {
+    "Duration": 19,
+    "Message": "Correctly rejects invalid token (401)",
+    "Success": true,
+    "Name": "4. Token Refresh With Invalid Token"
+  },
+  {
+    "Duration": 25,
+    "Message": "Requires authentication (400)",
+    "Success": true,
+    "Name": "5. Logout Without Authentication"
+  },
+  {
+    "Duration": 19,
+    "Message": "Unexpected status: 400",
+    "Success": false,
+    "Name": "6. Logout With Invalid Token"
+  }
+]

@@ -1,0 +1,77 @@
+[
+  {
+    "Details": {
+      "email": "test_user_89826@example.com",
+      "message": "Registration successful. Please check your email to complete your account setup.",
+      "user_id": 7346,
+      "verification_required": true
+    },
+    "Message": "User registered (ID: 7346) - Verification required",
+    "Duration": 32,
+    "Name": "1. User Registration (Email + Name Only)",
+    "Success": true
+  },
+  {
+    "Details": null,
+    "Message": "Duplicate handled gracefully - resent verification",
+    "Duration": 6,
+    "Name": "2. Duplicate Registration (Should Resend Verification)",
+    "Success": true
+  },
+  {
+    "Details": null,
+    "Message": "Correctly blocked unverified user (401)",
+    "Duration": 13,
+    "Name": "3. Login Before Email Verification (Should Fail)",
+    "Success": true
+  },
+  {
+    "Details": null,
+    "Message": "Correctly rejected invalid email (400)",
+    "Duration": 4,
+    "Name": "4. Registration with Invalid Email",
+    "Success": true
+  },
+  {
+    "Details": null,
+    "Message": "Correctly rejected missing fields (400)",
+    "Duration": 4,
+    "Name": "5. Registration Missing Required Fields",
+    "Success": true
+  },
+  {
+    "Details": null,
+    "Message": "Correctly rejected invalid credentials (401)",
+    "Duration": 5,
+    "Name": "6. Login with Non-Existent Email",
+    "Success": true
+  },
+  {
+    "Details": null,
+    "Message": "Correctly rejected invalid credentials (401)",
+    "Duration": 5,
+    "Name": "7. Login with Wrong Password",
+    "Success": true
+  },
+  {
+    "Details": null,
+    "Message": "No access token available (login test failed?)",
+    "Duration": 2,
+    "Name": "8. Access Protected Endpoint (Without Token)",
+    "Success": false
+  },
+  {
+    "Details": null,
+    "Message": "Correctly requires authentication (401)",
+    "Duration": 4,
+    "Name": "6. Access Protected Endpoint (Without Token)",
+    "Success": true
+  },
+  {
+    "Details": null,
+    "Message": "Correctly rejected invalid token (401)",
+    "Duration": 4,
+    "Name": "9. Access Protected Endpoint (Invalid Token)",
+    "Success": true
+  }
+]

@@ -131,7 +131,7 @@
 		if (isAuthenticated) {
 			goto('/videos');
 		} else {
-			goto('/register');
+			goto('/auth/register');
 		}
 	};
 

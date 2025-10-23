@@ -314,7 +314,7 @@ function createAuthStore() {
 				SecureTokenStorage.clearTokens();
 				clearAuthData();
 				if (browser) {
-					goto('/login');
+					goto('/auth/login');
 				}
 			}
 		},
@@ -669,14 +669,52 @@ export async function apiRequest(endpoint: string, options: RequestInit & { onPr
 	
 	// Add auth header if we have tokens
 	const tokens = getCurrentTokens();
-	//console.log('🔍 Auth debug:', {
-	//	hasTokens: !!tokens,
-	//	accessToken: tokens?.access_token ? `${tokens.access_token.substring(0, 20)}...` : 'none',
-	//	isAuthEndpoint: endpoint.includes('/auth/'),
-	//	endpoint
-	//});
 	
+	// Check if token is expired BEFORE making the request
 	if (tokens && !endpoint.includes('/auth/')) {
+		try {
+			// Decode JWT to check expiration
+			const tokenParts = tokens.access_token.split('.');
+			if (tokenParts.length === 3) {
+				const payload = JSON.parse(atob(tokenParts[1]));
+				const expirationTime = payload.exp * 1000; // Convert to milliseconds
+				const now = Date.now();
+				
+				if (expirationTime < now) {
+					console.warn('🔴 Token expired BEFORE request - clearing auth');
+					SecureTokenStorage.clearTokens();
+					auth.set({
+						isAuthenticated: false,
+						user: null,
+						token: null,
+						loading: false,
+						error: null
+					});
+					authTokens.set(null);
+					
+					// Redirect to login if not already there
+					if (typeof window !== 'undefined' && !window.location.pathname.includes('/auth/login')) {
+						window.location.href = '/auth/login?expired=true';
+					}
+					
+					throw new Error('Token expired - please login again');
+				}
+			}
+		} catch (e) {
+			console.warn('🔴 Error checking token expiration:', e);
+			// If we can't decode the token, clear it
+			SecureTokenStorage.clearTokens();
+			auth.set({
+				isAuthenticated: false,
+				user: null,
+				token: null,
+				loading: false,
+				error: null
+			});
+			authTokens.set(null);
+			throw new Error('Invalid token - please login again');
+		}
+		
 		config.headers = {
 			...config.headers,
 			'Authorization': `Bearer ${tokens.access_token}`,
@@ -726,20 +764,31 @@ export async function apiRequest(endpoint: string, options: RequestInit & { onPr
 		
 		// Handle 401 - token expired
 		if (response.status === 401 && tokens && !endpoint.includes('/auth/')) {
-			// Try to refresh tokens
-			const refreshed = await refreshTokens();
-			if (refreshed) {
-				// Retry the original request with new token
-				config.headers = {
-					...config.headers,
-					'Authorization': `Bearer ${getCurrentTokens()?.access_token}`,
-				};
-				return fetch(url, config);
-			} else {
-				// Refresh failed, redirect to login
-				await goto('/login');
-				throw new Error('Authentication required');
+			console.warn('🔴 Token expired - clearing auth and redirecting to login');
+			
+			// IMMEDIATELY clear tokens to stop the spam
+			SecureTokenStorage.clearTokens();
+			auth.set({
+				isAuthenticated: false,
+				user: null,
+				token: null,
+				loading: false,
+				error: null
+			});
+			authTokens.set(null);
+			
+			// Cancel any pending refresh
+			if (refreshTimeout) {
+				clearTimeout(refreshTimeout);
+				refreshTimeout = null;
 			}
+			
+			// Redirect to login ONCE
+			if (typeof window !== 'undefined' && !window.location.pathname.includes('/auth/login')) {
+				window.location.href = '/auth/login?expired=true';
+			}
+			
+			throw new Error('Token expired - please login again');
 		}
 		
 		// Handle 403 - admin access denied: Cancel token refresh to prevent retry loops
@@ -865,7 +914,7 @@ export function requireAuth() {
     if (browser) {
         const user = getCurrentUser();
         if (!user) {
-            goto('/login');
+            goto('/auth/login');
         }
     }
 }
@@ -883,7 +932,7 @@ export function requireEmailVerification() {
     if (browser) {
         const user = getCurrentUser();
         if (!user || !user.email_verified) {
-            goto('/verify-email');
+            goto('/auth/verify-email');
         }
     }
 }

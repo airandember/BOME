@@ -805,7 +805,11 @@ func (s *StripeService) handleSubscriptionCreated(event *stripe.Event) error {
 		return fmt.Errorf("failed to unmarshal subscription: %w", err)
 	}
 
-	log.Printf("Subscription created: %s", subscription.ID)
+	log.Printf("📊 [ANALYTICS] Subscription created: %s", subscription.ID)
+
+	// Track subscription creation analytics
+	s.trackSubscriptionEvent("subscription_created", &subscription, event)
+
 	// TODO: Update local database with subscription information
 	return nil
 }
@@ -818,7 +822,11 @@ func (s *StripeService) handleSubscriptionUpdated(event *stripe.Event) error {
 		return fmt.Errorf("failed to unmarshal subscription: %w", err)
 	}
 
-	log.Printf("Subscription updated: %s", subscription.ID)
+	log.Printf("📊 [ANALYTICS] Subscription updated: %s (status: %s)", subscription.ID, subscription.Status)
+
+	// Track subscription update analytics
+	s.trackSubscriptionEvent("subscription_updated", &subscription, event)
+
 	// TODO: Update local database with subscription information
 	return nil
 }
@@ -831,7 +839,11 @@ func (s *StripeService) handleSubscriptionDeleted(event *stripe.Event) error {
 		return fmt.Errorf("failed to unmarshal subscription: %w", err)
 	}
 
-	log.Printf("Subscription deleted: %s", subscription.ID)
+	log.Printf("📊 [ANALYTICS] Subscription deleted: %s", subscription.ID)
+
+	// Track subscription deletion analytics
+	s.trackSubscriptionEvent("subscription_deleted", &subscription, event)
+
 	// TODO: Update local database with subscription information
 	return nil
 }
@@ -844,7 +856,11 @@ func (s *StripeService) handlePaymentSucceeded(event *stripe.Event) error {
 		return fmt.Errorf("failed to unmarshal invoice: %w", err)
 	}
 
-	log.Printf("Payment succeeded for invoice: %s", invoice.ID)
+	log.Printf("📊 [ANALYTICS] Payment succeeded: %s (amount: %d %s)", invoice.ID, invoice.AmountPaid, invoice.Currency)
+
+	// Track payment success analytics
+	s.trackPaymentEvent("payment_succeeded", &invoice, event)
+
 	// TODO: Update local database with payment information
 	return nil
 }
@@ -857,7 +873,11 @@ func (s *StripeService) handlePaymentFailed(event *stripe.Event) error {
 		return fmt.Errorf("failed to unmarshal invoice: %w", err)
 	}
 
-	log.Printf("Payment failed for invoice: %s", invoice.ID)
+	log.Printf("📊 [ANALYTICS] Payment failed: %s (amount: %d %s)", invoice.ID, invoice.AmountDue, invoice.Currency)
+
+	// Track payment failure analytics
+	s.trackPaymentEvent("payment_failed", &invoice, event)
+
 	// TODO: Update local database with payment information
 	return nil
 }
@@ -2805,4 +2825,60 @@ func (s *StripeService) getSubscriptionDiagnosticsV2() map[string]interface{} {
 		"method":                               "v2_simple_subscription_diagnostics",
 		"explanation":                          "Simple approach: just count unique customers from active subscriptions",
 	}
+}
+
+// trackSubscriptionEvent tracks subscription events for analytics
+func (s *StripeService) trackSubscriptionEvent(eventType string, subscription *stripe.Subscription, stripeEvent *stripe.Event) {
+	// Create analytics event data
+	eventData := map[string]interface{}{
+		"event_type":           eventType,
+		"subscription_id":      subscription.ID,
+		"customer_id":          subscription.Customer.ID,
+		"status":               subscription.Status,
+		"plan_id":              subscription.Items.Data[0].Price.ID,
+		"amount":               subscription.Items.Data[0].Price.UnitAmount,
+		"currency":             subscription.Items.Data[0].Price.Currency,
+		"interval":             subscription.Items.Data[0].Price.Recurring.Interval,
+		"current_period_start": subscription.CurrentPeriodStart,
+		"current_period_end":   subscription.CurrentPeriodEnd,
+		"cancel_at_period_end": subscription.CancelAtPeriodEnd,
+		"trial_start":          subscription.TrialStart,
+		"trial_end":            subscription.TrialEnd,
+		"stripe_event_id":      stripeEvent.ID,
+		"timestamp":            time.Now().Unix(),
+	}
+
+	// Log analytics event
+	log.Printf("📊 [ANALYTICS] %s: %+v", eventType, eventData)
+
+	// TODO: Store in analytics database table
+	// This will be used by the analytics braid to track subscription metrics
+}
+
+// trackPaymentEvent tracks payment events for analytics
+func (s *StripeService) trackPaymentEvent(eventType string, invoice *stripe.Invoice, stripeEvent *stripe.Event) {
+	// Create analytics event data
+	eventData := map[string]interface{}{
+		"event_type":      eventType,
+		"invoice_id":      invoice.ID,
+		"customer_id":     invoice.Customer.ID,
+		"subscription_id": invoice.Subscription.ID,
+		"amount_due":      invoice.AmountDue,
+		"amount_paid":     invoice.AmountPaid,
+		"currency":        invoice.Currency,
+		"status":          invoice.Status,
+		"billing_reason":  invoice.BillingReason,
+		"period_start":    invoice.PeriodStart,
+		"period_end":      invoice.PeriodEnd,
+		"due_date":        invoice.DueDate,
+		"paid_at":         invoice.StatusTransitions.PaidAt,
+		"stripe_event_id": stripeEvent.ID,
+		"timestamp":       time.Now().Unix(),
+	}
+
+	// Log analytics event
+	log.Printf("📊 [ANALYTICS] %s: %+v", eventType, eventData)
+
+	// TODO: Store in analytics database table
+	// This will be used by the analytics braid to track payment metrics
 }

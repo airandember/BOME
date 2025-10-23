@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth, apiRequest } from '$lib/auth';
-	import { publicPlansService, type PublicSubscriptionPlan, type PublicSubscriptionOffer } from '$lib/services/public-plans';
+	import { publicPlansService, type PublicSubscriptionPlan, type PublicSubscriptionOffer } from '$lib/services/public-plans-service';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import Navigation from '$lib/components/Navigation.svelte';
