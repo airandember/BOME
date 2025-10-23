@@ -65,7 +65,8 @@
 				role: data.user.role,
 				first_name: data.user.first_name,
 				last_name: data.user.last_name,
-				email_verified: data.user.email_verified
+				email_verified: data.user.email_verified,
+				password_changed: data.user.password_changed || false
 			};
 
 			// Store authentication data using the same system as regular login

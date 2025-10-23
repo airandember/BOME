@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount, createEventDispatcher } from 'svelte';
-    import { analytics } from '$lib/services/analytics';
+    import { analytics } from '$lib/services/analytics-service';
     import { auth } from '$lib/auth';
     import Hls from 'hls.js';
 

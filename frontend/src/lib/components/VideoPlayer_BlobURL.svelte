@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount, createEventDispatcher } from 'svelte';
-    import { analytics } from '/services/analytics';
-    import { auth, apiRequest } from '/auth';
+    import { analytics } from '$lib/services/analytics-service';
+    import { auth, apiRequest } from '$lib/auth';
 
     export let videoId: string = '';
     export let title: string = '';
