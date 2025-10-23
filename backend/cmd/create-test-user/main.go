@@ -5,9 +5,9 @@ import (
 	"log"
 	"os"
 
-	"bome-backend/database"
-	authModels "bome-backend/models/authentication"
-	"bome-backend/services/security/crypto"
+	"bome-backend/internal/database"
+	authModels "bome-backend/internal/models/authentication"
+	"bome-backend/internal/services/security/crypto"
 
 	"github.com/joho/godotenv"
 )
