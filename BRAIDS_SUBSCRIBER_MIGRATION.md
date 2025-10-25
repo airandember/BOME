@@ -112,6 +112,7 @@ Consolidate fragmented subscriber/user services into unified **SubscriberElastic
 - [x] Test all migrated components
 - [x] Verify data consistency across all strands
 - [x] Fix backend NULL scanning issues
+- [x] Remove test scripts causing production build conflicts
 - [ ] Request permission to delete old services
 
 ## 🔍 API ENDPOINT AUDIT
