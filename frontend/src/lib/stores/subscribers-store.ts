@@ -1,6 +1,7 @@
 import { writable, derived } from 'svelte/store';
 import type { EnhancedSubscriber } from '$lib/types/enhanced-subscriber';
 import { api } from '$lib/api';
+import { subscriberElasticService, type UnifiedSubscriber } from '$lib/services/subscriber-elastic-service';
 
 // Types
 export interface SubscriberFilters {
@@ -187,36 +188,66 @@ export const subscriberStoreActions = {
 		subscriberStore.update(state => ({ ...state, loading: true, error: null }));
 		
 		try {
-			console.log('🔄 Loading all subscriber data...');
-			console.log('🔍 About to call API endpoint: /admin/subscribers/enhanced/all');
+			console.log('🔄 Loading all subscriber data using UNIFIED ELASTIC SERVICE...');
+			console.log('🔍 About to call elastic service: subscriberElasticService.getAllSubscribers()');
 			
-			// Load ALL subscribers at once using the new /all endpoint (no pagination)
-			const response = await api.get('/admin/subscribers/enhanced/all');
+			// Load ALL subscribers using the new unified elastic service
+			const unifiedSubscribers = await subscriberElasticService.getAllSubscribers();
 			
-			console.log('🔍 API Response received:', response);
-			console.log('🔍 Response data keys:', response?.data ? Object.keys(response.data) : 'NO DATA');
+			console.log('🔍 Elastic service response received:', unifiedSubscribers);
+			console.log('🔍 Response array length:', unifiedSubscribers.length);
+			console.log('🔍 First subscriber:', unifiedSubscribers[0]);
 			
-			if ((response?.data as any)?.subscribers) {
-				console.log('🔍 FULL RESPONSE:', response.data);
-				console.log('🔍 Response structure:', Object.keys(response.data as any));
-				console.log('🔍 Total count from response:', (response.data as any).total_count);
-				console.log('🔍 Subscribers array length:', (response.data as any).subscribers.length);
-				console.log('🔍 First subscriber:', (response.data as any).subscribers[0]);
-				
-				subscriberStore.update(state => ({
-					...state,
-					subscribers: (response.data as any).subscribers,
-					loading: false,
-					lastUpdated: new Date(),
-					error: null
-				}));
-				
-				console.log(`✅ Loaded ${(response.data as any).subscribers.length} subscribers`);
-			} else {
-				console.log('❌ Invalid response format - no subscribers array found');
-				console.log('🔍 Full response:', response);
-				throw new Error('Invalid response format - no subscribers array');
-			}
+			// Convert UnifiedSubscriber to EnhancedSubscriber format for compatibility
+			const enhancedSubscribers: EnhancedSubscriber[] = unifiedSubscribers.map(sub => ({
+				id: sub.id,
+				email: sub.email,
+				first_name: sub.first_name,
+				last_name: sub.last_name,
+				role: sub.role,
+				email_verified: sub.email_verified,
+				is_active: sub.is_active,
+				created_at: sub.created_at,
+				last_login: sub.last_login,
+				stripe_customer_id: sub.stripe_customer_id,
+				stripe_customer_ids: sub.stripe_customer_ids,
+				subscription_id: sub.subscription_id,
+				plan_name: sub.plan_name || 'No Plan',
+				plan_type: sub.plan_type,
+				plan_status: sub.plan_status,
+				plan_price: sub.plan_price,
+				plan_currency: sub.plan_currency,
+				plan_interval: sub.plan_interval,
+				plan_start_date: sub.plan_start_date,
+				billing_period_start: sub.billing_period_start,
+				billing_period_end: sub.billing_period_end,
+				days_until_expiry: sub.days_until_expiry,
+				has_active_plan: sub.has_active_plan,
+				has_video_access: sub.has_video_access,
+				manual_access_granted: sub.manual_access_granted,
+				mrr_contribution: sub.mrr_contribution,
+				arr_contribution: sub.arr_contribution,
+				ltv_estimate: sub.ltv_estimate,
+				account_age_days: sub.account_age_days,
+				plan_legacy_status: sub.plan_legacy_status,
+				full_name: sub.full_name,
+				is_expiring_soon: sub.is_expiring_soon,
+				// Additional fields for compatibility
+				is_high_value: sub.ltv_estimate > 1000,
+				subscription_duration_days: sub.account_age_days,
+				updated_at: sub.created_at // Use created_at as fallback
+			}));
+			
+			subscriberStore.update(state => ({
+				...state,
+				subscribers: enhancedSubscribers,
+				loading: false,
+				lastUpdated: new Date(),
+				error: null
+			}));
+			
+			console.log(`✅ Loaded ${enhancedSubscribers.length} subscribers using UNIFIED ELASTIC SERVICE`);
+			console.log('🔍 Sample subscriber data:', enhancedSubscribers[0]);
 		} catch (error) {
 			console.error('❌ Failed to load subscribers:', error);
 			subscriberStore.update(state => ({

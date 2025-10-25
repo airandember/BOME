@@ -1,4 +1,5 @@
 import { api } from '$lib/api';
+import { subscriberElasticService, type UnifiedSubscriber } from '$lib/services/subscriber-elastic-service';
 import type { EnhancedSubscriber, SubscriberFilters, SubscriberResponse, SubscriberKPIs } from '$lib/types/enhanced-subscriber';
 
 /**
@@ -16,7 +17,7 @@ export class SubscriberCache {
   private readonly KPIS_CACHE_TTL = 2 * 60 * 1000;
   
   /**
-   * Get subscribers with smart caching
+   * Get subscribers with smart caching using UNIFIED ELASTIC SERVICE
    */
   async getSubscribers(
     page = 1, 
@@ -35,82 +36,88 @@ export class SubscriberCache {
       }
     }
     
-    // Fetch fresh data
-    console.log('🔄 Fetching fresh subscriber data');
+    // Fetch fresh data using UNIFIED ELASTIC SERVICE
+    console.log('🔄 Fetching fresh subscriber data using UNIFIED ELASTIC SERVICE');
     try {
-      // Build query parameters
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-        ...this.serializeFilters(filters)
-      });
+      // Get ALL subscribers from elastic service
+      const unifiedSubscribers = await subscriberElasticService.getAllSubscribers();
       
-      const response = await api.get(`/admin/subscribers/enhanced?${params}`);
+      // Convert UnifiedSubscriber to EnhancedSubscriber format
+      const allEnhancedSubscribers: EnhancedSubscriber[] = unifiedSubscribers.map(sub => ({
+        id: sub.id,
+        email: sub.email,
+        first_name: sub.first_name,
+        last_name: sub.last_name,
+        role: sub.role,
+        email_verified: sub.email_verified,
+        is_active: sub.is_active,
+        created_at: sub.created_at,
+        last_login: sub.last_login,
+        stripe_customer_id: sub.stripe_customer_id,
+        stripe_customer_ids: sub.stripe_customer_ids,
+        subscription_id: sub.subscription_id,
+        plan_name: sub.plan_name || 'No Plan',
+        plan_type: sub.plan_type,
+        plan_status: sub.plan_status,
+        plan_price: sub.plan_price,
+        plan_currency: sub.plan_currency,
+        plan_interval: sub.plan_interval,
+        plan_start_date: sub.plan_start_date,
+        billing_period_start: sub.billing_period_start,
+        billing_period_end: sub.billing_period_end,
+        days_until_expiry: sub.days_until_expiry,
+        has_active_plan: sub.has_active_plan,
+        has_video_access: sub.has_video_access,
+        manual_access_granted: sub.manual_access_granted,
+        mrr_contribution: sub.mrr_contribution,
+        arr_contribution: sub.arr_contribution,
+        ltv_estimate: sub.ltv_estimate,
+        account_age_days: sub.account_age_days,
+        plan_legacy_status: sub.plan_legacy_status,
+        full_name: sub.full_name,
+        is_expiring_soon: sub.is_expiring_soon,
+        // Additional fields for compatibility
+        is_high_value: sub.ltv_estimate > 1000,
+        subscription_duration_days: sub.account_age_days,
+        updated_at: sub.created_at // Use created_at as fallback
+      }));
       
-      // Check if response is an error (handle multiple error formats)
-      if (response && typeof response === 'object') {
-        if ('error' in response) {
-          throw new Error(response.error as string);
-        }
-        // Handle middleware auth errors that might have different format
-        if ('message' in response && typeof response.message === 'string' && response.message.includes('Authorization')) {
-          throw new Error(response.message as string);
-        }
-        // Handle case where response is null or undefined
-        if (response === null || response === undefined) {
-          throw new Error('No response received from server');
-        }
+      // Apply filters
+      let filteredSubscribers = allEnhancedSubscribers;
+      if (Object.keys(filters).length > 0) {
+        filteredSubscribers = this.applyFilters(allEnhancedSubscribers, filters);
       }
       
-      // Log the actual response for debugging
-      console.log('Enhanced subscriber response:', response);
+      // Apply pagination
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      const paginatedSubscribers = filteredSubscribers.slice(startIndex, endIndex);
       
-      // Handle both enhanced format and old format wrapped in 'data'
-      if (response && typeof response === 'object') {
-        let actualData: any;
-        
-        // The API client wraps responses in { data: ... }, so check for that first
-        if ('data' in response && response.data && typeof response.data === 'object') {
-          actualData = response.data;
-        }
-        // Check if it's the enhanced format (direct) - fallback
-        else if ('subscribers' in response) {
-          actualData = response;
-        }
-        
-        if (actualData && 'subscribers' in actualData) {
-          const data = actualData as SubscriberResponse;
-          
-          // Deduplicate subscribers by ID to prevent Svelte each_key_duplicate errors
-          if (data.subscribers && Array.isArray(data.subscribers)) {
-            const seen = new Set();
-            data.subscribers = data.subscribers.filter(subscriber => {
-              if (seen.has(subscriber.id)) {
-                console.warn(`Duplicate subscriber found with ID: ${subscriber.id}`);
-                return false;
-              }
-              seen.add(subscriber.id);
-              return true;
-            });
-          }
-          
-          // Cache the response
-          this.cache.set(cacheKey, data);
-          this.lastFetch.set(cacheKey, now);
-          
-          // Also cache KPIs separately
-          if (data.kpis) {
-            this.kpisCache = data.kpis;
-            this.kpisLastFetch = now;
-          }
-          
-          return data;
-        }
+      // Create response in expected format
+      const response: SubscriberResponse = {
+        subscribers: paginatedSubscribers,
+        total_count: filteredSubscribers.length,
+        page: page,
+        limit: limit,
+        total_pages: Math.ceil(filteredSubscribers.length / limit),
+        kpis: await this.generateKPIsFromSubscribers(allEnhancedSubscribers)
+      };
+      
+      // Cache the response
+      this.cache.set(cacheKey, response);
+      this.lastFetch.set(cacheKey, now);
+      
+      // Also cache KPIs separately
+      if (response.kpis) {
+        this.kpisCache = response.kpis;
+        this.kpisLastFetch = now;
       }
       
-      throw new Error('Invalid response format');
+      console.log(`✅ Loaded ${paginatedSubscribers.length} subscribers using UNIFIED ELASTIC SERVICE (filtered from ${allEnhancedSubscribers.length} total)`);
+      return response;
+      
     } catch (error) {
-      console.error('Failed to fetch subscriber data:', error);
+      console.error('Failed to fetch subscriber data from elastic service:', error);
       throw error;
     }
   }
@@ -236,7 +243,81 @@ export class SubscriberCache {
   }
   
   /**
-   * Serialize filters for API call
+   * Apply filters to subscribers array
+   */
+  private applyFilters(subscribers: EnhancedSubscriber[], filters: SubscriberFilters): EnhancedSubscriber[] {
+    return subscribers.filter(subscriber => {
+      // Active plan filter
+      if (filters.has_active_plan !== undefined) {
+        if (filters.has_active_plan && !subscriber.has_active_plan) return false;
+        if (!filters.has_active_plan && subscriber.has_active_plan) return false;
+      }
+      
+      // Video access filter
+      if (filters.has_video_access !== undefined) {
+        if (filters.has_video_access && !subscriber.has_video_access) return false;
+        if (!filters.has_video_access && subscriber.has_video_access) return false;
+      }
+      
+      // Plan type filter
+      if (filters.plan_type && subscriber.plan_type !== filters.plan_type) return false;
+      
+      // Expiring soon filter
+      if (filters.is_expiring_soon !== undefined) {
+        if (filters.is_expiring_soon && !subscriber.is_expiring_soon) return false;
+        if (!filters.is_expiring_soon && subscriber.is_expiring_soon) return false;
+      }
+      
+      // Video access source filter
+      if (filters.video_access_source) {
+        if (filters.video_access_source === 'manual' && !subscriber.manual_access_granted) return false;
+        if (filters.video_access_source === 'subscription' && !subscriber.has_active_plan) return false;
+      }
+      
+      // Search filter
+      if (filters.search) {
+        const searchTerm = filters.search.toLowerCase();
+        const searchableText = [
+          subscriber.email,
+          subscriber.first_name,
+          subscriber.last_name,
+          subscriber.full_name,
+          subscriber.plan_name
+        ].join(' ').toLowerCase();
+        
+        if (!searchableText.includes(searchTerm)) return false;
+      }
+      
+      return true;
+    });
+  }
+  
+  /**
+   * Generate KPIs from subscribers array
+   */
+  private async generateKPIsFromSubscribers(subscribers: EnhancedSubscriber[]): Promise<SubscriberKPIs> {
+    const totalSubscribers = subscribers.length;
+    const activeSubscribers = subscribers.filter(s => s.has_active_plan).length;
+    const videoAccessSubscribers = subscribers.filter(s => s.has_video_access).length;
+    const expiringSoonSubscribers = subscribers.filter(s => s.is_expiring_soon).length;
+    
+    const totalMRR = subscribers.reduce((sum, s) => sum + (s.mrr_contribution || 0), 0);
+    const totalARR = subscribers.reduce((sum, s) => sum + (s.arr_contribution || 0), 0);
+    
+    return {
+      total_subscribers: totalSubscribers,
+      active_subscribers: activeSubscribers,
+      video_access_subscribers: videoAccessSubscribers,
+      expiring_soon_subscribers: expiringSoonSubscribers,
+      total_mrr: totalMRR,
+      total_arr: totalARR,
+      avg_mrr_per_subscriber: totalSubscribers > 0 ? totalMRR / totalSubscribers : 0,
+      avg_arr_per_subscriber: totalSubscribers > 0 ? totalARR / totalSubscribers : 0
+    };
+  }
+  
+  /**
+   * Serialize filters for API call (legacy method - kept for compatibility)
    */
   private serializeFilters(filters: SubscriberFilters): Record<string, any> {
     const serialized: Record<string, any> = {};
