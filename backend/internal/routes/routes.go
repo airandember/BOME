@@ -126,6 +126,9 @@ func SetupRoutes(
 		SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService, subscriptionPlanStripeService, subscriptionOffersStripeService, bunnyService)
 		SetupMasterVideoRoutes(admin, db, bunnyService)
 
+		// Setup unified subscriber elastic service routes
+		SetupSubscriberElasticRoutes(admin, db)
+
 		// 🔗 PUBLIC STRIPE WEBHOOK ENDPOINT (NO AUTH REQUIRED)
 		// This must be accessible to Stripe servers without authentication
 		syncService := services.NewStripeSyncService(db, stripeService)

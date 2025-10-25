@@ -1,5 +1,6 @@
 import { api } from '$lib/api';
 import { apiRequest } from '$lib/auth';
+import { subscriberElasticService, type UnifiedSubscriber } from './subscriber-elastic-service';
 
 export interface Subscriber {
 	id: number;
@@ -110,55 +111,58 @@ export class StreamingSubscriberService {
 	}): Promise<SubscribersResponse> {
 		try {
 			console.log('StreamingSubscriberService.getSubscribers called with params:', params);
+			console.log('🔄 Using UNIFIED ELASTIC SERVICE instead of fragmented endpoint');
 			
-			const queryParams = new URLSearchParams();
+			// Get ALL subscribers from elastic service
+			const unifiedSubscribers = await subscriberElasticService.getAllSubscribers();
 			
-			if (params?.limit) queryParams.append('limit', params.limit.toString());
-			if (params?.offset) queryParams.append('offset', params.offset.toString());
+			// Convert UnifiedSubscriber to Subscriber format for compatibility
+			let allSubscribers: Subscriber[] = unifiedSubscribers.map(sub => ({
+				id: sub.id,
+				email: sub.email,
+				first_name: sub.first_name,
+				last_name: sub.last_name,
+				role: sub.role,
+				email_verified: sub.email_verified,
+				plan_name: sub.plan_name || 'No Plan',
+				plan_price: sub.plan_price,
+				plan_currency: sub.plan_currency,
+				plan_interval: sub.plan_interval,
+				subscription_id: sub.subscription_id ? parseInt(sub.subscription_id) : undefined,
+				sub_id: sub.subscription_id ? parseInt(sub.subscription_id) : undefined,
+				subscription_status: sub.plan_status,
+				current_period_start: sub.billing_period_start,
+				current_period_end: sub.billing_period_end,
+				stripe_customer_id: sub.stripe_customer_id,
+				stripe_subscription_id: sub.subscription_id,
+				last_login: sub.last_login,
+				created_at: sub.created_at,
+				updated_at: sub.created_at // Use created_at as fallback
+			}));
 			
+			// Apply filters
 			if (params?.filters) {
-				if (params.filters.plan_id) queryParams.append('plan_id', params.filters.plan_id.toString());
-				if (params.filters.status) queryParams.append('status', params.filters.status);
-				if (params.filters.search) queryParams.append('search', params.filters.search);
-				if (params.filters.email_verified !== undefined) queryParams.append('email_verified', params.filters.email_verified.toString());
-				if (params.filters.role) {
-					console.log('Adding role filter:', params.filters.role);
-					queryParams.append('role', params.filters.role);
-				}
-				if (params.filters.last_login) {
-					console.log('Adding last_login filter:', params.filters.last_login);
-					queryParams.append('last_login', params.filters.last_login);
-				}
-				if (params.filters.created_date) {
-					console.log('Adding created_date filter:', params.filters.created_date);
-					queryParams.append('created_date', params.filters.created_date);
-				}
-			if (params.filters.date_range) {
-				queryParams.append('start_date', params.filters.date_range.start);
-				queryParams.append('end_date', params.filters.date_range.end);
+				allSubscribers = this.applySubscriberFilters(allSubscribers, params.filters);
 			}
-			if (params.filters.has_subscription_history !== undefined) {
-				queryParams.append('has_subscription_history', params.filters.has_subscription_history.toString());
-			}
-		}
-
-		const url = `/admin/subscribers/enhanced?${queryParams}`;
-			console.log('Making API request to ENHANCED endpoint:', url);
-			console.log('Query parameters being sent:', queryParams.toString());
 			
-			const response = await api.get(url);
+			// Apply pagination
+			const limit = params?.limit || 50;
+			const offset = params?.offset || 0;
+			const paginatedSubscribers = allSubscribers.slice(offset, offset + limit);
 			
-			console.log('API response received:', response);
+			console.log(`✅ Loaded ${paginatedSubscribers.length} subscribers using UNIFIED ELASTIC SERVICE (filtered from ${allSubscribers.length} total)`);
 			
-			if (response.data) {
-				console.log('Response data:', response.data);
-				return response.data as SubscribersResponse;
-			} else {
-				console.error('No data in response:', response);
-				throw new Error(response.error || 'Failed to load subscribers');
-			}
+			return {
+				subscribers: paginatedSubscribers,
+				pagination: {
+					limit: limit,
+					offset: offset,
+					total: allSubscribers.length
+				}
+			};
+			
 		} catch (error) {
-			console.error('Error fetching subscribers:', error);
+			console.error('Error fetching subscribers from elastic service:', error);
 			throw error;
 		}
 	}
@@ -303,19 +307,33 @@ export class StreamingSubscriberService {
 	}
 
 	/**
-	 * Get subscriber statistics
+	 * Get subscriber statistics using UNIFIED ELASTIC SERVICE
 	 */
 	static async getSubscriberStats(): Promise<SubscriberStats> {
 		try {
-			const response = await api.get('/admin/subscribers/stats');
+			console.log('🔄 Getting subscriber stats using UNIFIED ELASTIC SERVICE');
 			
-			if (response.data) {
-				return response.data as SubscriberStats;
-			} else {
-				throw new Error(response.error || 'Failed to get subscriber stats');
-			}
+			// Get stats from elastic service
+			const stats = await subscriberElasticService.getSubscriberStats();
+			
+			// Convert to expected format
+			const subscriberStats: SubscriberStats = {
+				total_subscribers: stats.total_subscribers,
+				active_subscribers: stats.active_plans,
+				trialing_subscribers: 0, // Not available in current elastic service
+				past_due_subscribers: 0, // Not available in current elastic service
+				canceled_subscribers: 0, // Not available in current elastic service
+				monthly_revenue: stats.total_mrr,
+				annual_revenue: stats.total_arr,
+				average_revenue_per_user: stats.total_subscribers > 0 ? stats.total_mrr / stats.total_subscribers : 0,
+				churn_rate: 0 // Not available in current elastic service
+			};
+			
+			console.log('✅ Subscriber stats loaded using UNIFIED ELASTIC SERVICE:', subscriberStats);
+			return subscriberStats;
+			
 		} catch (error) {
-			console.error('Error fetching subscriber stats:', error);
+			console.error('Error fetching subscriber stats from elastic service:', error);
 			throw error;
 		}
 	}
@@ -969,5 +987,68 @@ export class StreamingSubscriberService {
 			console.error('Error exporting non-subscribers:', error);
 			throw error;
 		}
+	}
+	
+	/**
+	 * Apply filters to subscribers array (helper method for elastic service migration)
+	 */
+	private static applySubscriberFilters(subscribers: Subscriber[], filters: SubscriberFilters): Subscriber[] {
+		return subscribers.filter(subscriber => {
+			// Plan ID filter
+			if (filters.plan_id !== undefined && subscriber.plan_id !== filters.plan_id) return false;
+			
+			// Status filter
+			if (filters.status && subscriber.subscription_status !== filters.status) return false;
+			
+			// Search filter
+			if (filters.search) {
+				const searchTerm = filters.search.toLowerCase();
+				const searchableText = [
+					subscriber.email,
+					subscriber.first_name,
+					subscriber.last_name,
+					subscriber.plan_name
+				].join(' ').toLowerCase();
+				
+				if (!searchableText.includes(searchTerm)) return false;
+			}
+			
+			// Email verified filter
+			if (filters.email_verified !== undefined && subscriber.email_verified !== filters.email_verified) return false;
+			
+			// Role filter
+			if (filters.role && subscriber.role !== filters.role) return false;
+			
+			// Last login filter (simplified - would need more complex date logic in production)
+			if (filters.last_login && subscriber.last_login) {
+				// Basic string matching for now
+				if (!subscriber.last_login.includes(filters.last_login)) return false;
+			}
+			
+			// Created date filter (simplified)
+			if (filters.created_date && subscriber.created_at) {
+				if (!subscriber.created_at.includes(filters.created_date)) return false;
+			}
+			
+			// Date range filter (simplified)
+			if (filters.date_range) {
+				const createdDate = new Date(subscriber.created_at);
+				const startDate = new Date(filters.date_range.start);
+				const endDate = new Date(filters.date_range.end);
+				
+				if (createdDate < startDate || createdDate > endDate) return false;
+			}
+			
+			// Subscription ID filter
+			if (filters.sub_id !== undefined && subscriber.sub_id !== filters.sub_id) return false;
+			
+			// Has subscription history filter
+			if (filters.has_subscription_history !== undefined) {
+				const hasHistory = !!subscriber.subscription_id || !!subscriber.sub_id;
+				if (hasHistory !== filters.has_subscription_history) return false;
+			}
+			
+			return true;
+		});
 	}
 } 
