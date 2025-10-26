@@ -502,7 +502,8 @@ func StreamingAdminRequired() gin.HandlerFunc {
 }
 
 // SubscriptionAccessRequired middleware that requires active subscription for protected content
-func SubscriptionAccessRequired(db *database.DB) gin.HandlerFunc {
+// NOW USING ELASTIC SERVICE - Single source of truth!
+func SubscriptionAccessRequired(elasticService *services.SubscriberElasticService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetInt("user_id")
 		if userID == 0 {
@@ -553,40 +554,43 @@ func SubscriptionAccessRequired(db *database.DB) gin.HandlerFunc {
 			return
 		}
 
-		// For non-admin users, validate video access (active plan + video_approved OR manual override)
-		if db != nil {
-			hasVideoAccess, accessInfo, err := db.HasVideoAccess(userID)
+		// For non-admin users, use ELASTIC SERVICE for unified subscriber data
+		if elasticService != nil {
+			subscriber, err := elasticService.GetUnifiedSubscriberByID(userID)
 			if err != nil {
-				log.Printf("❌ [SubscriptionAccessRequired] Error checking video access for user %d: %v", userID, err)
+				log.Printf("❌ [SubscriptionAccessRequired] Error fetching subscriber %d from elastic service: %v", userID, err)
 				c.JSON(http.StatusInternalServerError, gin.H{
-					"error": "Video access check failed",
-					"code":  "VIDEO_ACCESS_CHECK_ERROR",
+					"error": "Failed to verify subscription status",
+					"code":  "SUBSCRIPTION_CHECK_ERROR",
 				})
 				c.Abort()
 				return
 			}
 
-			if !hasVideoAccess {
-				log.Printf("❌ [SubscriptionAccessRequired] User %d denied video access - Stripe: %v, Legacy: %v, Manual: %v",
-					userID, accessInfo.HasStripeAccess, accessInfo.HasLegacyAccess, accessInfo.HasManualAccess)
+			// Check video access from unified elastic data
+			if !subscriber.HasVideoAccess {
+				log.Printf("❌ [SubscriptionAccessRequired] User %d denied video access - ActivePlan: %v, VideoAccess: %v, Manual: %v",
+					userID, subscriber.HasActivePlan, subscriber.HasVideoAccess, subscriber.ManualAccessGranted)
 				c.JSON(http.StatusForbidden, gin.H{
 					"error":   "Video access required",
 					"code":    "VIDEO_ACCESS_REQUIRED",
 					"message": "You need an active video subscription or manual access to view this content",
 					"access_info": gin.H{
-						"stripe_access": accessInfo.HasStripeAccess,
-						"legacy_access": accessInfo.HasLegacyAccess,
-						"manual_access": accessInfo.HasManualAccess,
+						"has_active_plan":  subscriber.HasActivePlan,
+						"has_video_access": subscriber.HasVideoAccess,
+						"manual_access":    subscriber.ManualAccessGranted,
+						"plan_name":        subscriber.PlanName,
+						"plan_status":      subscriber.PlanStatus,
 					},
 				})
 				c.Abort()
 				return
 			}
 
-			// Store video access info in context for later use
-			c.Set("video_access_info", accessInfo)
-			log.Printf("✅ [SubscriptionAccessRequired] User %d has video access - Source: Stripe=%v, Legacy=%v, Manual=%v",
-				userID, accessInfo.HasStripeAccess, accessInfo.HasLegacyAccess, accessInfo.HasManualAccess)
+			// Store unified subscriber info in context for later use
+			c.Set("subscriber", subscriber)
+			log.Printf("✅ [SubscriptionAccessRequired] User %d has video access via ELASTIC SERVICE - Plan: %v, Status: %v, Manual: %v",
+				userID, subscriber.PlanName, subscriber.PlanStatus, subscriber.ManualAccessGranted)
 		}
 
 		c.Next()
@@ -728,7 +732,8 @@ func SubscriptionRateLimit() gin.HandlerFunc {
 }
 
 // SubscriptionValidation middleware that validates subscription access
-func SubscriptionValidation(db *database.DB) gin.HandlerFunc {
+// NOW USING ELASTIC SERVICE - Single source of truth!
+func SubscriptionValidation(elasticService *services.SubscriberElasticService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetInt("user_id")
 		if userID == 0 {
@@ -771,40 +776,43 @@ func SubscriptionValidation(db *database.DB) gin.HandlerFunc {
 			return
 		}
 
-		// For non-admin users, validate video access (active plan + video_approved OR manual override)
-		if db != nil {
-			hasVideoAccess, accessInfo, err := db.HasVideoAccess(userID)
+		// For non-admin users, use ELASTIC SERVICE for unified subscriber data
+		if elasticService != nil {
+			subscriber, err := elasticService.GetUnifiedSubscriberByID(userID)
 			if err != nil {
-				log.Printf("Error checking video access for user %d: %v", userID, err)
+				log.Printf("❌ [SubscriptionValidation] Error fetching subscriber %d from elastic service: %v", userID, err)
 				c.JSON(http.StatusInternalServerError, gin.H{
-					"error": "Video access check failed",
-					"code":  "VIDEO_ACCESS_CHECK_ERROR",
+					"error": "Failed to verify subscription status",
+					"code":  "SUBSCRIPTION_CHECK_ERROR",
 				})
 				c.Abort()
 				return
 			}
 
-			if !hasVideoAccess {
-				log.Printf("❌ User %d denied video access - Stripe: %v, Legacy: %v, Manual: %v",
-					userID, accessInfo.HasStripeAccess, accessInfo.HasLegacyAccess, accessInfo.HasManualAccess)
+			// Check video access from unified elastic data
+			if !subscriber.HasVideoAccess {
+				log.Printf("❌ [SubscriptionValidation] User %d denied video access - ActivePlan: %v, VideoAccess: %v, Manual: %v",
+					userID, subscriber.HasActivePlan, subscriber.HasVideoAccess, subscriber.ManualAccessGranted)
 				c.JSON(http.StatusForbidden, gin.H{
 					"error":   "Video access required",
 					"code":    "VIDEO_ACCESS_REQUIRED",
 					"message": "You need an active video subscription or manual access to view this content",
 					"access_info": gin.H{
-						"stripe_access": accessInfo.HasStripeAccess,
-						"legacy_access": accessInfo.HasLegacyAccess,
-						"manual_access": accessInfo.HasManualAccess,
+						"has_active_plan":  subscriber.HasActivePlan,
+						"has_video_access": subscriber.HasVideoAccess,
+						"manual_access":    subscriber.ManualAccessGranted,
+						"plan_name":        subscriber.PlanName,
+						"plan_status":      subscriber.PlanStatus,
 					},
 				})
 				c.Abort()
 				return
 			}
 
-			// Store video access info in context for later use
-			c.Set("video_access_info", accessInfo)
-			log.Printf("✅ User %d has video access - Source: Stripe=%v, Legacy=%v, Manual=%v",
-				userID, accessInfo.HasStripeAccess, accessInfo.HasLegacyAccess, accessInfo.HasManualAccess)
+			// Store unified subscriber info in context for later use
+			c.Set("subscriber", subscriber)
+			log.Printf("✅ [SubscriptionValidation] User %d has video access via ELASTIC SERVICE - Plan: %v, Status: %v, Manual: %v",
+				userID, subscriber.PlanName, subscriber.PlanStatus, subscriber.ManualAccessGranted)
 		}
 
 		c.Next()
@@ -812,7 +820,8 @@ func SubscriptionValidation(db *database.DB) gin.HandlerFunc {
 }
 
 // SubscriptionPlanValidation middleware that validates specific subscription plan access
-func SubscriptionPlanValidation(db *database.DB, requiredPlan string) gin.HandlerFunc {
+// NOW USING ELASTIC SERVICE - Single source of truth!
+func SubscriptionPlanValidation(elasticService *services.SubscriberElasticService, requiredPlan string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetInt("user_id")
 		if userID == 0 {
@@ -855,10 +864,11 @@ func SubscriptionPlanValidation(db *database.DB, requiredPlan string) gin.Handle
 			return
 		}
 
-		// For non-admin users, validate subscription plan
-		if db != nil {
-			subscription, err := db.GetSubscriptionByUserID(userID)
-			if err != nil || subscription == nil {
+		// For non-admin users, use ELASTIC SERVICE for unified subscriber data
+		if elasticService != nil {
+			subscriber, err := elasticService.GetUnifiedSubscriberByID(userID)
+			if err != nil {
+				log.Printf("❌ [SubscriptionPlanValidation] Error fetching subscriber %d from elastic service: %v", userID, err)
 				c.JSON(http.StatusForbidden, gin.H{
 					"error": "Active subscription required",
 					"code":  "SUBSCRIPTION_REQUIRED",
@@ -868,48 +878,43 @@ func SubscriptionPlanValidation(db *database.DB, requiredPlan string) gin.Handle
 			}
 
 			// Check if subscription is active
-			if subscription.Status != "active" {
+			if !subscriber.HasActivePlan || subscriber.PlanStatus != "active" {
 				c.JSON(http.StatusForbidden, gin.H{
 					"error":  "Subscription is not active",
 					"code":   "SUBSCRIPTION_INACTIVE",
-					"status": subscription.Status,
+					"status": subscriber.PlanStatus,
 				})
 				c.Abort()
 				return
 			}
 
 			// Check if subscription has expired
-			if subscription.CurrentPeriodEnd != nil && time.Now().After(*subscription.CurrentPeriodEnd) {
+			if subscriber.BillingPeriodEnd != nil && time.Now().After(*subscriber.BillingPeriodEnd) {
 				c.JSON(http.StatusForbidden, gin.H{
 					"error":      "Subscription has expired",
 					"code":       "SUBSCRIPTION_EXPIRED",
-					"expired_at": subscription.CurrentPeriodEnd,
+					"expired_at": subscriber.BillingPeriodEnd,
 				})
 				c.Abort()
 				return
 			}
 
 			// Check if user has the required plan
-			if subscription.PlanID.Valid {
-				plan, err := db.GetSubscriptionPlanByID(int(subscription.PlanID.Int32))
-				if err == nil && plan != nil {
-					// TODO: Implement plan hierarchy checking
-					// For now, just check if the plan name matches
-					if plan.Name != requiredPlan {
-						c.JSON(http.StatusForbidden, gin.H{
-							"error":         "Higher subscription plan required",
-							"code":          "PLAN_UPGRADE_REQUIRED",
-							"required_plan": requiredPlan,
-							"current_plan":  plan.Name,
-						})
-						c.Abort()
-						return
-					}
-				}
+			if subscriber.PlanName != nil && *subscriber.PlanName != requiredPlan {
+				c.JSON(http.StatusForbidden, gin.H{
+					"error":         "Higher subscription plan required",
+					"code":          "PLAN_UPGRADE_REQUIRED",
+					"required_plan": requiredPlan,
+					"current_plan":  *subscriber.PlanName,
+				})
+				c.Abort()
+				return
 			}
 
-			// Store subscription info in context for later use
-			c.Set("user_subscription", subscription)
+			// Store unified subscriber info in context for later use
+			c.Set("subscriber", subscriber)
+			log.Printf("✅ [SubscriptionPlanValidation] User %d has required plan via ELASTIC SERVICE - Plan: %v",
+				userID, subscriber.PlanName)
 		}
 
 		c.Next()
@@ -917,7 +922,8 @@ func SubscriptionPlanValidation(db *database.DB, requiredPlan string) gin.Handle
 }
 
 // SubscriptionExpirationWarning middleware that adds expiration warnings to responses
-func SubscriptionExpirationWarning(db *database.DB) gin.HandlerFunc {
+// NOW USING ELASTIC SERVICE - Single source of truth!
+func SubscriptionExpirationWarning(elasticService *services.SubscriberElasticService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetInt("user_id")
 		if userID == 0 {
@@ -954,23 +960,26 @@ func SubscriptionExpirationWarning(db *database.DB) gin.HandlerFunc {
 			return
 		}
 
-		// For non-admin users, check subscription expiration
-		if db != nil {
-			subscription, err := db.GetSubscriptionByUserID(userID)
-			if err == nil && subscription != nil && subscription.CurrentPeriodEnd != nil {
-				daysUntilExpiration := int(time.Until(*subscription.CurrentPeriodEnd).Hours() / 24)
+		// For non-admin users, use ELASTIC SERVICE to check subscription expiration
+		if elasticService != nil {
+			subscriber, err := elasticService.GetUnifiedSubscriberByID(userID)
+			if err == nil && subscriber != nil && subscriber.BillingPeriodEnd != nil {
+				daysUntilExpiration := int(time.Until(*subscriber.BillingPeriodEnd).Hours() / 24)
 
 				// Add warning headers for expiring subscriptions
 				if daysUntilExpiration <= 7 && daysUntilExpiration > 0 {
 					c.Header("X-Subscription-Warning", "expiring_soon")
 					c.Header("X-Subscription-Expires-In", strconv.Itoa(daysUntilExpiration)+" days")
+					log.Printf("⚠️ [SubscriptionExpirationWarning] User %d subscription expiring in %d days", userID, daysUntilExpiration)
 				} else if daysUntilExpiration <= 0 {
 					c.Header("X-Subscription-Warning", "expired")
-					c.Header("X-Subscription-Expired", subscription.CurrentPeriodEnd.Format(time.RFC3339))
+					c.Header("X-Subscription-Expired", subscriber.BillingPeriodEnd.Format(time.RFC3339))
+					log.Printf("🚫 [SubscriptionExpirationWarning] User %d subscription expired", userID)
 				}
 
 				// Store expiration info in context
 				c.Set("subscription_expiration_days", daysUntilExpiration)
+				c.Set("subscriber", subscriber) // Also store the full subscriber for reference
 			}
 		}
 

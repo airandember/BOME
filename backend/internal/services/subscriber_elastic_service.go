@@ -20,6 +20,200 @@ func NewSubscriberElasticService(db *database.DB) *SubscriberElasticService {
 	return &SubscriberElasticService{db: db}
 }
 
+// GetUnifiedSubscriberByID returns a single subscriber's unified data
+// This is optimized for middleware auth checks - uses the same CTE logic as GetAllUnifiedSubscribers
+// but with a WHERE clause to fetch only the requested user
+func (s *SubscriberElasticService) GetUnifiedSubscriberByID(userID int) (*UnifiedSubscriber, error) {
+	log.Printf("🔍 [SubscriberElasticService] Fetching unified data for user %d", userID)
+
+	// Use the same optimized CTE query but filtered for single user
+	query := `
+		WITH user_subscriptions AS (
+			-- Get the most recent active subscription for each user
+			SELECT DISTINCT ON (u.id)
+				u.id as user_id,
+				ss.stripe_id as subscription_id,
+				ss.status as subscription_status,
+				ss.current_period_start,
+				ss.current_period_end,
+				ss.created_at as subscription_created_at,
+				sp.name as product_name,
+				sp.video_approved,
+				sp.stripe_id as product_id,
+				COALESCE(spr.unit_amount, 0) as product_price,
+				COALESCE(spr.currency, 'USD') as product_currency,
+				COALESCE(spr.recurring_interval, 'monthly') as product_interval,
+				CASE 
+					WHEN sp.name ILIKE '%premium%' THEN 'premium'
+					WHEN sp.name ILIKE '%basic%' THEN 'basic'
+					ELSE 'none'
+				END as plan_type,
+				CASE 
+					WHEN ss.status IN ('active', 'trialing') THEN 'current'
+					WHEN ss.status IN ('canceled', 'incomplete', 'incomplete_expired', 'past_due', 'unpaid') THEN 'legacy'
+					ELSE 'unknown'
+				END as legacy_status
+			FROM users u
+			LEFT JOIN stripe_customers sc ON (
+				u.stripe_customer_id = sc.stripe_id OR 
+				sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
+			)
+			LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id
+			LEFT JOIN stripe_products sp ON ss.stripe_product_id = sp.stripe_id
+			LEFT JOIN stripe_prices spr ON sp.id = spr.product_id
+			WHERE u.id = $1 AND ss.status IN ('active', 'trialing', 'canceled', 'incomplete', 'incomplete_expired', 'past_due', 'unpaid')
+			ORDER BY u.id, ss.created_at DESC
+		),
+		user_access AS (
+			-- Determine video access based on subscription and manual overrides
+			SELECT 
+				u.id as user_id,
+				CASE 
+					WHEN u.manual_video_access = true THEN true
+					WHEN us.subscription_status IN ('active', 'trialing') AND us.video_approved = true THEN true
+					ELSE false
+				END as has_video_access,
+				u.manual_video_access as manual_access_granted,
+				CASE 
+					WHEN us.subscription_status IN ('active', 'trialing') THEN true
+					ELSE false
+				END as has_active_plan
+			FROM users u
+			LEFT JOIN user_subscriptions us ON u.id = us.user_id
+			WHERE u.id = $1
+		)
+		SELECT 
+			u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified, u.is_active,
+			u.created_at, u.last_login, u.stripe_customer_id,
+			ARRAY_TO_STRING(u.stripe_customer_ids, ',') as stripe_customer_ids_str,
+			us.subscription_id, us.product_name as plan_name,
+			us.plan_type, us.subscription_status as plan_status,
+			us.product_price as plan_price, us.product_currency as plan_currency,
+			us.product_interval as plan_interval, us.current_period_start as plan_start_date,
+			us.current_period_start as billing_period_start, us.current_period_end as billing_period_end,
+			CASE 
+				WHEN us.current_period_end IS NOT NULL 
+				THEN EXTRACT(DAYS FROM us.current_period_end - NOW())::int
+				ELSE NULL
+			END as days_until_expiry,
+			ua.has_active_plan,
+			ua.has_video_access,
+			ua.manual_access_granted,
+			-- Calculate MRR/ARR contributions (convert from cents to dollars)
+			CASE 
+				WHEN us.product_interval = 'monthly' AND us.subscription_status IN ('active', 'trialing')
+				THEN COALESCE(us.product_price, 0) / 100.0
+				WHEN us.product_interval = 'yearly' AND us.subscription_status IN ('active', 'trialing')
+				THEN COALESCE(us.product_price, 0) / 100.0 / 12
+				WHEN us.product_interval = 'year' AND us.subscription_status IN ('active', 'trialing')
+				THEN COALESCE(us.product_price, 0) / 100.0 / 12
+				ELSE 0
+			END as mrr_contribution,
+			CASE 
+				WHEN us.product_interval = 'monthly' AND us.subscription_status IN ('active', 'trialing')
+				THEN COALESCE(us.product_price, 0) / 100.0 * 12
+				WHEN us.product_interval = 'yearly' AND us.subscription_status IN ('active', 'trialing')
+				THEN COALESCE(us.product_price, 0) / 100.0
+				WHEN us.product_interval = 'year' AND us.subscription_status IN ('active', 'trialing')
+				THEN COALESCE(us.product_price, 0) / 100.0
+				ELSE 0
+			END as arr_contribution,
+			-- LTV estimate (simplified: ARR * 2 years, in dollars)
+			CASE 
+				WHEN us.product_interval = 'monthly' AND us.subscription_status IN ('active', 'trialing')
+				THEN COALESCE(us.product_price, 0) / 100.0 * 12 * 2
+				WHEN us.product_interval = 'yearly' AND us.subscription_status IN ('active', 'trialing')
+				THEN COALESCE(us.product_price, 0) / 100.0 * 2
+				WHEN us.product_interval = 'year' AND us.subscription_status IN ('active', 'trialing')
+				THEN COALESCE(us.product_price, 0) / 100.0 * 2
+				ELSE 0
+			END as ltv_estimate,
+			EXTRACT(DAYS FROM NOW() - u.created_at)::int as account_age_days,
+			us.legacy_status as plan_legacy_status,
+			-- Computed fields
+			TRIM(CONCAT(u.first_name, ' ', u.last_name)) as full_name,
+			CASE 
+				WHEN us.current_period_end IS NOT NULL AND us.current_period_end <= NOW() + INTERVAL '30 days'
+				THEN true
+				ELSE false
+			END as is_expiring_soon
+		FROM users u
+		LEFT JOIN user_subscriptions us ON u.id = us.user_id
+		LEFT JOIN user_access ua ON u.id = ua.user_id
+		WHERE u.id = $1
+	`
+
+	row := s.db.DB.QueryRow(query, userID)
+
+	var sub UnifiedSubscriber
+	var (
+		stripeCustomerID, subscriptionID, planName, planType, planStatus, planCurrency, planInterval, planLegacyStatus sql.NullString
+		planPrice                                                                                                      sql.NullFloat64
+		planStartDate, billingPeriodStart, billingPeriodEnd, lastLogin                                                 sql.NullTime
+		daysUntilExpiry, accountAgeDays                                                                                sql.NullInt64
+		stripeCustomerIDsRaw                                                                                           sql.NullString
+		mrrContribution, arrContribution, ltvEstimate                                                                  sql.NullFloat64
+	)
+
+	err := row.Scan(
+		&sub.ID, &sub.Email, &sub.FirstName, &sub.LastName, &sub.Role, &sub.EmailVerified, &sub.IsActive,
+		&sub.CreatedAt, &lastLogin, &stripeCustomerID, &stripeCustomerIDsRaw, &subscriptionID, &planName,
+		&planType, &planStatus, &planPrice, &planCurrency, &planInterval, &planStartDate,
+		&billingPeriodStart, &billingPeriodEnd, &daysUntilExpiry, &sub.HasActivePlan, &sub.HasVideoAccess,
+		&sub.ManualAccessGranted, &mrrContribution, &arrContribution, &ltvEstimate, &accountAgeDays,
+		&planLegacyStatus, &sub.FullName, &sub.IsExpiringSoon,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("❌ [SubscriberElasticService] User %d not found", userID)
+			return nil, fmt.Errorf("user not found: %d", userID)
+		}
+		log.Printf("❌ [SubscriberElasticService] Error scanning subscriber %d: %v", userID, err)
+		return nil, fmt.Errorf("failed to scan subscriber: %w", err)
+	}
+
+	// Assign scanned values to the struct, handling Null types
+	sub.LastLogin = nullTimeToPtr(lastLogin)
+	sub.StripeCustomerID = nullStringToStringPtr(stripeCustomerID)
+	sub.SubscriptionID = nullStringToStringPtr(subscriptionID)
+	sub.PlanName = nullStringToStringPtr(planName)
+	sub.PlanType = nullStringToString(planType)
+	sub.PlanStatus = nullStringToString(planStatus)
+	sub.PlanPrice = nullFloat64ToFloat64(planPrice)
+	sub.PlanCurrency = nullStringToString(planCurrency)
+	sub.PlanInterval = nullStringToString(planInterval)
+	sub.PlanStartDate = nullTimeToPtr(planStartDate)
+	sub.BillingPeriodStart = nullTimeToPtr(billingPeriodStart)
+	sub.BillingPeriodEnd = nullTimeToPtr(billingPeriodEnd)
+	sub.DaysUntilExpiry = nullInt64ToIntPtr(daysUntilExpiry)
+	sub.MRRContribution = nullFloat64ToFloat64(mrrContribution)
+	sub.ARRContribution = nullFloat64ToFloat64(arrContribution)
+	sub.LTVEstimate = nullFloat64ToFloat64(ltvEstimate)
+	sub.AccountAgeDays = nullInt64ToInt(accountAgeDays)
+	sub.PlanLegacyStatus = nullStringToString(planLegacyStatus)
+
+	// Parse stripe_customer_ids from PostgreSQL array format
+	if stripeCustomerIDsRaw.Valid && stripeCustomerIDsRaw.String != "" {
+		idsStr := strings.Trim(stripeCustomerIDsRaw.String, "{}")
+		if idsStr != "" {
+			sub.StripeCustomerIDs = strings.Split(idsStr, ",")
+			for i, id := range sub.StripeCustomerIDs {
+				sub.StripeCustomerIDs[i] = strings.TrimSpace(id)
+			}
+		} else {
+			sub.StripeCustomerIDs = []string{}
+		}
+	} else {
+		sub.StripeCustomerIDs = []string{}
+	}
+
+	log.Printf("✅ [SubscriberElasticService] User %d fetched - HasActivePlan: %v, HasVideoAccess: %v, ManualAccess: %v",
+		userID, sub.HasActivePlan, sub.HasVideoAccess, sub.ManualAccessGranted)
+
+	return &sub, nil
+}
+
 // UnifiedSubscriber represents the complete subscriber data from all sources
 type UnifiedSubscriber struct {
 	// User data
@@ -316,21 +510,7 @@ func (s *SubscriberElasticService) GetUnifiedSubscriberByEmail(email string) (*U
 	return nil, fmt.Errorf("subscriber not found: %s", email)
 }
 
-// GetUnifiedSubscriberByID retrieves a specific subscriber by ID
-func (s *SubscriberElasticService) GetUnifiedSubscriberByID(id int) (*UnifiedSubscriber, error) {
-	subscribers, err := s.GetAllUnifiedSubscribers()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, sub := range subscribers {
-		if sub.ID == id {
-			return &sub, nil
-		}
-	}
-
-	return nil, fmt.Errorf("subscriber not found: %d", id)
-}
+// NOTE: GetUnifiedSubscriberByID is defined at line 26 with optimized WHERE clause
 
 // GetSubscribersWithMultipleStripeCustomers finds users with multiple Stripe customer IDs
 func (s *SubscriberElasticService) GetSubscribersWithMultipleStripeCustomers() ([]UnifiedSubscriber, error) {
@@ -470,4 +650,48 @@ func (s *SubscriberElasticService) GetSubscriberStats() (map[string]interface{},
 	}
 
 	return stats, nil
+}
+
+// Helper functions for NULL handling in GetUnifiedSubscriberByID
+func nullTimeToPtr(t sql.NullTime) *time.Time {
+	if t.Valid {
+		return &t.Time
+	}
+	return nil
+}
+
+func nullStringToStringPtr(s sql.NullString) *string {
+	if s.Valid {
+		return &s.String
+	}
+	return nil
+}
+
+func nullStringToString(s sql.NullString) string {
+	if s.Valid {
+		return s.String
+	}
+	return ""
+}
+
+func nullFloat64ToFloat64(f sql.NullFloat64) float64 {
+	if f.Valid {
+		return f.Float64
+	}
+	return 0.0
+}
+
+func nullInt64ToIntPtr(i sql.NullInt64) *int {
+	if i.Valid {
+		val := int(i.Int64)
+		return &val
+	}
+	return nil
+}
+
+func nullInt64ToInt(i sql.NullInt64) int {
+	if i.Valid {
+		return int(i.Int64)
+	}
+	return 0
 }

@@ -85,6 +85,10 @@ func SetupRoutes(
 	// Debug logging
 	fmt.Printf("Setting up routes...\n")
 
+	// Initialize SubscriberElasticService for middleware
+	subscriberElasticService := services.NewSubscriberElasticService(db)
+	log.Printf("✅ SubscriberElasticService initialized for middleware auth checks")
+
 	// Health check endpoint
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -447,7 +451,7 @@ func SetupRoutes(
 		fmt.Printf("Setting up video routes...\n")
 
 		// Get all videos with pagination and filtering
-		videos.GET("", middleware.AuthRequired(), middleware.SubscriptionValidation(db), func(c *gin.Context) {
+		videos.GET("", middleware.AuthRequired(), middleware.SubscriptionValidation(subscriberElasticService), func(c *gin.Context) {
 			// Parse query parameters
 			page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
@@ -541,7 +545,7 @@ func SetupRoutes(
 		})
 
 		videos.GET("/categories", GetMockCategoriesHandler) // Must come before /:id
-		videos.GET("/:id", middleware.AuthRequired(), middleware.SessionActivityTracker(db), middleware.SubscriptionValidation(db), func(c *gin.Context) {
+		videos.GET("/:id", middleware.AuthRequired(), middleware.SessionActivityTracker(db), middleware.SubscriptionValidation(subscriberElasticService), func(c *gin.Context) {
 			videoID := c.Param("id")
 			if videoID == "" {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Video ID is required"})
@@ -691,7 +695,7 @@ func SetupRoutes(
 		})
 
 		// Add blob URL endpoint for direct video data access
-		videos.GET("/:id/blob", middleware.AuthRequired(), middleware.SubscriptionValidation(db), func(c *gin.Context) {
+		videos.GET("/:id/blob", middleware.AuthRequired(), middleware.SubscriptionValidation(subscriberElasticService), func(c *gin.Context) {
 			videoID := c.Param("id")
 
 			// Get user info from context
@@ -797,10 +801,10 @@ func SetupRoutes(
 	})
 
 	// Bunny.net direct access endpoint (separate from videos to avoid conflicts)
-	v1.GET("/bunny-videos", middleware.AuthRequired(), middleware.SubscriptionValidation(db), GetVideosFromBunnyHandler(db, bunnyService))
+	v1.GET("/bunny-videos", middleware.AuthRequired(), middleware.SubscriptionValidation(subscriberElasticService), GetVideosFromBunnyHandler(db, bunnyService))
 
 	// Add single video endpoint
-	v1.GET("/bunny-videos/:id", middleware.AuthRequired(), middleware.SubscriptionValidation(db), func(c *gin.Context) {
+	v1.GET("/bunny-videos/:id", middleware.AuthRequired(), middleware.SubscriptionValidation(subscriberElasticService), func(c *gin.Context) {
 		videoID := c.Param("id")
 		if videoID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{
