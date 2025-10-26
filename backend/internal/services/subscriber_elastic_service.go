@@ -151,27 +151,33 @@ func (s *SubscriberElasticService) GetAllUnifiedSubscribers() ([]UnifiedSubscrib
 			ua.has_active_plan,
 			ua.has_video_access,
 			ua.manual_access_granted,
-			-- Calculate MRR/ARR contributions
+			-- Calculate MRR/ARR contributions (convert from cents to dollars)
 			CASE 
 				WHEN us.product_interval = 'monthly' AND us.subscription_status IN ('active', 'trialing')
-				THEN COALESCE(us.product_price, 0)
+				THEN COALESCE(us.product_price, 0) / 100.0
 				WHEN us.product_interval = 'yearly' AND us.subscription_status IN ('active', 'trialing')
-				THEN COALESCE(us.product_price, 0) / 12
+				THEN COALESCE(us.product_price, 0) / 100.0 / 12
+				WHEN us.product_interval = 'year' AND us.subscription_status IN ('active', 'trialing')
+				THEN COALESCE(us.product_price, 0) / 100.0 / 12
 				ELSE 0
 			END as mrr_contribution,
 			CASE 
 				WHEN us.product_interval = 'monthly' AND us.subscription_status IN ('active', 'trialing')
-				THEN COALESCE(us.product_price, 0) * 12
+				THEN COALESCE(us.product_price, 0) / 100.0 * 12
 				WHEN us.product_interval = 'yearly' AND us.subscription_status IN ('active', 'trialing')
-				THEN COALESCE(us.product_price, 0)
+				THEN COALESCE(us.product_price, 0) / 100.0
+				WHEN us.product_interval = 'year' AND us.subscription_status IN ('active', 'trialing')
+				THEN COALESCE(us.product_price, 0) / 100.0
 				ELSE 0
 			END as arr_contribution,
-			-- LTV estimate (simplified: ARR * 2 years)
+			-- LTV estimate (simplified: ARR * 2 years, in dollars)
 			CASE 
 				WHEN us.product_interval = 'monthly' AND us.subscription_status IN ('active', 'trialing')
-				THEN COALESCE(us.product_price, 0) * 12 * 2
+				THEN COALESCE(us.product_price, 0) / 100.0 * 12 * 2
 				WHEN us.product_interval = 'yearly' AND us.subscription_status IN ('active', 'trialing')
-				THEN COALESCE(us.product_price, 0) * 2
+				THEN COALESCE(us.product_price, 0) / 100.0 * 2
+				WHEN us.product_interval = 'year' AND us.subscription_status IN ('active', 'trialing')
+				THEN COALESCE(us.product_price, 0) / 100.0 * 2
 				ELSE 0
 			END as ltv_estimate,
 			EXTRACT(DAYS FROM NOW() - u.created_at)::int as account_age_days,
@@ -200,7 +206,7 @@ func (s *SubscriberElasticService) GetAllUnifiedSubscribers() ([]UnifiedSubscrib
 		var sub UnifiedSubscriber
 		var stripeCustomerIDsRaw sql.NullString
 		var lastLogin sql.NullTime
-		var subscriptionID, planName, planType, planStatus sql.NullString
+		var subscriptionID, planName, planType, planStatus, planCurrency, planInterval, planLegacyStatus sql.NullString
 		var planStartDate, billingPeriodStart, billingPeriodEnd sql.NullTime
 		var daysUntilExpiry sql.NullInt32
 
@@ -209,11 +215,11 @@ func (s *SubscriberElasticService) GetAllUnifiedSubscribers() ([]UnifiedSubscrib
 			&sub.EmailVerified, &sub.IsActive, &sub.CreatedAt, &lastLogin,
 			&sub.StripeCustomerID, &stripeCustomerIDsRaw, &subscriptionID,
 			&planName, &planType, &planStatus, &sub.PlanPrice,
-			&sub.PlanCurrency, &sub.PlanInterval, &planStartDate,
+			&planCurrency, &planInterval, &planStartDate,
 			&billingPeriodStart, &billingPeriodEnd, &daysUntilExpiry,
 			&sub.HasActivePlan, &sub.HasVideoAccess, &sub.ManualAccessGranted,
 			&sub.MRRContribution, &sub.ARRContribution, &sub.LTVEstimate,
-			&sub.AccountAgeDays, &sub.PlanLegacyStatus, &sub.FullName,
+			&sub.AccountAgeDays, &planLegacyStatus, &sub.FullName,
 			&sub.IsExpiringSoon,
 		)
 		if err != nil {
@@ -240,6 +246,21 @@ func (s *SubscriberElasticService) GetAllUnifiedSubscribers() ([]UnifiedSubscrib
 			sub.PlanStatus = planStatus.String
 		} else {
 			sub.PlanStatus = "none" // Default value for NULL plan_status
+		}
+		if planCurrency.Valid {
+			sub.PlanCurrency = planCurrency.String
+		} else {
+			sub.PlanCurrency = "USD" // Default value for NULL plan_currency
+		}
+		if planInterval.Valid {
+			sub.PlanInterval = planInterval.String
+		} else {
+			sub.PlanInterval = "monthly" // Default value for NULL plan_interval
+		}
+		if planLegacyStatus.Valid {
+			sub.PlanLegacyStatus = planLegacyStatus.String
+		} else {
+			sub.PlanLegacyStatus = "unknown" // Default value for NULL plan_legacy_status
 		}
 		if planStartDate.Valid {
 			sub.PlanStartDate = &planStartDate.Time

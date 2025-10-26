@@ -84,11 +84,11 @@
 		{ key: 'has_video_access', label: 'Video Access', type: 'boolean' as const, sortable: true, width: '100px' },
 		{ key: 'has_active_plan', label: 'Active Plan', type: 'boolean' as const, sortable: true, width: '100px' },
 		{ key: 'email_verified', label: 'Verified', type: 'boolean' as const, sortable: true, width: '80px' },
-		{ key: 'subscription_status', label: 'Status', sortable: true, width: '100px' },
-		{ key: 'current_period_end', label: 'Expires', type: 'date' as const, sortable: true, width: '100px' },
+		{ key: 'plan_status', label: 'Status', sortable: true, width: '100px' },
+		{ key: 'billing_period_end', label: 'Expires', type: 'date' as const, sortable: true, width: '100px' },
 		{ key: 'mrr_contribution', label: 'MRR', type: 'currency' as const, sortable: true, width: '80px' },
 		{ key: 'arr_contribution', label: 'ARR', type: 'currency' as const, sortable: true, width: '80px' },
-		{ key: 'days_until_expiry', label: 'Days Left', type: 'number' as const, sortable: true, width: '80px' },
+		{ key: 'days_until_expiry', label: 'Days Left', type: 'days_left' as const, sortable: true, width: '80px' },
 		{ key: 'actions', label: 'Actions', type: 'actions' as const, width: '100px' }
 	];
 	
