@@ -460,9 +460,14 @@ func AdminRequired() gin.HandlerFunc {
 // StreamingAdminRequired middleware that requires streaming manager role or higher
 func StreamingAdminRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		log.Printf("🔍 [STREAMING-AUTH] Checking streaming admin permissions for path: %s", c.Request.URL.Path)
+
 		// Get user role from context (set by AuthRequired)
 		role, exists := c.Get("user_role")
+		log.Printf("🔍 [STREAMING-AUTH] Role from context - exists: %v, role: %v", exists, role)
+
 		if !exists {
+			log.Printf("❌ [STREAMING-AUTH] No user_role in context!")
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "Authentication required",
 			})
@@ -479,17 +484,20 @@ func StreamingAdminRequired() gin.HandlerFunc {
 		}
 
 		roleStr := role.(string)
+		log.Printf("🔍 [STREAMING-AUTH] Checking if role '%s' is in streaming admin list: %v", roleStr, streamingAdminRoles)
+
 		isStreamingAdmin := false
 		for _, adminRole := range streamingAdminRoles {
 			if roleStr == adminRole {
 				isStreamingAdmin = true
+				log.Printf("✅ [STREAMING-AUTH] Role '%s' matched admin role '%s'", roleStr, adminRole)
 				break
 			}
 		}
 
 		if !isStreamingAdmin {
 			userEmail, _ := c.Get("user_email")
-			log.Printf("Streaming admin access denied for user: %v (role: %s)", userEmail, roleStr)
+			log.Printf("❌ [STREAMING-AUTH] Streaming admin access DENIED for user: %v (role: %s)", userEmail, roleStr)
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "Streaming admin access required",
 			})
@@ -497,6 +505,7 @@ func StreamingAdminRequired() gin.HandlerFunc {
 			return
 		}
 
+		log.Printf("✅ [STREAMING-AUTH] Streaming admin access GRANTED for role: %s", roleStr)
 		c.Next()
 	}
 }
