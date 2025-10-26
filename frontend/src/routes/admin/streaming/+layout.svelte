@@ -9,8 +9,6 @@
 
 	// Reactive variables
 	let currentUser: any = null;
-	let isStreamingAdmin = false;
-	let isLoading = true;
 	let quickActiveSubscriptions = 0;
 	let quickMonthlyRevenue = 0;
 	let quickChurnRate = 0;
@@ -61,12 +59,6 @@
 			description: 'Subscriber management and support'
 		},
 		{
-			name: 'Analytics',
-			href: '/admin/streaming/analytics',
-			icon: 'chart-bar',
-			description: 'Revenue and subscription analytics'
-		},
-		{
 			name: 'Creator Payouts',
 			href: '/admin/streaming/creator-payouts',
 			icon: 'dollar-sign',
@@ -92,20 +84,6 @@
 		}
 	];
 
-	// Check if user has streaming admin permissions
-	function checkStreamingAdminPermissions(user: any): boolean {
-		if (!user || !user.role) return false;
-		
-		const streamingAdminRoles = [
-			'super_admin',
-			'system_admin', 
-			'content_manager',
-			'streaming_manager'
-		];
-		
-		return streamingAdminRoles.includes(user.role);
-	}
-
 	// Handle navigation
 	function handleNavigation(href: string): void {
 		goto(href);
@@ -114,22 +92,16 @@
 	// Initialize component
 	onMount(() => {
 		try {
-			// Subscribe to auth store
+			// Subscribe to auth store to get current user info (NO auth checks - parent handles that)
 			const unsubscribe = auth.subscribe((authState: any) => {
 				currentUser = authState.user;
-				isStreamingAdmin = checkStreamingAdminPermissions(authState.user);
-				isLoading = false;
+                console.log("❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌");
+				console.log(currentUser);
 			});
 
-			// Check permissions immediately
-			if (currentUser) {
-				isStreamingAdmin = checkStreamingAdminPermissions(currentUser);
-			}
-
-			// Redirect if not authorized
-			if (!isLoading && !isStreamingAdmin) {
-				goto('/admin?error=unauthorized');
-			}
+			// NOTE: Parent /admin/+layout.svelte already verified admin status
+			// Backend middleware provides the real security layer
+			// This layout just renders the UI
 
 			// Load quick stats (non-blocking)
 			loadQuickStats();
@@ -137,7 +109,6 @@
 			return unsubscribe;
 		} catch (error) {
 			console.error('Error initializing streaming admin layout:', error);
-			isLoading = false;
 		}
 	});
 
@@ -146,7 +117,12 @@
 
 	async function loadQuickStats() {
 		try {
+			console.log('🔍 [STREAMING] About to call /admin/streaming/dashboard');
+			console.log('🔍 [STREAMING] Current user:', currentUser);
+			console.log('🔍 [STREAMING] User role:', currentUser?.role);
+			
 			const response = await api.get('/admin/streaming/dashboard');
+			console.log('🔍 [STREAMING] Dashboard API response:', response);
 			const raw = (response?.data as any) || {};
 			const data = raw.dashboard?.metrics as any;
 			if (data) {
@@ -227,20 +203,9 @@
 	<meta name="description" content="Streaming subscription management and analytics" />
 </svelte:head>
 
-{#if isLoading}
-	<div class="loading-container">
-		<div class="spinner"></div>
-	</div>
-{:else if !isStreamingAdmin}
-	<div class="access-denied">
-		<div class="text-center">
-			<h1 class="text-2xl font-bold m-4">Access Denied</h1>
-			<p class="text-secondary m-6">You don't have permission to access the streaming admin area.</p>
-			<a href="/admin" class="btn btn-primary">Return to Admin Dashboard</a>
-		</div>
-	</div>
-{:else}
-	<div class="streaming-admin-layout">
+<!-- Parent layout already verified admin status - trust it and render -->
+<!-- Backend middleware provides the real security layer -->
+<div class="streaming-admin-layout">
 		<!-- Header -->
 		<header class="admin-header">
 			<div class="container">
@@ -360,25 +325,9 @@
 				</main>
 			</div>
 		</div>
-	</div>
-{/if}
+</div>
 
 <style>
-	/* Loading and Access Denied */
-	.loading-container {
-		min-height: 100vh;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.access-denied {
-		min-height: 100vh;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
 	/* Layout Structure */
 	.streaming-admin-layout {
 		min-height: 100vh;

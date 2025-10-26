@@ -74,18 +74,22 @@ class ApiClient {
 			console.log('ApiClient: Request headers:', config.headers);
 			const response = await fetch(url, config);
 			
-			// Handle 401 - token expired
-			if (response.status === 401 && token) {
-				// Clear tokens regardless of response
-				// The auth store will handle clearing tokens on 401
-				
-				// Redirect to login for auth endpoints
-				if (browser && !endpoint.includes('/auth/')) {
-					goto('/auth/login');
-				}
-				
-				return { error: 'Authentication required' };
+		// Handle 401 - token expired
+		if (response.status === 401 && token) {
+			console.warn('🔴 [API] 401 Unauthorized for endpoint:', endpoint);
+			console.warn('🔴 [API] Response status:', response.status);
+			
+			// Clear tokens regardless of response
+			// The auth store will handle clearing tokens on 401
+			
+			// Redirect to login for non-auth endpoints
+			if (browser && !endpoint.includes('/auth/')) {
+				console.warn('🔴 [API] Redirecting to login due to 401');
+				goto('/auth/login?expired=true');
 			}
+			
+			return { error: 'Authentication required' };
+		}
 			
 			// Check if response is JSON
 			const contentType = response.headers.get('content-type');

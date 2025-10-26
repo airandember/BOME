@@ -679,9 +679,23 @@ export async function apiRequest(endpoint: string, options: RequestInit & { onPr
 				const payload = JSON.parse(atob(tokenParts[1]));
 				const expirationTime = payload.exp * 1000; // Convert to milliseconds
 				const now = Date.now();
+				const timeUntilExpiry = expirationTime - now;
+				const minutesUntilExpiry = Math.floor(timeUntilExpiry / 1000 / 60);
 				
-				if (expirationTime < now) {
+			console.log('🔍 Token expiry check:', {
+				endpoint,
+				expiresAt: new Date(expirationTime).toLocaleString(),
+				now: new Date(now).toLocaleString(),
+				minutesUntilExpiry,
+				isExpired: expirationTime < now,
+				isExpiredBeyondGracePeriod: expirationTime < (now - 30000)
+			});
+			
+			// Only redirect if token is ACTUALLY expired (with 30 second grace period)
+			// This prevents race conditions where clock skew or loading delays cause premature redirects
+			if (expirationTime < (now - 30000)) {
 					console.warn('🔴 Token expired BEFORE request - clearing auth');
+					console.warn('🔴 Token was expired by:', Math.abs(minutesUntilExpiry), 'minutes');
 					SecureTokenStorage.clearTokens();
 					auth.set({
 						isAuthenticated: false,
@@ -701,18 +715,23 @@ export async function apiRequest(endpoint: string, options: RequestInit & { onPr
 				}
 			}
 		} catch (e) {
-			console.warn('🔴 Error checking token expiration:', e);
-			// If we can't decode the token, clear it
-			SecureTokenStorage.clearTokens();
-			auth.set({
-				isAuthenticated: false,
-				user: null,
-				token: null,
-				loading: false,
-				error: null
-			});
-			authTokens.set(null);
-			throw new Error('Invalid token - please login again');
+			// Only clear token if it's a decode error, not expiration
+			if (e instanceof Error && !e.message.includes('expired')) {
+				console.warn('🔴 Error decoding token:', e);
+				// If we can't decode the token, clear it
+				SecureTokenStorage.clearTokens();
+				auth.set({
+					isAuthenticated: false,
+					user: null,
+					token: null,
+					loading: false,
+					error: null
+				});
+				authTokens.set(null);
+				throw new Error('Invalid token - please login again');
+			} else {
+				throw e; // Re-throw expiration errors
+			}
 		}
 		
 		config.headers = {

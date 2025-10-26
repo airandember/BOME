@@ -100,10 +100,10 @@
 		<div class="auth-footer">
 			<p>
 				Don't have an account?
-				<a href="/register" class="link">Sign up</a>
+				<a href="/auth/register" class="link">Sign up</a>
 			</p>
 			<p>
-				<a href="/forgot-password" class="link">Forgot your password?</a>
+				<!--<a href="/forgot-password" class="link">Forgot your password?</a>-->
 			</p>
 		</div>
 	</div>

@@ -6,7 +6,7 @@
 		label: string;
 		sortable?: boolean;
 		filterable?: boolean;
-		type?: 'text' | 'number' | 'currency' | 'date' | 'boolean' | 'actions';
+		type?: 'text' | 'number' | 'currency' | 'date' | 'boolean' | 'actions' | 'days_left';
 		width?: string;
 		align?: 'left' | 'center' | 'right';
 		format?: (value: any) => string;
@@ -168,9 +168,21 @@
 			case 'number':
 				return Number(value).toLocaleString();
 			
+			case 'days_left':
+				// Return the number as-is, styling handled in template
+				return String(value);
+			
 			default:
 				return String(value);
 		}
+	}
+	
+	function getDaysLeftClass(value: any): string {
+		if (value == null) return '';
+		const numValue = Number(value);
+		if (numValue < 0) return 'days-left-negative';
+		if (numValue > 0) return 'days-left-positive';
+		return '';
 	}
 	
 	function getSortIcon(column: Column): string {
@@ -308,32 +320,32 @@
 								</td>
 							{/if}
 							
-							{#each columns as column}
-								<td class="table-cell {column.align || 'left'}">
-									{#if column.type === 'actions'}
-										<div class="action-buttons">
-											<button
-												type="button"
-												class="action-btn"
-												onclick={() => handleRowAction(item, 'edit')}
-												title="Edit"
-											>
-												✏️
-											</button>
-											<button
-												type="button"
-												class="action-btn"
-												onclick={() => handleRowAction(item, 'view')}
-												title="View Details"
-											>
-												👁️
-											</button>
-										</div>
-									{:else}
-										{formatValue(item[column.key], column)}
-									{/if}
-								</td>
-							{/each}
+						{#each columns as column}
+							<td class="table-cell {column.align || 'left'} {column.type === 'days_left' ? getDaysLeftClass(item[column.key]) : ''}">
+								{#if column.type === 'actions'}
+									<div class="action-buttons">
+										<button
+											type="button"
+											class="action-btn"
+											onclick={() => handleRowAction(item, 'edit')}
+											title="Edit"
+										>
+											✏️
+										</button>
+										<button
+											type="button"
+											class="action-btn"
+											onclick={() => handleRowAction(item, 'view')}
+											title="View Details"
+										>
+											👁️
+										</button>
+									</div>
+								{:else}
+									{formatValue(item[column.key], column)}
+								{/if}
+							</td>
+						{/each}
 						</tr>
 					{/each}
 				</tbody>
@@ -868,5 +880,16 @@
 	.mobile-status-badge.pending {
 		background-color: #fef3c7;
 		color: #d97706;
+	}
+
+	/* Days Left Styling */
+	.days-left-negative {
+		color: #dc2626;
+		font-weight: bold;
+	}
+
+	.days-left-positive {
+		color: #16a34a;
+		font-style: italic;
 	}
 </style>

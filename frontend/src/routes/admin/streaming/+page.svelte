@@ -36,8 +36,10 @@
 			isLoading = true;
 			error = '';
 
+			console.log('🔍 [STREAMING-PAGE] About to call /admin/streaming/dashboard');
 			// Fetch dashboard data from API
 			const response = await api.get('/admin/streaming/dashboard');
+			console.log('🔍 [STREAMING-PAGE] Dashboard API response received:', response);
 			if (response.data) {
 				dashboardData = response.data;
 				
@@ -68,7 +70,8 @@
 				await deriveMetricsFromSubscribers();
 			}
 		} catch (err: unknown) {
-			console.error('Error loading dashboard data:', err);
+			console.error('🔴 [STREAMING-PAGE] Error loading dashboard data:', err);
+			console.error('🔴 [STREAMING-PAGE] Error type:', typeof err, err);
 			error = err instanceof Error ? err.message : 'An unknown error occurred';
 			// If API fails, still try to populate metrics from subscribers as a graceful fallback
 			try { await deriveMetricsFromSubscribers(); } catch {}

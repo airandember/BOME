@@ -126,7 +126,7 @@
 		<div class="auth-footer">
 			<p>
 				Already have an account?
-				<a href="/login" class="link">Log in</a>
+				<a href="/auth/login" class="link">Log in</a>
 			</p>
 		</div>
 	</div>

@@ -11,6 +11,8 @@
 	let isSuperAdmin = $state(false);
 	let isDark = $state(false);
 	let authChecked = $state(false); // Track if auth has been checked at least once
+	let authStableTime = $state<number>(0); // Timestamp when auth became stable
+	let redirectTimeout: NodeJS.Timeout | null = null;
 
 	// Subscribe to theme changes
 	theme.subscribe(state => {
@@ -73,10 +75,20 @@
 					'events_manager', 'advertisement_manager', 'user_manager',
 					'analytics_manager', 'financial_admin', 'admin'
 				];
+				const wasAdmin = isAdmin;
 				isAdmin = adminRoles.includes($auth.user.role);
 				userRole = $auth.user.role;
 				isSuperAdmin = $auth.user.role === 'super_admin';
+				
+				// If auth state just stabilized (became admin), record timestamp
+				if (isAdmin && !wasAdmin) {
+					authStableTime = Date.now();
+					console.log('✅ Auth stabilized - User is admin:', userRole);
+				}
 			} else {
+				// Auth state cleared - but don't immediately assume user is logged out
+				// Could be a navigation race condition
+				console.log('⚠️ Auth state cleared (isAuthenticated:', $auth.isAuthenticated, ', user:', $auth.user, ')');
 				isAdmin = false;
 				userRole = '';
 				isSuperAdmin = false;
@@ -84,18 +96,66 @@
 		}
 	});
 
-	// Reactive redirect logic using $effect for runes compatibility
+	// Reactive redirect logic using $effect for runes compatibility - DEFENSIVE APPROACH
 	$effect(() => {
-		// Only redirect if auth has been checked and not loading (prevents HMR redirects)
+		// Clear any pending redirect timeouts
+		if (redirectTimeout) {
+			clearTimeout(redirectTimeout);
+			redirectTimeout = null;
+		}
+		
+		// Only consider redirecting if auth has been checked and is not loading
 		if (authChecked && !$auth.loading) {
-			if ($page.url.pathname !== '/admin' && !isAdmin && !$auth.isAuthenticated) {
-				// User is not authenticated, redirect to login
-				console.log('🔐 Not authenticated - redirecting to login');
-				goto('/admin');
-			} else if ($page.url.pathname !== '/admin' && !isAdmin && $auth.isAuthenticated) {
-				// User is authenticated but not admin, redirect to main dashboard
-				console.log('⚠️ Authenticated but not admin - redirecting to main dashboard');
-				goto('/admin');
+			const currentPath = $page.url.pathname;
+			const isOnAdminRoute = currentPath !== '/admin' && currentPath.startsWith('/admin');
+			
+			console.log('🔍 Admin layout auth check:', {
+				pathname: currentPath,
+				isAdmin,
+				isAuthenticated: $auth.isAuthenticated,
+				userRole: $auth.user?.role,
+				hasToken: !!$auth.token,
+				authStableTime: authStableTime ? `${Date.now() - authStableTime}ms ago` : 'never'
+			});
+			
+			// DEFENSIVE RULE 1: If user is authenticated and IS admin, allow access immediately
+			if ($auth.isAuthenticated && isAdmin && $auth.user) {
+				console.log('✅ User authenticated as admin - access granted');
+				return; // Exit early - no redirect needed
+			}
+			
+			// DEFENSIVE RULE 2: If auth is still stabilizing, wait before redirecting
+			const timeSinceStable = authStableTime ? Date.now() - authStableTime : 0;
+			const isAuthStillStabilizing = timeSinceStable < 500; // 500ms grace period
+			
+			if (isAuthStillStabilizing) {
+				console.log('⏳ Auth still stabilizing - waiting before redirect decision');
+				return; // Don't redirect yet - auth might still be loading
+			}
+			
+			// DEFENSIVE RULE 3: Only redirect if we're CERTAIN user should not be here
+			if (isOnAdminRoute && !isAdmin) {
+				// Check if user has a token but just hasn't loaded user data yet
+				if ($auth.token && !$auth.user) {
+					console.log('⏳ Has token but user data not loaded yet - waiting...');
+					// Set a timeout to re-check after auth has time to load
+					redirectTimeout = setTimeout(() => {
+						if (!isAdmin && !$auth.user) {
+							console.warn('🚫 Token exists but user data failed to load - likely expired');
+							goto('/auth/login?expired=true');
+						}
+					}, 1000); // 1 second grace period for user data to load
+					return;
+				}
+				
+				// User definitely should not be here
+				if (!$auth.isAuthenticated || !$auth.token) {
+					console.warn('🚫 User not authenticated - redirecting to login');
+					goto('/auth/login?expired=true');
+				} else if ($auth.isAuthenticated && !isAdmin) {
+					console.warn('🚫 User authenticated but not admin - redirecting');
+					goto('/admin');
+				}
 			}
 		}
 	});
