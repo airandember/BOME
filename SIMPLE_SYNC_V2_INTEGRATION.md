@@ -1,7 +1,7 @@
-# Simple Sync V2 Integration - Oct 31, 2025
+# Simple Sync V2 Migration - Oct 31, 2025
 
 ## 🎯 Objective
-Make it easy for admins to populate v2 Stripe tables through the existing Simple Sync UI instead of running CLI tools manually.
+Migrate Simple Sync to use **v2 tables exclusively**, eliminating v1 sync errors and providing a cleaner architecture.
 
 ## ✅ What Was Done
 
