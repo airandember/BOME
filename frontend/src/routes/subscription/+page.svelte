@@ -165,6 +165,20 @@
 
 				if (!response.ok) {
 					const errorData = await response.json();
+					
+					// 🔒 Handle "already subscribed" case (HTTP 409 Conflict)
+					if (response.status === 409 && errorData.action === 'redirect_dashboard') {
+						// User already has active subscription - show BETA message and redirect to dashboard
+						const supportEmail = errorData.support_email || 'support@bookofmormonevidence.org';
+						const betaMessage = `You already have an active subscription! Want to change your subscription while we're in BETA? Contact ${supportEmail}`;
+						
+						showToast(betaMessage, 'info');
+						setTimeout(() => {
+							goto('/dashboard?tab=subscription');
+						}, 3000); // 3 seconds so they can read the message
+						throw new Error('Redirecting to subscription dashboard...');
+					}
+					
 					throw new Error(errorData.error || 'Failed to create checkout session');
 				}
 

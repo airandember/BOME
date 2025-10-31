@@ -1,0 +1,620 @@
+{
+  "generated_at": "2025-10-31",
+  "summary": {
+    "critical_users_both_issues": 2,
+    "total_users_with_issues": 29,
+    "users_with_multiple_active_subs_only": 17,
+    "users_with_multiple_customers_only": 10
+  },
+  "users": [
+    {
+      "email": "jameskersey2@gmail.com",
+      "user_id": 4891,
+      "customer_count": 3,
+      "customer_ids": [
+        "cus_S7VixQutVow4BB",
+        "cus_TC4zTVEOZbzRXe",
+        "cus_TC503P4Vlw8XrB"
+      ],
+      "active_subscription_count": 3,
+      "total_subscription_count": 3,
+      "active_subscription_ids": [
+        "sub_1RDGhKFpxJJNWdU84MiA614D",
+        "sub_1SFgpjFpxJJNWdU8hO7ZKZzM",
+        "sub_1SFgquFpxJJNWdU80aoQH9gO"
+      ],
+      "all_subscription_ids": [
+        "sub_1RDGhKFpxJJNWdU84MiA614D",
+        "sub_1SFgpjFpxJJNWdU8hO7ZKZzM",
+        "sub_1SFgquFpxJJNWdU80aoQH9gO"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "3 customers + 3 active subs"
+    },
+    {
+      "email": "kjoelwa@me.com",
+      "user_id": 7188,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_GydYIzu6GVQqTe"
+      ],
+      "active_subscription_count": 3,
+      "total_subscription_count": 3,
+      "active_subscription_ids": [
+        "sub_1KhgLZFpxJJNWdU89qmouiBC",
+        "sub_1P7R0ZFpxJJNWdU8fwtVzo6R",
+        "sub_GydYLtZruOLjJH"
+      ],
+      "all_subscription_ids": [
+        "sub_1KhgLZFpxJJNWdU89qmouiBC",
+        "sub_1P7R0ZFpxJJNWdU8fwtVzo6R",
+        "sub_GydYLtZruOLjJH"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "3 active subs"
+    },
+    {
+      "email": "pdm1441@gmail.com",
+      "user_id": 4881,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_SLbPdKJ0VX8lYG",
+        "cus_TKJiFjARd5bqb0"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 3,
+      "active_subscription_ids": [
+        "sub_1SNf5XFpxJJNWdU8YMCmWMyx",
+        "sub_1SNf6gFpxJJNWdU8ipWrUpPx"
+      ],
+      "all_subscription_ids": [
+        "sub_1RQuCrFpxJJNWdU8lciTqVon",
+        "sub_1SNf5XFpxJJNWdU8YMCmWMyx",
+        "sub_1SNf6gFpxJJNWdU8ipWrUpPx"
+      ],
+      "subscription_statuses": [
+        "active",
+        "past_due"
+      ],
+      "issue": "2 customers + 2 active subs"
+    },
+    {
+      "email": "benheaton1@gmail.com",
+      "user_id": 6196,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_I4wMoSyVNpXsnJ"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1KfoYUFpxJJNWdU8f86G4Wuu",
+        "sub_1MrYqMFpxJJNWdU8dTqfYZBq"
+      ],
+      "all_subscription_ids": [
+        "sub_1KfoYUFpxJJNWdU8f86G4Wuu",
+        "sub_1MrYqMFpxJJNWdU8dTqfYZBq"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "clay.inspire@gmail.com",
+      "user_id": 5198,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_LZg1uE9boQeXLP"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1QSllOFpxJJNWdU892o9P3Pr",
+        "sub_1R9YP9FpxJJNWdU8Tly4Z9rp"
+      ],
+      "all_subscription_ids": [
+        "sub_1QSllOFpxJJNWdU892o9P3Pr",
+        "sub_1R9YP9FpxJJNWdU8Tly4Z9rp"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "dbarger11@cox.net",
+      "user_id": 5159,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_MWf41X1dNPWTmx"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1Lnbk6FpxJJNWdU8D24Zecqm",
+        "sub_1NDHwuFpxJJNWdU8owoQcIGM"
+      ],
+      "all_subscription_ids": [
+        "sub_1Lnbk6FpxJJNWdU8D24Zecqm",
+        "sub_1NDHwuFpxJJNWdU8owoQcIGM"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "emersonrowley@hotmail.com",
+      "user_id": 7267,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_GRlqogzCK4LFx6"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1LlIV9FpxJJNWdU8mErBTbTp",
+        "sub_GRlqPuK8MWHBWg"
+      ],
+      "all_subscription_ids": [
+        "sub_1LlIV9FpxJJNWdU8mErBTbTp",
+        "sub_GRlqPuK8MWHBWg"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "floydwgowans@gmail.com",
+      "user_id": 6771,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_HPxsOj3OMHVeAR"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1K6F8jFpxJJNWdU84HToSWQm",
+        "sub_KDQPIJUy4KoAtG"
+      ],
+      "all_subscription_ids": [
+        "sub_1K6F8jFpxJJNWdU84HToSWQm",
+        "sub_KDQPIJUy4KoAtG"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "hushpuppi2001@yahoo.com",
+      "user_id": 6769,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_HQFQFUi2qeogou"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1NaHRKFpxJJNWdU8b2stv56G",
+        "sub_1RhdznFpxJJNWdU8hE7geCaA"
+      ],
+      "all_subscription_ids": [
+        "sub_1NaHRKFpxJJNWdU8b2stv56G",
+        "sub_1RhdznFpxJJNWdU8hE7geCaA"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "jam777jam777@netscape.net",
+      "user_id": 4883,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_SI6pgIwZP0EFVS"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1RNWcJFpxJJNWdU8e86tjd6t",
+        "sub_1SDsT8FpxJJNWdU8wKOhVMwy"
+      ],
+      "all_subscription_ids": [
+        "sub_1RNWcJFpxJJNWdU8e86tjd6t",
+        "sub_1SDsT8FpxJJNWdU8wKOhVMwy"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "james.hewitt.329@gmail.com",
+      "user_id": 4832,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_T8prwglGDXkLMJ"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1SCYBNFpxJJNWdU8c0HePfR0",
+        "sub_1SCYCNFpxJJNWdU8WMHAqVQp"
+      ],
+      "all_subscription_ids": [
+        "sub_1SCYBNFpxJJNWdU8c0HePfR0",
+        "sub_1SCYCNFpxJJNWdU8WMHAqVQp"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "lorisessentialoils@gmail.com",
+      "user_id": 7322,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_G66y51MBpOGvGg"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1M24vYFpxJJNWdU8Ieo1PZR4",
+        "sub_G66yaJmViaZeaK"
+      ],
+      "all_subscription_ids": [
+        "sub_1M24vYFpxJJNWdU8Ieo1PZR4",
+        "sub_G66yaJmViaZeaK"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "lry@ebbe-america.com",
+      "user_id": 5561,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_JDBeYV6wtQIiTG"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1JeK3kFpxJJNWdU8DGQ4vz2Y",
+        "sub_1MqJu5FpxJJNWdU8idpqZ3J3"
+      ],
+      "all_subscription_ids": [
+        "sub_1JeK3kFpxJJNWdU8DGQ4vz2Y",
+        "sub_1MqJu5FpxJJNWdU8idpqZ3J3"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "lwinkelkotter@gmail.com",
+      "user_id": 5729,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_IPWLLDXhp4YJQp"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1PEySDFpxJJNWdU8s8BqMTSE",
+        "sub_JIuERo93LuzMk8"
+      ],
+      "all_subscription_ids": [
+        "sub_1PEySDFpxJJNWdU8s8BqMTSE",
+        "sub_JIuERo93LuzMk8"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "lyman.stevens@comcast.net",
+      "user_id": 7135,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_H3s6AxiElDGG5G"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1OYF2fFpxJJNWdU8DJxEtuLa",
+        "sub_H3s6SiWh6RqcR1"
+      ],
+      "all_subscription_ids": [
+        "sub_1OYF2fFpxJJNWdU8DJxEtuLa",
+        "sub_H3s6SiWh6RqcR1"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "maryidabush@gmail.com",
+      "user_id": 6236,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_I4lxRMFDnL4Opt"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1Lou3PFpxJJNWdU8VtCdlRPc",
+        "sub_1Q4wNuFpxJJNWdU8hlc81Xy7"
+      ],
+      "all_subscription_ids": [
+        "sub_1Lou3PFpxJJNWdU8VtCdlRPc",
+        "sub_1Q4wNuFpxJJNWdU8hlc81Xy7"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "mike.armatage@gmail.com",
+      "user_id": 7118,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_H4VP2PvqTQBiLu"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1K5z5UFpxJJNWdU8KxX2hlt4",
+        "sub_1OTfnTFpxJJNWdU8FZTG50ox"
+      ],
+      "all_subscription_ids": [
+        "sub_1K5z5UFpxJJNWdU8KxX2hlt4",
+        "sub_1OTfnTFpxJJNWdU8FZTG50ox"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "pthooah@gmail.com",
+      "user_id": 7154,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_H2P2lfN3hKCBIy"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1JeO9JFpxJJNWdU8kgqvgnrf",
+        "sub_1K2gqdFpxJJNWdU8tyTv2hbE"
+      ],
+      "all_subscription_ids": [
+        "sub_1JeO9JFpxJJNWdU8kgqvgnrf",
+        "sub_1K2gqdFpxJJNWdU8tyTv2hbE"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "steveevans@outlook.com",
+      "user_id": 7269,
+      "customer_count": 1,
+      "customer_ids": [
+        "cus_GRG44uwdjinIMF"
+      ],
+      "active_subscription_count": 2,
+      "total_subscription_count": 2,
+      "active_subscription_ids": [
+        "sub_1RDDHBFpxJJNWdU8Wg65hTme",
+        "sub_1RDDI2FpxJJNWdU8WO7y171K"
+      ],
+      "all_subscription_ids": [
+        "sub_1RDDHBFpxJJNWdU8Wg65hTme",
+        "sub_1RDDI2FpxJJNWdU8WO7y171K"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 active subs"
+    },
+    {
+      "email": "ericgessel@gmail.com",
+      "user_id": 7014,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_HJsNLfuaMqxZ5m",
+        "cus_TGAcxsB1BicDbY"
+      ],
+      "active_subscription_count": 1,
+      "total_subscription_count": 1,
+      "active_subscription_ids": [
+        "sub_1SJeHKFpxJJNWdU8ulBXEuIW"
+      ],
+      "all_subscription_ids": [
+        "sub_1SJeHKFpxJJNWdU8ulBXEuIW"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 customers"
+    },
+    {
+      "email": "gay.martin@gmail.com",
+      "user_id": 7333,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_FzdDY0PonL6zn3",
+        "cus_TDZsaz4yCHJ3AY"
+      ],
+      "active_subscription_count": 1,
+      "total_subscription_count": 1,
+      "active_subscription_ids": [
+        "sub_1SH8iRFpxJJNWdU8YroUBmXM"
+      ],
+      "all_subscription_ids": [
+        "sub_1SH8iRFpxJJNWdU8YroUBmXM"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 customers"
+    },
+    {
+      "email": "joyfullavatar@gmail.com",
+      "user_id": 4886,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_SFOdgnsyBO3hAv",
+        "cus_SGRNo0QogNynbA"
+      ],
+      "active_subscription_count": 1,
+      "total_subscription_count": 1,
+      "active_subscription_ids": [
+        "sub_1RLuUYFpxJJNWdU8JwP2LLgu"
+      ],
+      "all_subscription_ids": [
+        "sub_1RLuUYFpxJJNWdU8JwP2LLgu"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 customers"
+    },
+    {
+      "email": "robberch@gmail.com",
+      "user_id": 4873,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_I3gwAsaWJxA04o",
+        "cus_SqP3fXHCE8o9sA"
+      ],
+      "active_subscription_count": 1,
+      "total_subscription_count": 1,
+      "active_subscription_ids": [
+        "sub_1RuiEvFpxJJNWdU8StF1Xgr4"
+      ],
+      "all_subscription_ids": [
+        "sub_1RuiEvFpxJJNWdU8StF1Xgr4"
+      ],
+      "subscription_statuses": [
+        "active"
+      ],
+      "issue": "2 customers"
+    },
+    {
+      "email": "dbates62@hotmail.com",
+      "user_id": 4987,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_PU3oDefn66rr3y",
+        "cus_PxJSTelFAeAQm8"
+      ],
+      "active_subscription_count": 0,
+      "total_subscription_count": 1,
+      "active_subscription_ids": [],
+      "all_subscription_ids": [
+        "sub_1P7OpnFpxJJNWdU8aWwmKWzr"
+      ],
+      "subscription_statuses": [
+        "unpaid"
+      ],
+      "issue": "2 customers"
+    },
+    {
+      "email": "garrettreichert@hotmail.com",
+      "user_id": 5297,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_HSdztzkLMeSoEy",
+        "cus_KUFR1LIfvAxiBv"
+      ],
+      "active_subscription_count": 0,
+      "total_subscription_count": 0,
+      "active_subscription_ids": [],
+      "all_subscription_ids": [],
+      "subscription_statuses": [],
+      "issue": "2 customers"
+    },
+    {
+      "email": "jillypill1@yahoo.com",
+      "user_id": 4992,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_H4zvReb8kIeY2c",
+        "cus_PwG2D2iXsffjpW"
+      ],
+      "active_subscription_count": 0,
+      "total_subscription_count": 1,
+      "active_subscription_ids": [],
+      "all_subscription_ids": [
+        "sub_1Q7jurFpxJJNWdU8QLoDDZ2V"
+      ],
+      "subscription_statuses": [
+        "past_due"
+      ],
+      "issue": "2 customers"
+    },
+    {
+      "email": "lbar3351@gmail.com",
+      "user_id": 5781,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_IBIWONCliEW2lJ",
+        "cus_IC21UOyXgdObKP"
+      ],
+      "active_subscription_count": 0,
+      "total_subscription_count": 0,
+      "active_subscription_ids": [],
+      "all_subscription_ids": [],
+      "subscription_statuses": [],
+      "issue": "2 customers"
+    },
+    {
+      "email": "shauna_math@outlook.com",
+      "user_id": 5305,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_KQW4QSxKXvWqTf",
+        "cus_TGcJEtjOvgvFV1"
+      ],
+      "active_subscription_count": 0,
+      "total_subscription_count": 0,
+      "active_subscription_ids": [],
+      "all_subscription_ids": [],
+      "subscription_statuses": [],
+      "issue": "2 customers"
+    },
+    {
+      "email": "sherryjohns@hotmail.com",
+      "user_id": 5197,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_HlIAH7fJWNmqE8",
+        "cus_La7ss9iAAJfcle"
+      ],
+      "active_subscription_count": 0,
+      "total_subscription_count": 0,
+      "active_subscription_ids": [],
+      "all_subscription_ids": [],
+      "subscription_statuses": [],
+      "issue": "2 customers"
+    }
+  ]
+}

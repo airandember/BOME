@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 
+	"bome-backend/internal/database"
 	"bome-backend/internal/middleware"
 	"bome-backend/internal/services"
 
@@ -46,7 +47,7 @@ func SetupPublicStripeRoutes(v1 *gin.RouterGroup, stripePublicService *services.
 
 // SetupAuthenticatedStripeRoutes sets up Stripe routes that require authentication
 // DEPRECATED: Phase 7 replaces this with user-controlled subscription management
-func SetupAuthenticatedStripeRoutes(v1 *gin.RouterGroup, stripePublicService *services.StripePublicService) {
+func SetupAuthenticatedStripeRoutes(v1 *gin.RouterGroup, db *database.DB, stripePublicService *services.StripePublicService) {
 	if stripePublicService == nil {
 		log.Printf("⚠️ [STRIPE-AUTH] StripePublicService is nil, skipping authenticated routes")
 		return
@@ -110,17 +111,52 @@ func SetupAuthenticatedStripeRoutes(v1 *gin.RouterGroup, stripePublicService *se
 				return
 			}
 
-			log.Printf("🔍 [CHECKOUT] Creating embedded checkout session for user %v, plan %s", userID, req.PlanID)
+			userIDInt, ok := userID.(int)
+			if !ok {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID type"})
+				return
+			}
+
+			log.Printf("🔍 [CHECKOUT] Creating embedded checkout session for user %d, plan %s", userIDInt, req.PlanID)
+
+			// 🔒 CHECK: Prevent users with active subscriptions from creating new ones
+			linkingService := services.NewCustomerLinkingService(db)
+			userSubService := services.NewUserSubscriptionService(db, linkingService)
+			canSubscribe, message, err := userSubService.CanUserSubscribe(userIDInt)
+			if err != nil {
+				log.Printf("❌ [CHECKOUT] Failed to check subscription eligibility: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify subscription status"})
+				return
+			}
+
+			if !canSubscribe {
+				log.Printf("🚫 [CHECKOUT] User %d blocked from creating new subscription: %s", userIDInt, message)
+
+				// Get support email from public settings
+				var supportEmail string
+				err = db.DB.QueryRow("SELECT value FROM public_settings WHERE key = 'support_email'").Scan(&supportEmail)
+				if err != nil || supportEmail == "" {
+					supportEmail = "support@bookofmormonevidence.org" // Fallback
+				}
+
+				c.JSON(http.StatusConflict, gin.H{
+					"error":         "Cannot create new subscription",
+					"message":       "You already have an active subscription",
+					"support_email": supportEmail,
+					"action":        "redirect_dashboard",
+				})
+				return
+			}
 
 			// Create embedded checkout session using public service
-			clientSecret, err := stripePublicService.CreateEmbeddedCheckoutSession(req.PlanID, req.ReturnURL, fmt.Sprintf("%v", userID))
+			clientSecret, err := stripePublicService.CreateEmbeddedCheckoutSession(req.PlanID, req.ReturnURL, fmt.Sprintf("%v", userIDInt))
 			if err != nil {
 				log.Printf("❌ [CHECKOUT] Failed to create checkout session: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create checkout session", "details": err.Error()})
 				return
 			}
 
-			log.Printf("✅ [CHECKOUT] Embedded checkout session created successfully")
+			log.Printf("✅ [CHECKOUT] Embedded checkout session created successfully for user %d", userIDInt)
 			c.JSON(http.StatusOK, gin.H{
 				"client_secret": clientSecret,
 			})
