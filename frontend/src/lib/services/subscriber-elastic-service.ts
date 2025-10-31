@@ -97,7 +97,7 @@ export interface DiagnosticData {
 }
 
 class SubscriberElasticService {
-	private baseUrl = '/admin/subscriber-elastic';
+	private baseUrl = '/admin/subscriber-elastic-v2'; // Updated to v2!
 
 	/**
 	 * Get all unified subscribers with complete data

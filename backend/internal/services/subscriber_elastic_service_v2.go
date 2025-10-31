@@ -81,7 +81,7 @@ func (s *SubscriberElasticServiceV2) GetUnifiedSubscriberByIDV2(userID int) (*Un
 			JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
 			WHERE usc.user_id = $1 AND usc.is_primary = true
 		),
-		user_subscriptions AS (
+		v2_subscriptions AS (
 			-- Get the most recent subscription for the PRIMARY customer only
 			SELECT DISTINCT ON (u.id)
 				u.id as user_id,
@@ -106,12 +106,12 @@ func (s *SubscriberElasticServiceV2) GetUnifiedSubscriberByIDV2(userID int) (*Un
 					WHEN ss.status IN ('canceled', 'incomplete', 'incomplete_expired', 'past_due', 'unpaid') THEN 'legacy'
 					ELSE 'unknown'
 				END as legacy_status
-			FROM users u
-			JOIN user_primary_customer upc ON upc.user_id = u.id
-			JOIN stripe_customers_v2 sc ON sc.id = upc.stripe_customer_id
-			JOIN stripe_subscriptions_v2 ss ON ss.stripe_customer_id = sc.id
-			LEFT JOIN stripe_products_v2 sp ON ss.stripe_product_id = sp.id
-			LEFT JOIN stripe_prices_v2 spr ON ss.stripe_price_id = spr.id
+		FROM users u
+		JOIN user_primary_customer upc ON upc.user_id = u.id
+		JOIN stripe_customers_v2 sc ON sc.id = upc.stripe_customer_id
+		JOIN stripe_subscriptions_v2 ss ON ss.customer_id = sc.id
+		LEFT JOIN stripe_prices_v2 spr ON ss.price_id = spr.id
+		LEFT JOIN stripe_products_v2 sp ON spr.product_id = sp.id
 			WHERE u.id = $1 AND ss.status IN ('active', 'trialing', 'canceled', 'incomplete', 'incomplete_expired', 'past_due', 'unpaid')
 			ORDER BY u.id, ss.stripe_created_at DESC
 		),
@@ -130,12 +130,11 @@ func (s *SubscriberElasticServiceV2) GetUnifiedSubscriberByIDV2(userID int) (*Un
 					ELSE false
 				END as has_active_plan
 			FROM users u
-			LEFT JOIN user_subscriptions us ON u.id = us.user_id
-			WHERE u.id = $1
+			LEFT JOIN v2_subscriptions us ON u.id = us.user_id
 		)
 		SELECT 
 			u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified, u.is_active,
-			u.created_at, u.last_login, u.stripe_customer_id,
+			u.created_at, u.last_login, upc.stripe_customer_stripe_id,
 			upc.stripe_customer_stripe_id as primary_customer_id,
 			us.subscription_id, us.product_name as plan_name,
 			us.plan_type, us.subscription_status as plan_status,
@@ -154,7 +153,7 @@ func (s *SubscriberElasticServiceV2) GetUnifiedSubscriberByIDV2(userID int) (*Un
 			EXTRACT(DAYS FROM NOW() - u.created_at)::int as account_age_days
 		FROM users u
 		LEFT JOIN user_primary_customer upc ON upc.user_id = u.id
-		LEFT JOIN user_subscriptions us ON u.id = us.user_id
+		LEFT JOIN v2_subscriptions us ON u.id = us.user_id
 		LEFT JOIN user_access ua ON u.id = ua.user_id
 		WHERE u.id = $1
 	`
@@ -294,7 +293,7 @@ func (s *SubscriberElasticServiceV2) GetAllUnifiedSubscribersV2() ([]UnifiedSubs
 			JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
 			WHERE usc.is_primary = true
 		),
-		user_subscriptions AS (
+		v2_subscriptions AS (
 			-- Get the most recent subscription for each user's PRIMARY customer
 			SELECT DISTINCT ON (u.id)
 				u.id as user_id,
@@ -321,9 +320,9 @@ func (s *SubscriberElasticServiceV2) GetAllUnifiedSubscribersV2() ([]UnifiedSubs
 			FROM users u
 			LEFT JOIN user_primary_customers upc ON upc.user_id = u.id
 			LEFT JOIN stripe_customers_v2 sc ON sc.id = upc.stripe_customer_id
-			LEFT JOIN stripe_subscriptions_v2 ss ON ss.stripe_customer_id = sc.id
-			LEFT JOIN stripe_products_v2 sp ON ss.stripe_product_id = sp.id
-			LEFT JOIN stripe_prices_v2 spr ON ss.stripe_price_id = spr.id
+		LEFT JOIN stripe_subscriptions_v2 ss ON ss.customer_id = sc.id
+		LEFT JOIN stripe_prices_v2 spr ON ss.price_id = spr.id
+		LEFT JOIN stripe_products_v2 sp ON spr.product_id = sp.id
 			WHERE ss.status IS NULL OR ss.status IN ('active', 'trialing', 'canceled', 'incomplete', 'incomplete_expired', 'past_due', 'unpaid')
 			ORDER BY u.id, ss.stripe_created_at DESC
 		),
@@ -341,11 +340,11 @@ func (s *SubscriberElasticServiceV2) GetAllUnifiedSubscribersV2() ([]UnifiedSubs
 					ELSE false
 				END as has_active_plan
 			FROM users u
-			LEFT JOIN user_subscriptions us ON u.id = us.user_id
+			LEFT JOIN v2_subscriptions us ON u.id = us.user_id
 		)
 		SELECT 
 			u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified, u.is_active,
-			u.created_at, u.last_login, u.stripe_customer_id,
+			u.created_at, u.last_login, upc.stripe_customer_stripe_id,
 			upc.stripe_customer_stripe_id as primary_customer_id,
 			us.subscription_id, us.product_name,
 			us.plan_type, us.subscription_status,
@@ -364,7 +363,7 @@ func (s *SubscriberElasticServiceV2) GetAllUnifiedSubscribersV2() ([]UnifiedSubs
 			EXTRACT(DAYS FROM NOW() - u.created_at)::int as account_age_days
 		FROM users u
 		LEFT JOIN user_primary_customers upc ON upc.user_id = u.id
-		LEFT JOIN user_subscriptions us ON u.id = us.user_id
+		LEFT JOIN v2_subscriptions us ON u.id = us.user_id
 		LEFT JOIN user_access ua ON u.id = ua.user_id
 		ORDER BY u.id
 	`
@@ -538,9 +537,9 @@ func (s *SubscriberElasticServiceV2) GetSubscriberStatsV2() (map[string]interfac
 				WHEN spr.recurring_interval = 'quarter' THEN (spr.unit_amount / 100.0) * 4
 				ELSE (spr.unit_amount / 100.0) * 12
 			END) as total_arr
-		FROM stripe_subscriptions_v2 ss
-		JOIN stripe_prices_v2 spr ON ss.stripe_price_id = spr.id
-		JOIN stripe_customers_v2 sc ON sc.id = ss.stripe_customer_id
+	FROM stripe_subscriptions_v2 ss
+	JOIN stripe_prices_v2 spr ON ss.price_id = spr.id
+	JOIN stripe_customers_v2 sc ON sc.id = ss.customer_id
 		JOIN user_stripe_customers_v2 usc ON usc.stripe_customer_id = sc.id
 		WHERE usc.is_primary = true
 		AND ss.status IN ('active', 'trialing')

@@ -5,14 +5,16 @@
 	import { auth, initializeAuth, testBackendConnectivity } from '$lib/auth';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import Navigation from '$lib/components/Navigation.svelte';
+	import SubscriptionManagementCard from '$lib/components/SubscriptionManagementCard.svelte';
+	import SubscriptionManagement from '$lib/components/SubscriptionManagement.svelte';
 
 	let user: any = null;
 	let isAuthenticated = false;
 	let loading = true;
 	let error = '';
 
-	// Tab state - now includes profile
-	let activeTab: 'dashboard' | 'profile' | 'advertiser' = 'dashboard';
+	// Tab state - now includes profile and subscription
+	let activeTab: 'dashboard' | 'profile' | 'subscription' | 'advertiser' = 'dashboard';
 
 	onMount(() => {
 		let unsubscribe: any = null;
@@ -57,6 +59,8 @@
 							
 							if (tabParam === 'profile') {
 								activeTab = 'profile';
+							} else if (tabParam === 'subscription') {
+								activeTab = 'subscription';
 							} else if (tabParam === 'advertiser') {
 								activeTab = 'advertiser';
 							} else {
@@ -104,7 +108,7 @@
 		};
 	});
 
-	function switchTab(tab: 'dashboard' | 'profile' | 'advertiser') {
+	function switchTab(tab: 'dashboard' | 'profile' | 'subscription' | 'advertiser') {
 		activeTab = tab;
 	}
 </script>
@@ -162,6 +166,15 @@
 					<circle cx="12" cy="7" r="4"/>
 				</svg>
 				Profile
+			</button>
+			<button 
+				class="tab-button {activeTab === 'subscription' ? 'active' : ''}"
+				on:click={() => switchTab('subscription')}
+			>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+				</svg>
+				Subscription
 			</button>
 			<button 
 				class="tab-button {activeTab === 'advertiser' ? 'active' : ''}"
@@ -230,24 +243,16 @@
 							</span>
 						</div>
 					</div>
-					
-					<div class="profile-actions">
-					<button class="btn btn-primary" on:click={() => goto('/user/subscriptions')}>
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-						</svg>
-						Manage Subscription
-					</button>
-						<button class="btn btn-secondary" on:click={() => goto('/dashboard?tab=advertiser')}>
-							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-								<circle cx="12" cy="12" r="3"/>
-							</svg>
-							Advertiser Portal
-						</button>
-					</div>
 				</div>
+
+				
 			</div>
+		{:else if activeTab === 'subscription'}
+			<!-- Subscription Tab Content -->
+			<div class="tab-content">
+				<SubscriptionManagement embedded={true} />
+			</div>
+		
 		{:else if activeTab === 'advertiser'}
 			<!-- Advertiser Tab Content -->
 			<div class="tab-content">
@@ -534,6 +539,13 @@
 	}
 
 	/* Profile Actions */
+	.subscription-section {
+		margin-top: 2rem;
+		max-width: 600px;
+		margin-left: auto;
+		margin-right: auto;
+	}
+
 	.profile-actions {
 		display: flex;
 		justify-content: center;

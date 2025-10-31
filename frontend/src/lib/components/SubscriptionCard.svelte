@@ -3,10 +3,10 @@
 	import { UserSubscriptionService } from '$lib/services/user-subscription-service';
 
 	export let subscription: UserSubscription;
-	export let canSelect: boolean = false; // Show "Keep This One" button
+	export let canSelect: boolean = false; // Show "Keep This One" button (for multiple active subscriptions)
 	export let isSelected: boolean = false; // Is this the selected subscription to keep?
 	export let onSelect: ((id: string) => void) | undefined = undefined;
-	export let onCancel: ((id: string) => void) | undefined = undefined;
+	// onCancel removed - users should contact support for cancellations
 
 	$: statusColor = UserSubscriptionService.getStatusColor(subscription.status);
 	$: daysLeftColor = UserSubscriptionService.getDaysLeftColor(subscription.days_until_renewal);
@@ -18,12 +18,6 @@
 	function handleSelect() {
 		if (onSelect) {
 			onSelect(subscription.id);
-		}
-	}
-
-	function handleCancel() {
-		if (onCancel) {
-			onCancel(subscription.id);
 		}
 	}
 </script>
@@ -102,11 +96,6 @@
 				<button class="btn btn-outline" on:click={handleSelect}>
 					⭐ Keep This One
 				</button>
-				{#if onCancel}
-					<button class="btn btn-danger" on:click={handleCancel}>
-						❌ Cancel
-					</button>
-				{/if}
 			{/if}
 		</div>
 	{:else if subscription.cancel_at_period_end}
@@ -115,13 +104,9 @@
 				⏳ Canceling at Period End
 			</button>
 		</div>
-	{:else if subscription.status === 'active' && onCancel}
-		<div class="card-actions">
-			<button class="btn btn-danger" on:click={handleCancel}>
-				❌ Cancel Subscription
-			</button>
-		</div>
 	{/if}
+	
+	<!-- Note: No cancel buttons - users should contact support for subscription changes -->
 </div>
 
 <style>

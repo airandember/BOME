@@ -9,6 +9,7 @@ import (
 
 	"bome-backend/internal/database"
 
+	"github.com/lib/pq"
 	"github.com/stripe/stripe-go/v74"
 	"github.com/stripe/stripe-go/v74/subscription"
 )
@@ -114,21 +115,21 @@ func (s *UserSubscriptionService) GetUserSubscriptions(userID int) (*UserSubscri
 			ss.status,
 			COALESCE(spr.unit_amount, 0) as price,
 			COALESCE(spr.currency, 'usd') as currency,
-			COALESCE(spr.interval, 'month') as interval,
+			COALESCE(spr.recurring_interval, 'month') as interval,
 			ss.current_period_start,
 			ss.current_period_end,
 			ss.cancel_at_period_end,
 			ss.canceled_at,
 			ss.stripe_created_at
 		FROM stripe_subscriptions_v2 ss
-		JOIN stripe_customers_v2 sc ON ss.stripe_customer_id = sc.id
+		JOIN stripe_customers_v2 sc ON ss.customer_id = sc.id
 		LEFT JOIN stripe_prices_v2 spr ON ss.price_id = spr.id
 		LEFT JOIN stripe_products_v2 sp ON spr.product_id = sp.id
 		WHERE sc.stripe_id = ANY($1)
 		ORDER BY ss.stripe_created_at DESC
 	`
 
-	rows, err := s.db.Query(query, linkedCustomers)
+	rows, err := s.db.Query(query, pq.Array(linkedCustomers))
 	if err != nil {
 		return nil, fmt.Errorf("failed to query subscriptions: %w", err)
 	}

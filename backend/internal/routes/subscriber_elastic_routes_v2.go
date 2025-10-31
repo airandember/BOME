@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -22,20 +23,28 @@ func SetupSubscriberElasticRoutesV2(router *gin.RouterGroup, db *database.DB) {
 
 	// Get all subscribers using v2 tables
 	elastic.GET("/subscribers", func(c *gin.Context) {
+		log.Printf("📋 [V2 ENDPOINT] Starting GetAllUnifiedSubscribersV2 request")
+		
 		subscribers, err := elasticService.GetAllUnifiedSubscribersV2()
 		if err != nil {
+			log.Printf("❌ [V2 ENDPOINT] Error fetching subscribers: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to fetch subscribers",
+				"error":   "Failed to fetch subscribers from v2 tables",
 				"details": err.Error(),
+				"hint":    "Check if v2 tables are populated and user_stripe_customers_v2 has linked data",
 			})
 			return
 		}
 
+		log.Printf("✅ [V2 ENDPOINT] Successfully fetched %d subscribers", len(subscribers))
+		
 		c.JSON(http.StatusOK, gin.H{
-			"subscribers": subscribers,
-			"count":       len(subscribers),
-			"version":     "v2",
-			"source":      "stripe_v2_tables",
+			"data": gin.H{
+				"subscribers": subscribers,
+			},
+			"count":   len(subscribers),
+			"version": "v2",
+			"source":  "stripe_v2_tables",
 		})
 	})
 
