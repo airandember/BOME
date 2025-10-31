@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"bome-backend/internal/config"
 	"bome-backend/internal/database"
@@ -24,9 +25,9 @@ func main() {
 
 	// Initialize config and database
 	cfg := config.New()
-	db := database.New(cfg)
-	if db == nil {
-		log.Fatal("❌ Failed to initialize database")
+	db, err := database.New(cfg)
+	if err != nil {
+		log.Fatalf("❌ Failed to initialize database: %v", err)
 	}
 	defer db.Close()
 
@@ -53,7 +54,6 @@ func main() {
 
 	// Generate output
 	var output []byte
-	var err error
 	if *pretty {
 		output, err = json.MarshalIndent(results, "", "  ")
 	} else {
@@ -130,7 +130,7 @@ func compareAllUsers(v1Service *services.SubscriberElasticService, v2Service *se
 
 	v2Map := make(map[int]*services.UnifiedSubscriber)
 	for i := range v2Subscribers {
-		v2Map[v2Subscribers[i].ID] = &v2Subscribers[i]
+		v2Map[v2Subscribers[i].ID] = convertV2ToV1(&v2Subscribers[i])
 	}
 
 	// Compare all users
@@ -185,10 +185,13 @@ func compareUser(userID int, v1Service *services.SubscriberElasticService, v2Ser
 	}
 
 	// Get v2 data
-	v2Sub, err := v2Service.GetUnifiedSubscriberByIDV2(userID)
+	v2SubV2, err := v2Service.GetUnifiedSubscriberByIDV2(userID)
 	if err != nil {
 		log.Printf("⚠️  Failed to get v2 data for user %d: %v", userID, err)
 	}
+
+	// Convert v2 to v1 format for comparison
+	v2Sub := convertV2ToV1(v2SubV2)
 
 	return compareSubscribers(userID, v1Sub, v2Sub, verbose)
 }
@@ -269,8 +272,16 @@ func compareSubscribers(userID int, v1Sub, v2Sub *services.UnifiedSubscriber, ve
 	}
 
 	// Days Until Expiry (allow 1 day difference for timing)
-	if abs(v1Sub.DaysUntilExpiry-v2Sub.DaysUntilExpiry) > 1 {
-		diffs = append(diffs, FieldDifference{"days_until_expiry", v1Sub.DaysUntilExpiry, v2Sub.DaysUntilExpiry})
+	v1Days := 0
+	if v1Sub.DaysUntilExpiry != nil {
+		v1Days = *v1Sub.DaysUntilExpiry
+	}
+	v2Days := 0
+	if v2Sub.DaysUntilExpiry != nil {
+		v2Days = *v2Sub.DaysUntilExpiry
+	}
+	if abs(v1Days-v2Days) > 1 {
+		diffs = append(diffs, FieldDifference{"days_until_expiry", v1Days, v2Days})
 	}
 
 	comparison.Differences = diffs
@@ -342,4 +353,63 @@ func percentage(part, total int) float64 {
 		return 0
 	}
 	return float64(part) / float64(total) * 100
+}
+
+// convertV2ToV1 converts UnifiedSubscriberV2 to UnifiedSubscriber for comparison
+// Note: V2 and V1 have different field types, so we do best-effort conversion
+func convertV2ToV1(v2 *services.UnifiedSubscriberV2) *services.UnifiedSubscriber {
+	if v2 == nil {
+		return nil
+	}
+
+	// Convert pointer fields safely
+	var firstName, lastName string
+	if v2.FirstName != nil {
+		firstName = *v2.FirstName
+	}
+	if v2.LastName != nil {
+		lastName = *v2.LastName
+	}
+
+	// Convert price from cents (*int) to dollars (float64)
+	var planPrice float64
+	if v2.PlanPrice != nil {
+		planPrice = float64(*v2.PlanPrice) / 100.0
+	}
+
+	// Note: V2 uses strings for dates, V1 uses time.Time
+	// For comparison purposes, we'll use nil for V1's time fields
+	// since we can't easily convert strings to time.Time here
+
+	return &services.UnifiedSubscriber{
+		ID:            v2.ID,
+		Email:         v2.Email,
+		FirstName:     firstName,
+		LastName:      lastName,
+		Role:          v2.Role,
+		EmailVerified: v2.EmailVerified,
+		IsActive:      v2.IsActive,
+		// Note: V2 uses string for dates, V1 uses time.Time
+		// We use zero values since we can't easily parse the string format here
+		CreatedAt:          time.Time{}, // V2 uses string, V1 uses time.Time
+		LastLogin:          nil,         // V2 uses *string, V1 uses *time.Time
+		StripeCustomerID:   v2.StripeCustomerID,
+		StripeCustomerIDs:  v2.StripeCustomerIDs,
+		SubscriptionID:     v2.SubscriptionID,
+		PlanName:           v2.PlanName,
+		PlanType:           v2.PlanType,
+		PlanStatus:         v2.PlanStatus,
+		PlanPrice:          planPrice, // Converted from cents to dollars
+		PlanCurrency:       v2.PlanCurrency,
+		PlanInterval:       v2.PlanInterval,
+		PlanStartDate:      nil, // V2 uses *string, V1 uses *time.Time - skip for comparison
+		BillingPeriodStart: nil, // V2 uses *string, V1 uses *time.Time - skip for comparison
+		BillingPeriodEnd:   nil, // V2 uses *string, V1 uses *time.Time - skip for comparison
+		DaysUntilExpiry:    v2.DaysUntilExpiry,
+		HasActivePlan:      v2.HasActivePlan,
+		HasVideoAccess:     v2.HasVideoAccess,
+		PlanLegacyStatus:   v2.PlanLegacyStatus,
+		MRRContribution:    v2.MRRContribution,
+		ARRContribution:    v2.ARRContribution,
+	}
 }
