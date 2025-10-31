@@ -603,8 +603,12 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 		// Setup Stripe sync management routes
 		RegisterStripeSyncRoutes(streaming, syncService, cronService)
 
-		// Setup Stripe webhook routes
-		RegisterStripeWebhookRoutes(streaming, stripeService, syncService)
+		// Setup Stripe webhook routes (Phase 5: with v2 support, Phase 6: with subscription manager)
+		syncServiceV2 := services.NewStripeSyncV2Service(db)
+		customerLinkingService := services.NewCustomerLinkingService(db)
+		subscriptionManager := services.NewSubscriptionManagerService(db, customerLinkingService)
+		webhookServiceV2 := services.NewStripeWebhookServiceV2(syncServiceV2, customerLinkingService, subscriptionManager, db)
+		RegisterStripeWebhookRoutes(streaming, stripeService, syncService, syncServiceV2, webhookServiceV2)
 
 		// Setup Stripe testing and monitoring routes
 		RegisterStripeTestRoutes(streaming, stripeService, syncService, cronService)
