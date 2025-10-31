@@ -14,8 +14,10 @@ import (
 
 // SimpleStripeSyncHandler handles simple Stripe sync operations
 type SimpleStripeSyncHandler struct {
-	syncService *services.SimpleStripeSyncService
-	syncStatus  struct {
+	syncService            *services.SimpleStripeSyncService
+	syncServiceV2          *services.StripeSyncV2Service
+	customerLinkingService *services.CustomerLinkingService
+	syncStatus             struct {
 		mu        sync.RWMutex
 		isRunning bool
 		lastRun   time.Time
@@ -24,9 +26,11 @@ type SimpleStripeSyncHandler struct {
 }
 
 // NewSimpleStripeSyncHandler creates a new simple sync handler
-func NewSimpleStripeSyncHandler(syncService *services.SimpleStripeSyncService) *SimpleStripeSyncHandler {
+func NewSimpleStripeSyncHandler(syncService *services.SimpleStripeSyncService, syncServiceV2 *services.StripeSyncV2Service, customerLinkingService *services.CustomerLinkingService) *SimpleStripeSyncHandler {
 	return &SimpleStripeSyncHandler{
-		syncService: syncService,
+		syncService:            syncService,
+		syncServiceV2:          syncServiceV2,
+		customerLinkingService: customerLinkingService,
 	}
 }
 
@@ -61,8 +65,46 @@ func (h *SimpleStripeSyncHandler) SyncAllHandler(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer cancel()
 
-		log.Println("🚀 Starting background simple Stripe sync...")
+		log.Println("🚀 Starting background Stripe sync (v1 + v2 tables)...")
+
+		// Sync v1 tables (legacy)
+		log.Println("📦 Syncing v1 tables...")
 		err := h.syncService.SyncAll(ctx)
+		if err != nil {
+			log.Printf("⚠️  V1 sync had errors: %v", err)
+			// Don't fail completely - continue to v2
+		} else {
+			log.Println("✅ V1 tables synced successfully")
+		}
+
+		// Sync v2 tables (new architecture)
+		log.Println("📦 Syncing v2 tables...")
+		_, errV2 := h.syncServiceV2.SyncAll(ctx)
+		if errV2 != nil {
+			log.Printf("⚠️  V2 sync had errors: %v", errV2)
+			err = errV2 // Set error for status reporting
+		} else {
+			log.Println("✅ V2 tables synced successfully")
+		}
+
+		// Link customers to users (v2 only)
+		log.Println("🔗 Linking customers to users...")
+		linkResults, errLink := h.customerLinkingService.LinkAllUsers()
+		if errLink != nil {
+			log.Printf("⚠️  Customer linking had errors: %v", errLink)
+			err = errLink
+		} else {
+			// Count successful links and total customers
+			successCount := 0
+			totalCustomers := 0
+			for _, result := range linkResults {
+				if result.Error == "" && result.CustomersLinked > 0 {
+					successCount++
+					totalCustomers += result.CustomersLinked
+				}
+			}
+			log.Printf("✅ Successfully linked %d users to %d Stripe customers", successCount, totalCustomers)
+		}
 
 		// Update status
 		h.syncStatus.mu.Lock()
@@ -76,12 +118,13 @@ func (h *SimpleStripeSyncHandler) SyncAllHandler(c *gin.Context) {
 		h.syncStatus.mu.Unlock()
 
 		if err != nil {
-			log.Printf("❌ Background sync failed: %v", err)
-			log.Println("💡 Check the error above and try running the sync again")
+			log.Printf("❌ Background sync completed with errors: %v", err)
+			log.Println("💡 Check the errors above and try running the sync again")
 		} else {
-			log.Println("✅ Background simple Stripe sync completed successfully")
-			log.Println("🎉 SUCCESS: Stripe data sync is complete! Check your Customer Dashboard for updated plan names.")
-			log.Println("📊 You can now view the synchronized data at: /admin/streaming/subscribers/customers/")
+			log.Println("✅ Background Stripe sync completed successfully!")
+			log.Println("🎉 SUCCESS: V1 + V2 tables synced and customers linked!")
+			log.Println("📊 V1 data: /admin/streaming/subscribers/customers/")
+			log.Println("📊 V2 data: /user/subscriptions (user dashboard)")
 		}
 	}()
 }
@@ -109,8 +152,8 @@ func (h *SimpleStripeSyncHandler) LinkCustomersHandler(c *gin.Context) {
 }
 
 // RegisterSimpleStripeSyncRoutes registers the simple sync routes
-func RegisterSimpleStripeSyncRoutes(router *gin.RouterGroup, syncService *services.SimpleStripeSyncService) {
-	handler := NewSimpleStripeSyncHandler(syncService)
+func RegisterSimpleStripeSyncRoutes(router *gin.RouterGroup, syncService *services.SimpleStripeSyncService, syncServiceV2 *services.StripeSyncV2Service, customerLinkingService *services.CustomerLinkingService) {
+	handler := NewSimpleStripeSyncHandler(syncService, syncServiceV2, customerLinkingService)
 
 	// Simple sync routes
 	router.POST("/simple-sync/all", handler.SyncAllHandler)
