@@ -624,9 +624,8 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 		comprehensiveSyncService := services.NewComprehensiveStripeSyncService(db.DB, stripeService)
 		RegisterComprehensiveSyncRoutes(streaming, comprehensiveSyncService)
 
-		// 🚀 Setup Simple Stripe Sync routes (new simplified approach - now syncs v1 + v2 tables!)
-		simpleStripeSyncService := services.NewSimpleStripeSyncService(db, stripeService)
-		RegisterSimpleStripeSyncRoutes(streaming, simpleStripeSyncService, syncServiceV2, customerLinkingService)
+		// 🚀 Setup Simple Stripe Sync routes (v2 only - clean architecture!)
+		RegisterSimpleStripeSyncRoutes(streaming, syncServiceV2, customerLinkingService)
 
 		// Start the cron service for scheduled syncs
 		go cronService.StartCronJobs()
