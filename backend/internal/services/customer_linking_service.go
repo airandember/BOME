@@ -60,10 +60,10 @@ func (s *CustomerLinkingService) LinkUserToCustomers(userID int) (*LinkResult, e
 
 	// Find all Stripe customers with matching email
 	rows, err := s.db.Query(`
-		SELECT id, stripe_id, created_at 
+		SELECT id, stripe_id, stripe_created_at 
 		FROM stripe_customers_v2 
 		WHERE LOWER(email) = LOWER($1)
-		ORDER BY created_at DESC
+		ORDER BY stripe_created_at DESC
 	`, email)
 	if err != nil {
 		result.Error = fmt.Sprintf("Failed to query customers: %v", err)
