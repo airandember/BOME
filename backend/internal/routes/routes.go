@@ -130,20 +130,52 @@ func SetupRoutes(
 		SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService, subscriptionPlanStripeService, subscriptionOffersStripeService, bunnyService)
 		SetupMasterVideoRoutes(admin, db, bunnyService)
 
-		// Setup unified subscriber elastic service routes
+		// Setup unified subscriber elastic service routes (v1)
 		SetupSubscriberElasticRoutes(admin, db)
+
+		// Setup unified subscriber elastic service routes (v2 - parallel)
+		SetupSubscriberElasticRoutesV2(admin, db)
+		fmt.Printf("✅ Subscriber Elastic V2 routes setup complete\n")
+
+		// Setup comparison routes (v1 vs v2)
+		SetupSubscriberComparisonRoutes(admin, db)
+		fmt.Printf("✅ Subscriber Comparison routes setup complete\n")
+
+		// Setup Stripe Sync V2 routes
+		SetupStripeSyncV2Routes(admin, db)
+		fmt.Printf("✅ Stripe Sync V2 routes setup complete\n")
+
+		// Setup Customer Linking routes
+		SetupCustomerLinkingRoutes(admin, db)
+		fmt.Printf("✅ Customer Linking routes setup complete\n")
+
+		// Setup Subscription Manager routes (Phase 6 - Admin only)
+		SetupSubscriptionManagerRoutes(admin, db)
+		fmt.Printf("✅ Subscription Manager routes setup complete\n")
+
+		// Setup Admin Support Settings routes (Phase 9.0 - Admin only)
+		SetupAdminSupportSettingsRoutes(admin, db)
+		fmt.Printf("✅ Admin Support Settings routes setup complete\n")
 
 		// 🔗 PUBLIC STRIPE WEBHOOK ENDPOINT (NO AUTH REQUIRED)
 		// This must be accessible to Stripe servers without authentication
-		syncService := services.NewStripeSyncService(db, stripeService)
+		// Phase 5: Now with v2 dual-write support
+		// Phase 6: Now with single subscription enforcement
+		syncServiceV1 := services.NewStripeSyncService(db, stripeService)
+		syncServiceV2 := services.NewStripeSyncV2Service(db)
+		customerLinkingService := services.NewCustomerLinkingService(db)
+		subscriptionManager := services.NewSubscriptionManagerService(db, customerLinkingService)
+		webhookServiceV2 := services.NewStripeWebhookServiceV2(syncServiceV2, customerLinkingService, subscriptionManager, db)
+
 		webhooks := v1.Group("/webhooks")
 		{
 			// Public Stripe webhook endpoint - NO MIDDLEWARE
+			// Phase 5: Dual-write to v1 + v2 tables with auto-linking
 			webhooks.POST("/stripe", func(c *gin.Context) {
-				HandleStripeWebhook(c, stripeService, syncService)
+				HandleStripeWebhook(c, stripeService, syncServiceV1, syncServiceV2, webhookServiceV2)
 			})
 		}
-		fmt.Printf("✅ Public Stripe webhook registered: POST /api/v1/webhooks/stripe\n")
+		fmt.Printf("✅ Public Stripe webhook registered: POST /api/v1/webhooks/stripe (Phase 5: v1+v2 dual-write)\n")
 
 		// 🧪 PUBLIC TEST ENDPOINT FOR SIMPLE STRIPE SYNC (NO AUTH REQUIRED)
 		// This is for testing the new simple sync approach
@@ -301,7 +333,7 @@ func SetupRoutes(
 
 		// Setup Stripe routes using dedicated file
 		SetupPublicStripeRoutes(v1, stripePublicService)
-		SetupAuthenticatedStripeRoutes(v1, stripePublicService, globalUserSubscriptionService)
+		// SetupAuthenticatedStripeRoutes(v1, stripePublicService, globalUserSubscriptionService) // DEPRECATED: Phase 7 replaces these routes
 	} else {
 		// Provide fallback responses when database is unavailable
 		publicPlans := v1.Group("/subscription-plans")
@@ -444,6 +476,18 @@ func SetupRoutes(
 		users.GET("/profile", middleware.AuthRequired(), middleware.RequireEmailVerification(), GetCurrentUserHandler(db))    // Alias for /me
 		users.PUT("/profile", middleware.AuthRequired(), middleware.RequireEmailVerification(), UpdateCurrentUserHandler(db)) // Alias for /me
 	}
+
+	// User subscription management routes (Phase 7 - User-facing)
+	user := v1.Group("/user")
+	user.Use(middleware.AuthRequired()) // All user routes require authentication
+	{
+		SetupUserSubscriptionRoutes(user, db)
+		fmt.Printf("✅ User Subscription routes setup complete\n")
+	}
+
+	// Public Support Settings routes (Phase 9.0 - No auth required for support contact)
+	SetupPublicSupportSettingsRoutes(v1, db)
+	fmt.Printf("✅ Public Support Settings routes setup complete\n")
 
 	// Video routes using database handlers with bunny.net integration
 	videos := v1.Group("/videos")
@@ -1286,24 +1330,25 @@ func RoleRequired(allowedRoles ...string) gin.HandlerFunc {
 
 // Global services for subscription creation
 var (
-	globalUserSubscriptionService *services.UserSubscriptionService
-	globalEmailService            *services.EmailService
+	// globalUserSubscriptionService *services.UserSubscriptionService // DEPRECATED: Phase 7 replaces this with UserSubscriptionService
+	globalEmailService *services.EmailService
 )
 
 // InitializeSubscriptionServices initializes the global subscription services
 func InitializeSubscriptionServices(db *database.DB) {
 	globalEmailService = services.NewEmailService(db)
-	globalUserSubscriptionService = services.NewUserSubscriptionService(db, globalEmailService)
+	// globalUserSubscriptionService = services.NewUserSubscriptionService(db, globalEmailService) // DEPRECATED: Phase 7
 	log.Printf("✅ [SERVICES] Subscription and email services initialized")
 }
 
 // createSubscriptionFromSession helper function for creating subscriptions
+// DEPRECATED: Phase 7 replaces this with user-controlled subscription management
 func createSubscriptionFromSession(userID int, sessionData map[string]interface{}) (*services.UserSubscription, error) {
-	if globalUserSubscriptionService == nil {
-		return nil, fmt.Errorf("subscription service not initialized")
-	}
-
-	return globalUserSubscriptionService.CreateSubscriptionFromStripeSession(sessionData, userID)
+	// if globalUserSubscriptionService == nil {
+	// 	return nil, fmt.Errorf("subscription service not initialized")
+	// }
+	// return globalUserSubscriptionService.CreateSubscriptionFromStripeSession(sessionData, userID)
+	return nil, fmt.Errorf("deprecated - use Phase 7 subscription management")
 }
 
 // VerifyEmailTokenHandler handles email verification

@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Note: globalUserSubscriptionService is defined in routes.go
+// Note: globalUserSubscriptionService is DEPRECATED in Phase 7
 
 // SetupPublicStripeRoutes sets up public Stripe routes that don't require authentication
 func SetupPublicStripeRoutes(v1 *gin.RouterGroup, stripePublicService *services.StripePublicService) {
@@ -45,7 +45,8 @@ func SetupPublicStripeRoutes(v1 *gin.RouterGroup, stripePublicService *services.
 }
 
 // SetupAuthenticatedStripeRoutes sets up Stripe routes that require authentication
-func SetupAuthenticatedStripeRoutes(v1 *gin.RouterGroup, stripePublicService *services.StripePublicService, globalUserSubscriptionService *services.UserSubscriptionService) {
+// DEPRECATED: Phase 7 replaces this with user-controlled subscription management
+func SetupAuthenticatedStripeRoutes(v1 *gin.RouterGroup, stripePublicService *services.StripePublicService) {
 	if stripePublicService == nil {
 		log.Printf("⚠️ [STRIPE-AUTH] StripePublicService is nil, skipping authenticated routes")
 		return
@@ -178,82 +179,24 @@ func SetupAuthenticatedStripeRoutes(v1 *gin.RouterGroup, stripePublicService *se
 
 			log.Printf("🔍 [CREATE-SUB] Creating subscription for user %v, session: %s", userID, request.SessionID)
 
-			// Use the global user subscription service to create subscription
-			if globalUserSubscriptionService == nil {
-				log.Printf("❌ [CREATE-SUB] User subscription service not available")
-				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Subscription service not available"})
-				return
-			}
-
-			subscription, err := globalUserSubscriptionService.CreateSubscriptionFromStripeSession(request.SessionData, userID.(int))
-			if err != nil {
-				log.Printf("❌ [CREATE-SUB] Failed to create subscription: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-
-			log.Printf("✅ [CREATE-SUB] Subscription created successfully")
-			c.JSON(http.StatusOK, gin.H{
-				"status": "success",
-				"data":   subscription,
-			})
+			// DEPRECATED: Phase 7 replaces this
+			log.Printf("⚠️ [CREATE-SUB] Deprecated endpoint - use Phase 7 subscription management")
+			c.JSON(http.StatusGone, gin.H{"error": "This endpoint has been replaced. Please use /api/v1/user/subscriptions"})
+			return
 		})
 
 		// Get user subscription status (including legacy fields)
 		authenticatedStripe.GET("/subscription-status", func(c *gin.Context) {
-			// Get user from context
-			userID, exists := c.Get("user_id")
-			if !exists {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-				return
-			}
-
-			if globalUserSubscriptionService == nil {
-				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Subscription service not available"})
-				return
-			}
-
-			status, err := globalUserSubscriptionService.GetUserSubscriptionStatus(userID.(int))
-			if err != nil {
-				log.Printf("❌ [SUB-STATUS] Failed to get subscription status: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-
-			c.JSON(http.StatusOK, gin.H{
-				"status": "success",
-				"data":   status,
-			})
+			// DEPRECATED: Phase 7 replaces this
+			log.Printf("⚠️ [SUB-STATUS] Deprecated endpoint - use Phase 7 subscription management")
+			c.JSON(http.StatusGone, gin.H{"error": "This endpoint has been replaced. Please use /api/v1/user/subscriptions"})
 		})
 
 		// Cancel user subscription
 		authenticatedStripe.POST("/cancel-subscription", func(c *gin.Context) {
-			// Get user from context
-			userID, exists := c.Get("user_id")
-			if !exists {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
-				return
-			}
-
-			if globalUserSubscriptionService == nil {
-				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Subscription service not available"})
-				return
-			}
-
-			log.Printf("🔍 [CANCEL-SUB] Canceling subscription for user %v", userID)
-
-			err := globalUserSubscriptionService.CancelUserSubscription(userID.(int))
-			if err != nil {
-				log.Printf("❌ [CANCEL-SUB] Failed to cancel subscription: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-
-			log.Printf("✅ [CANCEL-SUB] Subscription canceled successfully")
-			c.JSON(http.StatusOK, gin.H{
-				"status":  "success",
-				"message": "Subscription canceled successfully",
-			})
+			// DEPRECATED: Phase 7 replaces this
+			log.Printf("⚠️ [CANCEL-SUB] Deprecated endpoint - use Phase 7 subscription management")
+			c.JSON(http.StatusGone, gin.H{"error": "This endpoint has been replaced. Please use /api/v1/user/subscriptions/:id/cancel"})
 		})
 	}
 

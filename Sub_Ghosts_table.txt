@@ -1,0 +1,221 @@
+╔════╤═════════════════════════╤═════════════════════════╤═════════════════════════╤════════════════╗
+║ #  │ Subscription ID         │ Missing Price ID        │ Request ID              │ Price Type     ║
+╠════╪═════════════════════════╪═════════════════════════╪═════════════════════════╪════════════════╣
+║ 1  │ sub_KD6CfO1SNMS92Z      │ Combo                   │ req_r97ccidVts38Pr      │ Quarterly $45  ║
+║ 2  │ sub_KBL2H6JBZofbIF      │ Combo                   │ req_9uFUODi7EVAEZ0      │ Quarterly $45  ║
+║ 3  │ sub_KB7PyADkqxLkVp      │ SYearPlus               │ req_u6l3izv53MATiT      │ Unknown        ║
+║ 4  │ sub_KAmobA6crX3P0U      │ Combo                   │ req_HoKXiGokxKubJ0      │ Quarterly $45  ║
+║ 5  │ sub_K1RHlrY8MQVb6U      │ Combo                   │ req_NFfqJ6XVCunuL4      │ Quarterly $45  ║
+║ 6  │ sub_JwQW4mkOPm0i1A      │ Combo                   │ req_R32FGbexHxdyco      │ Quarterly $45  ║
+║ 7  │ sub_Jgp3zd72H6uI9s      │ Combo                   │ req_yVE7lqXZ8mrFI3      │ Quarterly $45  ║
+║ 8  │ sub_JaSZZxbINlvQ0F      │ Combo                   │ req_Zbe2r1iXCkNCkY      │ Quarterly $45  ║
+║ 9  │ sub_JZOZefV75QRXOO      │ Combo                   │ req_7ajjdpAE13qluY      │ Quarterly $45  ║
+║ 10 │ sub_JVMGgUornnWqmP      │ Combo                   │ req_U2Gjiif3XeHwGB      │ Quarterly $45  ║
+║ 11 │ sub_JPicjbLWTAOfHX      │ Combo                   │ req_ycOLwj93GUZUTi      │ Quarterly $45  ║
+║ 12 │ sub_JN5TeHVVmv9GVO      │ Combo                   │ req_Rt3rMVdDUJsbbl      │ Quarterly $45  ║
+║ 13 │ sub_JLlk6HxiJ9RUwO      │ Combo                   │ req_qCIdkq7F3LahlO      │ Quarterly $45  ║
+║ 14 │ sub_JLV8AAvEwTBCRU      │ Combo                   │ req_Ql3Hz2z6drGU2h      │ Quarterly $45  ║
+║ 15 │ sub_JKSHdjY3fn4ddi      │ Combo                   │ req_vMtI4EaoD5oqfP      │ Quarterly $45  ║
+║ 16 │ sub_JKNu8qm9lR1Hfg      │ Combo                   │ req_pTXfwUvRJxJCv4      │ Quarterly $45  ║
+║ 17 │ sub_JK3h2wnUpmhZug      │ Combo                   │ req_ON8CcavDkghj7n      │ Quarterly $45  ║
+║ 18 │ sub_JJJo0nAfcuXGYP      │ Combo                   │ req_bCWT0uqu2BBRHn      │ Quarterly $45  ║
+║ 19 │ sub_JIULyaPsNpG2pC      │ Combo                   │ req_JnaOMioTPxReBw      │ Quarterly $45  ║
+║ 20 │ sub_JHiNN9EGKFCiCO      │ Combo                   │ req_XnXXsBrW7l4hg8      │ Quarterly $45  ║
+║ 21 │ sub_JHTqra7pebyuLK      │ Combo                   │ req_NuJs5t9WwhUk7j      │ Quarterly $45  ║
+║ 22 │ sub_JHNEeMzG5DyYck      │ Combo                   │ req_TREEL15WCFtqxd      │ Quarterly $45  ║
+║ 23 │ sub_JH0cQqujhT4FUJ      │ Combo                   │ req_KOQD6d337o05M4      │ Quarterly $45  ║
+║ 24 │ sub_JGzrxUWNkBwzE5      │ Combo                   │ req_KjZ8b3duu0ci4G      │ Quarterly $45  ║
+║ 25 │ sub_JGtjsONCbVBoiN      │ Combo                   │ req_PgGy3f7ET5qr9a      │ Quarterly $45  ║
+║ 26 │ sub_JGtMb4To6ucbUB      │ Combo                   │ req_PejCD9zGFS9NOa      │ Quarterly $45  ║
+║ 27 │ sub_JGtLaiCAWPbzIk      │ Combo                   │ req_vy8Y2erok7tk6w      │ Quarterly $45  ║
+║ 28 │ sub_JGrJCHAGThh2v9      │ Combo                   │ req_ViPN4YQFac3qsF      │ Quarterly $45  ║
+║ 29 │ sub_JGq0iq4SLID8GY      │ Combo                   │ req_FZL0SQArni834d      │ Quarterly $45  ║
+║ 30 │ sub_JGmwUZuoBNZpJM      │ Combo                   │ req_913RK7sMLEr6qe      │ Quarterly $45  ║
+║ 31 │ sub_JGZZmLwpOsih8I      │ Combo                   │ req_RvVkzDCMiM8Qrt      │ Quarterly $45  ║
+║ 32 │ sub_JGLu9d2drFcxw5      │ Combo                   │ req_8b9ZCxhyiPNxsL      │ Quarterly $45  ║
+║ 33 │ sub_JFzqasBiHyqDvu      │ Combo                   │ req_aty8y3XZdtL3k8      │ Quarterly $45  ║
+║ 34 │ sub_JFXNCH2FYS3JbW      │ Combo                   │ req_56CXkqnrIMAoFR      │ Quarterly $45  ║
+║ 35 │ sub_JDttCoBYyKnk7g      │ Combo                   │ req_R243gyeGMJClDV      │ Quarterly $45  ║
+║ 36 │ sub_JDLwqKaXbLhJRn      │ Combo                   │ req_CdQNkEdS33K1si      │ Quarterly $45  ║
+║ 37 │ sub_JDChTa1w92VmnK      │ Combo                   │ req_eDRWEEHbRp2wdi      │ Quarterly $45  ║
+║ 38 │ sub_JDBewpeVSNAJSj      │ Combo                   │ req_nc6BIc4p9AsQhI      │ Quarterly $45  ║
+║ 39 │ sub_JD9IqhHHLRGBW6      │ Combo                   │ req_5V9BKtbdsPtzAN      │ Quarterly $45  ║
+║ 40 │ sub_JD93MxVXpjwBrb      │ Combo                   │ req_RjVoprGbByDTVO      │ Quarterly $45  ║
+║ 41 │ sub_JCQAvgPnp7ydCX      │ Combo                   │ req_i0qiXVZ1iOrIfZ      │ Quarterly $45  ║
+║ 42 │ sub_JAlKRVb2NXpAvE      │ Combo                   │ req_51z6kkH4RTAMTm      │ Quarterly $45  ║
+║ 43 │ sub_JAD9WeAnRI1QmO      │ Combo                   │ req_nP6KyCwt02MdBx      │ Quarterly $45  ║
+║ 44 │ sub_J2tdKnsICvoxsw      │ Combo                   │ req_tor0dZWHKBCUcn      │ Quarterly $45  ║
+║ 45 │ sub_Iz28NIdqZIvCU0      │ Combo                   │ req_Y1cgIyPzd7ZEnw      │ Quarterly $45  ║
+║ 46 │ sub_IxyHNlmVUOPEf8      │ Combo                   │ req_vZrE7rdiN9V0XW      │ Quarterly $45  ║
+║ 47 │ sub_IvoFgNHCpwq7Ka      │ Combo                   │ req_7lqqVT3xM8lPjA      │ Quarterly $45  ║
+║ 48 │ sub_Is8macfApk1NE3      │ Combo                   │ req_9vHGG6YCvxdWVp      │ Quarterly $45  ║
+║ 49 │ sub_IShy2Zo1LzqGSj      │ Combo                   │ req_3pNfdBtTJS2d7r      │ Quarterly $45  ║
+║ 50 │ sub_IRkgJdYOLT76lQ      │ Combo                   │ req_UW7ARjzAVbvbmI      │ Quarterly $45  ║
+║ 51 │ sub_IOks9HYmmdFMnZ      │ Combo                   │ req_CI4W6DC8OLYIai      │ Quarterly $45  ║
+║ 52 │ sub_INHpOHmIzDLgzA      │ Combo                   │ req_Qo7ok4FqXtETte      │ Quarterly $45  ║
+║ 53 │ sub_IM8VCcczj7h1ab      │ Combo                   │ req_s2w4Q7vjTI4WBG      │ Quarterly $45  ║
+║ 54 │ sub_IGaPgdAG58uvV5      │ Combo                   │ req_SNLO5JQtVYAhL9      │ Quarterly $45  ║
+║ 55 │ sub_IDWwOCabpgAJrW      │ Combo                   │ req_Zy0rADShTtU8dX      │ Quarterly $45  ║
+║ 56 │ sub_IAZDnGXkMowSOy      │ Combo                   │ req_E6wu0KokysXVDi      │ Quarterly $45  ║
+║ 57 │ sub_I9JYd4d6NRr5nu      │ Combo                   │ req_ztcN53bzOhxZYu      │ Quarterly $45  ║
+║ 58 │ sub_I8rqMTsuaOlC2m      │ Combo                   │ req_QiIntY77UcQ87E      │ Quarterly $45  ║
+║ 59 │ sub_I8W9dBmtVDxbfa      │ Combo                   │ req_TWnaLGaPUYMqde      │ Quarterly $45  ║
+║ 60 │ sub_I8J0JBdh1y3y1G      │ Combo                   │ req_bU1QpLGLYByHrI      │ Quarterly $45  ║
+║ 61 │ sub_I85Cg4t16nCmtC      │ Combo                   │ req_ubRZHnkHeK2vkv      │ Quarterly $45  ║
+║ 62 │ sub_I7ppQWffUrheHD      │ Combo                   │ req_rWicoPK9FIAnFl      │ Quarterly $45  ║
+║ 63 │ sub_I7OwQtjxZRTrX7      │ Combo                   │ req_9tWroDkpiICBKM      │ Quarterly $45  ║
+║ 64 │ sub_I7CJ3QQ1DkTFTI      │ Combo                   │ req_NaXxFwfVnAypBN      │ Quarterly $45  ║
+║ 65 │ sub_I74X91i80B7jkx      │ Combo                   │ req_1n0DgPcUR5Hlti      │ Quarterly $45  ║
+║ 66 │ sub_I6Io7mcvsymrWU      │ Combo                   │ req_rMJ9R71jTxbaNM      │ Quarterly $45  ║
+║ 67 │ sub_I6HrvgHN6TKSbi      │ Combo                   │ req_oCYbMDKLQkvLSo      │ Quarterly $45  ║
+║ 68 │ sub_I6H4tjMShFz51i      │ Combo                   │ req_EosLtdWrrVibSO      │ Quarterly $45  ║
+║ 69 │ sub_I632sEtFEA67ss      │ Combo                   │ req_dddBywhFYS1IFA      │ Quarterly $45  ║
+║ 70 │ sub_I619t7SvhajcwM      │ Combo                   │ req_MCy2gljvcltc59      │ Quarterly $45  ║
+║ 71 │ sub_I5v8VDGOajE516      │ Combo                   │ req_sK7zcQCspatu6l      │ Quarterly $45  ║
+║ 72 │ sub_I5qU5gcwwvghyh      │ Combo                   │ req_BQTAjwkYXk5OeA      │ Quarterly $45  ║
+║ 73 │ sub_I5ocAYII6byMS1      │ Combo                   │ req_dWSJgBT8zYB40v      │ Quarterly $45  ║
+║ 74 │ sub_I5fc58o0wNAb1b      │ Combo                   │ req_QvEZTGJIwn7Hxh      │ Quarterly $45  ║
+║ 75 │ sub_I5fNHwyFvhooqo      │ Combo                   │ req_UW1aJfEvzexy5j      │ Quarterly $45  ║
+║ 76 │ sub_I5dSc9czma7bvg      │ Combo                   │ req_2Xo7GrNEtcrdio      │ Quarterly $45  ║
+║ 77 │ sub_I5cDsBifCf45bn      │ Combo                   │ req_UlrjwcfmMl6sHM      │ Quarterly $45  ║
+║ 78 │ sub_I5aQW6EAVyRMoZ      │ Combo                   │ req_aBW52tZOcaiWf2      │ Quarterly $45  ║
+║ 79 │ sub_I5ZG9qKvsK6Pl7      │ Combo                   │ req_ZZFRd8ffmH6YLs      │ Quarterly $45  ║
+║ 80 │ sub_I5YMraHLvA6KKY      │ Combo                   │ req_fUguYOTaSknLqV      │ Quarterly $45  ║
+║ 81 │ sub_I5XsFk8xbpjGuf      │ Combo                   │ req_wlNv03BJxP0pAF      │ Quarterly $45  ║
+║ 82 │ sub_I5XdLxHWJuMZ08      │ Combo                   │ req_IayVgc4haFY54R      │ Quarterly $45  ║
+║ 83 │ sub_I5X2DLH0PgptW2      │ Combo                   │ req_eacntnmKt6YpGE      │ Quarterly $45  ║
+║ 84 │ sub_I5UigDz4Kt2YMY      │ Combo                   │ req_8wYYkHNUSGfz7A      │ Quarterly $45  ║
+║ 85 │ sub_I5UA6GbkhJk04K      │ Combo                   │ req_Tg5YoyiQTRDj4F      │ Quarterly $45  ║
+║ 86 │ sub_I5TbnP0CgzYTMx      │ Combo                   │ req_tBqzjbK87gJKRu      │ Quarterly $45  ║
+║ 87 │ sub_I5TbZhvYC6Zqhq      │ Combo                   │ req_tOW38eDipBWkt9      │ Quarterly $45  ║
+║ 88 │ sub_I5SMSdx3HG6Smy      │ Combo                   │ req_mZLriX6CUVyBRz      │ Quarterly $45  ║
+║ 89 │ sub_I5IDX5WOBIjUCQ      │ Combo                   │ req_cOpYjdN8D9stca      │ Quarterly $45  ║
+║ 90 │ sub_I5HHVMv4jUdHd7      │ Combo                   │ req_mZZ1yYM9pdzdTj      │ Quarterly $45  ║
+║ 91 │ sub_I5E0HgCaup6RlJ      │ Combo                   │ req_tWTqsZlYrJUdKf      │ Quarterly $45  ║
+║ 92 │ sub_I5DjhQlzYbglL3      │ Combo                   │ req_56bLMjdoLNSIjP      │ Quarterly $45  ║
+║ 93 │ sub_I5DV4KU5Tn53J6      │ Combo                   │ req_dSH3V4bXGJ5Sqk      │ Quarterly $45  ║
+║ 94 │ sub_I5Alm7C9vzW012      │ Combo                   │ req_3YqTd0SDmVTDd9      │ Quarterly $45  ║
+║ 95 │ sub_I5AQQh41EJAkRD      │ Combo                   │ req_KPPg496stUr3VQ      │ Quarterly $45  ║
+║ 96 │ sub_I5A4c5cnYCgFZV      │ Combo                   │ req_KEKQ3BTb70uIY9      │ Quarterly $45  ║
+║ 97 │ sub_I58PmtTWNzo3QD      │ Combo                   │ req_XaxG25FGwB3JCa      │ Quarterly $45  ║
+║ 98 │ sub_I580H7SyKvu7ZA      │ Combo                   │ req_kUZZ2NYQv2pVyY      │ Quarterly $45  ║
+║ 99 │ sub_I55aUiRnwfOdpG      │ Combo                   │ req_W3XvSXMVHa2i3s      │ Quarterly $45  ║
+║ 100│ sub_I4vJbGzFMsKEkv      │ Combo                   │ req_GDYm45X9eyJVyu      │ Quarterly $45  ║
+║ 101│ sub_I4ue7hSkeniC3Z      │ Combo                   │ req_BtnPqxnysUsU0M      │ Quarterly $45  ║
+║ 102│ sub_I4ub7KpLvUkrhc      │ Combo                   │ req_flGIkAhEwM5e4Q      │ Quarterly $45  ║
+║ 103│ sub_I4tOOaTzeSnHbL      │ Combo                   │ req_DJtiDdfCll2SRQ      │ Quarterly $45  ║
+║ 104│ sub_I4sQIEjfJ2jyE0      │ Combo                   │ req_D2qVtAbHlfdI9T      │ Quarterly $45  ║
+║ 105│ sub_I4sCkagdRXdJVQ      │ Combo                   │ req_GeJdbbXTU2Dkbk      │ Quarterly $45  ║
+║ 106│ sub_I4qW0VokUN26jm      │ Combo                   │ req_4tmGerjoX6oyYQ      │ Quarterly $45  ║
+║ 107│ sub_I4nvIMdQUUYlz2      │ Combo                   │ req_V4YZLh5TOz2nno      │ Quarterly $45  ║
+║ 108│ sub_I4mtI8gzHiK3dN      │ Combo                   │ req_0VGUCN59lzxsJk      │ Quarterly $45  ║
+║ 109│ sub_I4k08y7VhZMp2J      │ Combo                   │ req_goX5g15xWsLnPI      │ Quarterly $45  ║
+║ 110│ sub_I4ip2EJAPlghRO      │ Combo                   │ req_sH9Q2gkwsYKFks      │ Quarterly $45  ║
+║ 111│ sub_I4ibx8YOHOYeM3      │ Combo                   │ req_r4olBKPLs3wGdg      │ Quarterly $45  ║
+║ 112│ sub_I4iPWPaq2PQU7F      │ Combo                   │ req_fWPaDPNXR7xZSV      │ Quarterly $45  ║
+║ 113│ sub_I4WdEOwZ9tltrY      │ Combo                   │ req_4Q3tVOfhjjLuaz      │ Quarterly $45  ║
+║ 114│ sub_I4SOVyszemQL9s      │ Combo                   │ req_8serxM31fvLnnd      │ Quarterly $45  ║
+║ 115│ sub_I4QW9RtzAeNvBg      │ Combo                   │ req_kgOcFcnpkHAcLb      │ Quarterly $45  ║
+║ 116│ sub_I4PSG38j8q9CUQ      │ Combo                   │ req_8diu9RuTIOi6Mr      │ Quarterly $45  ║
+║ 117│ sub_I4Oh1eDpciv4eG      │ Combo                   │ req_FQHh8KiIbqWK3L      │ Quarterly $45  ║
+║ 118│ sub_I4DWhDLi2g3hiP      │ Combo                   │ req_LQmnxzTRYsqLsI      │ Quarterly $45  ║
+║ 119│ sub_I42aUhjNTrsxpC      │ Combo                   │ req_sCh57gKxdsbl6E      │ Quarterly $45  ║
+║ 120│ sub_I3xOeEMZFWEeET      │ Combo                   │ req_y8ZJBG5JI1bpw4      │ Quarterly $45  ║
+║ 121│ sub_I3p1eInwVAqDgs      │ Combo                   │ req_FV21IF7WQnE6UF      │ Quarterly $45  ║
+║ 122│ sub_I3mTzfxv4cYNps      │ Combo                   │ req_LqQiVTJwPjDwAm      │ Quarterly $45  ║
+║ 123│ sub_I3j7fdsu3K0HbG      │ Combo                   │ req_AwZORwhjImuTXL      │ Quarterly $45  ║
+║ 124│ sub_I3hcGr1VRQNLS3      │ Combo                   │ req_nSOR0bp8V7aJVO      │ Quarterly $45  ║
+║ 125│ sub_I3epquREN5V8cB      │ Combo                   │ req_lb62OATmjuXtG2      │ Quarterly $45  ║
+║ 126│ sub_I3cAC1fvmDRPB2      │ Combo                   │ req_j1peq65xWgJ5VX      │ Quarterly $45  ║
+║ 127│ sub_I3LLupz8f1Fbem      │ Combo                   │ req_NfxZpwcApy2RFA      │ Quarterly $45  ║
+║ 128│ sub_I3EtB5DvFrxc0D      │ Combo                   │ req_gwMllRJZ8qyvFT      │ Quarterly $45  ║
+║ 129│ sub_I2zpvQMjoCLR2B      │ Combo                   │ req_e6hlip7rEPFNVD      │ Quarterly $45  ║
+║ 130│ sub_I2vd9Kjz5kd6ry      │ Combo                   │ req_BGsq9f2L4ubRCT      │ Quarterly $45  ║
+║ 131│ sub_I2oPhvj7qBEnfD      │ Combo                   │ req_z789YpsIKTgeym      │ Quarterly $45  ║
+║ 132│ sub_I2EIdeHDq3IQvL      │ Combo                   │ req_hZIncpjYUzsKib      │ Quarterly $45  ║
+║ 133│ sub_HxJTrfeFkg6EAW      │ Combo                   │ req_DhaSvWkzme2TRt      │ Quarterly $45  ║
+║ 134│ sub_Hws0OxRydGVF9F      │ Combo                   │ req_JBywCOPblr00Wp      │ Quarterly $45  ║
+║ 135│ sub_Hvm6QBiePtwcJY      │ Combo                   │ req_BJRrSej8ljwYnO      │ Quarterly $45  ║
+║ 136│ sub_HoUSm6NPo5kVwF      │ Combo                   │ req_ff2GGLuMKtm8tC      │ Quarterly $45  ║
+║ 137│ sub_HlogANmhA9sPGg      │ Combo                   │ req_f8uPg8E1sQzaLf      │ Quarterly $45  ║
+║ 138│ sub_HkwI3lgK6HK0dN      │ Combo                   │ req_gxtkxw3zvNtDok      │ Quarterly $45  ║
+║ 139│ sub_Hjm5EySY8q3i56      │ Combo                   │ req_FXyJVoHyIM6eeS      │ Quarterly $45  ║
+║ 140│ sub_HjiahXik56JbZQ      │ Combo                   │ req_u2qlBb5MzdJmV8      │ Quarterly $45  ║
+║ 141│ sub_HaSQS9pppqvBYz      │ EXPOYEAR                │ req_5nzK8Fp7kUWxUb      │ Expo Annual    ║
+║ 142│ sub_HX38fCXi0daSn1      │ VirtualExpoMonthly      │ req_XutBt6C728yrWU      │ Expo Monthly   ║
+║ 143│ sub_HWjPxDpRCTBHyI      │ VirtualExpoMonthly      │ req_9ZwvVRlsqEbBFW      │ Expo Monthly   ║
+║ 144│ sub_HVDGQdMY6a3xub      │ EXPOYEAR                │ req_nVyzSXiE5w7c80      │ Expo Annual    ║
+║ 145│ sub_HOpyg1cSO7hQQF      │ EXPOYEAR                │ req_Q3wQbya9wWp12e      │ Expo Annual    ║
+║ 146│ sub_HO6flII8aJoBC2      │ EXPOYEAR                │ req_pL3CLsEdx3RFsC      │ Expo Annual    ║
+║ 147│ sub_HNiaEtn0NNJdLG      │ EXPOYEAR                │ req_fY2SCJsvXwq84i      │ Expo Annual    ║
+║ 148│ sub_HNhBef8ejSov7F      │ VirtualExpoMonthly      │ req_silTedVlSTKESU      │ Expo Monthly   ║
+║ 149│ sub_HNUZRUhPjR710q      │ EXPOYEAR                │ req_6AUM9K2buEE1Qg      │ Expo Annual    ║
+║ 150│ sub_HNQmQqNGa96mu2      │ EXPOYEAR                │ req_j9SHRlL9enoQG5      │ Expo Annual    ║
+║ 151│ sub_HNNVyFjInvsJmC      │ EXPOYEAR                │ req_4m0ZMpzHZQQcZ8      │ Expo Annual    ║
+║ 152│ sub_HMkWxu7uQES5cd      │ VirtualExpoMonthly      │ req_omfD0Xa2EQiLqd      │ Expo Monthly   ║
+║ 153│ sub_HLtRCxfg4xJVyi      │ EXPOYEAR                │ req_J0QvglowXWfSyS      │ Expo Annual    ║
+║ 154│ sub_HLg8WejdhxaucV      │ EXPOYEAR                │ req_fLGT7b1rnGefsg      │ Expo Annual    ║
+║ 155│ sub_HLWDgq4k7M2yLt      │ EXPOYEAR                │ req_Fsggf8WsEWVSuK      │ Expo Annual    ║
+║ 156│ sub_HLNbYq0XWy1ONn      │ EXPOYEAR                │ req_Pz2QEpE7JuACHK      │ Expo Annual    ║
+║ 157│ sub_HLMEOkzu2J9Ysq      │ EXPOYEAR                │ req_7GhXwWgmPybdrj      │ Expo Annual    ║
+║ 158│ sub_HLCyuJWxDpQuNy      │ VirtualExpoMonthly      │ req_cmLKtqu42PUuCF      │ Expo Monthly   ║
+║ 159│ sub_HLB1O0GpET21Hw      │ VirtualExpoMonthly      │ req_BCNZ0imfD8aZlN      │ Expo Monthly   ║
+║ 160│ sub_HLAmY7sR2QDpsI      │ EXPOYEAR                │ req_TPbSJIUqAJ0uAA      │ Expo Annual    ║
+║ 161│ sub_HL4HHKKdK7DQXI      │ EXPOYEAR                │ req_2yhrqUavaDPI0u      │ Expo Annual    ║
+║ 162│ sub_HKrRKS5TeVOUuP      │ EXPOYEAR                │ req_R7ZX9ZdeCbMUde      │ Expo Annual    ║
+║ 163│ sub_HKjqMi1GL2hXce      │ VirtualExpoMonthly      │ req_2otADMt06qvMFt      │ Expo Monthly   ║
+║ 164│ sub_HKhbubnOMICw1Q      │ EXPOYEAR                │ req_MTlBytjU93WOUZ      │ Expo Annual    ║
+║ 165│ sub_HKcLUActSB4Wnz      │ EXPOYEAR                │ req_jW3My6biWv4vTu      │ Expo Annual    ║
+║ 166│ sub_HKTUhoHtJKlYw5      │ VirtualExpoMonthly      │ req_1wdvihSTBnxepE      │ Expo Monthly   ║
+║ 167│ sub_HKSU0KLoHP0SuB      │ EXPOYEAR                │ req_FDY8mnlYq2pEuT      │ Expo Annual    ║
+║ 168│ sub_HKS7CDphVM67Lo      │ EXPOYEAR                │ req_mSKrPn2ehck49K      │ Expo Annual    ║
+║ 169│ sub_HKNSp0bjuYZwXW      │ EXPOYEAR                │ req_h7CdaSzyXaUyve      │ Expo Annual    ║
+║ 170│ sub_HKGhcPEWqnneCM      │ EXPOYEAR                │ req_xu0KRI0RWcSkz1      │ Expo Annual    ║
+║ 171│ sub_HK8UcUEjZWJJWN      │ EXPOYEAR                │ req_smtOsYtRiE7U0F      │ Expo Annual    ║
+║ 172│ sub_HK6pgICdeXpoSN      │ VirtualExpoMonthly      │ req_QVCfLuWBEk8k0W      │ Expo Monthly   ║
+║ 173│ sub_HK59QSQ6fQ1EWZ      │ EXPOYEAR                │ req_ZC1zQX1htpPmxE      │ Expo Annual    ║
+║ 174│ sub_HK4Muid5eNGcEH      │ EXPOYEAR                │ req_s6G90HBWu6LVDI      │ Expo Annual    ║
+║ 175│ sub_HJx5l6Z7PAMu3t      │ EXPOYEAR                │ req_ltQQhpwXdThvfd      │ Expo Annual    ║
+║ 176│ sub_HJwDi15oXxInby      │ EXPOYEAR                │ req_2xTe0vJ1AWSGLX      │ Expo Annual    ║
+║ 177│ sub_HJuNKrEIdgIKhp      │ VirtualExpoMonthly      │ req_EfCwYwiB2bXCrE      │ Expo Monthly   ║
+║ 178│ sub_HJs6KfQu3FeZee      │ EXPOYEAR                │ req_4j5qXozM2U2xBa      │ Expo Annual    ║
+║ 179│ sub_HJir0BLBwEyN1q      │ VirtualExpoMonthly      │ req_2WMV4tI2HiGXef      │ Expo Monthly   ║
+║ 180│ sub_HJhzFPIWWnuqwf      │ EXPOYEAR                │ req_X2MJBF66lz7yj9      │ Expo Annual    ║
+║ 181│ sub_HJXfrKx6OpG6wY      │ VirtualExpoMonthly      │ req_eCIM3Q4wbd4qbL      │ Expo Monthly   ║
+║ 182│ sub_HIuYPDNkC25CK2      │ VirtualExpoMonthly      │ req_73ODaVISvEobbK      │ Expo Monthly   ║
+║ 183│ sub_HFOyBEociUKQ6o      │ EXPOYEAR                │ req_PDH2Tn0Zs0dzJO      │ Expo Annual    ║
+║ 184│ sub_HF17U62UrWQNa5      │ EXPOYEAR                │ req_e44PjnjahKrM1i      │ Expo Annual    ║
+╚════╧═════════════════════════╧═════════════════════════╧═════════════════════════╧════════════════╝
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+                                         SUMMARY STATISTICS
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+
+Total Ghost Subscriptions:     184
+
+By Missing Price ID:
+  • Combo                      140 subscriptions  (76.1%) - Quarterly $45 (Conference + Streaming)
+  • EXPOYEAR                    29 subscriptions  (15.8%) - Virtual Expo Annual
+  • VirtualExpoMonthly          14 subscriptions  (7.6%)  - Virtual Expo Monthly  
+  • SYearPlus                    1 subscription   (0.5%)  - Unknown Plan
+
+Product Association:
+  • prod_KExafNlUlt1H8M        140 subscriptions  (Combo Conference + Streaming Library)
+  • prod_KFHYfhnvNdUCH0         43 subscriptions  (Virtual Expo Special Annual Plan)
+  • Unknown                      1 subscription   (SYearPlus)
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+                                         CLEANUP PRIORITY
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+
+🔴 HIGH PRIORITY (140 affected customers):
+   Fix "Combo" price 
+
+🟡 MEDIUM PRIORITY (43 affected customers):  
+   Fix "EXPOYEAR" and "VirtualExpoMonthly" prices
+
+🟢 LOW PRIORITY (1 affected customer):
+   Investigate "SYearPlus" subscription
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════
+

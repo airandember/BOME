@@ -102,28 +102,33 @@ func logWebhookEventToDB(syncService *services.StripeSyncService, eventType, end
 }
 
 // RegisterStripeWebhookRoutes registers webhook endpoints for Stripe events
-func RegisterStripeWebhookRoutes(router *gin.RouterGroup, stripeService *services.StripeService, syncService *services.StripeSyncService) {
+// Phase 5: Now accepts v2 services for dual-write
+func RegisterStripeWebhookRoutes(router *gin.RouterGroup, stripeService *services.StripeService, syncServiceV1 *services.StripeSyncService, syncServiceV2 *services.StripeSyncV2Service, webhookServiceV2 *services.StripeWebhookServiceV2) {
 	webhooks := router.Group("/stripe/webhooks")
 	{
-		// Main webhook endpoint for all Stripe events
-		webhooks.POST("/", func(c *gin.Context) { HandleStripeWebhook(c, stripeService, syncService) })
+		// Main webhook endpoint for all Stripe events (admin test endpoint)
+		// Phase 5: Dual-write enabled
+		webhooks.POST("/", func(c *gin.Context) {
+			HandleStripeWebhook(c, stripeService, syncServiceV1, syncServiceV2, webhookServiceV2)
+		})
 
 		// Webhook status endpoint for admin dashboard
-		webhooks.GET("/status", func(c *gin.Context) { getWebhookStatus(c, syncService) })
+		webhooks.GET("/status", func(c *gin.Context) { getWebhookStatus(c, syncServiceV1) })
 
 		// Webhook ping/test endpoint for admin dashboard
-		webhooks.POST("/ping", func(c *gin.Context) { pingWebhook(c, syncService) })
+		webhooks.POST("/ping", func(c *gin.Context) { pingWebhook(c, syncServiceV1) })
 
 		// Webhook logs endpoint for admin dashboard
-		webhooks.GET("/logs", func(c *gin.Context) { getWebhookLogs(c, syncService) })
+		webhooks.GET("/logs", func(c *gin.Context) { getWebhookLogs(c, syncServiceV1) })
 
 		// Retry failed webhook event
-		webhooks.POST("/retry/:id", func(c *gin.Context) { retryWebhookEvent(c, syncService, stripeService) })
+		webhooks.POST("/retry/:id", func(c *gin.Context) { retryWebhookEvent(c, syncServiceV1, stripeService) })
 	}
 }
 
 // HandleStripeWebhook processes incoming Stripe webhook events dynamically (exported for public endpoint)
-func HandleStripeWebhook(c *gin.Context, stripeService *services.StripeService, syncService *services.StripeSyncService) {
+// Phase 5: Now accepts v2 services for dual-write (v1 + v2)
+func HandleStripeWebhook(c *gin.Context, stripeService *services.StripeService, syncServiceV1 *services.StripeSyncService, syncServiceV2 *services.StripeSyncV2Service, webhookServiceV2 *services.StripeWebhookServiceV2) {
 	startTime := time.Now()
 
 	// Read the request body
@@ -183,7 +188,7 @@ func HandleStripeWebhook(c *gin.Context, stripeService *services.StripeService, 
 		switch eventType {
 		case "v2.core.event_destination.ping":
 			log.Printf("📍 Webhook: v2 ping event - endpoint is healthy")
-			logWebhookEventToDB(syncService, eventType, c.Request.RequestURI, "success", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusOK, "")
+			logWebhookEventToDB(syncServiceV1, eventType, c.Request.RequestURI, "success", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusOK, "")
 			c.JSON(http.StatusOK, gin.H{
 				"received":  true,
 				"type":      "v2_ping",
@@ -215,19 +220,19 @@ func HandleStripeWebhook(c *gin.Context, stripeService *services.StripeService, 
 		log.Printf("✅ Webhook: v1 event signature validated successfully")
 		updateWebhookActivity(event.Type)
 
-		// Process v1 events (your existing logic)
-		err = processV1Event(event, syncService)
+		// Phase 5: Process with DUAL-WRITE (v1 + v2)
+		err = processV1EventWithDualWrite(event, syncServiceV1, webhookServiceV2)
 		if err != nil {
 			log.Printf("❌ Webhook: Failed to process v1 event %s: %v", event.Type, err)
 			recordWebhookFailure()
-			logWebhookEventToDB(syncService, event.Type, c.Request.RequestURI, "failed", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusInternalServerError, err.Error())
+			logWebhookEventToDB(syncServiceV1, event.Type, c.Request.RequestURI, "failed", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusInternalServerError, err.Error())
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process webhook"})
 			return
 		}
 
-		log.Printf("✅ Webhook: Successfully processed v1 event %s", event.Type)
-		logWebhookEventToDB(syncService, event.Type, c.Request.RequestURI, "success", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusOK, "")
-		c.JSON(http.StatusOK, gin.H{"received": true, "processed": true, "type": "v1_event"})
+		log.Printf("✅ Webhook: Successfully processed v1 event %s (dual-write to v1 + v2)", event.Type)
+		logWebhookEventToDB(syncServiceV1, event.Type, c.Request.RequestURI, "success", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusOK, "")
+		c.JSON(http.StatusOK, gin.H{"received": true, "processed": true, "type": "v1_event", "dual_write": "v1+v2"})
 	}
 }
 
@@ -277,6 +282,187 @@ func processV1Event(event *stripe.Event, syncService *services.StripeSyncService
 		return nil // Not an error - just ignored
 	}
 }
+
+// ================================================================
+// PHASE 5: DUAL-WRITE PROCESSOR (v1 + v2)
+// ================================================================
+
+// processV1EventWithDualWrite handles v1 events with dual-write to v1 and v2 tables
+func processV1EventWithDualWrite(event *stripe.Event, syncServiceV1 *services.StripeSyncService, webhookServiceV2 *services.StripeWebhookServiceV2) error {
+	log.Printf("🔄 [Webhook Dual-Write] Processing event: %s", event.Type)
+
+	// First, process with v1 (existing system - keep as fallback)
+	errV1 := processV1Event(event, syncServiceV1)
+	if errV1 != nil {
+		log.Printf("⚠️  [Webhook Dual-Write] V1 processing failed: %v", errV1)
+		// Don't fail webhook - v1 is now fallback only
+	} else {
+		log.Printf("✅ [Webhook Dual-Write] V1 processing succeeded")
+	}
+
+	// Then, process with v2 (new system - primary)
+	errV2 := processV2Event(event, webhookServiceV2)
+	if errV2 != nil {
+		log.Printf("❌ [Webhook Dual-Write] V2 processing failed: %v", errV2)
+		// Fail webhook if v2 fails - it's the primary system now
+		return errV2
+	}
+	log.Printf("✅ [Webhook Dual-Write] V2 processing succeeded")
+
+	return nil
+}
+
+// processV2Event routes events to v2 webhook handlers
+func processV2Event(event *stripe.Event, webhookServiceV2 *services.StripeWebhookServiceV2) error {
+	switch event.Type {
+	// Customer events
+	case "customer.created":
+		return handleCustomerCreatedV2(event, webhookServiceV2)
+	case "customer.updated":
+		return handleCustomerUpdatedV2(event, webhookServiceV2)
+	case "customer.deleted":
+		return handleCustomerDeletedV2(event, webhookServiceV2)
+
+	// Subscription events
+	case "customer.subscription.created":
+		return handleSubscriptionCreatedV2(event, webhookServiceV2)
+	case "customer.subscription.updated":
+		return handleSubscriptionUpdatedV2(event, webhookServiceV2)
+	case "customer.subscription.deleted":
+		return handleSubscriptionDeletedV2(event, webhookServiceV2)
+
+	// Product events
+	case "product.created":
+		return handleProductCreatedV2(event, webhookServiceV2)
+	case "product.updated":
+		return handleProductUpdatedV2(event, webhookServiceV2)
+
+	// Price events
+	case "price.created":
+		return handlePriceCreatedV2(event, webhookServiceV2)
+	case "price.updated":
+		return handlePriceUpdatedV2(event, webhookServiceV2)
+
+	// Invoice payment events - Phase 6
+	case "invoice.payment_succeeded":
+		return handleInvoicePaymentSucceededV2(event, webhookServiceV2)
+	case "invoice.payment_failed":
+		return handleInvoicePaymentFailedV2(event, webhookServiceV2)
+
+	default:
+		// Not an error - event is acknowledged but not processed in v2
+		return nil
+	}
+}
+
+// ================================================================
+// V2 WEBHOOK HANDLERS (delegate to StripeWebhookServiceV2)
+// ================================================================
+
+// Customer handlers
+func handleCustomerCreatedV2(event *stripe.Event, service *services.StripeWebhookServiceV2) error {
+	var customer stripe.Customer
+	if err := json.Unmarshal(event.Data.Raw, &customer); err != nil {
+		return fmt.Errorf("failed to unmarshal customer: %w", err)
+	}
+	return service.HandleCustomerCreated(&customer)
+}
+
+func handleCustomerUpdatedV2(event *stripe.Event, service *services.StripeWebhookServiceV2) error {
+	var customer stripe.Customer
+	if err := json.Unmarshal(event.Data.Raw, &customer); err != nil {
+		return fmt.Errorf("failed to unmarshal customer: %w", err)
+	}
+	return service.HandleCustomerUpdated(&customer)
+}
+
+func handleCustomerDeletedV2(event *stripe.Event, service *services.StripeWebhookServiceV2) error {
+	var customer stripe.Customer
+	if err := json.Unmarshal(event.Data.Raw, &customer); err != nil {
+		return fmt.Errorf("failed to unmarshal customer: %w", err)
+	}
+	return service.HandleCustomerDeleted(&customer)
+}
+
+// Subscription handlers
+func handleSubscriptionCreatedV2(event *stripe.Event, service *services.StripeWebhookServiceV2) error {
+	var subscription stripe.Subscription
+	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
+		return fmt.Errorf("failed to unmarshal subscription: %w", err)
+	}
+	return service.HandleSubscriptionCreated(&subscription)
+}
+
+func handleSubscriptionUpdatedV2(event *stripe.Event, service *services.StripeWebhookServiceV2) error {
+	var subscription stripe.Subscription
+	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
+		return fmt.Errorf("failed to unmarshal subscription: %w", err)
+	}
+	return service.HandleSubscriptionUpdated(&subscription)
+}
+
+func handleSubscriptionDeletedV2(event *stripe.Event, service *services.StripeWebhookServiceV2) error {
+	var subscription stripe.Subscription
+	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
+		return fmt.Errorf("failed to unmarshal subscription: %w", err)
+	}
+	return service.HandleSubscriptionDeleted(&subscription)
+}
+
+// Product handlers
+func handleProductCreatedV2(event *stripe.Event, service *services.StripeWebhookServiceV2) error {
+	var product stripe.Product
+	if err := json.Unmarshal(event.Data.Raw, &product); err != nil {
+		return fmt.Errorf("failed to unmarshal product: %w", err)
+	}
+	return service.HandleProductCreated(&product)
+}
+
+func handleProductUpdatedV2(event *stripe.Event, service *services.StripeWebhookServiceV2) error {
+	var product stripe.Product
+	if err := json.Unmarshal(event.Data.Raw, &product); err != nil {
+		return fmt.Errorf("failed to unmarshal product: %w", err)
+	}
+	return service.HandleProductUpdated(&product)
+}
+
+// Price handlers
+func handlePriceCreatedV2(event *stripe.Event, service *services.StripeWebhookServiceV2) error {
+	var price stripe.Price
+	if err := json.Unmarshal(event.Data.Raw, &price); err != nil {
+		return fmt.Errorf("failed to unmarshal price: %w", err)
+	}
+	return service.HandlePriceCreated(&price)
+}
+
+func handlePriceUpdatedV2(event *stripe.Event, service *services.StripeWebhookServiceV2) error {
+	var price stripe.Price
+	if err := json.Unmarshal(event.Data.Raw, &price); err != nil {
+		return fmt.Errorf("failed to unmarshal price: %w", err)
+	}
+	return service.HandlePriceUpdated(&price)
+}
+
+// Invoice handlers (Phase 6)
+func handleInvoicePaymentSucceededV2(event *stripe.Event, service *services.StripeWebhookServiceV2) error {
+	var invoice stripe.Invoice
+	if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
+		return fmt.Errorf("failed to unmarshal invoice: %w", err)
+	}
+	return service.HandleInvoicePaymentSucceeded(&invoice)
+}
+
+func handleInvoicePaymentFailedV2(event *stripe.Event, service *services.StripeWebhookServiceV2) error {
+	var invoice stripe.Invoice
+	if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
+		return fmt.Errorf("failed to unmarshal invoice: %w", err)
+	}
+	return service.HandleInvoicePaymentFailed(&invoice)
+}
+
+// ================================================================
+// V1 WEBHOOK HANDLERS (keep for fallback)
+// ================================================================
 
 // Customer webhook handlers
 func handleCustomerCreated(event *stripe.Event, syncService *services.StripeSyncService) error {
