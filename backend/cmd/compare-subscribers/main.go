@@ -79,22 +79,22 @@ func main() {
 }
 
 type ComparisonResults struct {
-	TotalCompared    int                     `json:"total_compared"`
-	IdenticalCount   int                     `json:"identical_count"`
-	DifferentCount   int                     `json:"different_count"`
-	V1OnlyCount      int                     `json:"v1_only_count"`
-	V2OnlyCount      int                     `json:"v2_only_count"`
-	Subscribers      []SubscriberComparison  `json:"subscribers"`
-	Summary          map[string]int          `json:"summary"`
+	TotalCompared  int                    `json:"total_compared"`
+	IdenticalCount int                    `json:"identical_count"`
+	DifferentCount int                    `json:"different_count"`
+	V1OnlyCount    int                    `json:"v1_only_count"`
+	V2OnlyCount    int                    `json:"v2_only_count"`
+	Subscribers    []SubscriberComparison `json:"subscribers"`
+	Summary        map[string]int         `json:"summary"`
 }
 
 type SubscriberComparison struct {
-	UserID       int                    `json:"user_id"`
-	Email        string                 `json:"email"`
-	Status       string                 `json:"status"` // "identical", "different", "v1_only", "v2_only"
-	V1Data       *services.UnifiedSubscriber `json:"v1_data,omitempty"`
-	V2Data       *services.UnifiedSubscriber `json:"v2_data,omitempty"`
-	Differences  []FieldDifference      `json:"differences,omitempty"`
+	UserID      int                         `json:"user_id"`
+	Email       string                      `json:"email"`
+	Status      string                      `json:"status"` // "identical", "different", "v1_only", "v2_only"
+	V1Data      *services.UnifiedSubscriber `json:"v1_data,omitempty"`
+	V2Data      *services.UnifiedSubscriber `json:"v2_data,omitempty"`
+	Differences []FieldDifference           `json:"differences,omitempty"`
 }
 
 type FieldDifference struct {
@@ -207,33 +207,35 @@ func compareSubscribers(userID int, v1Sub, v2Sub *services.UnifiedSubscriber, ve
 	if v1Sub == nil {
 		comparison.Status = "v2_only"
 		comparison.V2Data = v2Sub
-		comparison.Email = ptrToString(v2Sub.Email)
+		comparison.Email = v2Sub.Email
 		return comparison
 	}
 
 	if v2Sub == nil {
 		comparison.Status = "v1_only"
 		comparison.V1Data = v1Sub
-		comparison.Email = ptrToString(v1Sub.Email)
+		comparison.Email = v1Sub.Email
 		return comparison
 	}
 
 	// Both exist - compare fields
 	comparison.V1Data = v1Sub
 	comparison.V2Data = v2Sub
-	comparison.Email = ptrToString(v1Sub.Email)
+	comparison.Email = v1Sub.Email
 
 	// Compare critical fields
 	diffs := []FieldDifference{}
 
-	// Email
-	if ptrToString(v1Sub.Email) != ptrToString(v2Sub.Email) {
-		diffs = append(diffs, FieldDifference{"email", ptrToString(v1Sub.Email), ptrToString(v2Sub.Email)})
+	// Email (both are string, not *string)
+	if v1Sub.Email != v2Sub.Email {
+		diffs = append(diffs, FieldDifference{"email", v1Sub.Email, v2Sub.Email})
 	}
 
-	// Full Name
-	if ptrToString(v1Sub.FullName) != ptrToString(v2Sub.FullName) {
-		diffs = append(diffs, FieldDifference{"full_name", ptrToString(v1Sub.FullName), ptrToString(v2Sub.FullName)})
+	// Full Name (construct from FirstName + LastName for both)
+	v1FullName := v1Sub.FirstName + " " + v1Sub.LastName
+	v2FullName := v2Sub.FirstName + " " + v2Sub.LastName
+	if v1FullName != v2FullName {
+		diffs = append(diffs, FieldDifference{"full_name", v1FullName, v2FullName})
 	}
 
 	// Video Access
@@ -246,9 +248,9 @@ func compareSubscribers(userID int, v1Sub, v2Sub *services.UnifiedSubscriber, ve
 		diffs = append(diffs, FieldDifference{"has_active_plan", v1Sub.HasActivePlan, v2Sub.HasActivePlan})
 	}
 
-	// Plan Status
-	if ptrToString(v1Sub.PlanStatus) != ptrToString(v2Sub.PlanStatus) {
-		diffs = append(diffs, FieldDifference{"plan_status", ptrToString(v1Sub.PlanStatus), ptrToString(v2Sub.PlanStatus)})
+	// Plan Status (string, not *string)
+	if v1Sub.PlanStatus != v2Sub.PlanStatus {
+		diffs = append(diffs, FieldDifference{"plan_status", v1Sub.PlanStatus, v2Sub.PlanStatus})
 	}
 
 	// Plan Name
@@ -341,4 +343,3 @@ func percentage(part, total int) float64 {
 	}
 	return float64(part) / float64(total) * 100
 }
-
