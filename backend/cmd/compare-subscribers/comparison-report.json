@@ -1,0 +1,2 @@
+2025/10/31 12:46:16 ≡ƒöº Database pool configured: MaxOpen=25, MaxIdle=5, MaxLifetime=5m0s, MaxIdleTime=2m0s
+2025/10/31 12:46:17 Γ¥î Failed to initialize database: failed to ping database: pq: role "bome_user" does not exist

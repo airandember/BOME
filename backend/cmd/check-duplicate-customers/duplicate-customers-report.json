@@ -1,0 +1,102 @@
+{
+  "total_duplicate_records": 13,
+  "total_users_affected": 12,
+  "users": [
+    {
+      "email": "jameskersey2@gmail.com",
+      "user_id": 4891,
+      "customer_count": 3,
+      "customer_ids": [
+        "cus_S7VixQutVow4BB,cus_TC4zTVEOZbzRXe,cus_TC503P4Vlw8XrB"
+      ]
+    },
+    {
+      "email": "dbates62@hotmail.com",
+      "user_id": 4987,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_PU3oDefn66rr3y,cus_PxJSTelFAeAQm8"
+      ]
+    },
+    {
+      "email": "ericgessel@gmail.com",
+      "user_id": 7014,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_HJsNLfuaMqxZ5m,cus_TGAcxsB1BicDbY"
+      ]
+    },
+    {
+      "email": "garrettreichert@hotmail.com",
+      "user_id": 5297,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_HSdztzkLMeSoEy,cus_KUFR1LIfvAxiBv"
+      ]
+    },
+    {
+      "email": "gay.martin@gmail.com",
+      "user_id": 7333,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_FzdDY0PonL6zn3,cus_TDZsaz4yCHJ3AY"
+      ]
+    },
+    {
+      "email": "jillypill1@yahoo.com",
+      "user_id": 4992,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_H4zvReb8kIeY2c,cus_PwG2D2iXsffjpW"
+      ]
+    },
+    {
+      "email": "joyfullavatar@gmail.com",
+      "user_id": 4886,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_SFOdgnsyBO3hAv,cus_SGRNo0QogNynbA"
+      ]
+    },
+    {
+      "email": "lbar3351@gmail.com",
+      "user_id": 5781,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_IBIWONCliEW2lJ,cus_IC21UOyXgdObKP"
+      ]
+    },
+    {
+      "email": "pdm1441@gmail.com",
+      "user_id": 4881,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_SLbPdKJ0VX8lYG,cus_TKJiFjARd5bqb0"
+      ]
+    },
+    {
+      "email": "robberch@gmail.com",
+      "user_id": 4873,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_I3gwAsaWJxA04o,cus_SqP3fXHCE8o9sA"
+      ]
+    },
+    {
+      "email": "shauna_math@outlook.com",
+      "user_id": 5305,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_KQW4QSxKXvWqTf,cus_TGcJEtjOvgvFV1"
+      ]
+    },
+    {
+      "email": "sherryjohns@hotmail.com",
+      "user_id": 5197,
+      "customer_count": 2,
+      "customer_ids": [
+        "cus_HlIAH7fJWNmqE8,cus_La7ss9iAAJfcle"
+      ]
+    }
+  ]
+}

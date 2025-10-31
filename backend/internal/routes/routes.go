@@ -333,7 +333,7 @@ func SetupRoutes(
 
 		// Setup Stripe routes using dedicated file
 		SetupPublicStripeRoutes(v1, stripePublicService)
-		// SetupAuthenticatedStripeRoutes(v1, stripePublicService, globalUserSubscriptionService) // DEPRECATED: Phase 7 replaces these routes
+		SetupAuthenticatedStripeRoutes(v1, db, stripePublicService) // Checkout session creation with subscription blocking
 	} else {
 		// Provide fallback responses when database is unavailable
 		publicPlans := v1.Group("/subscription-plans")

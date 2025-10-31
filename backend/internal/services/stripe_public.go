@@ -10,6 +10,7 @@ import (
 
 	"github.com/stripe/stripe-go/v74"
 	"github.com/stripe/stripe-go/v74/checkout/session"
+	"github.com/stripe/stripe-go/v74/customer"
 	stripeprice "github.com/stripe/stripe-go/v74/price"
 )
 
@@ -180,6 +181,25 @@ func (s *StripePublicService) CreateEmbeddedCheckoutSession(planID, returnURL, u
 
 	log.Printf("🔍 [STRIPE-PUBLIC] Using customer email: %s", userEmail)
 
+	// 🔧 FIX: Check for existing Stripe customer by email to prevent duplicates
+	var customerID string
+
+	// Search for existing customer
+	customerParams := &stripe.CustomerListParams{}
+	customerParams.Filters.AddFilter("email", "", userEmail)
+	customerParams.Filters.AddFilter("limit", "", "1")
+
+	customerIter := customer.List(customerParams)
+	if customerIter.Next() {
+		// Found existing customer - reuse it!
+		existingCustomer := customerIter.Customer()
+		customerID = existingCustomer.ID
+		log.Printf("✅ [STRIPE-PUBLIC] Reusing existing customer: %s for email %s", customerID, userEmail)
+	} else {
+		// No existing customer - this will be created automatically by Stripe
+		log.Printf("ℹ️  [STRIPE-PUBLIC] No existing customer found for %s - Stripe will create one", userEmail)
+	}
+
 	params := &stripe.CheckoutSessionParams{
 		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
@@ -188,7 +208,13 @@ func (s *StripePublicService) CreateEmbeddedCheckoutSession(planID, returnURL, u
 				Quantity: stripe.Int64(1),
 			},
 		},
-		CustomerEmail: stripe.String(userEmail),
+	}
+
+	// Use existing customer ID if found, otherwise let Stripe create a new one with email
+	if customerID != "" {
+		params.Customer = stripe.String(customerID)
+	} else {
+		params.CustomerEmail = stripe.String(userEmail)
 	}
 
 	// Set UI mode for embedded checkout

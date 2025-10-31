@@ -80,6 +80,16 @@
 			<button class="btn-primary" on:click={loadSubscriptions}>Try Again</button>
 		</div>
 	{:else if subscriptions}
+		<!-- BETA Notice Banner -->
+		{#if activeSubscriptions.length > 0 && supportSettings?.email}
+			<div class="beta-notice">
+				<div class="beta-icon">🚀</div>
+				<div class="beta-content">
+					<h3>We're in BETA!</h3>
+					<p>Want to change your subscription? Please contact <a href="mailto:{supportSettings.email}">{supportSettings.email}</a></p>
+				</div>
+			</div>
+		{/if}
 		<!-- Multiple Active Subscriptions Warning -->
 		{#if hasMultipleActive && supportSettings}
 			<div class="warning-banner">
@@ -227,6 +237,51 @@
 		height: 64px;
 		stroke: #ef4444;
 		margin: 0 auto 1rem;
+	}
+
+	.beta-notice {
+		background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(147, 51, 234, 0.1) 100%);
+		border: 2px solid #3b82f6;
+		border-radius: 12px;
+		padding: 1.5rem;
+		margin-bottom: 2rem;
+		display: flex;
+		gap: 1rem;
+		align-items: center;
+	}
+
+	.beta-icon {
+		font-size: 2rem;
+		flex-shrink: 0;
+	}
+
+	.beta-content {
+		flex: 1;
+	}
+
+	.beta-content h3 {
+		color: #3b82f6;
+		font-size: 1.25rem;
+		margin: 0 0 0.5rem 0;
+		font-weight: 600;
+	}
+
+	.beta-content p {
+		margin: 0;
+		color: var(--text-secondary);
+		font-size: 1rem;
+	}
+
+	.beta-content a {
+		color: #3b82f6;
+		text-decoration: none;
+		font-weight: 600;
+		transition: color 0.2s;
+	}
+
+	.beta-content a:hover {
+		color: #2563eb;
+		text-decoration: underline;
 	}
 
 	.warning-banner {
