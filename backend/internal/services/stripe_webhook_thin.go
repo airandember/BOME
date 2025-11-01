@@ -25,10 +25,13 @@ func NewStripeWebhookThinService(webhookServiceV2 *StripeWebhookServiceV2) *Stri
 // ThinEvent represents a V2 thin webhook event structure
 type ThinEvent struct {
 	ID            string                 `json:"id"`
+	Object        string                 `json:"object"`
 	Type          string                 `json:"type"`
-	Created       int64                  `json:"created"`
-	Data          map[string]interface{} `json:"data"`
+	Livemode      bool                   `json:"livemode"`
+	Created       string                 `json:"created"` // V2 uses ISO 8601 string, not Unix timestamp
+	Data          map[string]interface{} `json:"data,omitempty"`
 	RelatedObject *ThinRelatedObject     `json:"related_object,omitempty"`
+	Reason        map[string]interface{} `json:"reason,omitempty"`
 }
 
 // ThinRelatedObject represents a related object reference in thin events
