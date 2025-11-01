@@ -17,10 +17,12 @@
 	import { SubscriptionOfferService } from '$lib/services/subscription-offers';
 	import { apiRequest } from '$lib/auth';
 	import StripeCustomers from './customers/+page.svelte';
+	import GhostDataManager from './GhostDataManager.svelte';
 
 	// State
-	let activeTab: 'subscribers' | 'stripe-subs' = $state('subscribers');
+	let activeTab: 'subscribers' | 'stripe-subs' | 'ghosts' = $state('subscribers');
 	let loading = $state(false);
+	let ghostCount = $state(0);
 	
 	// Separate loading states for each tab
 	let subscribersLoading = $state(false);
@@ -233,21 +235,40 @@ async function loadStripeSubscriptions() {
 }
 
 
+// Load ghost count
+async function loadGhostCount() {
+	try {
+		const res = await apiRequest('/admin/streaming/ghosts/count');
+		if (res.ok) {
+			const data = await res.json();
+			ghostCount = data.count || 0;
+			console.log(`👻 Ghost count loaded: ${ghostCount}`);
+		}
+	} catch (err) {
+		console.error('Failed to load ghost count:', err);
+	}
+}
+
 // Load data on mount
 onMount(async () => {
 	await fetchRoles();
 	await fetchSubscriptionPlans();
 	// Load the active tab's data immediately
 	await loadTabData(activeTab);
+	// Load ghost count on mount
+	await loadGhostCount();
 });
 
 // Load data for a specific tab
-async function loadTabData(tab: 'subscribers' | 'stripe-subs') {
+async function loadTabData(tab: 'subscribers' | 'stripe-subs' | 'ghosts') {
 	console.log(`🔄 Loading data for tab: ${tab}`);
 	
 	switch (tab) {
 		case 'subscribers':
 			await loadSubscribersData();
+			break;
+		case 'ghosts':
+			await loadGhostCount();
 			break;
 		case 'stripe-subs':
 			await loadStripeSubsData();
@@ -924,7 +945,7 @@ async function loadStripeSubsData() {
 
 
 	// Update the changeTab function to handle the new tab
-	async function changeTab(tab: 'subscribers' | 'stripe-subs') {
+	async function changeTab(tab: 'subscribers' | 'stripe-subs' | 'ghosts') {
 		if (tab === activeTab) return;
 		
 		// Clear selections when switching tabs
@@ -937,11 +958,11 @@ async function loadStripeSubsData() {
 		currentPage = 1;
 		
 		// Set animation direction based on tab order
-		if (activeTab === 'subscribers' && tab === 'stripe-subs') {
+		if (activeTab === 'subscribers' && (tab === 'stripe-subs' || tab === 'ghosts')) {
 			animationDirection = 'right';
-		} else if (activeTab === 'stripe-subs' && tab === 'subscribers') {
+		} else if ((activeTab === 'stripe-subs' || activeTab === 'ghosts') && tab === 'subscribers') {
 			animationDirection = 'left';
-		} else if (tab === 'stripe-subs') {
+		} else if (tab === 'stripe-subs' || tab === 'ghosts') {
 			// New tab - determine direction based on current tab
 			animationDirection = activeTab === 'subscribers' ? 'right' : 'left';
 		}
@@ -1246,6 +1267,16 @@ async function loadStripeSubsData() {
 			<span class="tab-icon">🔗</span>
 			Stripe Subs <!--({stripeOnlyCount + syncedCount})-->
 		</button>
+		{#if ghostCount > 0}
+		<button 
+			class="tab-button ghost-tab" 
+			class:active={activeTab === 'ghosts'}
+			onclick={() => changeTab('ghosts')}
+		>
+			<span class="tab-icon">👻👻👻</span>
+			({ghostCount})
+		</button>
+		{/if}
 	</div>
 
 	<!-- Tab Content -->
@@ -1278,7 +1309,10 @@ async function loadStripeSubsData() {
 					/>
 				{/if}
 			</div>
-		{/if}
+		{:else if activeTab === 'ghosts'}
+			<!-- Ghost Data Tab -->
+			<GhostDataManager onGhostCountUpdate={loadGhostCount} />
+	{/if}
 	</div>
 </div>
 
@@ -1389,6 +1423,24 @@ async function loadStripeSubsData() {
 
 	.tab-icon {
 		font-size: 1.1rem;
+	}
+
+	.tab-button.ghost-tab {
+		animation: ghostPulse 2s ease-in-out infinite;
+	}
+
+	.tab-button.ghost-tab.active {
+		color: #9333ea;
+		border-bottom-color: #9333ea;
+	}
+
+	@keyframes ghostPulse {
+		0%, 100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.7;
+		}
 	}
 
 	/* Tab Content */

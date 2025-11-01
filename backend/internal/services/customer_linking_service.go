@@ -150,10 +150,15 @@ func (s *CustomerLinkingService) LinkUserToCustomers(userID int) (*LinkResult, e
 		}
 	}
 
-	if result.CustomersLinked > 0 {
-		log.Printf("🎉 Successfully linked %d/%d customers for user %d (%s)",
-			result.CustomersLinked, customersFound, userID, email)
+	// Only log if there were errors or multiple customers linked (unusual cases)
+	if result.Error != "" {
+		log.Printf("❌ Error linking customers for user %d (%s): %s",
+			userID, email, result.Error)
+	} else if result.CustomersLinked > 1 {
+		log.Printf("⚠️  Linked %d customers for user %d (%s) - multiple customers detected",
+			result.CustomersLinked, userID, email)
 	}
+	// Omit success logs for single customer links (normal case)
 
 	return result, nil
 }

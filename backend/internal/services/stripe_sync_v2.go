@@ -19,7 +19,8 @@ import (
 
 // StripeSyncV2Service handles syncing Stripe data to v2 tables
 type StripeSyncV2Service struct {
-	db *database.DB
+	db           *database.DB
+	ghostTracker *GhostTrackingService
 }
 
 // SyncProgress tracks sync progress for reporting
@@ -39,7 +40,10 @@ type SyncProgress struct {
 
 // NewStripeSyncV2Service creates a new Stripe sync service for v2 tables
 func NewStripeSyncV2Service(db *database.DB) *StripeSyncV2Service {
-	return &StripeSyncV2Service{db: db}
+	return &StripeSyncV2Service{
+		db:           db,
+		ghostTracker: NewGhostTrackingService(db),
+	}
 }
 
 // ================================================================
@@ -140,6 +144,31 @@ func (s *StripeSyncV2Service) SyncProducts(ctx context.Context, progress *SyncPr
 }
 
 func (s *StripeSyncV2Service) upsertProduct(prod *stripe.Product) error {
+	// 🛡️ GHOST DETECTION: Block known ghost product IDs
+	ghostProducts := map[string]bool{
+		"prod_HEmcX1PE8TO2CO": true,
+		"prod_FvNAeI348dup9w": true,
+		"prod_HF5YzcBH5Rwr0d": true,
+		"prod_GVV5efccnh13h9": true,
+		"prod_FvNAJgnw48hwpZ": true,
+	}
+
+	if ghostProducts[prod.ID] {
+		log.Printf("👻 [V2] GHOST BLOCKED: Product %s - LOGGING TO GHOST TABLE", prod.ID)
+
+		if s.ghostTracker != nil {
+			metadata := map[string]interface{}{
+				"name":        prod.Name,
+				"description": prod.Description,
+				"active":      prod.Active,
+				"created":     prod.Created,
+			}
+			s.ghostTracker.LogGhostProduct(context.Background(), prod.ID, "Product deleted from Stripe or known ghost", metadata)
+		}
+
+		return nil // Skip sync but logged for admin visibility
+	}
+
 	query := `
 		INSERT INTO stripe_products_v2 (
 			stripe_id, name, description, active, metadata,
@@ -186,7 +215,15 @@ func (s *StripeSyncV2Service) upsertProduct(prod *stripe.Product) error {
 		isLegacy,                   // is_legacy
 	)
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Note: We don't auto-remove ghost products from the table anymore
+	// They stay in the ghost table for admin visibility until manually removed
+	// This allows admins to track historical issues and decide when to clean them up
+
+	return nil
 }
 
 // ================================================================
@@ -227,6 +264,34 @@ func (s *StripeSyncV2Service) SyncPrices(ctx context.Context, progress *SyncProg
 }
 
 func (s *StripeSyncV2Service) upsertPrice(pr *stripe.Price) error {
+	// 🛡️ GHOST DETECTION: Block prices for known ghost product IDs
+	ghostProducts := map[string]bool{
+		"prod_HEmcX1PE8TO2CO": true,
+		"prod_FvNAeI348dup9w": true,
+		"prod_HF5YzcBH5Rwr0d": true,
+		"prod_GVV5efccnh13h9": true,
+		"prod_FvNAJgnw48hwpZ": true,
+	}
+
+	if ghostProducts[pr.Product.ID] {
+		log.Printf("👻 [V2] GHOST BLOCKED: Price %s references ghost product %s - LOGGING TO GHOST TABLE", pr.ID, pr.Product.ID)
+
+		if s.ghostTracker != nil {
+			metadata := map[string]interface{}{
+				"currency":    pr.Currency,
+				"unit_amount": pr.UnitAmount,
+				"active":      pr.Active,
+				"created":     pr.Created,
+			}
+			if pr.Recurring != nil {
+				metadata["recurring_interval"] = pr.Recurring.Interval
+			}
+			s.ghostTracker.LogGhostPrice(context.Background(), pr.ID, pr.Product.ID, metadata)
+		}
+
+		return nil // Skip sync but logged for admin visibility
+	}
+
 	// First, get the product_id from stripe_products_v2
 	var productID int
 	err := s.db.QueryRow(`
@@ -300,7 +365,14 @@ func (s *StripeSyncV2Service) upsertPrice(pr *stripe.Price) error {
 		time.Unix(pr.Created, 0), // stripe_created_at
 	)
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Note: We don't auto-remove ghost prices from the table anymore
+	// They stay visible for admin review until manually removed
+
+	return nil
 }
 
 // ================================================================
@@ -429,6 +501,50 @@ func (s *StripeSyncV2Service) SyncSubscriptions(ctx context.Context, progress *S
 }
 
 func (s *StripeSyncV2Service) upsertSubscription(sub *stripe.Subscription) error {
+	// 🛡️ GHOST DETECTION: Block subscriptions referencing known ghost products
+	ghostProducts := map[string]bool{
+		"prod_HEmcX1PE8TO2CO": true,
+		"prod_FvNAeI348dup9w": true,
+		"prod_HF5YzcBH5Rwr0d": true,
+		"prod_GVV5efccnh13h9": true,
+		"prod_FvNAJgnw48hwpZ": true,
+	}
+
+	// Check if this subscription references a ghost product
+	if len(sub.Items.Data) > 0 {
+		firstItem := sub.Items.Data[0]
+		if firstItem.Price != nil && firstItem.Price.Product != nil {
+			productID := firstItem.Price.Product.ID
+			if ghostProducts[productID] {
+				log.Printf("👻 [V2] GHOST BLOCKED: Subscription %s references ghost product %s - LOGGING TO GHOST TABLE", sub.ID, productID)
+
+				// Get customer email
+				var customerEmail string
+				if sub.Customer != nil {
+					customerEmail = sub.Customer.Email
+				}
+
+				// Log to ghost tracking table
+				if s.ghostTracker != nil {
+					metadata := map[string]interface{}{
+						"status":               sub.Status,
+						"current_period_end":   sub.CurrentPeriodEnd,
+						"current_period_start": sub.CurrentPeriodStart,
+						"created":              sub.Created,
+					}
+					if firstItem.Price != nil {
+						metadata["price_id"] = firstItem.Price.ID
+						metadata["unit_amount"] = firstItem.Price.UnitAmount
+						metadata["currency"] = firstItem.Price.Currency
+					}
+					s.ghostTracker.LogGhostSubscription(context.Background(), sub.ID, productID, sub.Customer.ID, customerEmail, metadata)
+				}
+
+				return nil // Skip sync but logged for admin visibility
+			}
+		}
+	}
+
 	// Get customer_id from stripe_customers_v2
 	var customerID int
 	err := s.db.QueryRow(`
@@ -472,7 +588,43 @@ func (s *StripeSyncV2Service) upsertSubscription(sub *stripe.Subscription) error
 		log.Printf("⚠️ [Stripe Sync v2] Price %s not found for subscription %s, fetching...", priceStripeID, sub.ID)
 		pr, err := price.Get(priceStripeID, nil)
 		if err != nil {
-			return fmt.Errorf("failed to fetch price %s: %w", priceStripeID, err)
+			// Price fetch failed - this is a ghost price!
+			log.Printf("👻 [V2] GHOST DETECTED: Price %s cannot be fetched from Stripe (subscription %s) - LOGGING TO GHOST TABLE", priceStripeID, sub.ID)
+
+			// Get customer email
+			var customerEmail string
+			if sub.Customer != nil {
+				customerEmail = sub.Customer.Email
+			}
+
+			// Log subscription as ghost because it references a ghost price
+			if s.ghostTracker != nil {
+				metadata := map[string]interface{}{
+					"status":               sub.Status,
+					"current_period_end":   sub.CurrentPeriodEnd,
+					"current_period_start": sub.CurrentPeriodStart,
+					"created":              sub.Created,
+					"ghost_price_id":       priceStripeID,
+					"error":                err.Error(),
+				}
+				if len(sub.Items.Data) > 0 && sub.Items.Data[0].Price != nil {
+					metadata["unit_amount"] = sub.Items.Data[0].Price.UnitAmount
+					metadata["currency"] = sub.Items.Data[0].Price.Currency
+					if sub.Items.Data[0].Price.Product != nil {
+						metadata["product_id"] = sub.Items.Data[0].Price.Product.ID
+					}
+				}
+				s.ghostTracker.LogGhostSubscription(context.Background(), sub.ID, priceStripeID, sub.Customer.ID, customerEmail, metadata)
+
+				// Also log the ghost price itself
+				priceMetadata := map[string]interface{}{
+					"referenced_by_subscription": sub.ID,
+					"error":                      err.Error(),
+				}
+				s.ghostTracker.LogGhostPrice(context.Background(), priceStripeID, "unknown_product", priceMetadata)
+			}
+
+			return nil // Skip this subscription but logged for admin visibility
 		}
 		if err := s.upsertPrice(pr); err != nil {
 			return fmt.Errorf("failed to upsert price %s: %w", priceStripeID, err)
@@ -533,7 +685,16 @@ func (s *StripeSyncV2Service) upsertSubscription(sub *stripe.Subscription) error
 		string(metadataJSON),                 // metadata
 	)
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Auto-remove from ghost table if it was previously a ghost
+	if s.ghostTracker != nil {
+		s.ghostTracker.CheckAndRemoveGhostSubscription(context.Background(), sub.ID)
+	}
+
+	return nil
 }
 
 // ================================================================
