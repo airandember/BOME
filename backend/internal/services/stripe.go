@@ -32,7 +32,8 @@ import (
 type StripeService struct {
 	secretKey         string
 	publishableKey    string
-	webhookSecret     string
+	webhookSecret     string // Snapshot webhook secret (V1 events)
+	webhookSecretThin string // Thin webhook secret (V2 events)
 	priceIDMonthly    string
 	priceIDYearly     string
 	customerPortalURL string
@@ -239,31 +240,45 @@ func (s *StripeService) loadStoredWebhookSecret(db *database.DB) {
 		return
 	}
 
-	// Get the encrypted webhook secret from database
+	cryptoService := GetGlobalCryptoService()
+	if cryptoService == nil {
+		log.Printf("Cannot decrypt webhook secrets: crypto service not available")
+		return
+	}
+
+	// Get the encrypted SNAPSHOT webhook secret from database
 	encryptedSecret, err := db.GetSecureSetting("stripe_webhook_secret")
 	if err != nil {
 		// Only log if it's not a "not found" error
 		if err != sql.ErrNoRows {
-			log.Printf("Error loading stored webhook secret: %v", err)
+			log.Printf("Error loading stored snapshot webhook secret: %v", err)
 		}
-		return
+	} else {
+		decryptedSecret, err := cryptoService.DecryptString(encryptedSecret)
+		if err != nil {
+			log.Printf("Failed to decrypt stored snapshot webhook secret: %v", err)
+		} else {
+			s.webhookSecret = decryptedSecret
+			log.Printf("✅ Loaded snapshot webhook secret from database")
+		}
 	}
 
-	// Decrypt the secret
-	cryptoService := GetGlobalCryptoService()
-	if cryptoService == nil {
-		log.Printf("Cannot decrypt webhook secret: crypto service not available")
-		return
-	}
-
-	decryptedSecret, err := cryptoService.DecryptString(encryptedSecret)
+	// Get the encrypted THIN webhook secret from database
+	encryptedSecretThin, err := db.GetSecureSetting("stripe_webhook_secret_thin")
 	if err != nil {
-		log.Printf("Failed to decrypt stored webhook secret: %v", err)
-		return
+		// Only log if it's not a "not found" error
+		if err != sql.ErrNoRows {
+			log.Printf("ℹ️  No thin webhook secret configured yet")
+		}
+	} else {
+		decryptedSecretThin, err := cryptoService.DecryptString(encryptedSecretThin)
+		if err != nil {
+			log.Printf("Failed to decrypt stored thin webhook secret: %v", err)
+		} else {
+			s.webhookSecretThin = decryptedSecretThin
+			log.Printf("✅ Loaded thin webhook secret from database")
+		}
 	}
-
-	s.webhookSecret = decryptedSecret
-	log.Printf("✅ Loaded webhook secret from database")
 }
 
 // UpdateWebhookSecret updates the webhook secret and reloads the service configuration
@@ -693,14 +708,25 @@ func (s *StripeService) ValidateWebhookSignature(payload []byte, signature strin
 	return &event, nil
 }
 
-// ValidateWebhookSignatureRaw validates webhook signature without parsing the event (for v2 events)
+// ValidateWebhookSignatureRaw validates webhook signature without parsing the event (for v2 thin events)
 func (s *StripeService) ValidateWebhookSignatureRaw(payload []byte, signature string) error {
 	if !s.isEnabled {
 		return fmt.Errorf("stripe service is disabled")
 	}
 
+	// Try thin secret first (for V2 events)
+	if s.webhookSecretThin != "" {
+		err := webhook.ValidatePayload(payload, signature, s.webhookSecretThin)
+		if err == nil {
+			log.Printf("✅ V2 thin webhook signature validated with thin secret")
+			return nil
+		}
+		log.Printf("⚠️  Thin secret validation failed, trying snapshot secret: %v", err)
+	}
+
+	// Fall back to snapshot secret
 	if s.webhookSecret == "" {
-		return fmt.Errorf("webhook secret not configured")
+		return fmt.Errorf("webhook secret not configured (neither thin nor snapshot)")
 	}
 
 	// Use Stripe's internal signature validation without event parsing

@@ -20,10 +20,12 @@
 	let publicSettingsSuccess = $state('');
 	let editingPublishableKey = $state(false);
 	let editingPortalUrl = $state(false);
-	let editingWebhookSecret = $state(false);
+	let editingWebhookSecretSnapshot = $state(false);
+	let editingWebhookSecretThin = $state(false);
 	let publishableKey = $state('');
 	let portalUrl = $state('');
-	let webhookSecret = $state('');
+	let webhookSecretSnapshot = $state('');
+	let webhookSecretThin = $state('');
 
 	// Stripe Data Management state
 	let databaseStats = $state<any>(null)
@@ -273,27 +275,73 @@
 		}
 	}
 
-	// Save webhook secret
-	async function saveWebhookSecret() {
-		if (!webhookSecret.trim()) return;
+	// Save webhook secret (snapshot) - stored in secure_settings (encrypted)
+	async function saveWebhookSecretSnapshot() {
+		if (!webhookSecretSnapshot.trim()) return;
+		
+		// Validate format
+		if (!webhookSecretSnapshot.startsWith('whsec_')) {
+			publicSettingsError = 'Webhook secret must start with whsec_';
+			return;
+		}
 		
 		savingPublicSettings = true;
 		publicSettingsError = '';
 		publicSettingsSuccess = '';
 		
 		try {
-			const res = await apiRequest('/admin/streaming/stripe/public-settings', {
+			const res = await apiRequest('/admin/streaming/stripe/webhook-secret', {
 				method: 'POST',
 				body: JSON.stringify({ 
-					key: 'stripe_webhook_secret', 
-					value: webhookSecret.trim() 
+					secret: webhookSecretSnapshot.trim(),
+					type: 'snapshot' // Indicate this is the snapshot secret
 				})
 			});
 			
 			if (res.ok) {
-				publicSettingsSuccess = 'Webhook secret saved successfully!';
-				webhookSecret = '';
-				editingWebhookSecret = false;
+				publicSettingsSuccess = 'Snapshot webhook secret saved successfully (encrypted)!';
+				webhookSecretSnapshot = '';
+				editingWebhookSecretSnapshot = false;
+				await loadPublicSettings(); // Refresh settings
+			} else {
+				const errorData = await res.json();
+				publicSettingsError = errorData.error || 'Failed to save webhook secret';
+			}
+		} catch (err) {
+			publicSettingsError = 'Failed to save webhook secret';
+			console.error(err);
+		} finally {
+			savingPublicSettings = false;
+		}
+	}
+
+	// Save webhook secret (thin) - stored in secure_settings (encrypted)
+	async function saveWebhookSecretThin() {
+		if (!webhookSecretThin.trim()) return;
+		
+		// Validate format
+		if (!webhookSecretThin.startsWith('whsec_')) {
+			publicSettingsError = 'Webhook secret must start with whsec_';
+			return;
+		}
+		
+		savingPublicSettings = true;
+		publicSettingsError = '';
+		publicSettingsSuccess = '';
+		
+		try {
+			const res = await apiRequest('/admin/streaming/stripe/webhook-secret', {
+				method: 'POST',
+				body: JSON.stringify({ 
+					secret: webhookSecretThin.trim(),
+					type: 'thin' // Indicate this is the thin secret
+				})
+			});
+			
+			if (res.ok) {
+				publicSettingsSuccess = 'Thin webhook secret saved successfully (encrypted)!';
+				webhookSecretThin = '';
+				editingWebhookSecretThin = false;
 				await loadPublicSettings(); // Refresh settings
 			} else {
 				const errorData = await res.json();
@@ -653,7 +701,7 @@
 				<!-- Public Settings Section -->
 				<div class="next-steps-card">
 					<h3>🔑 Stripe Configuration</h3>
-					<p>Configure your Stripe settings (publishable key, portal URL, webhook secret) for complete integration</p>
+					<p>Configure your Stripe settings (publishable key, portal URL, webhook secrets) for complete integration. <strong>Note:</strong> Webhook secrets are encrypted and stored securely in the database.</p>
 					
 					<div class="public-settings-grid">
 						<!-- Stripe Publishable Key -->
@@ -772,63 +820,123 @@
 							{/if}
 						</div>
 
-						<!-- Webhook Secret -->
-						<div class="setting-item">
-							<div class="setting-header">
-								<h4>Webhook Secret</h4>
-								<span class="setting-type secure">Secure</span>
-							</div>
-							<p class="setting-description">
-								Your Stripe webhook endpoint secret (whsec_...) for validating webhook events. Get this from your Stripe Dashboard → Webhooks → [Your Endpoint] → Signing secret.
-							</p>
-							
-							{#if publicSettings?.stripe_webhook_secret && !editingWebhookSecret}
-								<div class="saved-setting">
-									<div class="saved-setting-display">
-										<code class="key-display">
-											whsec_••••••••••••••••••••••••••••••••••••••••••••••••••••
-										</code>
-									</div>
-									<div class="saved-setting-actions">
-										<button class="btn btn-outline btn-sm" onclick={() => editingWebhookSecret = true}>
-											✏️ Update
-										</button>
-										<button class="btn btn-secondary btn-sm" onclick={() => deletePublicSetting('stripe_webhook_secret')}>
-											🗑️ Remove
-										</button>
-									</div>
-								</div>
-							{:else}
-								<form onsubmit={(e) => { e.preventDefault(); saveWebhookSecret(); }} class="setting-form">
-									<div class="input-group">
-										<input 
-											class="input" 
-											type="password" 
-											placeholder="whsec_..." 
-											bind:value={webhookSecret}
-										/>
-									</div>
-									<div class="setting-form-actions">
-										<button 
-											type="submit" 
-											class="btn btn-primary btn-sm" 
-											disabled={savingPublicSettings || !webhookSecret.trim()}
-										>
-											{savingPublicSettings ? 'Saving...' : 'Save Secret'}
-										</button>
-										{#if editingWebhookSecret}
-											<button 
-												type="button" 
-												class="btn btn-secondary btn-sm" 
-												onclick={() => { editingWebhookSecret = false; webhookSecret = ''; }}
-											>
-												Cancel
-											</button>
-										{/if}
-									</div>
-								</form>
-							{/if}
+					<!-- Webhook Secret - Snapshot (V1 Events) -->
+					<div class="setting-item">
+						<div class="setting-header">
+							<h4>Webhook Secret - Snapshot (V1)</h4>
+							<span class="setting-type secure">Secure</span>
+							<span class="setting-badge primary">Destination 1</span>
 						</div>
+						<p class="setting-description">
+							Your Stripe webhook endpoint secret (whsec_...) for SNAPSHOT payloads (Destination 1). This validates V1 events with full data. Get this from Stripe Dashboard → Webhooks → Snapshot destination → Signing secret.
+						</p>
+						
+						{#if publicSettings?.stripe_webhook_secret_snapshot && !editingWebhookSecretSnapshot}
+							<div class="saved-setting">
+								<div class="saved-setting-display">
+									<code class="key-display">
+										whsec_••••••••••••••••••••••••••••••••••••••••••••••••••••
+									</code>
+								</div>
+								<div class="saved-setting-actions">
+									<button class="btn btn-outline btn-sm" onclick={() => editingWebhookSecretSnapshot = true}>
+										✏️ Update
+									</button>
+									<button class="btn btn-secondary btn-sm" onclick={() => deletePublicSetting('stripe_webhook_secret_snapshot')}>
+										🗑️ Remove
+									</button>
+								</div>
+							</div>
+						{:else}
+							<form onsubmit={(e) => { e.preventDefault(); saveWebhookSecretSnapshot(); }} class="setting-form">
+								<div class="input-group">
+									<input 
+										class="input" 
+										type="password" 
+										placeholder="whsec_... (from Snapshot destination)" 
+										bind:value={webhookSecretSnapshot}
+									/>
+								</div>
+								<div class="setting-form-actions">
+									<button 
+										type="submit" 
+										class="btn btn-primary btn-sm" 
+										disabled={savingPublicSettings || !webhookSecretSnapshot.trim()}
+									>
+										{savingPublicSettings ? 'Saving...' : 'Save Snapshot Secret'}
+									</button>
+									{#if editingWebhookSecretSnapshot}
+										<button 
+											type="button" 
+											class="btn btn-secondary btn-sm" 
+											onclick={() => { editingWebhookSecretSnapshot = false; webhookSecretSnapshot = ''; }}
+										>
+											Cancel
+										</button>
+									{/if}
+								</div>
+							</form>
+						{/if}
+					</div>
+
+					<!-- Webhook Secret - Thin (V2 Events) -->
+					<div class="setting-item">
+						<div class="setting-header">
+							<h4>Webhook Secret - Thin (V2)</h4>
+							<span class="setting-type secure">Secure</span>
+							<span class="setting-badge secondary">Destination 2</span>
+						</div>
+						<p class="setting-description">
+							Your Stripe webhook endpoint secret (whsec_...) for THIN payloads (Destination 2). This validates V2 events with minimal data. Get this from Stripe Dashboard → Webhooks → Thin destination → Signing secret.
+						</p>
+						
+						{#if publicSettings?.stripe_webhook_secret_thin && !editingWebhookSecretThin}
+							<div class="saved-setting">
+								<div class="saved-setting-display">
+									<code class="key-display">
+										whsec_••••••••••••••••••••••••••••••••••••••••••••••••••••
+									</code>
+								</div>
+								<div class="saved-setting-actions">
+									<button class="btn btn-outline btn-sm" onclick={() => editingWebhookSecretThin = true}>
+										✏️ Update
+									</button>
+									<button class="btn btn-secondary btn-sm" onclick={() => deletePublicSetting('stripe_webhook_secret_thin')}>
+										🗑️ Remove
+									</button>
+								</div>
+							</div>
+						{:else}
+							<form onsubmit={(e) => { e.preventDefault(); saveWebhookSecretThin(); }} class="setting-form">
+								<div class="input-group">
+									<input 
+										class="input" 
+										type="password" 
+										placeholder="whsec_... (from Thin destination)" 
+										bind:value={webhookSecretThin}
+									/>
+								</div>
+								<div class="setting-form-actions">
+									<button 
+										type="submit" 
+										class="btn btn-primary btn-sm" 
+										disabled={savingPublicSettings || !webhookSecretThin.trim()}
+									>
+										{savingPublicSettings ? 'Saving...' : 'Save Thin Secret'}
+									</button>
+									{#if editingWebhookSecretThin}
+										<button 
+											type="button" 
+											class="btn btn-secondary btn-sm" 
+											onclick={() => { editingWebhookSecretThin = false; webhookSecretThin = ''; }}
+										>
+											Cancel
+										</button>
+									{/if}
+								</div>
+							</form>
+						{/if}
+					</div>
 					</div>
 
 					{#if publicSettingsError}
@@ -2357,5 +2465,24 @@
 	.setting-type.secure {
 		background: #1f2937;
 		color: #f3f4f6;
+	}
+
+	.setting-badge {
+		padding: 0.25rem 0.75rem;
+		border-radius: 1rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.setting-badge.primary {
+		background: linear-gradient(135deg, #3b82f6, #2563eb);
+		color: white;
+	}
+
+	.setting-badge.secondary {
+		background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+		color: white;
 	}
 </style> 

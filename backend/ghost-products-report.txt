@@ -1,0 +1,84 @@
+# 👻 Ghost Products Report
+Generated: 2025-10-31 15:23:18
+
+## 📊 Summary
+- Unique Ghost Products: 2
+- Total Ghost Subscriptions: 12
+
+## 🔍 Ghost Products Breakdown
+
+### Product: prod_FvNAlEGGL452nN
+- Blocked Subscriptions: 2
+- Subscription IDs:
+  - sub_I4Mw5n6bF2TXFo
+  - sub_I4LLecS0F7utEO
+
+### Product: prod_HjYKGcWGP9r4EC
+- Blocked Subscriptions: 10
+- Subscription IDs:
+  - sub_I4NzA0pt1W6zE6
+  - sub_I4NRvQ7ipOAv6u
+  - sub_I4MlWzCVdbM3Xm
+  - sub_I4MBSu7cnwHgYz
+  - sub_I4M3OOhOBvSDBj
+  - sub_I4BZzxF3Jy5ypK
+  - sub_I4BYcp19EJqf1t
+  - sub_I47sMx05Yi1wsV
+  - sub_I46Mwz4iNse7ye
+  - sub_I469HoMvsnFaa6
+
+## 📋 All Ghost Subscriptions (CSV Format)
+
+subscription_id,product_id
+sub_I4NzA0pt1W6zE6,prod_HjYKGcWGP9r4EC
+sub_I4NRvQ7ipOAv6u,prod_HjYKGcWGP9r4EC
+sub_I4Mw5n6bF2TXFo,prod_FvNAlEGGL452nN
+sub_I4MlWzCVdbM3Xm,prod_HjYKGcWGP9r4EC
+sub_I4MBSu7cnwHgYz,prod_HjYKGcWGP9r4EC
+sub_I4M3OOhOBvSDBj,prod_HjYKGcWGP9r4EC
+sub_I4LLecS0F7utEO,prod_FvNAlEGGL452nN
+sub_I4BZzxF3Jy5ypK,prod_HjYKGcWGP9r4EC
+sub_I4BYcp19EJqf1t,prod_HjYKGcWGP9r4EC
+sub_I47sMx05Yi1wsV,prod_HjYKGcWGP9r4EC
+sub_I46Mwz4iNse7ye,prod_HjYKGcWGP9r4EC
+sub_I469HoMvsnFaa6,prod_HjYKGcWGP9r4EC
+
+## 🎯 Recommended SQL to Create Placeholders
+
+-- Insert placeholder products for historical data
+INSERT INTO stripe_products_v2 
+(stripe_id, name, description, active, video_approved, stripe_created_at, stripe_updated_at)
+VALUES
+('prod_FvNAlEGGL452nN', 'Legacy Product (Historical)', 'Historical product from 2020-2021 - discontinued', false, false, '2020-01-01', NOW()),
+('prod_HjYKGcWGP9r4EC', 'Legacy Product (Historical)', 'Historical product from 2020-2021 - discontinued', false, false, '2020-01-01', NOW());
+
+## 🔧 Recommended Code Changes
+
+Remove these from ghost blocklist in:
+- backend/internal/services/stripe_sync.go
+- backend/services/payment/stripe/stripe_sync.go
+- backend/subscription/services/stripe_sync.go
+
+`go
+// REMOVE THESE LINES:
+ghostProducts := map[string]bool{
+    "prod_FvNAlEGGL452nN": true,  // Historical product - now has placeholder
+    "prod_HjYKGcWGP9r4EC": true,  // Historical product - now has placeholder
+}
+`
+
+## ✅ Next Steps
+
+1. Review this report with team
+2. Decide: Preserve historical data or keep blocking?
+3. If preserving:
+   - Run SQL to create placeholders
+   - Update code to remove from blocklist
+   - Re-run Stripe sync
+4. If keeping blocklist:
+   - Document decision
+   - Accept loss of pre-2024 data
+
+---
+**Note:** All these are canceled subscriptions from 2020-2021.
+They don't affect current operations but are valuable for historical reporting.
