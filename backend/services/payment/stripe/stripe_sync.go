@@ -863,10 +863,10 @@ func (s *StripeSyncService) syncMonthlyMetrics(ctx context.Context, since time.T
 func (s *StripeSyncService) upsertProduct(prod *stripe.Product) error {
 	// 🛡️ GHOST DETECTION: Block known ghost product IDs
 	ghostProducts := map[string]bool{
-		"prod_HjYKGcWGP9r4EC": true,
+		// Removed: "prod_HjYKGcWGP9r4EC" - Real historical product, placeholder added
+		// Removed: "prod_FvNAlEGGL452nN" - Real historical product, placeholder added
 		"prod_HEmcX1PE8TO2CO": true,
 		"prod_FvNAeI348dup9w": true,
-		"prod_FvNAlEGGL452nN": true,
 		"prod_HF5YzcBH5Rwr0d": true,
 		"prod_GVV5efccnh13h9": true,
 		"prod_FvNAJgnw48hwpZ": true,
@@ -1032,10 +1032,10 @@ func (s *StripeSyncService) validateAndFixCustomerMetadata(cust *stripe.Customer
 func (s *StripeSyncService) upsertPrice(pr *stripe.Price) error {
 	// 🛡️ GHOST DETECTION: Block prices for known ghost product IDs
 	ghostProducts := map[string]bool{
-		"prod_HjYKGcWGP9r4EC": true,
+		// Removed: "prod_HjYKGcWGP9r4EC" - Real historical product, placeholder added
+		// Removed: "prod_FvNAlEGGL452nN" - Real historical product, placeholder added
 		"prod_HEmcX1PE8TO2CO": true,
 		"prod_FvNAeI348dup9w": true,
-		"prod_FvNAlEGGL452nN": true,
 		"prod_HF5YzcBH5Rwr0d": true,
 		"prod_GVV5efccnh13h9": true,
 		"prod_FvNAJgnw48hwpZ": true,
@@ -1283,10 +1283,10 @@ func parseFullName(fullName string) (string, string) {
 func (s *StripeSyncService) upsertSubscription(sub *stripe.Subscription) error {
 	// 🛡️ GHOST DETECTION: Block known ghost product IDs
 	ghostProducts := map[string]bool{
-		"prod_HjYKGcWGP9r4EC": true,
+		// Removed: "prod_HjYKGcWGP9r4EC" - Real historical product, placeholder added
+		// Removed: "prod_FvNAlEGGL452nN" - Real historical product, placeholder added
 		"prod_HEmcX1PE8TO2CO": true,
 		"prod_FvNAeI348dup9w": true,
-		"prod_FvNAlEGGL452nN": true,
 		"prod_HF5YzcBH5Rwr0d": true,
 		"prod_GVV5efccnh13h9": true,
 		"prod_FvNAJgnw48hwpZ": true,
@@ -2469,4 +2469,3 @@ func (s *StripeSyncService) GetSystemStats() (*SystemStats, error) {
 
 	return stats, nil
 }
-

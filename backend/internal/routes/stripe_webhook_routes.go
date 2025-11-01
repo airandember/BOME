@@ -102,14 +102,14 @@ func logWebhookEventToDB(syncService *services.StripeSyncService, eventType, end
 }
 
 // RegisterStripeWebhookRoutes registers webhook endpoints for Stripe events
-// Phase 5: Now accepts v2 services for dual-write
-func RegisterStripeWebhookRoutes(router *gin.RouterGroup, stripeService *services.StripeService, syncServiceV1 *services.StripeSyncService, syncServiceV2 *services.StripeSyncV2Service, webhookServiceV2 *services.StripeWebhookServiceV2) {
+// Phase 5: Now accepts v2 services for dual-write + thin event support
+func RegisterStripeWebhookRoutes(router *gin.RouterGroup, stripeService *services.StripeService, syncServiceV1 *services.StripeSyncService, syncServiceV2 *services.StripeSyncV2Service, webhookServiceV2 *services.StripeWebhookServiceV2, thinService *services.StripeWebhookThinService) {
 	webhooks := router.Group("/stripe/webhooks")
 	{
 		// Main webhook endpoint for all Stripe events (admin test endpoint)
-		// Phase 5: Dual-write enabled
+		// Phase 5: Dual-write enabled + V2 thin event support
 		webhooks.POST("/", func(c *gin.Context) {
-			HandleStripeWebhook(c, stripeService, syncServiceV1, syncServiceV2, webhookServiceV2)
+			HandleStripeWebhook(c, stripeService, syncServiceV1, syncServiceV2, webhookServiceV2, thinService)
 		})
 
 		// Webhook status endpoint for admin dashboard
@@ -127,8 +127,8 @@ func RegisterStripeWebhookRoutes(router *gin.RouterGroup, stripeService *service
 }
 
 // HandleStripeWebhook processes incoming Stripe webhook events dynamically (exported for public endpoint)
-// Phase 5: Now accepts v2 services for dual-write (v1 + v2)
-func HandleStripeWebhook(c *gin.Context, stripeService *services.StripeService, syncServiceV1 *services.StripeSyncService, syncServiceV2 *services.StripeSyncV2Service, webhookServiceV2 *services.StripeWebhookServiceV2) {
+// Phase 5: Now accepts v2 services for dual-write (v1 + v2) + thin event support
+func HandleStripeWebhook(c *gin.Context, stripeService *services.StripeService, syncServiceV1 *services.StripeSyncService, syncServiceV2 *services.StripeSyncV2Service, webhookServiceV2 *services.StripeWebhookServiceV2, thinService *services.StripeWebhookThinService) {
 	startTime := time.Now()
 
 	// Read the request body
@@ -173,7 +173,7 @@ func HandleStripeWebhook(c *gin.Context, stripeService *services.StripeService, 
 	isV2Event := strings.HasPrefix(eventType, "v2.")
 
 	if isV2Event {
-		// Handle v2 events with raw signature validation
+		// Handle v2 events (THIN PAYLOADS) with raw signature validation
 		if err := stripeService.ValidateWebhookSignatureRaw(payload, signature); err != nil {
 			log.Printf("❌ Webhook: Invalid v2 signature: %v", err)
 			recordWebhookFailure()
@@ -181,32 +181,23 @@ func HandleStripeWebhook(c *gin.Context, stripeService *services.StripeService, 
 			return
 		}
 
-		log.Printf("✅ Webhook: v2 event signature validated successfully")
+		log.Printf("✅ Webhook: v2 thin event signature validated successfully")
 		updateWebhookActivity(eventType)
 
-		// Process v2 events
-		switch eventType {
-		case "v2.core.event_destination.ping":
-			log.Printf("📍 Webhook: v2 ping event - endpoint is healthy")
-			logWebhookEventToDB(syncServiceV1, eventType, c.Request.RequestURI, "success", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusOK, "")
-			c.JSON(http.StatusOK, gin.H{
-				"received":  true,
-				"type":      "v2_ping",
-				"status":    "healthy",
-				"timestamp": time.Now().UTC().Format(time.RFC3339),
-			})
-			return
-
-		default:
-			log.Printf("📋 Webhook: v2 event %s acknowledged but not processed", eventType)
-			c.JSON(http.StatusOK, gin.H{
-				"received":   true,
-				"ignored":    true,
-				"reason":     "v2_event_not_implemented",
-				"event_type": eventType,
-			})
+		// Process v2 THIN events via thin service
+		// Thin service will fetch full objects from Stripe API and delegate to v2 service
+		err := thinService.ProcessThinEvent(payload)
+		if err != nil {
+			log.Printf("❌ Webhook: Failed to process v2 thin event %s: %v", eventType, err)
+			recordWebhookFailure()
+			logWebhookEventToDB(syncServiceV1, eventType, c.Request.RequestURI, "failed", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusInternalServerError, err.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process webhook"})
 			return
 		}
+
+		log.Printf("✅ Webhook: Successfully processed v2 thin event %s", eventType)
+		logWebhookEventToDB(syncServiceV1, eventType, c.Request.RequestURI, "success", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusOK, "")
+		c.JSON(http.StatusOK, gin.H{"received": true, "processed": true, "type": "v2_thin_event", "fetched_full_object": true})
 	} else {
 		// Handle v1 events with full parsing
 		event, err := stripeService.ValidateWebhookSignature(payload, signature)

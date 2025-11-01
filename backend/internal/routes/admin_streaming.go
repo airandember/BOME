@@ -143,6 +143,7 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 			log.Printf("🔗 Stripe webhook secret endpoint called")
 			var req struct {
 				Secret string `json:"secret" binding:"required"`
+				Type   string `json:"type"` // "snapshot" or "thin"
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
 				log.Printf("❌ Failed to bind JSON: %v", err)
@@ -150,12 +151,17 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 				return
 			}
 
+			// Default to snapshot for backward compatibility
+			if req.Type == "" {
+				req.Type = "snapshot"
+			}
+
 			// Safe secret logging - handle short secrets
 			secretPrefix := req.Secret
 			if len(req.Secret) > 8 {
 				secretPrefix = req.Secret[:8] + "..."
 			}
-			log.Printf("🔗 Received webhook secret request: %s", secretPrefix)
+			log.Printf("🔗 Received %s webhook secret request: %s", req.Type, secretPrefix)
 
 			// Only allow webhook secrets (whsec_)
 			if !(len(req.Secret) > 6 && req.Secret[:6] == "whsec_") {
@@ -177,18 +183,26 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 				return
 			}
 
-			// Store in database
-			err = db.SetSecureSetting("stripe_webhook_secret", encryptedSecret)
+			// Determine database key based on type
+			var dbKey string
+			if req.Type == "thin" {
+				dbKey = "stripe_webhook_secret_thin"
+			} else {
+				dbKey = "stripe_webhook_secret" // snapshot (default)
+			}
+
+			// Store in database (encrypted in secure_settings table)
+			err = db.SetSecureSetting(dbKey, encryptedSecret)
 			if err != nil {
 				log.Printf("❌ Failed to store webhook secret: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store webhook secret"})
 				return
 			}
 
-			// Update the service's webhook secret
-			if stripeService != nil {
+			// Update the service's webhook secret (for snapshot only, as that's the main one)
+			if req.Type == "snapshot" && stripeService != nil {
 				stripeService.UpdateWebhookSecret(req.Secret)
-				log.Printf("✅ Stripe webhook secret updated successfully")
+				log.Printf("✅ Stripe snapshot webhook secret updated successfully")
 			}
 
 			c.JSON(http.StatusOK, gin.H{
@@ -608,7 +622,8 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 		customerLinkingService := services.NewCustomerLinkingService(db)
 		subscriptionManager := services.NewSubscriptionManagerService(db, customerLinkingService)
 		webhookServiceV2 := services.NewStripeWebhookServiceV2(syncServiceV2, customerLinkingService, subscriptionManager, db)
-		RegisterStripeWebhookRoutes(streaming, stripeService, syncService, syncServiceV2, webhookServiceV2)
+		thinService := services.NewStripeWebhookThinService(webhookServiceV2)
+		RegisterStripeWebhookRoutes(streaming, stripeService, syncService, syncServiceV2, webhookServiceV2, thinService)
 
 		// Setup Stripe testing and monitoring routes
 		RegisterStripeTestRoutes(streaming, stripeService, syncService, cronService)

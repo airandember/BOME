@@ -166,13 +166,14 @@ func SetupRoutes(
 		customerLinkingService := services.NewCustomerLinkingService(db)
 		subscriptionManager := services.NewSubscriptionManagerService(db, customerLinkingService)
 		webhookServiceV2 := services.NewStripeWebhookServiceV2(syncServiceV2, customerLinkingService, subscriptionManager, db)
+		thinService := services.NewStripeWebhookThinService(webhookServiceV2)
 
 		webhooks := v1.Group("/webhooks")
 		{
 			// Public Stripe webhook endpoint - NO MIDDLEWARE
-			// Phase 5: Dual-write to v1 + v2 tables with auto-linking
+			// Phase 5: Dual-write to v1 + v2 tables with auto-linking + V2 thin event support
 			webhooks.POST("/stripe", func(c *gin.Context) {
-				HandleStripeWebhook(c, stripeService, syncServiceV1, syncServiceV2, webhookServiceV2)
+				HandleStripeWebhook(c, stripeService, syncServiceV1, syncServiceV2, webhookServiceV2, thinService)
 			})
 		}
 		fmt.Printf("✅ Public Stripe webhook registered: POST /api/v1/webhooks/stripe (Phase 5: v1+v2 dual-write)\n")
