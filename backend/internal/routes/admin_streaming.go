@@ -199,15 +199,20 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 				return
 			}
 
-			// Update the service's webhook secret (for snapshot only, as that's the main one)
-			if req.Type == "snapshot" && stripeService != nil {
-				stripeService.UpdateWebhookSecret(req.Secret)
-				log.Printf("✅ Stripe snapshot webhook secret updated successfully")
+			// Update the service's webhook secret in memory (hot reload)
+			if stripeService != nil {
+				if req.Type == "thin" {
+					stripeService.UpdateWebhookSecretThin(req.Secret)
+					log.Printf("✅ Stripe thin webhook secret updated successfully in memory")
+				} else {
+					stripeService.UpdateWebhookSecret(req.Secret)
+					log.Printf("✅ Stripe snapshot webhook secret updated successfully in memory")
+				}
 			}
 
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
-				"message": "Webhook secret saved and updated successfully",
+				"message": fmt.Sprintf("%s webhook secret saved and hot-reloaded successfully", req.Type),
 			})
 		})
 

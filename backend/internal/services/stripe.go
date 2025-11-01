@@ -281,14 +281,25 @@ func (s *StripeService) loadStoredWebhookSecret(db *database.DB) {
 	}
 }
 
-// UpdateWebhookSecret updates the webhook secret and reloads the service configuration
+// UpdateWebhookSecret updates the snapshot webhook secret and reloads the service configuration
 func (s *StripeService) UpdateWebhookSecret(webhookSecret string) {
 	s.webhookSecret = webhookSecret
 
 	if webhookSecret != "" {
-		log.Printf("✅ Webhook secret updated - webhook validation enabled")
+		log.Printf("✅ Snapshot webhook secret updated - webhook validation enabled")
 	} else {
-		log.Printf("⚠️ Webhook secret cleared - webhook validation disabled")
+		log.Printf("⚠️ Snapshot webhook secret cleared - webhook validation disabled")
+	}
+}
+
+// UpdateWebhookSecretThin updates the thin webhook secret and reloads the service configuration
+func (s *StripeService) UpdateWebhookSecretThin(webhookSecretThin string) {
+	s.webhookSecretThin = webhookSecretThin
+
+	if webhookSecretThin != "" {
+		log.Printf("✅ Thin webhook secret updated - V2 webhook validation enabled")
+	} else {
+		log.Printf("⚠️ Thin webhook secret cleared - V2 webhook validation disabled")
 	}
 }
 
