@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/stripe/stripe-go/v74"
 	"github.com/stripe/stripe-go/v74/customer"
 	"github.com/stripe/stripe-go/v74/subscription"
 )
@@ -234,4 +233,3 @@ func (s *StripeWebhookThinService) GetEventMetadata(event *ThinEvent) map[string
 
 	return metadata
 }
-
