@@ -208,6 +208,9 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 					stripeService.UpdateWebhookSecret(req.Secret)
 					log.Printf("✅ Stripe snapshot webhook secret updated successfully in memory")
 				}
+			} else {
+				log.Printf("⚠️  WARNING: stripeService is nil - cannot hot-reload webhook secret!")
+				log.Printf("⚠️  Secret saved to database but requires backend restart to take effect")
 			}
 
 			c.JSON(http.StatusOK, gin.H{

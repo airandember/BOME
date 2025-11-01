@@ -711,7 +711,16 @@ func (s *StripeService) ValidateWebhookSignature(payload []byte, signature strin
 		return nil, fmt.Errorf("webhook secret not configured")
 	}
 
-	event, err := webhook.ConstructEvent(payload, signature, s.webhookSecret)
+	// Use ConstructEventWithOptions to ignore API version mismatches
+	// This allows webhooks from newer API versions to be processed
+	event, err := webhook.ConstructEventWithOptions(
+		payload,
+		signature,
+		s.webhookSecret,
+		webhook.ConstructEventOptions{
+			IgnoreAPIVersionMismatch: true,
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate webhook signature: %w", err)
 	}
