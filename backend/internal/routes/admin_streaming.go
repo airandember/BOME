@@ -138,6 +138,49 @@ func SetupAdminStreamingRoutes(admin *gin.RouterGroup, db *database.DB, stripeSe
 			})
 		})
 
+		// Ghost tracking endpoints - NEW
+		ghostTracker := services.NewGhostTrackingService(db)
+
+		streaming.GET("/ghosts", func(c *gin.Context) {
+			log.Printf("👻 Ghost data API called")
+
+			report, err := ghostTracker.GetAllGhosts(c.Request.Context())
+			if err != nil {
+				log.Printf("❌ Failed to get ghost data: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve ghost data"})
+				return
+			}
+
+			c.JSON(http.StatusOK, report)
+		})
+
+		streaming.GET("/ghosts/count", func(c *gin.Context) {
+			count, err := ghostTracker.GetGhostCount(c.Request.Context())
+			if err != nil {
+				log.Printf("❌ Failed to get ghost count: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve ghost count"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"count": count})
+		})
+
+		streaming.DELETE("/ghosts/:type/:stripe_id", func(c *gin.Context) {
+			ghostType := c.Param("type")
+			stripeID := c.Param("stripe_id")
+
+			log.Printf("🧹 Manual ghost removal requested: %s %s", ghostType, stripeID)
+
+			err := ghostTracker.RemoveGhost(c.Request.Context(), ghostType, stripeID)
+			if err != nil {
+				log.Printf("❌ Failed to remove ghost: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove ghost"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"message": "Ghost removed successfully"})
+		})
+
 		// Webhook secret configuration endpoint
 		streaming.POST("/stripe/webhook-secret", func(c *gin.Context) {
 			log.Printf("🔗 Stripe webhook secret endpoint called")

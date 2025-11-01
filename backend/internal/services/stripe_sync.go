@@ -26,6 +26,7 @@ type StripeSyncService struct {
 	db            *database.DB
 	stripeService *StripeService
 	logger        *StripeLogger
+	ghostTracker  *GhostTrackingService
 }
 
 // SyncConfig represents sync configuration for an entity type
@@ -63,6 +64,7 @@ func NewStripeSyncService(db *database.DB, stripeService *StripeService) *Stripe
 		db:            db,
 		stripeService: stripeService,
 		logger:        NewStripeLogger("SYNC"),
+		ghostTracker:  NewGhostTrackingService(db),
 	}
 }
 
@@ -874,8 +876,20 @@ func (s *StripeSyncService) upsertProduct(prod *stripe.Product) error {
 	}
 
 	if ghostProducts[prod.ID] {
-		log.Printf("👻 GHOST BLOCKED: Product %s is a known ghost - REJECTED", prod.ID)
-		return nil // Skip this product silently
+		log.Printf("👻 GHOST BLOCKED: Product %s is a known ghost - LOGGING TO GHOST TABLE", prod.ID)
+
+		// Log to ghost tracking table
+		if s.ghostTracker != nil {
+			metadata := map[string]interface{}{
+				"name":        prod.Name,
+				"description": prod.Description,
+				"active":      prod.Active,
+				"created":     prod.Created,
+			}
+			s.ghostTracker.LogGhostProduct(context.Background(), prod.ID, "Product deleted from Stripe or known ghost", metadata)
+		}
+
+		return nil // Skip sync but logged for admin visibility
 	}
 
 	// Convert metadata to JSON
@@ -956,6 +970,12 @@ func (s *StripeSyncService) upsertProduct(prod *stripe.Product) error {
 	}
 
 	log.Printf("✅ Upserted product: %s (%s)", prod.ID, prod.Name)
+
+	// Auto-remove from ghost table if it was previously a ghost
+	if s.ghostTracker != nil {
+		s.ghostTracker.CheckAndRemoveGhostProduct(context.Background(), prod.ID)
+	}
+
 	return nil
 }
 
@@ -1043,8 +1063,23 @@ func (s *StripeSyncService) upsertPrice(pr *stripe.Price) error {
 	}
 
 	if ghostProducts[pr.Product.ID] {
-		log.Printf("👻 GHOST BLOCKED: Price %s references ghost product %s - REJECTED", pr.ID, pr.Product.ID)
-		return nil // Skip this price silently
+		log.Printf("👻 GHOST BLOCKED: Price %s references ghost product %s - LOGGING TO GHOST TABLE", pr.ID, pr.Product.ID)
+
+		// Log to ghost tracking table
+		if s.ghostTracker != nil {
+			metadata := map[string]interface{}{
+				"currency":    pr.Currency,
+				"unit_amount": pr.UnitAmount,
+				"active":      pr.Active,
+				"created":     pr.Created,
+			}
+			if pr.Recurring != nil {
+				metadata["recurring_interval"] = pr.Recurring.Interval
+			}
+			s.ghostTracker.LogGhostPrice(context.Background(), pr.ID, pr.Product.ID, metadata)
+		}
+
+		return nil // Skip sync but logged for admin visibility
 	}
 
 	// Get product ID from our database
@@ -1078,7 +1113,17 @@ func (s *StripeSyncService) upsertPrice(pr *stripe.Price) error {
 		recurringInterval,
 		time.Unix(pr.Created, 0),
 	)
-	return err
+
+	if err != nil {
+		return err
+	}
+
+	// Auto-remove from ghost table if it was previously a ghost
+	if s.ghostTracker != nil {
+		s.ghostTracker.CheckAndRemoveGhostPrice(context.Background(), pr.ID)
+	}
+
+	return nil
 }
 
 // ProcessVideoAccessForCustomer grants video access to a customer based on their active subscription
@@ -1299,8 +1344,31 @@ func (s *StripeSyncService) upsertSubscription(sub *stripe.Subscription) error {
 		if firstItem.Price != nil && firstItem.Price.Product != nil {
 			productID := firstItem.Price.Product.ID
 			if ghostProducts[productID] {
-				log.Printf("👻 GHOST BLOCKED: Subscription %s references ghost product %s - REJECTED", sub.ID, productID)
-				return nil // Skip this subscription silently
+				log.Printf("👻 GHOST BLOCKED: Subscription %s references ghost product %s - LOGGING TO GHOST TABLE", sub.ID, productID)
+
+				// Get customer email
+				var customerEmail string
+				if sub.Customer != nil {
+					customerEmail = sub.Customer.Email
+				}
+
+				// Log to ghost tracking table
+				if s.ghostTracker != nil {
+					metadata := map[string]interface{}{
+						"status":               sub.Status,
+						"current_period_end":   sub.CurrentPeriodEnd,
+						"current_period_start": sub.CurrentPeriodStart,
+						"created":              sub.Created,
+					}
+					if firstItem.Price != nil {
+						metadata["price_id"] = firstItem.Price.ID
+						metadata["unit_amount"] = firstItem.Price.UnitAmount
+						metadata["currency"] = firstItem.Price.Currency
+					}
+					s.ghostTracker.LogGhostSubscription(context.Background(), sub.ID, productID, sub.Customer.ID, customerEmail, metadata)
+				}
+
+				return nil // Skip sync but logged for admin visibility
 			}
 		}
 	}
@@ -1391,14 +1459,20 @@ func (s *StripeSyncService) upsertSubscription(sub *stripe.Subscription) error {
 
 	if err != nil {
 		log.Printf("❌ Failed to upsert subscription %s: %v", sub.ID, err)
-	} else {
-		log.Printf("✅ Upserted subscription %s with product: %s ($%.2f)",
-			sub.ID,
-			productName.String,
-			float64(unitAmount.Int64)/100.0)
+		return err
 	}
 
-	return err
+	log.Printf("✅ Upserted subscription %s with product: %s ($%.2f)",
+		sub.ID,
+		productName.String,
+		float64(unitAmount.Int64)/100.0)
+
+	// Auto-remove from ghost table if it was previously a ghost
+	if s.ghostTracker != nil {
+		s.ghostTracker.CheckAndRemoveGhostSubscription(context.Background(), sub.ID)
+	}
+
+	return nil
 }
 
 func (s *StripeSyncService) upsertInvoice(inv *stripe.Invoice) error {
