@@ -114,7 +114,7 @@ func (s *SubscriptionManagerService) findActiveSubscriptionsForUser(customerIDs 
 	query := `
 		SELECT ss.stripe_id
 		FROM stripe_subscriptions_v2 ss
-		JOIN stripe_customers_v2 sc ON ss.stripe_customer_id = sc.id
+		JOIN stripe_customers_v2 sc ON ss.customer_id = sc.id
 		WHERE sc.stripe_id = ANY($1)
 		AND ss.status IN ('active', 'trialing')
 		AND ss.stripe_id != $2
@@ -221,7 +221,7 @@ func (s *SubscriptionManagerService) hasActiveSubscription(userID int) (bool, er
 	query := `
 		SELECT COUNT(*)
 		FROM stripe_subscriptions_v2 ss
-		JOIN stripe_customers_v2 sc ON ss.stripe_customer_id = sc.id
+		JOIN stripe_customers_v2 sc ON ss.customer_id = sc.id
 		WHERE sc.stripe_id = ANY($1)
 		AND ss.status IN ('active', 'trialing')
 		AND ss.canceled_at IS NULL
@@ -245,7 +245,7 @@ func (s *SubscriptionManagerService) UpdateVideoAccessForSubscription(subscripti
 	query := `
 		SELECT sc.stripe_id, ss.status
 		FROM stripe_subscriptions_v2 ss
-		JOIN stripe_customers_v2 sc ON ss.stripe_customer_id = sc.id
+		JOIN stripe_customers_v2 sc ON ss.customer_id = sc.id
 		WHERE ss.stripe_id = $1
 	`
 
@@ -304,7 +304,7 @@ func (s *SubscriptionManagerService) GetUserSubscriptionSummary(userID int) (map
 			COUNT(*) FILTER (WHERE ss.status = 'past_due') as past_due_count,
 			COUNT(*) as total_count
 		FROM stripe_subscriptions_v2 ss
-		JOIN stripe_customers_v2 sc ON ss.stripe_customer_id = sc.id
+		JOIN stripe_customers_v2 sc ON ss.customer_id = sc.id
 		WHERE sc.stripe_id = ANY($1)
 	`
 
@@ -347,7 +347,7 @@ func (s *SubscriptionManagerService) FixMultipleSubscriptions(ctx context.Contex
 			array_agg(DISTINCT ss.stripe_id ORDER BY ss.stripe_created_at DESC) as subscription_ids
 		FROM user_stripe_customers_v2 usc
 		JOIN stripe_customers_v2 sc ON usc.stripe_customer_id = sc.stripe_id
-		JOIN stripe_subscriptions_v2 ss ON ss.stripe_customer_id = sc.id
+		JOIN stripe_subscriptions_v2 ss ON ss.customer_id = sc.id
 		WHERE ss.status IN ('active', 'trialing')
 		AND ss.canceled_at IS NULL
 		GROUP BY usc.user_id
