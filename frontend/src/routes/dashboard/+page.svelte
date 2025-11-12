@@ -329,7 +329,7 @@
 				</div>
 
 				<!-- Change Password Section -->
-				<div class="change-password-section glass">
+				<div class="change-password-section profile-info ">
 					<div class="section-header">
 						<h2>Security</h2>
 						<button 
@@ -746,7 +746,7 @@
 
 	/* Change Password Section */
 	.change-password-section {
-		background: var(--card-bg);
+		background: var(--bg-secondary);
 		border-radius: 20px;
 		padding: 2rem;
 		box-shadow: var(--neumorphic-shadow);
