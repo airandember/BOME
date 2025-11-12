@@ -16,6 +16,89 @@
 	// Tab state - now includes profile and subscription
 	let activeTab: 'dashboard' | 'profile' | 'subscription' | 'advertiser' = 'dashboard';
 
+	// Change Password state
+	let showChangePassword = false;
+	let currentPassword = '';
+	let newPassword = '';
+	let confirmNewPassword = '';
+	let passwordChangeLoading = false;
+	let passwordChangeError = '';
+	let passwordChangeSuccess = false;
+
+	// Password strength indicator
+	let passwordStrength: 'weak' | 'medium' | 'strong' = 'weak';
+
+	// Check password strength
+	$: {
+		if (newPassword.length === 0) {
+			passwordStrength = 'weak';
+		} else if (newPassword.length < 8) {
+			passwordStrength = 'weak';
+		} else if (newPassword.length < 12 && /[A-Z]/.test(newPassword) && /[0-9]/.test(newPassword)) {
+			passwordStrength = 'medium';
+		} else if (newPassword.length >= 12 && /[A-Z]/.test(newPassword) && /[0-9]/.test(newPassword) && /[!@#$%^&*]/.test(newPassword)) {
+			passwordStrength = 'strong';
+		} else {
+			passwordStrength = 'medium';
+		}
+	}
+
+	// Check if passwords match
+	$: passwordsMatch = newPassword === confirmNewPassword && confirmNewPassword.length > 0;
+	$: passwordsDontMatch = confirmNewPassword.length > 0 && newPassword !== confirmNewPassword;
+
+	async function handleChangePassword() {
+		if (!currentPassword || !newPassword || !confirmNewPassword) {
+			passwordChangeError = 'Please fill in all fields';
+			return;
+		}
+
+		if (newPassword !== confirmNewPassword) {
+			passwordChangeError = 'New passwords do not match';
+			return;
+		}
+
+		if (newPassword.length < 8) {
+			passwordChangeError = 'New password must be at least 8 characters';
+			return;
+		}
+
+		passwordChangeLoading = true;
+		passwordChangeError = '';
+		passwordChangeSuccess = false;
+
+		const result = await auth.changePassword(currentPassword, newPassword);
+
+		if (result.success) {
+			passwordChangeSuccess = true;
+			// Reset form
+			currentPassword = '';
+			newPassword = '';
+			confirmNewPassword = '';
+			// Hide form after 2 seconds
+			setTimeout(() => {
+				showChangePassword = false;
+				passwordChangeSuccess = false;
+			}, 2000);
+		} else {
+			passwordChangeError = result.error || 'Failed to change password. Please try again.';
+		}
+
+		passwordChangeLoading = false;
+	}
+
+	function toggleChangePassword() {
+		showChangePassword = !showChangePassword;
+		// Reset form when toggling
+		if (showChangePassword) {
+			currentPassword = '';
+			newPassword = '';
+			confirmNewPassword = '';
+			passwordChangeError = '';
+			passwordChangeSuccess = false;
+		}
+	}
+
 	onMount(() => {
 		let unsubscribe: any = null;
 
@@ -245,7 +328,130 @@
 					</div>
 				</div>
 
-				
+				<!-- Change Password Section -->
+				<div class="change-password-section glass">
+					<div class="section-header">
+						<h2>Security</h2>
+						<button 
+							class="btn btn-outline" 
+							on:click={toggleChangePassword}
+						>
+							{showChangePassword ? 'Cancel' : 'Change Password'}
+						</button>
+					</div>
+
+					{#if showChangePassword}
+						<div class="change-password-form">
+							{#if passwordChangeSuccess}
+								<div class="success-message">
+									<div class="success-icon">
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+											<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+											<polyline points="22,4 12,14.01 9,11.01"/>
+										</svg>
+									</div>
+									<p>Password changed successfully!</p>
+								</div>
+							{:else}
+								{#if passwordChangeError}
+									<div class="error-message">
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+											<circle cx="12" cy="12" r="10"/>
+											<line x1="12" y1="8" x2="12" y2="12"/>
+											<line x1="12" y1="16" x2="12.01" y2="16"/>
+										</svg>
+										<span>{passwordChangeError}</span>
+									</div>
+								{/if}
+
+								<form on:submit|preventDefault={handleChangePassword}>
+									<div class="form-group">
+										<label for="currentPassword">Current Password</label>
+										<input
+											id="currentPassword"
+											type="password"
+											bind:value={currentPassword}
+											placeholder="Enter your current password"
+											disabled={passwordChangeLoading}
+											required
+										/>
+									</div>
+
+									<div class="form-group">
+										<label for="newPassword">New Password</label>
+										<input
+											id="newPassword"
+											type="password"
+											bind:value={newPassword}
+											placeholder="Enter new password (min 8 characters)"
+											disabled={passwordChangeLoading}
+											required
+											minlength="8"
+										/>
+										
+										<!-- Password Strength Indicator -->
+										{#if newPassword.length > 0}
+											<div class="password-strength">
+												<div class="strength-bars">
+													<div class="bar {passwordStrength === 'weak' || passwordStrength === 'medium' || passwordStrength === 'strong' ? 'weak' : ''}"></div>
+													<div class="bar {passwordStrength === 'medium' || passwordStrength === 'strong' ? 'medium' : ''}"></div>
+													<div class="bar {passwordStrength === 'strong' ? 'strong' : ''}"></div>
+												</div>
+												<span class="strength-label {passwordStrength}">
+													{passwordStrength === 'weak' ? 'Weak' : passwordStrength === 'medium' ? 'Medium' : 'Strong'}
+												</span>
+											</div>
+										{/if}
+									</div>
+
+									<div class="form-group">
+										<label for="confirmNewPassword">Confirm New Password</label>
+										<input
+											id="confirmNewPassword"
+											type="password"
+											bind:value={confirmNewPassword}
+											placeholder="Confirm your new password"
+											disabled={passwordChangeLoading}
+											class:match={passwordsMatch}
+											class:no-match={passwordsDontMatch}
+											required
+										/>
+										
+										{#if passwordsMatch}
+											<div class="validation-message success">
+												<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+													<polyline points="20,6 9,17 4,12"/>
+												</svg>
+												Passwords match
+											</div>
+										{:else if passwordsDontMatch}
+											<div class="validation-message error">
+												<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+													<line x1="18" y1="6" x2="6" y2="18"/>
+													<line x1="6" y1="6" x2="18" y2="18"/>
+												</svg>
+												Passwords don't match
+											</div>
+										{/if}
+									</div>
+
+									<button 
+										type="submit" 
+										class="btn btn-primary"
+										disabled={passwordChangeLoading || !passwordsMatch || newPassword.length < 8}
+									>
+										{#if passwordChangeLoading}
+											<span class="spinner"></span>
+											Changing Password...
+										{:else}
+											Change Password
+										{/if}
+									</button>
+								</form>
+							{/if}
+						</div>
+					{/if}
+				</div>
 			</div>
 		{:else if activeTab === 'subscription'}
 			<!-- Subscription Tab Content -->
@@ -536,6 +742,251 @@
 	.verification-status.unverified {
 		background: #ef4444;
 		color: white;
+	}
+
+	/* Change Password Section */
+	.change-password-section {
+		background: var(--card-bg);
+		border-radius: 20px;
+		padding: 2rem;
+		box-shadow: var(--neumorphic-shadow);
+		border: 1px solid var(--border-color);
+		margin-top: 2rem;
+		max-width: 600px;
+		margin-left: auto;
+		margin-right: auto;
+	}
+
+	.section-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 1.5rem;
+	}
+
+	.section-header h2 {
+		font-size: 1.5rem;
+		font-weight: 600;
+		color: var(--text-primary);
+		margin: 0;
+	}
+
+	.change-password-form {
+		margin-top: 1.5rem;
+		animation: slideDown 0.3s ease-out;
+	}
+
+	@keyframes slideDown {
+		from {
+			opacity: 0;
+			transform: translateY(-10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.change-password-form .form-group {
+		margin-bottom: 1.5rem;
+	}
+
+	.change-password-form label {
+		display: block;
+		font-weight: 600;
+		color: var(--text-primary);
+		margin-bottom: 0.5rem;
+		font-size: 0.875rem;
+	}
+
+	.change-password-form input {
+		width: 100%;
+		padding: 0.75rem 1rem;
+		border: 2px solid var(--border-color);
+		border-radius: 8px;
+		font-size: 1rem;
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		transition: all 0.2s ease;
+	}
+
+	.change-password-form input:focus {
+		outline: none;
+		border-color: var(--primary-color);
+		box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.1);
+	}
+
+	.change-password-form input:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.change-password-form input.match {
+		border-color: #10b981;
+	}
+
+	.change-password-form input.no-match {
+		border-color: #ef4444;
+	}
+
+	/* Password Strength Indicator */
+	.password-strength {
+		margin-top: 0.5rem;
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.strength-bars {
+		display: flex;
+		gap: 0.25rem;
+		flex: 1;
+	}
+
+	.strength-bars .bar {
+		height: 4px;
+		flex: 1;
+		background: var(--border-color);
+		border-radius: 2px;
+		transition: all 0.3s ease;
+	}
+
+	.strength-bars .bar.weak {
+		background: #ef4444;
+	}
+
+	.strength-bars .bar.medium {
+		background: #f59e0b;
+	}
+
+	.strength-bars .bar.strong {
+		background: #10b981;
+	}
+
+	.strength-label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+	}
+
+	.strength-label.weak {
+		color: #ef4444;
+	}
+
+	.strength-label.medium {
+		color: #f59e0b;
+	}
+
+	.strength-label.strong {
+		color: #10b981;
+	}
+
+	/* Validation Messages */
+	.validation-message {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+	}
+
+	.validation-message svg {
+		width: 16px;
+		height: 16px;
+	}
+
+	.validation-message.success {
+		color: #10b981;
+	}
+
+	.validation-message.error {
+		color: #ef4444;
+	}
+
+	/* Success Message */
+	.success-message {
+		text-align: center;
+		padding: 2rem;
+		animation: fadeIn 0.3s ease-out;
+	}
+
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+			transform: scale(0.9);
+		}
+		to {
+			opacity: 1;
+			transform: scale(1);
+		}
+	}
+
+	.success-icon {
+		width: 64px;
+		height: 64px;
+		margin: 0 auto 1rem;
+		color: #10b981;
+		animation: pulse 0.6s ease-out;
+	}
+
+	@keyframes pulse {
+		0%, 100% {
+			transform: scale(1);
+		}
+		50% {
+			transform: scale(1.1);
+		}
+	}
+
+	.success-icon svg {
+		width: 100%;
+		height: 100%;
+	}
+
+	.success-message p {
+		font-size: 1.125rem;
+		font-weight: 600;
+		color: #10b981;
+		margin: 0;
+	}
+
+	/* Error Message */
+	.error-message {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 1rem;
+		background: rgba(239, 68, 68, 0.1);
+		border: 1px solid #ef4444;
+		border-radius: 8px;
+		color: #ef4444;
+		margin-bottom: 1.5rem;
+		font-size: 0.875rem;
+	}
+
+	.error-message svg {
+		width: 20px;
+		height: 20px;
+		flex-shrink: 0;
+	}
+
+	/* Submit Button Spinner */
+	.spinner {
+		display: inline-block;
+		width: 14px;
+		height: 14px;
+		border: 2px solid rgba(255, 255, 255, 0.3);
+		border-top-color: white;
+		border-radius: 50%;
+		animation: spin 0.6s linear infinite;
+		margin-right: 0.5rem;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	/* Profile Actions */
