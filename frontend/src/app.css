@@ -10,15 +10,16 @@
 	--glass-gradient: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
 	
 	/* Modern Colors */
-    --primary-bom-light: #6374be;
+    --primary-bom-light: #244bfa;
     --primary-bom: #213072;
-	--primary-bom-dark: #061352;
+	--primary-bom-dark: #000102;
+	--secondary-bom-dark: #000622;
 	--primary-gold-light: #f1dfac;
     --primary-gold: #fbbe14;
 	--primary-gold-dark: #977446;
 
 	--primary: #306df0;
-	--primary-dark: #4077be;
+	--primary-dark: #021329;
 
 	--secondary: #f093fb;
 	--accent: #4facfe;
@@ -169,7 +170,7 @@
 	--text-muted: var(--gray-400);
 	--text-inverse: var(--gray-900);
 	
-	--bg-primary: linear-gradient(135deg, var(--primary-bom-light) 0%, var(--primary-bom-dark) 100%);
+	--bg-primary: linear-gradient(135deg, var(--secondary-bom-dark) 30%, var(--primary-bom-dark) 100%);
 	--bg-secondary: var(--primary-bom-dark);
 	--bg-tertiary: var(--gray-700);
 	--bg-dark: var(--black);
