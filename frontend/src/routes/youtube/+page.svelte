@@ -36,7 +36,7 @@
 		if (searchTerm.trim() !== '') {
 			filteredVideos = searchResults;
 		} else if (selectedCategory !== '') {
-			filteredVideos = videos.filter(video => 
+			filteredVideos = videos.filter((video: YouTubeVideo) => 
 				//video.tags?.some(tag => tag.toLowerCase().includes(selectedCategory.toLowerCase())) ||
 				//video.category?.toLowerCase().includes(selectedCategory.toLowerCase()) ||
 				video.title.toLowerCase().includes(selectedCategory.toLowerCase()) ||
@@ -399,7 +399,7 @@
 									<h3 class="video-title">{video.title}</h3>
 									<div class="video-meta">
 										<span class="video-date">{formatDate(video.published_at)}</span>
-										<span class="video-views">{formatViewCount(video.view_count)} views</span>
+										<!--<span class="video-views">{formatViewCount(video.view_count)} views</span>-->
 									</div>
 									<p class="video-description">
 										{video.description.length > 120 
@@ -446,20 +446,20 @@
 									<h3 class="video-title">{video.title}</h3>
 									<div class="video-meta">
 										<span class="video-date">{formatDate(video.published_at)}</span>
-										<span class="video-views">{formatViewCount(video.view_count)} views</span>
+										<!--<span class="video-views">{formatViewCount(video.view_count)} views</span>-->
 									</div>
 									<p class="video-description">
 										{video.description.length > 120 
 											? video.description.substring(0, 120) + '...' 
 											: video.description}
 									</p>
-									{#if video.tags && video.tags.length > 0}
+									<!--{#if video.tags && video.tags.length > 0}
 										<div class="video-tags">
 											{#each video.tags.slice(0, 3) as tag}
 												<span class="tag">#{tag}</span>
 											{/each}
 										</div>
-									{/if}
+									{/if}-->
 								</div>
 							</div>
 						{/each}

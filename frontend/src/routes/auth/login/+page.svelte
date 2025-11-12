@@ -103,7 +103,7 @@
 				<a href="/auth/register" class="link">Sign up</a>
 			</p>
 			<p>
-				<!--<a href="/forgot-password" class="link">Forgot your password?</a>-->
+				<a href="/auth/forgot-password" class="link">Forgot your password?</a>
 			</p>
 		</div>
 	</div>
