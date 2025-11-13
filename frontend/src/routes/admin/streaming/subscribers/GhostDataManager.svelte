@@ -40,7 +40,7 @@
 	// Ghost Subscriptions Analytics
 	let selectedPlan = $state<string>('all');
 	let selectedStatus = $state<string>('all');
-	let searchEmail = $state<string>('');
+	let searchQuery = $state<string>(''); // Changed from searchEmail to searchQuery
 
 	onMount(async () => {
 		await loadGhostData();
@@ -245,12 +245,14 @@
 		// Second pass: Calculate revenue based on counts
 		planMap.forEach(plan => {
 			const activeCount = plan.statusBreakdown['active'] || 0;
+			const trialingCount = plan.statusBreakdown['trialing'] || 0;
 			const unpaidCount = plan.statusBreakdown['unpaid'] || 0;
 			const pastDueCount = plan.statusBreakdown['past_due'] || 0;
+			const cancelledCount = plan.statusBreakdown['canceled'] || 0; // Stripe uses 'canceled' (one 'l')
 
-			// Active revenue = active subscribers * unit amount
-			plan.activeMRR = activeCount * plan.unitMRR;
-			plan.activeARR = activeCount * plan.unitARR;
+			// Active revenue = active + trialing subscribers * unit amount
+			plan.activeMRR = (activeCount + trialingCount) * plan.unitMRR;
+			plan.activeARR = (activeCount + trialingCount) * plan.unitARR;
 
 			// Unpaid revenue = unpaid subscribers * unit amount
 			plan.unpaidMRR = unpaidCount * plan.unitMRR;
@@ -264,8 +266,10 @@
 			plan.totalMRR = plan.totalCount * plan.unitMRR;
 			plan.totalARR = plan.totalCount * plan.unitARR;
 
-			// Potential ARR = ALL subscribers * unit ARR (if everyone was paying)
-			plan.potentialARR = plan.totalCount * plan.unitARR;
+			// Potential ARR = ALL subscribers EXCEPT cancelled * unit ARR
+			// (cancelled subs are gone forever, not a realistic recovery target)
+			const recoverableCount = plan.totalCount - cancelledCount;
+			plan.potentialARR = recoverableCount * plan.unitARR;
 
 			// Add to overall totals
 			activeMRR += plan.activeMRR;
@@ -316,10 +320,16 @@
 				if (status !== selectedStatus) return false;
 			}
 
-			// Filter by email search
-			if (searchEmail.trim()) {
-				const email = sub.referenced_by?.customer_email || '';
-				if (!email.toLowerCase().includes(searchEmail.toLowerCase())) return false;
+			// Filter by search query (subscription ID or email)
+			if (searchQuery.trim()) {
+				const query = searchQuery.toLowerCase();
+				const stripeId = sub.stripe_id.toLowerCase();
+				const email = (sub.referenced_by?.customer_email || '').toLowerCase();
+				
+				// Match either subscription ID or email
+				if (!stripeId.includes(query) && !email.includes(query)) {
+					return false;
+				}
 			}
 
 			return true;
@@ -329,7 +339,7 @@
 	function resetFilters() {
 		selectedPlan = 'all';
 		selectedStatus = 'all';
-		searchEmail = '';
+		searchQuery = '';
 	}
 </script>
 
@@ -558,6 +568,7 @@
 											<th>Active</th>
 											<th>Unpaid</th>
 											<th>Past Due</th>
+											<th>Cancelled</th>
 											<th>Active MRR</th>
 											<th>Active ARR</th>
 											<th>At-Risk ARR</th>
@@ -573,20 +584,22 @@
 												<td class="billing-type">
 													<span class="type-badge {plan.billingType.toLowerCase()}">{plan.billingType}</span>
 												</td>
-											<td class="status-count active">{plan.statusBreakdown['active'] || 0}</td>
-											<td class="status-count unpaid">{plan.statusBreakdown['unpaid'] || 0}</td>
-											<td class="status-count past-due">{plan.statusBreakdown['past_due'] || 0}</td>
-											<td class="revenue active-revenue">{formatCurrency(plan.activeMRR)}</td>
-											<td class="revenue active-revenue">{formatCurrency(plan.activeARR)}</td>
-											<td class="revenue risk-revenue">{formatCurrency(plan.unpaidARR + plan.pastDueARR)}</td>
-											<td class="revenue potential-revenue">{formatCurrency(plan.potentialARR)}</td>
+												<td class="status-count active">{(plan.statusBreakdown['active'] || 0) + (plan.statusBreakdown['trialing'] || 0)}</td>
+												<td class="status-count unpaid">{plan.statusBreakdown['unpaid'] || 0}</td>
+												<td class="status-count past-due">{plan.statusBreakdown['past_due'] || 0}</td>
+												<td class="status-count cancelled">{plan.statusBreakdown['canceled'] || 0}</td>
+												<td class="revenue active-revenue">{formatCurrency(plan.activeMRR)}</td>
+												<td class="revenue active-revenue">{formatCurrency(plan.activeARR)}</td>
+												<td class="revenue risk-revenue">{formatCurrency(plan.unpaidARR + plan.pastDueARR)}</td>
+												<td class="revenue potential-revenue">{formatCurrency(plan.potentialARR)}</td>
 											</tr>
 										{/each}
 										<tr class="totals-row">
 											<td colspan="4"><strong>TOTALS</strong></td>
-											<td class="status-count active"><strong>{analytics.statusCounts['active'] || 0}</strong></td>
+											<td class="status-count active"><strong>{(analytics.statusCounts['active'] || 0) + (analytics.statusCounts['trialing'] || 0)}</strong></td>
 											<td class="status-count unpaid"><strong>{analytics.statusCounts['unpaid'] || 0}</strong></td>
 											<td class="status-count past-due"><strong>{analytics.statusCounts['past_due'] || 0}</strong></td>
+											<td class="status-count cancelled"><strong>{analytics.statusCounts['canceled'] || 0}</strong></td>
 											<td class="revenue active-revenue"><strong>{formatCurrency(analytics.activeMRR)}</strong></td>
 											<td class="revenue active-revenue"><strong>{formatCurrency(analytics.activeARR)}</strong></td>
 											<td class="revenue risk-revenue"><strong>{formatCurrency(analytics.unpaidARR + analytics.pastDueARR)}</strong></td>
@@ -616,19 +629,19 @@
 									<label for="status-filter">Status:</label>
 									<select id="status-filter" bind:value={selectedStatus}>
 										<option value="all">All Statuses</option>
-										{#each Object.entries(analytics.statusCounts) as [status, count]}
+										{#each Object.entries(analytics.statusCounts).sort((a, b) => b[1] - a[1]) as [status, count]}
 											<option value={status}>{status} ({count})</option>
 										{/each}
 									</select>
 								</div>
 
 								<div class="filter-group">
-									<label for="email-search">Search Email:</label>
+									<label for="search-query">Search:</label>
 									<input 
-										id="email-search" 
+										id="search-query" 
 										type="text" 
-										bind:value={searchEmail}
-										placeholder="customer@example.com"
+										bind:value={searchQuery}
+										placeholder="sub_xxx or email@example.com"
 									/>
 								</div>
 
@@ -659,9 +672,10 @@
 										<div class="detail-row">
 											<span class="detail-label">Status:</span>
 											<span class="detail-value status-badge" 
-												class:active={ghost.metadata?.status === 'active'}
+												class:active={ghost.metadata?.status === 'active' || ghost.metadata?.status === 'trialing'}
 												class:unpaid={ghost.metadata?.status === 'unpaid'}
 												class:past-due={ghost.metadata?.status === 'past_due'}
+												class:cancelled={ghost.metadata?.status === 'canceled'}
 											>
 												{ghost.metadata?.status || 'unknown'}
 											</span>
@@ -1268,6 +1282,11 @@
 		color: #ef4444;
 	}
 
+	.analytics-table .status-count.cancelled {
+		color: #6b7280;
+		font-style: italic;
+	}
+
 	.analytics-table .revenue {
 		font-weight: 600;
 		text-align: right;
@@ -1409,6 +1428,12 @@
 	.status-badge.past-due {
 		background: #fee2e2;
 		color: #991b1b;
+	}
+
+	.status-badge.cancelled {
+		background: #f3f4f6;
+		color: #6b7280;
+		text-decoration: line-through;
 	}
 
 	/* No Results */
