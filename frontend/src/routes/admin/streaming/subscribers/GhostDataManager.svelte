@@ -126,10 +126,12 @@
 		activeMRR: number;
 		unpaidMRR: number;
 		pastDueMRR: number;
+		cancelledMRR: number;
 		totalMRR: number;
 		activeARR: number;
 		unpaidARR: number;
 		pastDueARR: number;
+		cancelledARR: number;
 		totalARR: number;
 		potentialARR: number;
 	}
@@ -178,10 +180,12 @@
 		activeMRR: number;
 		unpaidMRR: number;
 		pastDueMRR: number;
+		cancelledMRR: number;
 		totalARR: number;
 		activeARR: number;
 		unpaidARR: number;
 		pastDueARR: number;
+		cancelledARR: number;
 		potentialARR: number;
 		uniquePlans: string[];
 		statusCounts: Record<string, number>;
@@ -193,10 +197,12 @@
 		let activeMRR = 0;
 		let unpaidMRR = 0;
 		let pastDueMRR = 0;
+		let cancelledMRR = 0;
 		let totalARR = 0;
 		let activeARR = 0;
 		let unpaidARR = 0;
 		let pastDueARR = 0;
+		let cancelledARR = 0;
 		let potentialARR = 0;
 
 		subscriptions.forEach(sub => {
@@ -225,10 +231,12 @@
 					activeMRR: 0,
 					unpaidMRR: 0,
 					pastDueMRR: 0,
+					cancelledMRR: 0,
 					totalMRR: 0,
 					activeARR: 0,
 					unpaidARR: 0,
 					pastDueARR: 0,
+					cancelledARR: 0,
 					totalARR: 0,
 					potentialARR: 0
 				});
@@ -262,6 +270,10 @@
 			plan.pastDueMRR = pastDueCount * plan.unitMRR;
 			plan.pastDueARR = pastDueCount * plan.unitARR;
 
+			// Cancelled revenue = cancelled subscribers * unit amount
+			plan.cancelledMRR = cancelledCount * plan.unitMRR;
+			plan.cancelledARR = cancelledCount * plan.unitARR;
+
 			// Total revenue (all statuses combined)
 			plan.totalMRR = plan.totalCount * plan.unitMRR;
 			plan.totalARR = plan.totalCount * plan.unitARR;
@@ -278,6 +290,8 @@
 			unpaidARR += plan.unpaidARR;
 			pastDueMRR += plan.pastDueMRR;
 			pastDueARR += plan.pastDueARR;
+			cancelledMRR += plan.cancelledMRR;
+			cancelledARR += plan.cancelledARR;
 			totalMRR += plan.totalMRR;
 			totalARR += plan.totalARR;
 			potentialARR += plan.potentialARR;
@@ -289,10 +303,12 @@
 			activeMRR,
 			unpaidMRR,
 			pastDueMRR,
+			cancelledMRR,
 			totalARR,
 			activeARR,
 			unpaidARR,
 			pastDueARR,
+			cancelledARR,
 			potentialARR,
 			uniquePlans: Array.from(planMap.keys()),
 			statusCounts
@@ -526,33 +542,39 @@
 							</div>
 						</div>
 
-						<!-- REVENUE SUMMARY -->
-						<div class="revenue-summary">
-							<div class="revenue-card total">
-								<div class="revenue-label">Total Annual Revenue (ARR)</div>
-								<div class="revenue-value">{formatCurrency(analytics.totalARR)}</div>
-								<div class="revenue-count">{ghostReport.ghost_subscriptions.length} subscriptions</div>
-								<div class="revenue-mrr">MRR: {formatCurrency(analytics.totalMRR)}</div>
-							</div>
-							<div class="revenue-card active">
-								<div class="revenue-label">Active/Trialing (ARR)</div>
-								<div class="revenue-value">{formatCurrency(analytics.activeARR)}</div>
-								<div class="revenue-count">{analytics.statusCounts['active'] || 0} active</div>
-								<div class="revenue-mrr">MRR: {formatCurrency(analytics.activeMRR)}</div>
-							</div>
-							<div class="revenue-card unpaid">
-								<div class="revenue-label">Unpaid (ARR)</div>
-								<div class="revenue-value">{formatCurrency(analytics.unpaidARR)}</div>
-								<div class="revenue-count">{analytics.statusCounts['unpaid'] || 0} unpaid</div>
-								<div class="revenue-mrr">MRR: {formatCurrency(analytics.unpaidMRR)}</div>
-							</div>
-							<div class="revenue-card past-due">
-								<div class="revenue-label">Past Due (ARR)</div>
-								<div class="revenue-value">{formatCurrency(analytics.pastDueARR)}</div>
-								<div class="revenue-count">{analytics.statusCounts['past_due'] || 0} past due</div>
-								<div class="revenue-mrr">MRR: {formatCurrency(analytics.pastDueMRR)}</div>
-							</div>
+					<!-- REVENUE SUMMARY -->
+					<div class="revenue-summary">
+						<div class="revenue-card total">
+							<div class="revenue-label">Total Annual Revenue (ARR)</div>
+							<div class="revenue-value">{formatCurrency(analytics.totalARR)}</div>
+							<div class="revenue-count">{ghostReport.ghost_subscriptions.length} subscriptions</div>
+							<div class="revenue-mrr">MRR: {formatCurrency(analytics.totalMRR)}</div>
 						</div>
+						<div class="revenue-card active">
+							<div class="revenue-label">Active/Trialing (ARR)</div>
+							<div class="revenue-value">{formatCurrency(analytics.activeARR)}</div>
+							<div class="revenue-count">{analytics.statusCounts['active'] || 0} active</div>
+							<div class="revenue-mrr">MRR: {formatCurrency(analytics.activeMRR)}</div>
+						</div>
+						<div class="revenue-card unpaid">
+							<div class="revenue-label">Unpaid (ARR)</div>
+							<div class="revenue-value">{formatCurrency(analytics.unpaidARR)}</div>
+							<div class="revenue-count">{analytics.statusCounts['unpaid'] || 0} unpaid</div>
+							<div class="revenue-mrr">MRR: {formatCurrency(analytics.unpaidMRR)}</div>
+						</div>
+						<div class="revenue-card past-due">
+							<div class="revenue-label">Past Due (ARR)</div>
+							<div class="revenue-value">{formatCurrency(analytics.pastDueARR)}</div>
+							<div class="revenue-count">{analytics.statusCounts['past_due'] || 0} past due</div>
+							<div class="revenue-mrr">MRR: {formatCurrency(analytics.pastDueMRR)}</div>
+						</div>
+						<div class="revenue-card cancelled">
+							<div class="revenue-label">Cancelled (ARR)</div>
+							<div class="revenue-value">{formatCurrency(analytics.cancelledARR)}</div>
+							<div class="revenue-count">{analytics.statusCounts['canceled'] || 0} cancelled</div>
+							<div class="revenue-mrr">MRR: {formatCurrency(analytics.cancelledMRR)}</div>
+						</div>
+					</div>
 
 						<!-- PLAN BREAKDOWN TABLE -->
 						<div class="plan-analytics-section">
@@ -1141,6 +1163,11 @@
 	.revenue-card.past-due {
 		background: linear-gradient(135deg, #fee2e2, #fecaca);
 		border-color: #ef4444;
+	}
+
+	.revenue-card.cancelled {
+		background: linear-gradient(135deg, #e5e7eb, #d1d5db);
+		border-color: #6b7280;
 	}
 
 	.revenue-label {
