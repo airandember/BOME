@@ -9,6 +9,8 @@
 	let password = '';
 	let loading = false;
 	let error = '';
+	let showGmailWarning = false;
+	let isGmailAccount = false;
 
 	onMount(() => {
 		// Check if already logged in, but don't redirect immediately
@@ -20,9 +22,28 @@
 		});
 	});
 
+	// Check if email is a Gmail account
+	function checkEmailProvider() {
+		const emailLower = email.toLowerCase().trim();
+		isGmailAccount = emailLower.endsWith('@gmail.com') || emailLower.endsWith('@googlemail.com');
+		
+		if (isGmailAccount) {
+			showGmailWarning = true;
+		} else {
+			showGmailWarning = false;
+		}
+	}
+
 	async function handleLogin() {
 		if (!email || !password) {
 			error = 'Please fill in all fields';
+			return;
+		}
+
+		// Check if trying to login with Gmail
+		checkEmailProvider();
+		if (isGmailAccount) {
+			error = 'Gmail accounts must use "Sign in with Google" above';
 			return;
 		}
 
@@ -68,9 +89,21 @@
 					type="email"
 					id="email"
 					bind:value={email}
+					on:input={checkEmailProvider}
+					on:blur={checkEmailProvider}
 					placeholder="Enter your email"
+					class:gmail-detected={showGmailWarning}
 					required
 				/>
+				{#if showGmailWarning}
+					<div class="gmail-warning">
+						<span class="gmail-icon">📧</span>
+						<p>
+							<strong>Gmail account detected!</strong><br>
+							Please use the "Sign in with Google" button above for the best experience.
+						</p>
+					</div>
+				{/if}
 			</div>
 
 			<div class="form-group">
@@ -257,5 +290,50 @@ box-shadow:  20px 20px 60px var(--bg-glass-dark),
 
 	.link:hover {
 		color: var(--accent-hover);
+	}
+
+	/* Gmail Detection Styles */
+	.gmail-detected {
+		border: 2px solid #4285f4 !important;
+		background: #e8f0fe !important;
+	}
+
+	.gmail-warning {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+		margin-top: 0.5rem;
+		padding: 0.75rem 1rem;
+		background: linear-gradient(135deg, #e8f0fe 0%, #d2e3fc 100%);
+		border: 1px solid #4285f4;
+		border-radius: 8px;
+		animation: slideIn 0.3s ease-out;
+	}
+
+	.gmail-icon {
+		font-size: 1.5rem;
+		flex-shrink: 0;
+	}
+
+	.gmail-warning p {
+		margin: 0;
+		font-size: 0.85rem;
+		color: #1a73e8;
+		line-height: 1.4;
+	}
+
+	.gmail-warning strong {
+		color: #1967d2;
+	}
+
+	@keyframes slideIn {
+		from {
+			opacity: 0;
+			transform: translateY(-10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 </style> 
