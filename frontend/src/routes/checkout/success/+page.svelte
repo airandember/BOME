@@ -65,6 +65,11 @@
 				// Subscription is automatically created by Stripe webhooks (customer.subscription.created)
 				// Video access is granted by invoice.payment_succeeded webhook
 				// No manual intervention needed! 🎉
+				
+				// Auto-redirect to videos page after 3 seconds
+				setTimeout(() => {
+					goto('/videos');
+				}, 3000);
 			} else if (sessionStatus === 'unpaid' || sessionStatus === 'requires_payment_method') {
 				showToast('Payment incomplete. Please try again.', 'warning');
 			} else {
@@ -80,6 +85,10 @@
 
 	function goToDashboard() {
 		goto('/dashboard');
+	}
+
+	function goToVideos() {
+		goto('/videos');
 	}
 
 	function goToSubscriptions() {
@@ -113,51 +122,28 @@
 		{:else if sessionStatus === 'paid' || sessionStatus === 'complete'}
 			<div class="success-container">
 				<div class="success-icon">🎉</div>
-				<h1>Welcome to BOME!</h1>
+				<h1>Welcome to BOME Premium!</h1>
 				<p class="success-message">
 					Your subscription has been activated successfully! 
 					{#if paymentAmount > 0}
 						You've been charged <strong>{new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(paymentAmount)}</strong>.
 					{/if}
-					A confirmation email has been sent to <strong>{customerEmail}</strong>.
 				</p>
 				
 				<div class="success-features">
-					<h2>What's Next?</h2>
-					<ul>
-						<li>
-							<svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<polyline points="20,6 9,17 4,12"></polyline>
-							</svg>
-							Access exclusive Book of Mormon evidence content
-						</li>
-						<!--<li>
-							<svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<polyline points="20,6 9,17 4,12"></polyline>
-							</svg>
-							Download videos for offline viewing
-						</li>
-						<li>
-							<svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<polyline points="20,6 9,17 4,12"></polyline>
-							</svg>
-							Join our community forum
-						</li>-->
-						<li>
-							<svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<polyline points="20,6 9,17 4,12"></polyline>
-							</svg>
-							Over 1600 videos!!
-						</li>
-					</ul>
+					<div class="redirect-message">
+						<div class="redirect-icon">🎬</div>
+						<h2>Taking you to your premium videos...</h2>
+						<p>You now have access to over 1,600 exclusive videos!</p>
+					</div>
 				</div>
 
 				<div class="success-actions">
-					<button class="btn btn-primary" style="color: --var(--text-primary)" on:click={goToDashboard}>
-						Go to Dashboard
+					<button class="btn btn-primary" style="color: --var(--text-primary)" on:click={goToVideos}>
+						Watch Now
 					</button>
-					<button class="btn btn-outline" on:click={goToSubscriptions}>
-						Manage Subscription
+					<button class="btn btn-outline" on:click={goToDashboard}>
+						Go to Dashboard
 					</button>
 				</div>
 			</div>
@@ -311,6 +297,40 @@
 		color: var(--text-primary);
 		margin-bottom: 1rem;
 		text-align: center;
+	}
+
+	.redirect-message {
+		text-align: center;
+		padding: 1rem 0;
+	}
+
+	.redirect-icon {
+		font-size: 3rem;
+		margin-bottom: 1rem;
+		animation: pulse 2s ease-in-out infinite;
+	}
+
+	.redirect-message h2 {
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: var(--primary-color);
+		margin-bottom: 0.5rem;
+	}
+
+	.redirect-message p {
+		font-size: 1rem;
+		color: var(--text-secondary);
+	}
+
+	@keyframes pulse {
+		0%, 100% {
+			transform: scale(1);
+			opacity: 1;
+		}
+		50% {
+			transform: scale(1.1);
+			opacity: 0.8;
+		}
 	}
 
 	.success-features ul {
