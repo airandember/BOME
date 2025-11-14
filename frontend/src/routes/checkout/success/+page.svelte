@@ -62,8 +62,9 @@
 			if (sessionStatus === 'paid' || sessionStatus === 'complete') {
 				showToast('Payment successful! Your subscription is now active.', 'success');
 				
-				// TODO: Update user subscription in database
-				await updateUserSubscription();
+				// Subscription is automatically created by Stripe webhooks (customer.subscription.created)
+				// Video access is granted by invoice.payment_succeeded webhook
+				// No manual intervention needed! 🎉
 			} else if (sessionStatus === 'unpaid' || sessionStatus === 'requires_payment_method') {
 				showToast('Payment incomplete. Please try again.', 'warning');
 			} else {
@@ -74,35 +75,6 @@
 			error = err.message || 'Failed to verify payment status';
 			loading = false;
 			throw err;
-		}
-	}
-
-	async function updateUserSubscription() {
-		try {
-			console.log('🔄 Updating user subscription...');
-			
-			// Call backend endpoint to create subscription record
-			const response = await apiRequest('/stripe/create-subscription', {
-				method: 'POST',
-				body: JSON.stringify({
-					session_id: sessionId,
-					session_data: sessionData
-				})
-			});
-			
-			if (!response.ok) {
-				const errorData = await response.json();
-				throw new Error(errorData.error || 'Failed to create subscription record');
-			}
-			
-			const result = await response.json();
-			console.log('✅ Subscription created successfully:', result);
-			
-		} catch (err) {
-			console.error('❌ Failed to update subscription:', err);
-			// Don't throw here - payment was successful even if DB update failed
-			// Show a warning toast but don't fail the success page
-			showToast('Payment successful, but there was an issue creating your subscription record. Please contact support.', 'warning');
 		}
 	}
 
