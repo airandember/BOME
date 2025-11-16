@@ -117,7 +117,7 @@
 		});
 
 		if (!isAuthenticated) {
-			goto('/login?redirect=/advertise');
+			goto('/auth/login?redirect=/advertise');
 			return;
 		}
 

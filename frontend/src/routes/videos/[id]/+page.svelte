@@ -98,7 +98,7 @@
 </script>
 
 <SubscriptionCheck 
-	redirectTo="/login" 
+	redirectTo="/auth/login" 
 	requireSubscription={true}
 	onLoadingChange={handleAuthLoadingChange}
 	onAccessGranted={handleAccessGranted}

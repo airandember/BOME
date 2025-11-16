@@ -133,7 +133,7 @@
 					</p>
 					
 					<div class="actions">
-						<a href="/login" class="btn btn-primary">
+						<a href="/auth/login" class="btn btn-primary">
 							Sign In
 						</a>
 					</div>

@@ -26,7 +26,7 @@
 
 	onMount(async () => {
 		if (!$auth.isAuthenticated) {
-			goto('/login');
+			goto('/auth/login');
 			return;
 		}
 

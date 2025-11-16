@@ -19,7 +19,7 @@
 	onMount(async () => {
 		if (!$auth.isAuthenticated) {
 			showToast('Please log in to continue', 'warning');
-			goto('/login');
+			goto('/auth/login');
 			return;
 		}
 

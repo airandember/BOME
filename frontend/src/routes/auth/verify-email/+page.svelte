@@ -230,7 +230,7 @@
 								Resend Verification Email
 							{/if}
 						</button>
-						<a href="/login" class="btn btn-secondary">Back to Login</a>
+						<a href="/auth/login" class="btn btn-secondary">Back to Login</a>
 					</div>
 				</div>
 			{:else}
@@ -286,7 +286,7 @@
 								Resend Verification Email
 							{/if}
 						</button>
-						<a href="/login" class="btn btn-secondary">Back to Login</a>
+						<a href="/auth/login" class="btn btn-secondary">Back to Login</a>
 					</div>
 
 					<div class="help-section">

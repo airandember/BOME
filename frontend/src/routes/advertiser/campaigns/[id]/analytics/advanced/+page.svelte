@@ -25,7 +25,7 @@
 	onMount(async () => {
 		campaignId = parseInt($page.params.id);
 		if (!$auth.isAuthenticated) {
-			goto('/login');
+			goto('/auth/login');
 			return;
 		}
 		await loadAnalytics();
