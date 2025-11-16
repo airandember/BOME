@@ -136,6 +136,17 @@ func RegisterHandler(db *database.DB, emailService *services.EmailService) gin.H
 				}
 			}
 
+			// 🔗 AUTO-LINK: Attempt to link any existing Stripe customers with matching email
+			// (in case they created Stripe customer after initial registration)
+			linkingService := services.NewCustomerLinkingService(db)
+			linkResult, err := linkingService.LinkUserToCustomers(existingUser.ID)
+			if err != nil {
+				log.Printf("⚠️  Failed to auto-link Stripe customers for existing user %d: %v", existingUser.ID, err)
+			} else if linkResult.CustomersLinked > 0 {
+				log.Printf("✅ Auto-linked %d Stripe customer(s) to existing user %d (%s)", 
+					linkResult.CustomersLinked, existingUser.ID, existingUser.Email)
+			}
+
 			// Return success message (same as new user to avoid revealing account existence)
 			c.JSON(http.StatusCreated, gin.H{
 				"message":               "Registration successful. Please check your email to complete your account setup.",
@@ -175,15 +186,25 @@ func RegisterHandler(db *database.DB, emailService *services.EmailService) gin.H
 			}
 		}
 
-		// Log successful registration
-		log.Printf("User registered successfully: %s (ID: %d) from %s", user.Email, user.ID, clientIP)
+	// Log successful registration
+	log.Printf("User registered successfully: %s (ID: %d) from %s", user.Email, user.ID, clientIP)
 
-		c.JSON(http.StatusCreated, gin.H{
-			"message":               "Registration successful. Please check your email to complete your account setup.",
-			"user_id":               user.ID,
-			"email":                 user.Email,
-			"verification_required": true,
-		})
+	// 🔗 AUTO-LINK: Attempt to link any existing Stripe customers with matching email
+	linkingService := services.NewCustomerLinkingService(db)
+	linkResult, err := linkingService.LinkUserToCustomers(user.ID)
+	if err != nil {
+		log.Printf("⚠️  Failed to auto-link Stripe customers for new user %d: %v", user.ID, err)
+	} else if linkResult.CustomersLinked > 0 {
+		log.Printf("✅ Auto-linked %d Stripe customer(s) to new user %d (%s)", 
+			linkResult.CustomersLinked, user.ID, user.Email)
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message":               "Registration successful. Please check your email to complete your account setup.",
+		"user_id":               user.ID,
+		"email":                 user.Email,
+		"verification_required": true,
+	})
 	}
 }
 
@@ -810,12 +831,23 @@ func VerifyEmailLinkHandler(db *database.DB) gin.HandlerFunc {
 			log.Printf("Failed to clear verification token: %v", err)
 		}
 
-		// Update last login to complete the verification process
-		if err := db.UpdateLastLogin(user.ID); err != nil {
-			log.Printf("Failed to update last login: %v", err)
-		}
+	// Update last login to complete the verification process
+	if err := db.UpdateLastLogin(user.ID); err != nil {
+		log.Printf("Failed to update last login: %v", err)
+	}
 
-		log.Printf("✅ Email verified via link for: %s (ID: %d)", user.Email, user.ID)
+	// 🔗 AUTO-LINK: Attempt to link any existing Stripe customers with matching email
+	// (safety net in case linking didn't happen at registration)
+	linkingService := services.NewCustomerLinkingService(db)
+	linkResult, err := linkingService.LinkUserToCustomers(user.ID)
+	if err != nil {
+		log.Printf("⚠️  Failed to auto-link Stripe customers during verification for user %d: %v", user.ID, err)
+	} else if linkResult.CustomersLinked > 0 {
+		log.Printf("✅ Auto-linked %d Stripe customer(s) during email verification for user %d (%s)", 
+			linkResult.CustomersLinked, user.ID, user.Email)
+	}
+
+	log.Printf("✅ Email verified via link for: %s (ID: %d)", user.Email, user.ID)
 
 		// 🔐 CHECK IF USER NEEDS PASSWORD SETUP
 		needsPasswordSetup := user.PasswordHash == "" ||
