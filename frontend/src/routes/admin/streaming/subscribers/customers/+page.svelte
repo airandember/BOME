@@ -939,8 +939,8 @@
 	}
 
 	// Event handlers for table components
-	function handleCreateUser(event: CustomEvent) {
-		const customer = event.detail;
+	function handleCreateUser(customer: any) {
+		// Called directly with customer object from child components
 		createUserFromStripe(customer);
 	}
 
@@ -948,8 +948,8 @@
 		createAllUsersFromStripe();
 	}
 
-	function handleSyncToStripe(event: CustomEvent) {
-		const customer = event.detail;
+	function handleSyncToStripe(customer: any) {
+		// Called directly with customer object from child components
 		// TODO: Implement individual sync to Stripe
 		showToast('Sync to Stripe functionality coming soon!', 'info');
 	}

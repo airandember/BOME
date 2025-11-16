@@ -22,7 +22,7 @@
 		});
 
 		if (!isAuthenticated) {
-			goto('/login?redirect=/advertise/campaigns');
+			goto('/auth/login?redirect=/advertise/campaigns');
 			return;
 		}
 

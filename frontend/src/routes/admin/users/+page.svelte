@@ -220,7 +220,7 @@
 		// Check authentication
 		if (!$auth.isAuthenticated) {
 			console.log('❌ Admin Users: User not authenticated, redirecting to login');
-			window.location.href = '/login';
+			window.location.href = '/auth/login';
 			return;
 		}
 

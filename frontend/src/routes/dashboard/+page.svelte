@@ -220,7 +220,7 @@
 			<h2>Access Required</h2>
 			<p>{error}</p>
 			<div class="error-actions">
-				<a href="/login" class="btn btn-primary">Log In</a>
+				<a href="/auth/login" class="btn btn-primary">Log In</a>
 				<a href="/register" class="btn btn-ghost">Create Account</a>
 				<button class="btn btn-outline" on:click={() => window.location.reload()}>Try Again</button>
 			</div>

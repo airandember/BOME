@@ -20,7 +20,7 @@
 
 	onMount(async () => {
 		if (!isAuthenticated) {
-			goto('/login');
+			goto('/auth/login');
 			return;
 		}
 

@@ -94,7 +94,7 @@
 					{/if}
 				</div>
 			{:else}
-				<a href="/login" class="btn-primary">Login</a>
+				<a href="/auth/login" class="btn-primary">Login</a>
 				<a href="/register" class="btn-secondary">Register</a>
 			{/if}
 		</div>

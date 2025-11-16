@@ -70,7 +70,7 @@
 	const handleSelectPlan = async (plan: PublicSubscriptionPlan) => {
 		if (!isAuthenticated) {
 			showToast('Please sign in to continue', 'warning');
-			goto('/login');
+			goto('/auth/login');
 			return;
 		}
 

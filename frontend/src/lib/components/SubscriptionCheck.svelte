@@ -6,7 +6,7 @@
 	import { subscriptionService, type Subscription } from '$lib/subscription';
 	import LoadingSpinner from './LoadingSpinner.svelte';
 
-	export let redirectTo: string = '/login';
+	export let redirectTo: string = '/auth/login';
 	export let requireSubscription: boolean = true;
 	export let requiredTier: 'free' | 'premium' = 'premium';
 	export let checking: boolean = false;

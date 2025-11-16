@@ -1138,7 +1138,7 @@
 <div class="page-wrapper">
 	<main class="main-content-wrapper">
 		<SubscriptionCheck 
-			redirectTo="/login" 
+			redirectTo="/auth/login" 
 			requireSubscription={true}
 			onLoadingChange={handleAuthLoadingChange}
 			onAccessGranted={handleAccessGranted}

@@ -292,6 +292,17 @@ func (s *OAuth2Service) CreateOrLinkUser(userInfo *OAuth2UserInfo) (*database.Us
 			}
 		}
 
+		// 🔗 AUTO-LINK: Attempt to link any existing Stripe customers with matching email
+		// (in case they created Stripe customer before OAuth2 login)
+		linkingService := NewCustomerLinkingService(s.db)
+		linkResult, err := linkingService.LinkUserToCustomers(existingUser.ID)
+		if err != nil {
+			log.Printf("⚠️ [OAUTH2] Failed to auto-link Stripe customers for existing user %d: %v", existingUser.ID, err)
+		} else if linkResult.CustomersLinked > 0 {
+			log.Printf("✅ [OAUTH2] Auto-linked %d Stripe customer(s) to existing user %d (%s)", 
+				linkResult.CustomersLinked, existingUser.ID, existingUser.Email)
+		}
+
 		log.Printf("🔗 [OAUTH2] Linked %s account to existing user: %s", userInfo.Provider, userInfo.Email)
 		return existingUser, false, nil // false = not a new user
 	}
@@ -321,6 +332,16 @@ func (s *OAuth2Service) CreateOrLinkUser(userInfo *OAuth2UserInfo) (*database.Us
 	if err != nil {
 		log.Printf("⚠️ [OAUTH2] Failed to link OAuth2 account to new user: %v", err)
 		// Continue anyway - user is created
+	}
+
+	// 🔗 AUTO-LINK: Attempt to link any existing Stripe customers with matching email
+	linkingService := NewCustomerLinkingService(s.db)
+	linkResult, err := linkingService.LinkUserToCustomers(createdUser.ID)
+	if err != nil {
+		log.Printf("⚠️ [OAUTH2] Failed to auto-link Stripe customers for new user %d: %v", createdUser.ID, err)
+	} else if linkResult.CustomersLinked > 0 {
+		log.Printf("✅ [OAUTH2] Auto-linked %d Stripe customer(s) to new user %d (%s)", 
+			linkResult.CustomersLinked, createdUser.ID, createdUser.Email)
 	}
 
 	log.Printf("👤 [OAUTH2] Created new user from %s: %s", userInfo.Provider, userInfo.Email)

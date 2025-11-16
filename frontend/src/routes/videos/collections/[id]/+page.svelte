@@ -177,7 +177,7 @@
 	
 	<main class="collection-page">
 		<SubscriptionCheck 
-			redirectTo="/login"
+			redirectTo="/auth/login"
 			requireSubscription={true}
 			requiredTier="premium"
 			onLoadingChange={handleAuthLoadingChange}

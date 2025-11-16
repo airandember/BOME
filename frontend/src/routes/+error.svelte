@@ -1,4 +1,5 @@
 <script lang="ts">
+	import '../app.css'; // Import CSS variables directly for error pages
 	import { page } from '$app/stores';
 	
 	// Type the error properly
@@ -37,7 +38,7 @@
 		
 		<div class="actions">
 			<button on:click={() => window.location.reload()}>Refresh Page</button>
-			<a href="/" class="btn-home">Go to Homepage</a>
+			<a href="/" class="btn-home">Back to Home</a>
 		</div>
 	</div>
 </div>
@@ -48,26 +49,27 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: #f8f9fa;
+		background: linear-gradient(135deg, var(--primary-bom-light) 0%, var(--primary-bom-dark) 50%);
 		padding: 1rem;
 	}
 	
 	.error-container {
 		max-width: 600px;
 		text-align: center;
-		background: white;
+		background: var(--primary-gold-dark);
 		padding: 2rem;
 		border-radius: 8px;
 		box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 	}
 	
 	h1 {
-		color: #dc3545;
+		font-family: var(--font-sans);
+		color: white;
 		margin-bottom: 1rem;
 	}
 	
 	.error-message {
-		color: #6c757d;
+		color: var(--font-display);
 		margin-bottom: 1.5rem;
 		font-size: 1.1rem;
 	}
@@ -96,14 +98,16 @@
 		padding: 0.5rem 1rem;
 		border: none;
 		border-radius: 4px;
-		background: #007bff;
+		background: var(--primary-bom-light);
 		color: white;
 		text-decoration: none;
 		cursor: pointer;
 		font-size: 1rem;
+		transition: all 0.3s ease;
 	}
 	
 	button:hover, .btn-home:hover {
-		background: #0056b3;
+		background: var(--primary-bom-dark);
+		transform: scale(1.15);
 	}
 </style>

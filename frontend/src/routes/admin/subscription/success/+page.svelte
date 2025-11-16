@@ -18,7 +18,7 @@
 	onMount(async () => {
 		// Check if user is authenticated
 		if (!isAuthenticated) {
-			goto('/login');
+			goto('/auth/login');
 			return;
 		}
 

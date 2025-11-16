@@ -67,7 +67,7 @@
 				<li><a href="/subscription">Subscription</a></li>
 				<li><a href="/account/billing">Billing</a></li>
 					{:else}
-						<li><a href="/login">Login</a></li>
+						<li><a href="/auth/login">Login</a></li>
 						<li><a href="/register">Sign Up</a></li>
 						<li><a href="/subscription">Plans</a></li>
 					{/if}
