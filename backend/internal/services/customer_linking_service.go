@@ -448,11 +448,14 @@ func (s *CustomerLinkingService) GetLinkingStats() (map[string]interface{}, erro
 // GetUserByStripeCustomerID gets the user associated with a Stripe customer ID
 func (s *CustomerLinkingService) GetUserByStripeCustomerID(stripeCustomerID string) (*database.User, error) {
 	// Find the user via the linking table
+	// IMPORTANT: stripe_customer_id in user_stripe_customers_v2 is an INTEGER FK to stripe_customers_v2.id
+	// We need to join to match on the Stripe ID string
 	var userID int
 	query := `
-		SELECT user_id 
-		FROM user_stripe_customers_v2 
-		WHERE stripe_customer_id = $1
+		SELECT usc.user_id 
+		FROM user_stripe_customers_v2 usc
+		JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
+		WHERE sc.stripe_id = $1
 		LIMIT 1
 	`
 
