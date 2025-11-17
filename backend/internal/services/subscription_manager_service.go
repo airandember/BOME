@@ -265,6 +265,35 @@ func (s *SubscriptionManagerService) UpdateVideoAccessForSubscription(subscripti
 	// Step 3: Grant or revoke video access based on status
 	if status == "active" || status == "trialing" {
 		return s.GrantVideoAccess(user.ID, fmt.Sprintf("subscription %s is %s", subscriptionID, status))
+	} else if status == "incomplete" {
+		// For incomplete subscriptions, check if the latest invoice was paid
+		// This handles cases where payment succeeds but the webhook for status update is delayed
+		log.Printf("⚠️  [Subscription Manager] Subscription %s is incomplete - checking payment status", subscriptionID)
+		
+		// Query to check if the subscription has a paid invoice
+		var hasPaidInvoice bool
+		invoiceQuery := `
+			SELECT EXISTS(
+				SELECT 1 FROM stripe_invoices si
+				WHERE si.subscription_id = $1
+				AND si.status = 'paid'
+				AND si.paid = true
+			)
+		`
+		err := s.db.QueryRow(invoiceQuery, subscriptionID).Scan(&hasPaidInvoice)
+		if err != nil {
+			log.Printf("⚠️  [Subscription Manager] Failed to check invoice status for subscription %s: %v", subscriptionID, err)
+			// Don't fail - just don't grant access yet
+			return nil
+		}
+		
+		if hasPaidInvoice {
+			log.Printf("✅ [Subscription Manager] Subscription %s is incomplete but has paid invoice - granting access", subscriptionID)
+			return s.GrantVideoAccess(user.ID, fmt.Sprintf("subscription %s has paid invoice", subscriptionID))
+		}
+		
+		log.Printf("ℹ️  [Subscription Manager] Subscription %s is incomplete and payment not confirmed yet", subscriptionID)
+		return nil
 	} else if status == "canceled" || status == "past_due" || status == "unpaid" {
 		return s.RevokeVideoAccess(user.ID, fmt.Sprintf("subscription %s is %s", subscriptionID, status))
 	}
