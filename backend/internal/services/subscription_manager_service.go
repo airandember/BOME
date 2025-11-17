@@ -8,6 +8,7 @@ import (
 
 	"bome-backend/internal/database"
 
+	"github.com/lib/pq"
 	"github.com/stripe/stripe-go/v74"
 	"github.com/stripe/stripe-go/v74/subscription"
 )
@@ -121,7 +122,7 @@ func (s *SubscriptionManagerService) findActiveSubscriptionsForUser(customerIDs 
 		AND ss.canceled_at IS NULL
 	`
 
-	rows, err := s.db.Query(query, customerIDs, excludeSubscriptionID)
+	rows, err := s.db.Query(query, pq.Array(customerIDs), excludeSubscriptionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query active subscriptions: %w", err)
 	}
@@ -229,7 +230,8 @@ func (s *SubscriptionManagerService) hasActiveSubscription(userID int) (bool, er
 	`
 
 	var count int
-	err = s.db.QueryRow(query, linkedCustomers).Scan(&count)
+	// Use pq.Array to properly convert Go slice to PostgreSQL array
+	err = s.db.QueryRow(query, pq.Array(linkedCustomers)).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("failed to count active subscriptions: %w", err)
 	}
@@ -338,7 +340,7 @@ func (s *SubscriptionManagerService) GetUserSubscriptionSummary(userID int) (map
 	`
 
 	var activeCount, canceledCount, pastDueCount, totalCount int
-	err = s.db.QueryRow(query, linkedCustomers).Scan(&activeCount, &canceledCount, &pastDueCount, &totalCount)
+	err = s.db.QueryRow(query, pq.Array(linkedCustomers)).Scan(&activeCount, &canceledCount, &pastDueCount, &totalCount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count subscriptions: %w", err)
 	}
