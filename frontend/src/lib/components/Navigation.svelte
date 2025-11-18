@@ -56,13 +56,14 @@
 		<div class="nav-brand">
 			<a href="/" class="brand-link">
 				<div class="brand-logo">
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<!--<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 						<path d="M12 2L2 7l10 5 10-5-10-5z"></path>
 						<path d="M2 17l10 5 10-5"></path>
 						<path d="M2 12l10 5 10-5"></path>
-					</svg>
+					</svg>-->
+					<img src="/Images/Logo.png" alt="Logo" class="brand-logo-image">
 				</div>
-				<span class="brand-text">BOME</span>
+				<span class="brand-text">BOOK of MORMON Evidence</span>
 			</a>
 		</div>
 
@@ -302,8 +303,8 @@
 	}
 
 	.brand-logo {
-		width: 32px;
-		height: 32px;
+		width: 40px;
+		height: 40px;
 		background: var(--primary-gradient);
 		border-radius: var(--radius-lg);
 		display: flex;
@@ -318,11 +319,16 @@
 		color: var(--white);
 	}
 
+	.brand-logo-image {
+		width: 30px;
+		height: 30px;
+
+	}
+
 	.brand-text {
 		font-size: var(--text-xl);
-		font-weight: 700;
 		color: var(--text-primary);
-		font-family: var(--font-display);
+		font-family: 'Steelfish_';
 	}
 
 	.nav-menu {
