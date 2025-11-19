@@ -146,17 +146,65 @@ func (s *SubscriptionManagerService) findActiveSubscriptionsForUser(customerIDs 
 // ================================================================
 
 // GrantVideoAccess grants video access to a user based on their subscription
+// This function is idempotent - calling it multiple times won't cause errors
 func (s *SubscriptionManagerService) GrantVideoAccess(userID int, reason string) error {
-	log.Printf("🎥 [Subscription Manager] Granting video access to user %d (reason: %s)", userID, reason)
+	// Check if user already has video access
+	var hasAccess bool
+	var currentSource string
+	err := s.db.QueryRow(`
+		SELECT COALESCE(has_video_access, false), COALESCE(video_access_source, '')
+		FROM users 
+		WHERE id = $1
+	`, userID).Scan(&hasAccess, &currentSource)
+	
+	if err != nil {
+		return fmt.Errorf("failed to check current access for user %d: %w", userID, err)
+	}
 
+	// If user already has access, update source to track all confirmation methods
+	if hasAccess {
+		// Append new source if not already present
+		var updatedSource string
+		if currentSource == "" {
+			updatedSource = reason
+		} else if !contains(currentSource, reason) {
+			updatedSource = currentSource + "," + reason
+		} else {
+			// Source already tracked, no update needed
+			log.Printf("ℹ️  [Subscription Manager] User %d already has video access from: %s", userID, currentSource)
+			return nil
+		}
+		
+		_, err = s.db.Exec(`
+			UPDATE users 
+			SET video_access_source = $1,
+			    updated_at = NOW()
+			WHERE id = $2
+		`, updatedSource, userID)
+		
+		if err != nil {
+			log.Printf("⚠️  [Subscription Manager] Failed to update access source for user %d: %v", userID, err)
+			// Don't return error - access already granted
+		} else {
+			log.Printf("ℹ️  [Subscription Manager] User %d already has video access, updated source: %s", userID, updatedSource)
+		}
+		return nil
+	}
+
+	// Grant new video access
+	log.Printf("🎥 [Subscription Manager] Granting video access to user %d (reason: %s)", userID, reason)
+	
 	query := `
 		UPDATE users 
-		SET manual_video_access = true,
+		SET has_video_access = true,
+		    video_access_granted_at = NOW(),
+		    video_access_source = $1,
+		    manual_video_access = true,
 		    updated_at = NOW()
-		WHERE id = $1
+		WHERE id = $2
 	`
 
-	result, err := s.db.Exec(query, userID)
+	result, err := s.db.Exec(query, reason, userID)
 	if err != nil {
 		return fmt.Errorf("failed to grant video access: %w", err)
 	}
@@ -168,6 +216,44 @@ func (s *SubscriptionManagerService) GrantVideoAccess(userID int, reason string)
 
 	log.Printf("✅ [Subscription Manager] Video access granted to user %d", userID)
 	return nil
+}
+
+// Helper function to check if a source string contains a specific value
+func contains(source, value string) bool {
+	if source == value {
+		return true
+	}
+	// Check if value exists as a comma-separated item
+	sources := splitSources(source)
+	for _, s := range sources {
+		if s == value {
+			return true
+		}
+	}
+	return false
+}
+
+// Helper function to split comma-separated sources
+func splitSources(source string) []string {
+	if source == "" {
+		return []string{}
+	}
+	var result []string
+	current := ""
+	for _, char := range source {
+		if char == ',' {
+			if current != "" {
+				result = append(result, current)
+				current = ""
+			}
+		} else {
+			current += string(char)
+		}
+	}
+	if current != "" {
+		result = append(result, current)
+	}
+	return result
 }
 
 // RevokeVideoAccess revokes video access from a user

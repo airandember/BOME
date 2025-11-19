@@ -1,5 +1,97 @@
 /* Modern BOME Design System - 2024/2025 Trends */
 
+/* Font Declarations - Must be at root level */
+
+/* Ayres Font */
+@font-face {
+	font-family: 'Ayres';
+	src: url('/fonts/Ayres.otf') format('opentype');
+	font-weight: normal;
+	font-style: normal;
+}
+
+/* DayRoman Font */
+@font-face {
+	font-family: 'DayRoman';
+	src: url('/fonts/DAYROM__.ttf') format('truetype');
+	font-weight: normal;
+	font-style: normal;
+}
+
+/* Rosemartin Font */
+@font-face {
+	font-family: 'Rosemartin';
+	src: url('/fonts/Rosemartin.otf') format('opentype');
+	font-weight: normal;
+	font-style: normal;
+}
+
+/* Euphorigenic Font */
+@font-face {
+	font-family: 'Euphorigenic';
+	src: url('/fonts/Euphorigenic.otf') format('opentype');
+	font-weight: normal;
+	font-style: normal;
+}
+
+/* Quicksand Font Family */
+@font-face {
+	font-family: 'Quicksand';
+	src: url('/fonts/Quicksand_Light.otf') format('opentype');
+	font-weight: 300;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'Quicksand_';
+	src: url('/fonts/Quicksand_Book.otf') format('opentype');
+	font-weight: 400;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'Quicksand_Bold';
+	src: url('/fonts/Quicksand_Bold.otf') format('opentype');
+	font-weight: 700;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'Quicksand_Bold_Oblique';
+	src: url('/fonts/Quicksand_Bold_Oblique.otf') format('opentype');
+	font-weight: 700;
+	font-style: italic;
+}
+
+/* Steelfish Font Family */
+@font-face {
+	font-family: 'Steelfish_';
+	src: url('/fonts/Steelfish Rg.otf') format('opentype');
+	font-weight: 400;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'Steelfish_Italic';
+	src: url('/fonts/Steelfish Rg It.otf') format('opentype');
+	font-weight: 400;
+	font-style: italic;
+}
+
+@font-face {
+	font-family: 'Steelfish_Bold';
+	src: url('/fonts/Steelfish Bd.otf') format('opentype');
+	font-weight: 700;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'Steelfish_Outline';
+	src: url('/fonts/Steelfish Outline.otf') format('opentype');
+	font-weight: 400;
+	font-style: normal;
+}
+
 /* CSS Custom Properties for Modern Design */
 :root {
 	/* Modern Color Palette */
@@ -83,6 +175,7 @@
 	--bg-glass-dark: rgba(0, 0, 0, 0.1);
 	--bg-adding: var(--bg-green-300);
 	--bg-removing: var(--bg-red-300);
+	--bg-ghost: rgba(255, 255, 255, 1);
 	
 	/* Shadows */
 	--shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
@@ -176,6 +269,7 @@
 	--bg-dark: var(--black);
 	--bg-glass: rgba(255, 255, 255, 0.05);
 	--bg-glass-dark: rgba(0, 0, 0, 0.2);
+	--bg-ghost: rgba(150, 142, 132, 0) ;
 }
 
 /* Base Styles */
@@ -220,7 +314,7 @@ h6 { font-size: var(--text-lg); }
 
 p {
 	margin: 0 0 var(--space-md) 0;
-	color: var(--text-secondary);
+	color: var(--text-inverse);
 	line-height: var(--leading-relaxed);
 }
 
@@ -241,7 +335,7 @@ a:hover {
 	justify-content: center;
 	gap: var(--space-sm);
 	padding: var(--space-md) var(--space-xl);
-	font-family: var(--font-sans);
+	font-family: 'Quicksand_';
 	font-size: var(--text-base);
 	font-weight: 600;
 	line-height: var(--leading-none);
@@ -255,6 +349,8 @@ a:hover {
 	white-space: nowrap;
 	user-select: none;
 }
+
+
 
 .btn::before {
 	content: '';
@@ -280,6 +376,7 @@ a:hover {
 .btn-primary:hover {
 	transform: translateY(-2px);
 	box-shadow: var(--shadow-lg), var(--shadow-glow);
+	color: var(--primary-gold-dark);
 }
 
 .btn-secondary {
@@ -314,7 +411,8 @@ a:hover {
 }
 
 .btn-ghost:hover {
-	background: var(--bg-secondary);
+	color: var(--primary-gold-dark);
+	background: var(--bg-primary);
 	transform: translateY(-1px);
 }
 
@@ -413,6 +511,13 @@ a:hover {
 .grid-2 { grid-template-columns: repeat(2, 1fr); }
 .grid-3 { grid-template-columns: repeat(3, 1fr); }
 .grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+/* High Resolution Displays (2K+) - 1440p and above */
+@media (min-height: 1440px) {
+	.brand-text {
+		font-size: clamp(6rem, 25vw, 15rem);
+	}
+}
 
 /* Responsive Grid */
 @media (max-width: 1024px) {

@@ -163,23 +163,27 @@
 	<section class="zoom-section book-section active" data-section="0">
 		<div class="zoom-content">
 			<div class="book-container">
-				<img src="/HOMEPAGE_TEST_ASSETS/book_of_mormon_close_up.webp" alt="Book of Mormon Close-up" class="book-image" />
+				<img src="/Images/BOME-Background.png" alt="Book of Mormon Close-up" class="book-image" />
 				<div class="book-glow"></div>
 			</div>
 			
 			<!-- Main Title Outside Glass Container -->
-			<div class="main-title-container">
-				<h1 class="hero-title"><span class="hero-title-book">BOOK OF MORMON</span><br> <span class="hero-title-evidence">EVIDENCE</span><br>
-					<span class="hero-title-beta">BETA</span></h1>
+			<!--<div class="main-title-container">
+				h1 class="hero-title"><span class="hero-title-book">BOOK OF MORMON</span><br> <span class="hero-title-evidence">EVIDENCE</span><br>
+					<span class="hero-title-beta">BETA</span></h1
 				<blockquote class="hero-quote">
 					"The Book of Mormon was the most correct of any book on earth, and the keystone of our religion, and a man would get nearer to God by abiding by its precepts, than by any other book."
 					<cite>– Joseph Smith</cite>
 				</blockquote>
-			</div>
+			</div>-->
 
 			<!-- Three Navigation Cards -->
 			 
 			<div class="navigation-cards">
+				<blockquote class="hero-quote">
+					<p>"The Book of Mormon was the most correct of any book on earth, and the keystone of our religion, and a man would get nearer to God by abiding by its precepts, than by any other book."</p>
+					<cite>– Joseph Smith</cite>
+				</blockquote>
 				<!-- REMOVE WHEN ARTICLES SITE IS UP
 				<a href="/articles" class="nav-card">
 					<div class="card-action">READ</div>
@@ -198,7 +202,20 @@
 					</div>
 				</a>-->
 
-				<a href="/videos" class="nav-card" on:click|preventDefault={handleGetStarted}>
+				<a href="/videos" class="" on:click|preventDefault={handleGetStarted}>
+					<div class="outer">
+						<div class="dot"></div>
+						<div class="card">
+						  <div class="ray"></div>
+						  <div class="text" style="text-align: center;">WATCH NOW</div>
+						  <div></div>
+						  <div class="line topl"></div>
+						  <div class="line leftl"></div>
+						  <div class="line bottoml"></div>
+						  <div class="line rightl"></div>
+						</div>
+					  </div>
+					 <!--
 					<div class="card-action">WATCH</div>
 					<div class="nav-card-content">
 						<div class="card-icon">
@@ -209,7 +226,7 @@
 						</div>
 						<h3>Streaming Videos</h3>
 						<p>Watch exclusive documentaries and presentations</p>
-					</div>
+					</div>--> 
 				</a>
 				<!-- REMOVE WHEN EVENTS SITE IS UP
 				<a href="/events" class="nav-card">
@@ -244,10 +261,10 @@
 			<div class="content-overlay">
 				<h2 class="section-title">Where It All Began</h2>
 				<p class="section-description">Hill Cumorah, New York - The sacred hill where Joseph Smith received the golden plates</p>
-				<div class="info-card">
+				<!--<div class="info-card">
 					<h3>Historical Significance</h3>
 					<p>The restoration began in upstate New York, where ancient records were preserved for centuries.</p>
-				</div>
+				</div>-->
 			</div>
 		</div>
 	</section>
@@ -268,14 +285,14 @@
 			</div>
 			<div class="content-overlay">
 				<h2 class="section-title">America in 1830</h2>
-				<p class="section-description">The United States during the time of the Book of Mormon's publication</p>
+				<!--<p class="section-description">The United States during the time of the Book of Mormon's publication</p>-->
 				<div class="timeline-info">
 					<div class="timeline-item">
-						<span class="year">1830</span>
+						<!--<span class="year">1830</span>-->
 						<span class="event">Book of Mormon Published</span>
 					</div>
 					<div class="timeline-item">
-						<span class="year">1830</span>
+						<!--<span class="year">1830</span>-->
 						<span class="event">Church Organized</span>
 					</div>
 				</div>
@@ -395,6 +412,128 @@
 		scroll-behavior: smooth;
 	}
 
+
+
+	/* Card Styles TESTING*/
+	.outer {
+  width: 600px;
+  height: 250px;
+  border-radius: 10px;
+  padding: 1px;
+  background: radial-gradient(circle 230px at 55% 0%, rgb(255, 234, 112), rgba(68, 39, 7, 0.05));
+  position: relative;
+  animation: breathe 8s ease-in-out infinite;
+}
+
+.dot {
+  width: 5px;
+  aspect-ratio: 1;
+  position: absolute;
+  background-color: #ffffff;
+  box-shadow: 2px 2px 5px #fff174;
+  border-radius: 100px;
+  z-index: 2;
+  right: 10%;
+  top: 10%;
+  animation: moveDot 6s linear infinite;
+}
+
+@keyframes moveDot {
+  0%,
+  100% {
+    top: 8%;
+    right: 9%;
+  }
+  25% {
+    top: 10%;
+    right: calc(100% - 60px);
+  }
+  50% {
+    top: calc(100% - 30px);
+    right: calc(100% - 66px);
+  }
+  75% {
+    top: calc(100% - 30px);
+    right: 11%;
+  }
+}
+
+@keyframes breathe {
+	0%,
+	100% {
+		transform: scale(1);
+	}
+	50% {
+		transform: scale(0.95);
+	}
+}
+
+.card {
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border-radius: 9px;
+  border: solid 1px #202222;
+  background-size: 20px 20px;
+  background: radial-gradient(circle 280px at 0% 0%, rgba(73, 68, 59, 0.5), rgba(0, 6, 19, 0.5));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex-direction: column;
+  color: #e7cab2;
+}
+.ray {
+  width: 220px;
+  height: 65px;
+  border-radius: 100px;
+  position: absolute;
+  background-color: linear-gradient(30deg, #241000 4%, #ffeb7a, #241000); 
+  opacity: 0.4;
+  box-shadow: 0 0 50px #fff;
+  filter: blur(10px);
+  transform-origin: 50%;
+  top: 0%;
+  left: 55;
+  transform: rotate(84deg);
+}
+
+.card .text {
+  font-family: 'Quicksand', serif;
+  font-weight: bolder;
+  font-size: 4rem;
+  background: linear-gradient(45deg, #241000 4%, #ffeb7a, #241000);
+  background-clip: text;
+  color: transparent;
+  animation: breathe 8s ease-in-out infinite;
+}
+
+.line {
+  width: 100%;
+  height: 1px;
+  position: absolute;
+  background-color: #2c2c2c;
+}
+.topl {
+  top: 10%;
+  background: linear-gradient(90deg, #888888 30%, #1d1f1f 70%);
+}
+.bottoml {
+  bottom: 10%;
+}
+.leftl {
+  left: 10%;
+  width: 1px;
+  height: 100%;
+  background: linear-gradient(180deg, #747474 30%, #222424 70%);
+}
+.rightl {
+  right: 10%;
+  width: 1px;
+  height: 100%;
+}
+
+
 	.scroll-container {
 		height: 100vh;
 		overflow: hidden;
@@ -448,7 +587,8 @@
 		border-radius: 0;
 		box-shadow: none;
 		filter: drop-shadow(0 0 30px rgba(255, 215, 0, 0.3));
-		filter: blur(6px);
+		filter: blur(0px);
+		align-items: left;
 	}
 
 	.book-glow {
@@ -893,39 +1033,50 @@
 	}
 
 	.hero-quote {
+		font-family: 'Quicksand_';
 		font-size: clamp(1.1rem, 1.5vw, 1.4rem);
 		color: rgba(255, 255, 255, 0.95);
 		text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
 		font-style: italic;
 		line-height: 1.6;
 		margin-bottom: 3rem;
-		max-width: 1800px;
-		margin-left: auto;
-		margin-right: auto;
+		max-width: 800px;
+		/*margin-left: auto;
+		margin-right: auto;*/
+	}
+
+	.hero-quote p {
+		color: white;
+		font-family: 'Ayres';
+		font-size: clamp(1.1rem, 5vw, 3rem);
 	}
 
 	.hero-quote cite {
 		display: block;
 		margin-top: 1rem;
-		font-size: 1.1rem;
+		font-size: clamp(1.1rem, 5vw, 2.5rem);
 		color: #ffd700;
 		font-style: normal;
 		font-weight: 600;
+		font-family: 'Ayres';
 	}
 
 	/* Navigation Cards - Base Styles */
 	.navigation-cards {
+		width: 100vw;
 		position: absolute;
 		bottom: 11%;
 		left: 50%;
 		transform: translateX(-50%);
 		display: flex;
-		gap: clamp(3rem, 5vw, 5rem);
+		justify-content: space-between;
+		gap: clamp(3rem, 15vw, 7rem);
+		padding: 0 8rem;
 		z-index: 15;
 	}
 
 	.nav-card {
-		background: rgba(150, 142, 132, 0.5);
+		background: rgba(59, 138, 241, 0.05);
 		backdrop-filter: blur(10px);
 		border-radius: 15px;
 		padding: 0;
@@ -936,7 +1087,7 @@
 		border: 1px solid rgba(255, 255, 255, 0.2);
 		box-shadow: 10px 10px 20px rgba(0, 0, 0, 0.2),
 					-10px -10px 20px rgba(13, 3, 41, 0.5),
-					inset 0 0 10px rgba(255, 255, 255, 0.5),
+					inset 0 0 10px rgba(155, 112, 63, 0.5),
 					inset 0 0 10px rgba(0, 0, 0, 0.2);
 		width: clamp(300px, 25vw, 400px);
 		min-height: clamp(250px, 20vw, 300px);
@@ -953,11 +1104,11 @@
 					-15px -15px 30px rgba(13, 3, 41, 0.6),
 					inset 0 0 15px rgba(255, 255, 255, 0.6),
 					inset 0 0 15px rgba(0, 0, 0, 0.3);
-		background: rgba(150, 142, 132, 0.7);
+		background: rgba(49, 49, 49, 0.7);
 	}
 
 	.nav-card:hover .card-action {
-		background: rgba(255, 215, 0, 0.2);
+		background: rgba(66, 66, 66, 0.2);
 	}
 
 	.card-action {
@@ -1132,12 +1283,12 @@
 		color: white;
 		width: 100vw;
 		height: 6vh;
-		background: rgba(150, 142, 132, 0.5);
+		background: var(--bg-ghost);
 		border-radius: 0 0 15px 15px;
-		box-shadow: 10px 10px 20px rgba(0, 0, 0, 0.2),
+		/*box-shadow: 10px 10px 20px rgba(0, 0, 0, 0.2),
 					-10px -10px 20px rgba(13, 3, 41, 0.5),
 					inset 0 0 10px rgba(255, 255, 255, 0.5),
-					inset 0 0 10px rgba(0, 0, 0, 0.2);
+					inset 0 0 10px rgba(0, 0, 0, 0.2);*/
 		backdrop-filter: blur(10px);
 		pointer-events: auto;
 		z-index: 50;
@@ -1178,6 +1329,7 @@
 		.hero-title {
 			padding: 0.8rem 1.2rem;
 			margin-bottom: 1.5rem;
+			
 		}
 		
 		.hero-title-book {
@@ -1194,13 +1346,16 @@
 		
 		.hero-quote {
 			font-size: 1.2rem;
-			margin-bottom: 2rem;
+			margin-top: 2rem;
+			max-width: 700px;
+			padding: 0 2rem 1rem 2rem;
 		}
 		
 		.navigation-cards {
-			gap: 4rem;
-			bottom: 12%;
+			gap: 5rem;
+			bottom: 5%;
 			left: 50%;
+			padding: 0 2rem 1rem 2rem;
 		}
 		
 		.nav-card {

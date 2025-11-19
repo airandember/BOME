@@ -1346,15 +1346,26 @@ func SetupPasswordHandler(db *database.DB) gin.HandlerFunc {
 			log.Printf("Failed to clear password setup token: %v", err)
 		}
 
-		// Update last login to complete the setup process
-		if err := db.UpdateLastLogin(user.ID); err != nil {
-			log.Printf("Failed to update last login: %v", err)
-		}
+	// Update last login to complete the setup process
+	if err := db.UpdateLastLogin(user.ID); err != nil {
+		log.Printf("Failed to update last login: %v", err)
+	}
 
-		log.Printf("✅ Password setup completed for: %s (ID: %d)", user.Email, user.ID)
+	// 🔗 AUTO-LINK: Attempt to link any existing Stripe customers with matching email
+	// (safety net in case linking didn't happen earlier in the flow)
+	linkingService := services.NewCustomerLinkingService(db)
+	linkResult, err := linkingService.LinkUserToCustomers(user.ID)
+	if err != nil {
+		log.Printf("⚠️  [SETUP-PASSWORD] Failed to auto-link Stripe customers for user %d: %v", user.ID, err)
+	} else if linkResult.CustomersLinked > 0 {
+		log.Printf("✅ [SETUP-PASSWORD] Auto-linked %d Stripe customer(s) during password setup for user %d (%s)", 
+			linkResult.CustomersLinked, user.ID, user.Email)
+	}
 
-		// Generate login tokens for auto-login
-		tokenPair, err := services.GenerateTokenPair(user.ID, user.Email, user.Role, true) // email is verified
+	log.Printf("✅ Password setup completed for: %s (ID: %d)", user.Email, user.ID)
+
+	// Generate login tokens for auto-login
+	tokenPair, err := services.GenerateTokenPair(user.ID, user.Email, user.Role, true) // email is verified
 		if err != nil {
 			log.Printf("Failed to generate tokens after password setup: %v", err)
 			c.JSON(http.StatusOK, gin.H{
