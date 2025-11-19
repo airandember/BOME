@@ -1,6 +1,15 @@
 /* Modern BOME Design System - 2024/2025 Trends */
 
 /* Font Declarations - Must be at root level */
+
+/* Ayres Font */
+@font-face {
+	font-family: 'Ayres';
+	src: url('/fonts/Ayres.otf') format('opentype');
+	font-weight: normal;
+	font-style: normal;
+}
+
 /* DayRoman Font */
 @font-face {
 	font-family: 'DayRoman';
@@ -13,6 +22,14 @@
 @font-face {
 	font-family: 'Rosemartin';
 	src: url('/fonts/Rosemartin.otf') format('opentype');
+	font-weight: normal;
+	font-style: normal;
+}
+
+/* Euphorigenic Font */
+@font-face {
+	font-family: 'Euphorigenic';
+	src: url('/fonts/Euphorigenic.otf') format('opentype');
 	font-weight: normal;
 	font-style: normal;
 }
@@ -318,7 +335,7 @@ a:hover {
 	justify-content: center;
 	gap: var(--space-sm);
 	padding: var(--space-md) var(--space-xl);
-	font-family: var(--font-sans);
+	font-family: 'Quicksand_';
 	font-size: var(--text-base);
 	font-weight: 600;
 	line-height: var(--leading-none);
@@ -332,6 +349,8 @@ a:hover {
 	white-space: nowrap;
 	user-select: none;
 }
+
+
 
 .btn::before {
 	content: '';
@@ -357,6 +376,7 @@ a:hover {
 .btn-primary:hover {
 	transform: translateY(-2px);
 	box-shadow: var(--shadow-lg), var(--shadow-glow);
+	color: var(--primary-gold-dark);
 }
 
 .btn-secondary {
@@ -391,7 +411,8 @@ a:hover {
 }
 
 .btn-ghost:hover {
-	background: var(--bg-secondary);
+	color: var(--primary-gold-dark);
+	background: var(--bg-primary);
 	transform: translateY(-1px);
 }
 
@@ -490,6 +511,13 @@ a:hover {
 .grid-2 { grid-template-columns: repeat(2, 1fr); }
 .grid-3 { grid-template-columns: repeat(3, 1fr); }
 .grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+/* High Resolution Displays (2K+) - 1440p and above */
+@media (min-height: 1440px) {
+	.brand-text {
+		font-size: clamp(6rem, 25vw, 15rem);
+	}
+}
 
 /* Responsive Grid */
 @media (max-width: 1024px) {

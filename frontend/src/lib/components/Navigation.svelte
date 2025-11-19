@@ -328,18 +328,21 @@
 	.brand-text {
 		font-size: var(--text-xl);
 		color: var(--text-primary);
-		font-family: 'Steelfish_';
+		font-family: 'Euphorigenic';
+		letter-spacing: 0.2rem;
 	}
 
 	.nav-menu {
 		display: flex;
 		align-items: center;
-		gap: var(--space-2xl);
+		
 	}
 
 	.nav-link {
 		text-decoration: none;
 		color: var(--text-primary);
+		font-family: 'Quicksand_';
+		letter-spacing: 0.1rem;
 		font-size: 1rem;
 		font-weight: 500;
 		transition: all var(--transition-normal);

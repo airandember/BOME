@@ -1047,15 +1047,18 @@
 
 	.hero-quote p {
 		color: white;
+		font-family: 'Ayres';
+		font-size: clamp(1.1rem, 5vw, 3rem);
 	}
 
 	.hero-quote cite {
 		display: block;
 		margin-top: 1rem;
-		font-size: 1.1rem;
+		font-size: clamp(1.1rem, 5vw, 2.5rem);
 		color: #ffd700;
 		font-style: normal;
 		font-weight: 600;
+		font-family: 'Ayres';
 	}
 
 	/* Navigation Cards - Base Styles */

@@ -162,7 +162,7 @@ func SetupAuthenticatedStripeRoutes(v1 *gin.RouterGroup, db *database.DB, stripe
 			})
 		})
 
-		// Verify checkout session status
+		// Verify checkout session status and grant immediate access
 		authenticatedStripe.GET("/session/:session_id", func(c *gin.Context) {
 			sessionID := c.Param("session_id")
 			if sessionID == "" {
@@ -171,15 +171,23 @@ func SetupAuthenticatedStripeRoutes(v1 *gin.RouterGroup, db *database.DB, stripe
 			}
 
 			// Get user from context for security
-			userID, exists := c.Get("user_id")
+			userIDInterface, exists := c.Get("user_id")
 			if !exists {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
 				return
 			}
 
-			log.Printf("🔍 [SESSION-VERIFY] User %v verifying session: %s", userID, sessionID)
+			userID, ok := userIDInterface.(int)
+			if !ok {
+				log.Printf("❌ [SESSION-VERIFY] Invalid user_id type: %T", userIDInterface)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user context"})
+				return
+			}
 
-			sessionData, err := stripePublicService.VerifyCheckoutSession(sessionID)
+			log.Printf("🔍 [SESSION-VERIFY] User %d verifying session: %s", userID, sessionID)
+
+			// Use new VerifyAndGrantAccess method for immediate access
+			sessionData, err := stripePublicService.VerifyAndGrantAccess(sessionID, userID)
 			if err != nil {
 				log.Printf("❌ [SESSION-VERIFY] Failed to verify session: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

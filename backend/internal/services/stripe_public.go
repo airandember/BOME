@@ -381,6 +381,74 @@ func (s *StripePublicService) VerifyCheckoutSession(sessionID string) (map[strin
 	return result, nil
 }
 
+// VerifyAndGrantAccess verifies a checkout session and grants immediate video access
+// This provides instant access upon payment success, with webhooks as backup confirmation
+func (s *StripePublicService) VerifyAndGrantAccess(sessionID string, userID int) (map[string]interface{}, error) {
+	// 1. Verify session with Stripe
+	sessionData, err := s.VerifyCheckoutSession(sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Check payment status
+	paymentStatus, _ := sessionData["payment_status"].(string)
+	status, _ := sessionData["status"].(string)
+
+	// Only proceed if payment is complete
+	if paymentStatus != "paid" && status != "complete" {
+		log.Printf("ℹ️  [SESSION-GRANT] Session %s not paid yet (status: %s, payment: %s)", sessionID, status, paymentStatus)
+		return sessionData, nil
+	}
+
+	log.Printf("✅ [SESSION-GRANT] Session %s is paid - processing immediate access grant", sessionID)
+
+	// 3. Extract customer and subscription IDs
+	customerID, hasCustomer := sessionData["customer_id"].(string)
+	subscriptionID, hasSub := sessionData["subscription_id"].(string)
+
+	if !hasCustomer {
+		log.Printf("⚠️  [SESSION-GRANT] No customer ID in session %s", sessionID)
+		return sessionData, nil
+	}
+
+	log.Printf("🔍 [SESSION-GRANT] Customer: %s, Subscription: %s", customerID, subscriptionID)
+
+	// 4. Try to link customer to user (if not already linked)
+	linkingService := NewCustomerLinkingService(s.db)
+	linkedUser, err := linkingService.GetUserByStripeCustomerID(customerID)
+
+	if err != nil {
+		// Customer not linked yet - link it now
+		log.Printf("🔗 [SESSION-GRANT] Customer %s not linked, linking to user %d", customerID, userID)
+		_, linkErr := linkingService.LinkUserToCustomers(userID)
+		if linkErr != nil {
+			log.Printf("⚠️  [SESSION-GRANT] Failed to link customer: %v", linkErr)
+		} else {
+			log.Printf("✅ [SESSION-GRANT] Customer %s linked to user %d", customerID, userID)
+		}
+	} else if linkedUser.ID != userID {
+		log.Printf("⚠️  [SESSION-GRANT] Customer %s already linked to different user %d (session user: %d)", 
+			customerID, linkedUser.ID, userID)
+		// Continue anyway - the user viewing the session might be the correct one
+	}
+
+	// 5. Grant video access if subscription exists
+	if hasSub {
+		subscriptionManager := NewSubscriptionManagerService(s.db, linkingService)
+		grantErr := subscriptionManager.GrantVideoAccess(userID, fmt.Sprintf("session_verification:%s", sessionID))
+		if grantErr != nil {
+			log.Printf("⚠️  [SESSION-GRANT] Failed to grant access to user %d: %v", userID, grantErr)
+		} else {
+			log.Printf("🎉 [SESSION-GRANT] Granted instant video access to user %d via session verification!", userID)
+			sessionData["video_access_granted"] = true
+		}
+	} else {
+		log.Printf("ℹ️  [SESSION-GRANT] No subscription in session %s - skipping access grant", sessionID)
+	}
+
+	return sessionData, nil
+}
+
 // RefreshSettings reloads the public settings from database
 func (s *StripePublicService) RefreshSettings() error {
 	return s.loadPublicSettings()

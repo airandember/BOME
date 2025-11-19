@@ -150,6 +150,11 @@ func (s *CustomerLinkingService) LinkUserToCustomers(userID int) (*LinkResult, e
 		}
 	}
 
+	// Check if any of the linked customers have active subscriptions and grant video access if needed
+	if result.CustomersLinked > 0 {
+		s.checkAndGrantVideoAccessAfterLinking(userID, email)
+	}
+
 	// Only log if there were errors or multiple customers linked (unusual cases)
 	if result.Error != "" {
 		log.Printf("❌ Error linking customers for user %d (%s): %s",
@@ -503,4 +508,64 @@ func (s *CustomerLinkingService) GetUserLinkedCustomers(userID int) ([]string, e
 	}
 
 	return customerIDs, nil
+}
+
+// checkAndGrantVideoAccessAfterLinking checks if a newly linked user has active subscriptions
+// and grants video access if they do (retroactive access grant)
+func (s *CustomerLinkingService) checkAndGrantVideoAccessAfterLinking(userID int, email string) {
+	// Check if user already has video access
+	var hasAccess bool
+	err := s.db.QueryRow(`
+		SELECT COALESCE(has_video_access, false) 
+		FROM users 
+		WHERE id = $1
+	`, userID).Scan(&hasAccess)
+	
+	if err != nil {
+		log.Printf("⚠️  [Customer Linking] Failed to check video access for user %d: %v", userID, err)
+		return
+	}
+
+	// If user already has access, no need to check further
+	if hasAccess {
+		return
+	}
+
+	// Check if any of their linked customers have active subscriptions
+	query := `
+		SELECT EXISTS(
+			SELECT 1 
+			FROM user_stripe_customers_v2 usc
+			JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
+			JOIN stripe_subscriptions_v2 ss ON ss.stripe_customer_id = sc.id
+			WHERE usc.user_id = $1
+			AND ss.status IN ('active', 'trialing')
+			AND (ss.cancel_at_period_end = false OR ss.cancel_at_period_end IS NULL)
+		)
+	`
+
+	var hasActiveSubscription bool
+	err = s.db.QueryRow(query, userID).Scan(&hasActiveSubscription)
+	if err != nil {
+		log.Printf("⚠️  [Customer Linking] Failed to check active subscriptions for user %d: %v", userID, err)
+		return
+	}
+
+	// If they have an active subscription, grant video access
+	if hasActiveSubscription {
+		_, err = s.db.Exec(`
+			UPDATE users 
+			SET has_video_access = true, 
+			    video_access_granted_at = NOW(),
+			    video_access_source = 'retroactive_linking'
+			WHERE id = $1
+		`, userID)
+
+		if err != nil {
+			log.Printf("❌ [Customer Linking] Failed to grant video access to user %d: %v", userID, err)
+			return
+		}
+
+		log.Printf("✅ [Customer Linking] Granted retroactive video access to user %d (%s) - active subscription found after linking", userID, email)
+	}
 }
