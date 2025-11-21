@@ -130,12 +130,12 @@ func SetupRoutes(
 		SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService, subscriptionPlanStripeService, subscriptionOffersStripeService, bunnyService)
 		SetupMasterVideoRoutes(admin, db, bunnyService)
 
-		// Setup unified subscriber elastic service routes (v1)
-		SetupSubscriberElasticRoutes(admin, db)
+	// Setup unified subscriber elastic service routes (v1) - DEPRECATED
+	// SetupSubscriberElasticRoutes(admin, db) // ⚠️ DISABLED: V1 deprecated, use V2 below
 
-		// Setup unified subscriber elastic service routes (v2 - parallel)
-		SetupSubscriberElasticRoutesV2(admin, db)
-		fmt.Printf("✅ Subscriber Elastic V2 routes setup complete\n")
+	// Setup unified subscriber elastic service routes (v2 - PRIMARY)
+	SetupSubscriberElasticRoutesV2(admin, db)
+	fmt.Printf("✅ Subscriber Elastic V2 routes setup complete (V1 deprecated)\n")
 
 		// Setup comparison routes (v1 vs v2)
 		SetupSubscriberComparisonRoutes(admin, db)

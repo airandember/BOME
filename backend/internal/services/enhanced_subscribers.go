@@ -152,11 +152,11 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 				END
 			) as plan_name,
 			
-			CASE 
-				WHEN stripe_prod.legacy_product = true THEN 'Legacy'
-				WHEN stripe_prod.legacy_product = false THEN 'Current'
-				ELSE 'Unknown'
-			END as plan_legacy_status,
+		CASE 
+			WHEN stripe_prod.is_legacy = true THEN 'Legacy'
+			WHEN stripe_prod.is_legacy = false THEN 'Current'
+			ELSE 'Unknown'
+		END as plan_legacy_status,
 			
 			CASE 
 				WHEN LOWER(COALESCE(sp.name, ss.product_name, '')) LIKE '%premium%' 
@@ -228,19 +228,17 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 				ELSE false
 			END as is_expiring_soon,
 			
-			EXTRACT(DAY FROM (NOW() - u.created_at))::int as account_age_days
-			
-		FROM users u
-		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id AND sp.is_active = true AND sp.deleted_at IS NULL
-		LEFT JOIN stripe_customers sc ON (
-			u.stripe_customer_id = sc.stripe_id OR 
-			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
-		)
-		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing') AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
-		LEFT JOIN stripe_prices sp_price ON ss.stripe_price_id = sp_price.stripe_id
-		LEFT JOIN stripe_products stripe_prod ON sp_price.product_id = stripe_prod.id
-		WHERE u.is_active = true
-	`
+		EXTRACT(DAY FROM (NOW() - u.created_at))::int as account_age_days
+		
+	FROM users u
+	LEFT JOIN subscription_plans sp ON u.sub_id = sp.id AND sp.is_active = true AND sp.deleted_at IS NULL
+	LEFT JOIN user_stripe_customers_v2 usc ON usc.user_id = u.id
+	LEFT JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
+	LEFT JOIN stripe_subscriptions_v2 ss ON ss.customer_id = sc.id AND ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()
+	LEFT JOIN stripe_prices_v2 sp_price ON sp_price.id = ss.price_id
+	LEFT JOIN stripe_products_v2 stripe_prod ON stripe_prod.id = sp_price.product_id
+	WHERE u.is_active = true
+`
 
 	// Apply filters
 	args := []interface{}{}
@@ -328,13 +326,11 @@ func (s *EnhancedSubscriberService) GetEnhancedSubscribers(page, limit int, filt
 		SELECT COUNT(DISTINCT u.id)
 		FROM users u
 		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id AND sp.is_active = true AND sp.deleted_at IS NULL
-		LEFT JOIN stripe_customers sc ON (
-			u.stripe_customer_id = sc.stripe_id OR 
-			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
-		)
-		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing') AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
-		LEFT JOIN stripe_prices sp_price ON ss.stripe_price_id = sp_price.stripe_id
-		LEFT JOIN stripe_products stripe_prod ON sp_price.product_id = stripe_prod.id
+		LEFT JOIN user_stripe_customers_v2 usc ON usc.user_id = u.id
+		LEFT JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
+		LEFT JOIN stripe_subscriptions_v2 ss ON ss.customer_id = sc.id AND ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()
+		LEFT JOIN stripe_prices_v2 sp_price ON sp_price.id = ss.price_id
+		LEFT JOIN stripe_products_v2 stripe_prod ON stripe_prod.id = sp_price.product_id
 		WHERE u.is_active = true
 	`
 
@@ -575,21 +571,19 @@ func (s *EnhancedSubscriberService) GetKPIs() (*SubscriberKPIs, error) {
 				WHEN LOWER(COALESCE(sp.name, ss.product_name, '')) LIKE '%basic%' 
 				THEN u.id 
 			END) as basic_users,
-			COUNT(DISTINCT CASE 
-				WHEN u.manual_video_access = true 
-				THEN u.id 
-			END) as manual_access_users
-		FROM users u
-		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id AND sp.is_active = true AND sp.deleted_at IS NULL
-		LEFT JOIN stripe_customers sc ON (
-			u.stripe_customer_id = sc.stripe_id OR 
-			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
-		)
-		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id AND ss.status IN ('active', 'trialing') AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
-		LEFT JOIN stripe_prices sp_price ON ss.stripe_price_id = sp_price.stripe_id
-		LEFT JOIN stripe_products stripe_prod ON sp_price.product_id = stripe_prod.id
-		WHERE u.is_active = true
-	`
+		COUNT(DISTINCT CASE 
+			WHEN u.manual_video_access = true 
+			THEN u.id 
+		END) as manual_access_users
+	FROM users u
+	LEFT JOIN subscription_plans sp ON u.sub_id = sp.id AND sp.is_active = true AND sp.deleted_at IS NULL
+	LEFT JOIN user_stripe_customers_v2 usc ON usc.user_id = u.id
+	LEFT JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
+	LEFT JOIN stripe_subscriptions_v2 ss ON ss.customer_id = sc.id AND ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW()
+	LEFT JOIN stripe_prices_v2 sp_price ON sp_price.id = ss.price_id
+	LEFT JOIN stripe_products_v2 stripe_prod ON stripe_prod.id = sp_price.product_id
+	WHERE u.is_active = true
+`
 
 	var kpis SubscriberKPIs
 	err := s.db.QueryRow(query).Scan(

@@ -3163,15 +3163,13 @@ func FixStripeMetadataHandler(db *database.DB) gin.HandlerFunc {
 		dryRun := c.Query("dry_run") == "true"
 
 		if dryRun {
-			// Count how many records would be fixed
-			query := `
-				SELECT COUNT(*)
-				FROM stripe_customers sc
-				INNER JOIN users u ON (
-					u.stripe_customer_id = sc.stripe_id OR 
-					sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
-				)
-				WHERE (
+		// Count how many records would be fixed (V2)
+		query := `
+			SELECT COUNT(*)
+			FROM user_stripe_customers_v2 usc
+			INNER JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
+			INNER JOIN users u ON u.id = usc.user_id
+			WHERE (
 					sc.metadata->>'local_customer_id' != u.id::text OR
 					sc.metadata->>'local_customer_id' IS NULL
 				)
@@ -3270,16 +3268,14 @@ func cleanNameForStripeImport(name string) string {
 
 // linkSubscriptionsForNewUsers attempts to link active Stripe subscriptions to newly created users
 func linkSubscriptionsForNewUsers(db *database.DB) error {
-	// This is the same logic as LinkSubscriptionsToUsers but simplified for the admin context
+	// This is the same logic as LinkSubscriptionsToUsers but simplified for the admin context (V2)
 	query := `
 		UPDATE users 
 		SET sub_id = ss.stripe_id, has_subbed = true, updated_at = NOW()
-		FROM stripe_customers sc
-		INNER JOIN stripe_subscriptions ss ON sc.id = ss.customer_id
-		WHERE (
-			users.stripe_customer_id = sc.stripe_id OR 
-			sc.stripe_id = ANY(COALESCE(users.stripe_customer_ids, '{}'))
-		)
+		FROM user_stripe_customers_v2 usc
+		INNER JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
+		INNER JOIN stripe_subscriptions_v2 ss ON ss.customer_id = sc.id
+		WHERE users.id = usc.user_id
 		AND ss.status IN ('active', 'trialing')
 		AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
 		AND (users.sub_id IS NULL OR users.sub_id != ss.stripe_id)

@@ -11,8 +11,10 @@ import (
 
 // SetupSubscriberElasticRoutes sets up routes for the unified subscriber elastic service
 // 🔒 SECURITY: All routes are ADMIN-ONLY - protected by AdminRequired() middleware
+// ⚠️ LEGACY V1: Using subscriber_elastic_service.go (V1 tables - deprecated)
+// TODO: Migrate to V2 or use subscriber_elastic_routes_v2.go
 func SetupSubscriberElasticRoutes(router *gin.RouterGroup, db *database.DB) {
-	// Create service and handler
+	// Create service and handler - V1 (kept for backward compat)
 	elasticService := services.NewSubscriberElasticService(db)
 	elasticHandler := handlers.NewSubscriberElasticHandler(elasticService)
 

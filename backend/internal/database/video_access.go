@@ -32,51 +32,49 @@ func (db *DB) HasVideoAccess(userID int) (bool, *VideoAccessInfo, error) {
 		return true, accessInfo, nil
 	}
 
-	// Check Stripe subscription with video_approved products
+	// Check Stripe subscription with video_approved products (V2 tables)
 	var hasStripeAccess bool
 	stripeQuery := `
 		SELECT EXISTS(
-			SELECT 1 FROM users u
-			INNER JOIN stripe_customers sc ON (
-				u.stripe_customer_id = sc.stripe_id OR 
-				sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
-			)
-			INNER JOIN stripe_subscriptions ss ON sc.id = ss.customer_id
-			INNER JOIN stripe_products sp ON ss.stripe_product_id = sp.stripe_id
-			WHERE u.id = $1
+			SELECT 1 
+			FROM user_stripe_customers_v2 usc
+			INNER JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
+			INNER JOIN stripe_subscriptions_v2 ss ON ss.customer_id = sc.id
+			INNER JOIN stripe_prices_v2 sp ON sp.id = ss.price_id
+			INNER JOIN stripe_products_v2 sprod ON sprod.id = sp.product_id
+			WHERE usc.user_id = $1
 			AND ss.status IN ('active', 'trialing')
-			AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
-			AND sp.video_approved = true
+			AND ss.current_period_end > NOW()
+			AND sprod.video_approved = true
+			AND sprod.active = true
 		)
 	`
-	log.Printf("🔍 [HasVideoAccess] Checking Stripe access for user %d", userID)
+	log.Printf("🔍 [HasVideoAccess] Checking Stripe V2 access for user %d", userID)
 	err = db.QueryRow(stripeQuery, userID).Scan(&hasStripeAccess)
 	if err != nil {
-		log.Printf("❌ [HasVideoAccess] Stripe query error for user %d: %v", userID, err)
+		log.Printf("❌ [HasVideoAccess] Stripe V2 query error for user %d: %v", userID, err)
 		
 		// Fallback: Try simpler query without video_approved check
 		fallbackQuery := `
 			SELECT EXISTS(
-				SELECT 1 FROM users u
-				INNER JOIN stripe_customers sc ON (
-					u.stripe_customer_id = sc.stripe_id OR 
-					sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
-				)
-				INNER JOIN stripe_subscriptions ss ON sc.id = ss.customer_id
-				WHERE u.id = $1
+				SELECT 1 
+				FROM user_stripe_customers_v2 usc
+				INNER JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
+				INNER JOIN stripe_subscriptions_v2 ss ON ss.customer_id = sc.id
+				WHERE usc.user_id = $1
 				AND ss.status IN ('active', 'trialing')
-				AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
+				AND ss.current_period_end > NOW()
 			)
 		`
-		log.Printf("🔄 [HasVideoAccess] Trying fallback query for user %d", userID)
+		log.Printf("🔄 [HasVideoAccess] Trying V2 fallback query for user %d", userID)
 		err = db.QueryRow(fallbackQuery, userID).Scan(&hasStripeAccess)
 		if err != nil {
-			log.Printf("❌ [HasVideoAccess] Fallback query also failed for user %d: %v", userID, err)
+			log.Printf("❌ [HasVideoAccess] V2 fallback query also failed for user %d: %v", userID, err)
 			return false, accessInfo, fmt.Errorf("failed to check Stripe video access: %w", err)
 		}
-		log.Printf("✅ [HasVideoAccess] Fallback query succeeded for user %d: %v", userID, hasStripeAccess)
+		log.Printf("✅ [HasVideoAccess] V2 fallback query succeeded for user %d: %v", userID, hasStripeAccess)
 	} else {
-		log.Printf("✅ [HasVideoAccess] User %d Stripe access result: %v", userID, hasStripeAccess)
+		log.Printf("✅ [HasVideoAccess] User %d Stripe V2 access result: %v", userID, hasStripeAccess)
 	}
 
 	accessInfo.HasStripeAccess = hasStripeAccess
