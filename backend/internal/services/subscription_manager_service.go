@@ -152,7 +152,7 @@ func (s *SubscriptionManagerService) GrantVideoAccess(userID int, reason string)
 	var hasAccess bool
 	var currentSource string
 	err := s.db.QueryRow(`
-		SELECT COALESCE(has_video_access, false), COALESCE(video_access_source, '')
+		SELECT COALESCE(manual_video_access, false), COALESCE(video_access_source, '')
 		FROM users 
 		WHERE id = $1
 	`, userID).Scan(&hasAccess, &currentSource)
@@ -196,10 +196,9 @@ func (s *SubscriptionManagerService) GrantVideoAccess(userID int, reason string)
 	
 	query := `
 		UPDATE users 
-		SET has_video_access = true,
+		SET manual_video_access = true,
 		    video_access_granted_at = NOW(),
 		    video_access_source = $1,
-		    manual_video_access = true,
 		    updated_at = NOW()
 		WHERE id = $2
 	`
