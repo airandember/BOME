@@ -75,17 +75,34 @@ type SystemMetrics struct {
 
 // WebhookEvent represents webhook delivery events
 type WebhookEvent struct {
-	ID           int       `json:"id"`
-	EventType    string    `json:"event_type"`
-	Subsite      string    `json:"subsite"`
-	Endpoint     string    `json:"endpoint"`
-	Status       string    `json:"status"`        // success, failed, pending
-	ResponseTime int       `json:"response_time"` // milliseconds
-	PayloadSize  int       `json:"payload_size"`  // bytes
-	StatusCode   int       `json:"status_code"`
-	ErrorMessage string    `json:"error_message"`
-	RetryCount   int       `json:"retry_count"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID                 int       `json:"id"`
+	EventType          string    `json:"event_type"`
+	Subsite            string    `json:"subsite"`
+	Endpoint           string    `json:"endpoint"`
+	Status             string    `json:"status"`              // success, failed, pending
+	ResponseTime       int       `json:"response_time"`       // milliseconds
+	PayloadSize        int       `json:"payload_size"`        // bytes
+	StatusCode         int       `json:"status_code"`
+	ErrorMessage       string    `json:"error_message"`
+	RetryCount         int       `json:"retry_count"`
+	CreatedAt          time.Time `json:"created_at"`
+	// Enhanced fields
+	StripeEventID      string    `json:"stripe_event_id"`
+	StripeObjectID     string    `json:"stripe_object_id"`
+	StripeObjectType   string    `json:"stripe_object_type"`
+	UserID             *int      `json:"user_id"`
+	UserEmail          string    `json:"user_email"`
+	CustomerID         string    `json:"customer_id"`
+	SubscriptionID     string    `json:"subscription_id"`
+	InvoiceID          string    `json:"invoice_id"`
+	AmountCents        *int      `json:"amount_cents"`
+	Currency           string    `json:"currency"`
+	SubscriptionStatus string    `json:"subscription_status"`
+	PaymentStatus      string    `json:"payment_status"`
+	EventData          string    `json:"event_data"` // JSON string
+	APIVersion         string    `json:"api_version"`
+	Livemode           *bool     `json:"livemode"`
+	Description        string    `json:"description"`
 }
 
 // Alert represents system alerts
@@ -539,7 +556,23 @@ func (db *DB) GetWebhookEventsWithPagination(page, limit int, eventType, status 
 	// Get paginated events (newest first)
 	eventsQuery := `
 		SELECT id, event_type, subsite, endpoint, status, response_time, 
-		       payload_size, status_code, error_message, retry_count, created_at
+		       payload_size, status_code, error_message, retry_count, created_at,
+		       COALESCE(stripe_event_id, '') as stripe_event_id,
+		       COALESCE(stripe_object_id, '') as stripe_object_id,
+		       COALESCE(stripe_object_type, '') as stripe_object_type,
+		       user_id,
+		       COALESCE(user_email, '') as user_email,
+		       COALESCE(customer_id, '') as customer_id,
+		       COALESCE(subscription_id, '') as subscription_id,
+		       COALESCE(invoice_id, '') as invoice_id,
+		       amount_cents,
+		       COALESCE(currency, '') as currency,
+		       COALESCE(subscription_status, '') as subscription_status,
+		       COALESCE(payment_status, '') as payment_status,
+		       COALESCE(event_data::text, '') as event_data,
+		       COALESCE(api_version, '') as api_version,
+		       livemode,
+		       COALESCE(description, '') as description
 		FROM webhook_events 
 		` + whereClause + `
 		ORDER BY created_at DESC 
@@ -557,6 +590,9 @@ func (db *DB) GetWebhookEventsWithPagination(page, limit int, eventType, status 
 	for rows.Next() {
 		event := &WebhookEvent{}
 		var errorMessage sql.NullString
+		var userID sql.NullInt32
+		var amountCents sql.NullInt32
+		var livemode sql.NullBool
 
 		err := rows.Scan(
 			&event.ID,
@@ -570,14 +606,42 @@ func (db *DB) GetWebhookEventsWithPagination(page, limit int, eventType, status 
 			&errorMessage,
 			&event.RetryCount,
 			&event.CreatedAt,
+			&event.StripeEventID,
+			&event.StripeObjectID,
+			&event.StripeObjectType,
+			&userID,
+			&event.UserEmail,
+			&event.CustomerID,
+			&event.SubscriptionID,
+			&event.InvoiceID,
+			&amountCents,
+			&event.Currency,
+			&event.SubscriptionStatus,
+			&event.PaymentStatus,
+			&event.EventData,
+			&event.APIVersion,
+			&livemode,
+			&event.Description,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan webhook event: %w", err)
 		}
 
-		// Handle nullable error message
+		// Handle nullable fields
 		if errorMessage.Valid {
 			event.ErrorMessage = errorMessage.String
+		}
+		if userID.Valid {
+			uid := int(userID.Int32)
+			event.UserID = &uid
+		}
+		if amountCents.Valid {
+			amt := int(amountCents.Int32)
+			event.AmountCents = &amt
+		}
+		if livemode.Valid {
+			live := livemode.Bool
+			event.Livemode = &live
 		}
 
 		events = append(events, event)
