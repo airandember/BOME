@@ -443,35 +443,41 @@
 						
 						<div class="plans-grid">
 							{#each availablePlans.filter(plan => plan.sub_type === 'stnd') as plan}
-								<div class="plan-card">
-									<div class="plan-header">
-										<h3>{plan.name}</h3>
-									</div>
-									<div class="plan-price">
-										{formatPrice(plan.price, plan.currency)}
-										<span class="interval">/{plan.interval}</span>
-									</div>
+								<!-- Animated card wrapper -->
+								<div class="outerNew plan-outer">
 									{#if plan.popular}
 										<div class="popular-badge">Most Popular</div>
 									{/if}
-									
-									<br>
-									<div class="plan-description">
-										<p>{plan.description}</p>
-									</div>
+									<div class="cardNew plan-card">
+										<div class="rayNew"></div>
+										
+										<!-- Card content -->
+										<div class="plan-content">
+											<div class="plan-header">
+												<h3>{plan.name}</h3>
+											</div>
+											<div class="plan-price">
+												{formatPrice(plan.price, plan.currency)}
+												<span class="interval">/{plan.interval}</span>
+											</div>
+											
+											<br>
+											<div class="plan-description">
+												<p>{plan.description}</p>
+											</div>
 
-									<div class="plan-features">
-										<ul>
-											{#each plan.features.slice(0, 5) as feature}
-												<li>
-													<svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-														<polyline points="20,6 9,17 4,12"></polyline>
-													</svg>
-													{feature}
-												</li>
-											{/each}
-										</ul>
-									</div>
+											<div class="plan-features">
+												<ul>
+													{#each plan.features.slice(0, 5) as feature}
+														<li>
+															<svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+																<polyline points="20,6 9,17 4,12"></polyline>
+															</svg>
+															{feature}
+														</li>
+													{/each}
+												</ul>
+											</div>
 
 									{#if getPlanOffers(plan.id).length > 0}
 										<div class="offers-section">
@@ -491,16 +497,18 @@
 										</div>
 									{/if}
 
-									<button 
-										class="btn btn-primary btn-full btn-bottom" 
-										on:click={() => handleSelectPlan(plan)}
-									>
-										{#if !isAuthenticated}
-											Sign In to Subscribe
-										{:else}
-											Subscribe to {plan.name}
-										{/if}
-									</button>
+											<button 
+												class="btn btn-primary btn-full btn-bottom" 
+												on:click={() => handleSelectPlan(plan)}
+											>
+												{#if !isAuthenticated}
+													Sign In to Subscribe
+												{:else}
+													Subscribe to {plan.name}
+												{/if}
+											</button>
+										</div>
+									</div>
 								</div>
 							{/each}
 						</div>
@@ -794,7 +802,7 @@
 	}
 
 	.plans-section {
-		background: var(--bg-tertiary);
+		background: var(--bg-primary);
 		border-radius: 20px;
 		padding: 2rem;
 		box-shadow: var(--neumorphic-shadow);
@@ -822,27 +830,53 @@
 		align-items: center;
 	}
 
+	/* Animated card wrapper for plan cards */
+	.plan-outer {
+		max-width: 350px;
+		min-height: 500px;
+		height: auto;
+		position: relative;
+	}
+
+	.plan-outer::before {
+		content: '';
+		position: absolute;
+		inset: -2px;
+		border-radius: 22px;
+		background: radial-gradient(circle at center, rgba(212, 175, 55, 0.3), transparent 70%);
+		animation: breathe 8s ease-in-out infinite;
+		z-index: -1;
+		pointer-events: none;
+	}
+
 	.plan-card {
-		border-radius: 15px;
+		border-radius: 20px;
 		padding: 2rem;
 		border: 1px solid var(--border-color);
 		transition: all 0.3s ease;
 		position: relative;
 		overflow: hidden;
-		max-width: 350px;
-		min-height: 450px;
+		width: 100%;
+		min-height: 480px;
+		height: 100%;
 		background: linear-gradient(145deg, var(--primary-bom), var(--primary-bom-dark));
-		box-shadow:  7px 7px 14px #bebebe,
-             -7px -7px 14px #ffffff;
+		box-shadow:  7px 7px 14px var(--bg-dark);
 	}
 
-	.plan-card:hover {
+	.plan-outer:hover {
 		transform: translateY(-4px);
+	}
+
+	.plan-outer:hover .plan-card {
 		box-shadow: var(--neumorphic-shadow-hover);
 	}
 
-	.plan-card.promotional {
-		border: 2px solid var(--primary-color);
+	/* Plan content wrapper to counter-animate */
+	.plan-content {
+		position: relative;
+		z-index: 2;
+		width: 100%;
+		height: 100%;
 	}
 
 	.plan-header {
@@ -879,17 +913,20 @@
 	.popular-badge,
 	.promo-badge {
 		position: absolute;
-		top: -0.25rem;
+		top: 0;
 		right: 1rem;
 		color: white;
+		background: linear-gradient(135deg, var(--primary-gold), var(--primary-gold-dark));
 		padding: 0.5rem 1rem;
 		border-radius: 0 0 10px 10px;
 		font-size: 0.875rem;
 		font-weight: 600;
+		z-index: 10;
+		box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
 	}
 
 	.promo-badge {
-		background: #ba8927;
+		background: linear-gradient(135deg, #ba8927, #8b6914);
 	}
 
 	.plan-description {
