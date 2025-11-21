@@ -65,9 +65,8 @@ func recordWebhookFailure() {
 	webhookActivity.failureCount++
 }
 
-// logWebhookEventToDB logs webhook events to the webhook_events database table
-func logWebhookEventToDB(syncService *services.StripeSyncService, eventType, endpoint, status string, responseTime int, payloadSize int, statusCode int, errorMessage string) {
-	// Get the database connection from the sync service
+// logWebhookEventToDBSimple logs webhook events with minimal data (for thin events)
+func logWebhookEventToDBSimple(syncService *services.StripeSyncService, eventType, endpoint, status string, responseTime int, payloadSize int, statusCode int, errorMessage string) {
 	db := syncService.GetDB()
 	if db == nil {
 		log.Printf("❌ No database connection available for webhook logging")
@@ -98,6 +97,179 @@ func logWebhookEventToDB(syncService *services.StripeSyncService, eventType, end
 		log.Printf("❌ Failed to log webhook event to database: %v", err)
 	} else {
 		log.Printf("📝 Logged webhook event to database: %s (%s)", eventType, status)
+	}
+}
+
+// logWebhookEventToDB logs webhook events to the webhook_events database table with enhanced data
+func logWebhookEventToDB(syncService *services.StripeSyncService, event *stripe.Event, endpoint, status string, responseTime int, payloadSize int, statusCode int, errorMessage string) {
+	// Get the database connection from the sync service
+	db := syncService.GetDB()
+	if db == nil {
+		log.Printf("❌ No database connection available for webhook logging")
+		return
+	}
+
+	// Extract detailed data from the event
+	var (
+		stripeObjectID     string
+		stripeObjectType   string
+		userID             *int
+		userEmail          string
+		customerID         string
+		subscriptionID     string
+		invoiceID          string
+		amountCents        *int
+		currency           string
+		subscriptionStatus string
+		paymentStatus      string
+		description        string
+	)
+
+	// Parse event data based on type
+	switch event.Type {
+	case "customer.created", "customer.updated", "customer.deleted":
+		var customer stripe.Customer
+		if err := json.Unmarshal(event.Data.Raw, &customer); err == nil {
+			stripeObjectID = customer.ID
+			stripeObjectType = "customer"
+			customerID = customer.ID
+			userEmail = customer.Email
+			description = fmt.Sprintf("%s's customer account %s", customer.Email, strings.TrimPrefix(event.Type, "customer."))
+		}
+
+	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
+		var sub stripe.Subscription
+		if err := json.Unmarshal(event.Data.Raw, &sub); err == nil {
+			stripeObjectID = sub.ID
+			stripeObjectType = "subscription"
+			customerID = sub.Customer.ID
+			subscriptionID = sub.ID
+			subscriptionStatus = string(sub.Status)
+			
+			// Get customer email from metadata or lookup
+			if sub.Customer != nil {
+				userEmail = sub.Customer.Email
+			}
+			
+			description = fmt.Sprintf("%s's subscription %s (status: %s)", userEmail, strings.TrimPrefix(event.Type, "customer.subscription."), sub.Status)
+		}
+
+	case "invoice.payment_succeeded", "invoice.payment_failed":
+		var invoice stripe.Invoice
+		if err := json.Unmarshal(event.Data.Raw, &invoice); err == nil {
+			stripeObjectID = invoice.ID
+			stripeObjectType = "invoice"
+			invoiceID = invoice.ID
+			amountCents = new(int)
+			*amountCents = int(invoice.AmountPaid)
+			currency = string(invoice.Currency)
+			paymentStatus = string(invoice.Status)
+			
+			if invoice.Customer != nil {
+				customerID = invoice.Customer.ID
+				userEmail = invoice.Customer.Email
+			}
+			if invoice.Subscription != nil {
+				subscriptionID = invoice.Subscription.ID
+			}
+			
+			statusWord := "succeeded"
+			if event.Type == "invoice.payment_failed" {
+				statusWord = "failed"
+			}
+			description = fmt.Sprintf("%s's invoice payment %s (amount: $%.2f)", userEmail, statusWord, float64(*amountCents)/100.0)
+		}
+
+	case "product.created", "product.updated":
+		var product stripe.Product
+		if err := json.Unmarshal(event.Data.Raw, &product); err == nil {
+			stripeObjectID = product.ID
+			stripeObjectType = "product"
+			description = fmt.Sprintf("Product '%s' %s", product.Name, strings.TrimPrefix(event.Type, "product."))
+		}
+
+	case "price.created", "price.updated":
+		var price stripe.Price
+		if err := json.Unmarshal(event.Data.Raw, &price); err == nil {
+			stripeObjectID = price.ID
+			stripeObjectType = "price"
+			currency = string(price.Currency)
+			if price.UnitAmount > 0 {
+				amt := int(price.UnitAmount)
+				amountCents = &amt
+			}
+			description = fmt.Sprintf("Price %s (amount: $%.2f)", strings.TrimPrefix(event.Type, "price."), float64(price.UnitAmount)/100.0)
+		}
+	}
+
+	// Try to find the user ID from customer ID
+	if customerID != "" {
+		// Query to find user by customer ID
+		var foundUserID int
+		err := db.QueryRow(`
+			SELECT usc.user_id 
+			FROM user_stripe_customers_v2 usc
+			JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
+			WHERE sc.stripe_id = $1
+			LIMIT 1
+		`, customerID).Scan(&foundUserID)
+		if err == nil {
+			userID = &foundUserID
+		}
+	}
+
+	// If no email yet, try to get from user_id
+	if userEmail == "" && userID != nil {
+		db.QueryRow("SELECT email FROM users WHERE id = $1", *userID).Scan(&userEmail)
+	}
+
+	// Convert event data to JSON
+	eventDataJSON, _ := json.Marshal(event.Data.Raw)
+
+	query := `
+		INSERT INTO webhook_events (
+			event_type, subsite, endpoint, status, response_time, 
+			payload_size, status_code, error_message, retry_count,
+			stripe_event_id, stripe_object_id, stripe_object_type,
+			user_id, user_email, customer_id, subscription_id, invoice_id,
+			amount_cents, currency, subscription_status, payment_status,
+			event_data, api_version, livemode, description, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+	`
+
+	_, err := db.Exec(query,
+		event.Type,
+		"streaming",
+		endpoint,
+		status,
+		responseTime,
+		payloadSize,
+		statusCode,
+		errorMessage,
+		0, // retry_count
+		event.ID,
+		stripeObjectID,
+		stripeObjectType,
+		userID,
+		userEmail,
+		customerID,
+		subscriptionID,
+		invoiceID,
+		amountCents,
+		currency,
+		subscriptionStatus,
+		paymentStatus,
+		eventDataJSON,
+		event.APIVersion,
+		event.Livemode,
+		description,
+		time.Now(),
+	)
+
+	if err != nil {
+		log.Printf("❌ Failed to log webhook event to database: %v", err)
+	} else {
+		log.Printf("📝 Logged webhook event to database: %s (%s) for user: %s", event.Type, status, userEmail)
 	}
 }
 
@@ -190,13 +362,13 @@ func HandleStripeWebhook(c *gin.Context, stripeService *services.StripeService, 
 		if err != nil {
 			log.Printf("❌ Webhook: Failed to process v2 thin event %s: %v", eventType, err)
 			recordWebhookFailure()
-			logWebhookEventToDB(syncServiceV1, eventType, c.Request.RequestURI, "failed", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusInternalServerError, err.Error())
+			logWebhookEventToDBSimple(syncServiceV1, eventType, c.Request.RequestURI, "failed", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusInternalServerError, err.Error())
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process webhook"})
 			return
 		}
 
 		log.Printf("✅ Webhook: Successfully processed v2 thin event %s", eventType)
-		logWebhookEventToDB(syncServiceV1, eventType, c.Request.RequestURI, "success", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusOK, "")
+		logWebhookEventToDBSimple(syncServiceV1, eventType, c.Request.RequestURI, "success", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusOK, "")
 		c.JSON(http.StatusOK, gin.H{"received": true, "processed": true, "type": "v2_thin_event", "fetched_full_object": true})
 	} else {
 		// Handle v1 events with full parsing
@@ -216,13 +388,13 @@ func HandleStripeWebhook(c *gin.Context, stripeService *services.StripeService, 
 		if err != nil {
 			log.Printf("❌ Webhook: Failed to process v1 event %s: %v", event.Type, err)
 			recordWebhookFailure()
-			logWebhookEventToDB(syncServiceV1, event.Type, c.Request.RequestURI, "failed", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusInternalServerError, err.Error())
+			logWebhookEventToDB(syncServiceV1, event, c.Request.RequestURI, "failed", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusInternalServerError, err.Error())
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process webhook"})
 			return
 		}
 
 		log.Printf("✅ Webhook: Successfully processed v1 event %s (dual-write to v1 + v2)", event.Type)
-		logWebhookEventToDB(syncServiceV1, event.Type, c.Request.RequestURI, "success", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusOK, "")
+		logWebhookEventToDB(syncServiceV1, event, c.Request.RequestURI, "success", int(time.Since(startTime).Milliseconds()), len(payload), http.StatusOK, "")
 		c.JSON(http.StatusOK, gin.H{"received": true, "processed": true, "type": "v1_event", "dual_write": "v1+v2"})
 	}
 }
