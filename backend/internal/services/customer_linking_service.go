@@ -516,7 +516,7 @@ func (s *CustomerLinkingService) checkAndGrantVideoAccessAfterLinking(userID int
 	// Check if user already has video access
 	var hasAccess bool
 	err := s.db.QueryRow(`
-		SELECT COALESCE(has_video_access, false) 
+		SELECT COALESCE(manual_video_access, false) 
 		FROM users 
 		WHERE id = $1
 	`, userID).Scan(&hasAccess)
@@ -555,7 +555,7 @@ func (s *CustomerLinkingService) checkAndGrantVideoAccessAfterLinking(userID int
 	if hasActiveSubscription {
 		_, err = s.db.Exec(`
 			UPDATE users 
-			SET has_video_access = true, 
+			SET manual_video_access = true, 
 			    video_access_granted_at = NOW(),
 			    video_access_source = 'retroactive_linking'
 			WHERE id = $1
