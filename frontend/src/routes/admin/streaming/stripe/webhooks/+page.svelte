@@ -14,6 +14,7 @@
 	let refreshing = $state(false);
 	let showLogs = $state(true);
 	let retryingEvents = $state(new Set<number>()); // Track which events are being retried
+	let expandedRows = $state(new Set<number>()); // Track which rows are expanded
 	
 	// Pagination and filtering
 	let currentPage = $state(1);
@@ -25,6 +26,10 @@
 
 	onMount(async () => {
 		await loadWebhookStatus();
+		// Auto-load webhook logs on mount
+		if (showLogs) {
+			await loadWebhookLogs(1);
+		}
 	});
 
 	async function loadWebhookStatus() {
@@ -258,6 +263,15 @@
 		} finally {
 			retryingEvents.delete(eventId);
 		}
+	}
+
+	function toggleRowExpansion(eventId: number) {
+		if (expandedRows.has(eventId)) {
+			expandedRows.delete(eventId);
+		} else {
+			expandedRows.add(eventId);
+		}
+		expandedRows = new Set(expandedRows); // Trigger reactivity
 	}
 </script>
 
@@ -499,52 +513,54 @@
 								<thead>
 									<tr>
 										<th>Timestamp</th>
+										<th>User</th>
 										<th>Event Type</th>
 										<th>Status</th>
-										<th>Response Time</th>
-										<th>Payload Size</th>
-										<th>Status Code</th>
-										<th>Error</th>
 										<th>Actions</th>
 									</tr>
 								</thead>
 								<tbody>
 									{#each webhookLogs as log (log.id)}
-										<tr class="log-row">
+										<!-- Main row -->
+										<tr class="log-row" class:expanded={expandedRows.has(log.id)}>
 											<td class="timestamp">
 												{formatTimestamp(log.created_at)}
 											</td>
+											<td class="user-cell">
+												{#if log.user_email}
+													<div class="user-info">
+														<span class="user-email">{log.user_email}</span>
+														{#if log.user_id}
+															<span class="user-id">ID: {log.user_id}</span>
+														{/if}
+													</div>
+												{:else}
+													<span class="no-user">System Event</span>
+												{/if}
+											</td>
 											<td class="event-type">
 												<code>{log.event_type}</code>
+												{#if log.description}
+													<div class="event-description">{log.description}</div>
+												{/if}
 											</td>
 											<td class="status">
 												<span class="status-badge {getStatusClass(log.status)}">
 													{log.status}
 												</span>
 											</td>
-											<td class="response-time">
-												{formatDuration(log.response_time)}
-											</td>
-											<td class="payload-size">
-												{formatSize(log.payload_size)}
-											</td>
-											<td class="status-code">
-												<span class="status-code-badge status-code-{Math.floor(log.status_code / 100)}xx">
-													{log.status_code}
-												</span>
-											</td>
-											<td class="error-message status-{Math.floor(log.status_code / 100)}xx">
-												{#if log.error_message}
-													<span class="error" title={log.error_message}>
-														{log.error_message.length > 50 
-															? log.error_message.substring(0, 50) + '...' 
-															: log.error_message}
-													</span>
-												{:else}
-													<span class="no-error">-</span>
-												{/if}
-											</td>
 											<td class="actions">
+												<button 
+													class="btn-details" 
+													onclick={() => toggleRowExpansion(log.id)}
+													title="View event details"
+												>
+													{#if expandedRows.has(log.id)}
+														▼ Hide
+													{:else}
+														▶ Details
+													{/if}
+												</button>
 												{#if log.status === 'failed' && log.retry_count < 5}
 													<button 
 														class="btn-retry" 
@@ -557,17 +573,138 @@
 														{:else}
 															🔄
 														{/if}
-														Retry
 													</button>
-												{:else if log.status === 'failed' && log.retry_count >= 5}
-													<span class="max-retries" title="Maximum retry attempts exceeded">
-														⚠️ Max retries
-													</span>
-												{:else}
-													<span class="no-action">-</span>
 												{/if}
 											</td>
 										</tr>
+										
+										<!-- Expanded details row -->
+										{#if expandedRows.has(log.id)}
+											<tr class="details-row">
+												<td colspan="5">
+													<div class="details-content">
+														<div class="details-grid">
+															<!-- Technical Details -->
+															<div class="detail-section">
+																<h4>📊 Technical Details</h4>
+																<div class="detail-items">
+																	<div class="detail-row">
+																		<span class="label">Response Time:</span>
+																		<span class="value">{formatDuration(log.response_time)}</span>
+																	</div>
+																	<div class="detail-row">
+																		<span class="label">Payload Size:</span>
+																		<span class="value">{formatSize(log.payload_size)}</span>
+																	</div>
+																	<div class="detail-row">
+																		<span class="label">Status Code:</span>
+																		<span class="value">
+																			<span class="status-code-badge status-code-{Math.floor(log.status_code / 100)}xx">
+																				{log.status_code}
+																			</span>
+																		</span>
+																	</div>
+																	{#if log.retry_count > 0}
+																		<div class="detail-row">
+																			<span class="label">Retry Count:</span>
+																			<span class="value">{log.retry_count}</span>
+																		</div>
+																	{/if}
+																</div>
+															</div>
+
+															<!-- Stripe Details (if available) -->
+															{#if log.stripe_event_id || log.stripe_object_id}
+																<div class="detail-section">
+																	<h4>🔗 Stripe Information</h4>
+																	<div class="detail-items">
+																		{#if log.stripe_event_id}
+																			<div class="detail-row">
+																				<span class="label">Event ID:</span>
+																				<span class="value"><code>{log.stripe_event_id}</code></span>
+																			</div>
+																		{/if}
+																		{#if log.stripe_object_id}
+																			<div class="detail-row">
+																				<span class="label">Object ID:</span>
+																				<span class="value"><code>{log.stripe_object_id}</code></span>
+																			</div>
+																		{/if}
+																		{#if log.stripe_object_type}
+																			<div class="detail-row">
+																				<span class="label">Object Type:</span>
+																				<span class="value">{log.stripe_object_type}</span>
+																			</div>
+																		{/if}
+																		{#if log.api_version}
+																			<div class="detail-row">
+																				<span class="label">API Version:</span>
+																				<span class="value">{log.api_version}</span>
+																			</div>
+																		{/if}
+																	</div>
+																</div>
+															{/if}
+
+															<!-- Subscription/Payment Details -->
+															{#if log.subscription_id || log.invoice_id || log.amount_cents}
+																<div class="detail-section">
+																	<h4>💳 Subscription & Payment</h4>
+																	<div class="detail-items">
+																		{#if log.subscription_id}
+																			<div class="detail-row">
+																				<span class="label">Subscription:</span>
+																				<span class="value"><code>{log.subscription_id}</code></span>
+																			</div>
+																		{/if}
+																		{#if log.subscription_status}
+																			<div class="detail-row">
+																				<span class="label">Status:</span>
+																				<span class="value">
+																					<span class="status-badge status-{log.subscription_status}">
+																						{log.subscription_status}
+																					</span>
+																				</span>
+																			</div>
+																		{/if}
+																		{#if log.invoice_id}
+																			<div class="detail-row">
+																				<span class="label">Invoice:</span>
+																				<span class="value"><code>{log.invoice_id}</code></span>
+																			</div>
+																		{/if}
+																		{#if log.amount_cents}
+																			<div class="detail-row">
+																				<span class="label">Amount:</span>
+																				<span class="value">
+																					${(log.amount_cents / 100).toFixed(2)} {log.currency?.toUpperCase() || 'USD'}
+																				</span>
+																			</div>
+																		{/if}
+																	</div>
+																</div>
+															{/if}
+														</div>
+
+														<!-- Error Message (if any) -->
+														{#if log.error_message}
+															<div class="error-section">
+																<h4>⚠️ Error Details</h4>
+																<pre class="error-pre">{log.error_message}</pre>
+															</div>
+														{/if}
+
+														<!-- Full Event Data (if available) -->
+														{#if log.event_data}
+															<div class="json-section">
+																<h4>📄 Full Event Data</h4>
+																<pre class="json-pre">{JSON.stringify(JSON.parse(log.event_data), null, 2)}</pre>
+															</div>
+														{/if}
+													</div>
+												</td>
+											</tr>
+										{/if}
 									{/each}
 								</tbody>
 							</table>
@@ -1214,11 +1351,50 @@
 		background: var(--bg-secondary);
 	}
 
+	.log-row.expanded {
+		background: var(--bg-secondary);
+		border-left: 3px solid var(--primary);
+	}
+
 	.timestamp {
 		font-family: monospace;
 		font-size: 0.85rem;
 		color: var(--text-muted);
 		white-space: nowrap;
+	}
+
+	.user-cell {
+		min-width: 180px;
+	}
+
+	.user-info {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.user-email {
+		font-weight: 500;
+		color: var(--text);
+	}
+
+	.user-id {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		font-family: monospace;
+	}
+
+	.no-user {
+		color: var(--text-muted);
+		font-style: italic;
+		font-size: 0.85rem;
+	}
+
+	.event-description {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		margin-top: 0.25rem;
+		font-style: italic;
 	}
 
 	.event-type code {
@@ -1325,7 +1501,32 @@
 
 	.actions {
 		text-align: center;
-		min-width: 100px;
+		min-width: 150px;
+		display: flex;
+		gap: 0.5rem;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.btn-details {
+		background: var(--bg-secondary);
+		color: var(--text);
+		border: 1px solid var(--border);
+		padding: 0.25rem 0.5rem;
+		border-radius: 4px;
+		font-size: 0.75rem;
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		transition: all 0.2s ease;
+		white-space: nowrap;
+	}
+
+	.btn-details:hover {
+		background: var(--primary);
+		color: white;
+		border-color: var(--primary);
 	}
 
 	.btn-retry {
@@ -1351,6 +1552,141 @@
 		opacity: 0.6;
 		cursor: not-allowed;
 		transform: none;
+	}
+
+	/* Details accordion */
+	.details-row {
+		background: var(--surface);
+		border-left: 3px solid var(--primary);
+	}
+
+	.details-row td {
+		padding: 0 !important;
+	}
+
+	.details-content {
+		padding: var(--space-lg);
+		animation: slideDown 0.3s ease-out;
+	}
+
+	@keyframes slideDown {
+		from {
+			opacity: 0;
+			transform: translateY(-10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.details-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+		gap: var(--space-lg);
+		margin-bottom: var(--space-lg);
+	}
+
+	.detail-section h4 {
+		margin: 0 0 var(--space-md) 0;
+		color: var(--text);
+		font-size: 1rem;
+		font-weight: 600;
+		border-bottom: 2px solid var(--border);
+		padding-bottom: var(--space-xs);
+	}
+
+	.detail-items {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-sm);
+	}
+
+	.detail-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: var(--space-sm);
+		padding: var(--space-xs) 0;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.detail-row:last-child {
+		border-bottom: none;
+	}
+
+	.detail-row .label {
+		font-size: 0.85rem;
+		color: var(--text-muted);
+		font-weight: 500;
+		white-space: nowrap;
+	}
+
+	.detail-row .value {
+		font-size: 0.85rem;
+		color: var(--text);
+		font-weight: 600;
+		text-align: right;
+		word-break: break-all;
+	}
+
+	.detail-row .value code {
+		background: var(--bg-secondary);
+		padding: 2px var(--space-xs);
+		border-radius: var(--radius-sm);
+		font-size: 0.75rem;
+		font-family: monospace;
+	}
+
+	.error-section,
+	.json-section {
+		margin-top: var(--space-lg);
+		padding: var(--space-md);
+		background: var(--bg-secondary);
+		border-radius: var(--radius-md);
+		border: 1px solid var(--border);
+	}
+
+	.error-section h4,
+	.json-section h4 {
+		margin: 0 0 var(--space-md) 0;
+		color: var(--text);
+		font-size: 1rem;
+		font-weight: 600;
+	}
+
+	.error-pre,
+	.json-pre {
+		margin: 0;
+		padding: var(--space-md);
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		font-family: monospace;
+		font-size: 0.8rem;
+		color: var(--text);
+		overflow-x: auto;
+		white-space: pre-wrap;
+		word-break: break-word;
+	}
+
+	.error-pre {
+		color: var(--error);
+	}
+
+	.status-active {
+		background: var(--success-light);
+		color: var(--success-dark);
+	}
+
+	.status-unpaid {
+		background: var(--warning-light);
+		color: var(--warning-dark);
+	}
+
+	.status-canceled {
+		background: var(--error-light);
+		color: var(--error-dark);
 	}
 
 	.max-retries {
