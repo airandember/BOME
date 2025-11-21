@@ -215,7 +215,7 @@
 	.divider span {
 		background: var(--card-bg);
 		padding: 0 1rem;
-		color: var(--text-secondary);
+		color: white;
 		font-size: 0.875rem;
 	}
 

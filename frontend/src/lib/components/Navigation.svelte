@@ -283,6 +283,8 @@
 		align-items: center;
 		justify-content: space-between;
 		height: 65px;
+		background-color: var(--bg-ghost);
+		border-radius: 15px;
 	}
 
 	.nav-brand {
