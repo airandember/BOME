@@ -220,7 +220,7 @@ func (s *CustomerLinkingService) GetUnlinkedCustomers() ([]UnlinkedCustomer, err
 			CASE WHEN u.id IS NOT NULL THEN true ELSE false END as user_exists,
 			EXISTS(
 				SELECT 1 FROM stripe_subscriptions_v2 ss 
-				WHERE ss.stripe_customer_id = sc.id 
+				WHERE ss.customer_id = sc.id 
 				AND ss.status IN ('active', 'trialing')
 			) as has_active_subscriptions,
 			sc.stripe_created_at
@@ -537,7 +537,7 @@ func (s *CustomerLinkingService) checkAndGrantVideoAccessAfterLinking(userID int
 			SELECT 1 
 			FROM user_stripe_customers_v2 usc
 			JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
-			JOIN stripe_subscriptions_v2 ss ON ss.stripe_customer_id = sc.id
+			JOIN stripe_subscriptions_v2 ss ON ss.customer_id = sc.id
 			WHERE usc.user_id = $1
 			AND ss.status IN ('active', 'trialing')
 			AND (ss.cancel_at_period_end = false OR ss.cancel_at_period_end IS NULL)
