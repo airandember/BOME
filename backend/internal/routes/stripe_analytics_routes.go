@@ -388,29 +388,29 @@ func getV2Analytics(c *gin.Context, stripeService *services.StripeService) {
 	c.JSON(http.StatusOK, analytics)
 }
 
-// getDatabaseStats returns real counts from database tables
+// getDatabaseStats returns real counts from database tables (V2)
 func getDatabaseStats(c *gin.Context, db *database.DB) {
 	stats := make(map[string]interface{})
 
-	// Get customer count from stripe_customers table
+	// Get customer count from stripe_customers_v2 table
 	var customerCount int
-	err := db.DB.QueryRow("SELECT COUNT(*) FROM stripe_customers").Scan(&customerCount)
+	err := db.DB.QueryRow("SELECT COUNT(*) FROM stripe_customers_v2").Scan(&customerCount)
 	if err != nil {
 		log.Printf("Error getting customer count: %v", err)
 		customerCount = 0
 	}
 
-	// Get active subscription count from stripe_subscriptions table
+	// Get active subscription count from stripe_subscriptions_v2 table
 	var subscriptionCount int
-	err = db.DB.QueryRow("SELECT COUNT(*) FROM stripe_subscriptions WHERE status = 'active'").Scan(&subscriptionCount)
+	err = db.DB.QueryRow("SELECT COUNT(*) FROM stripe_subscriptions_v2 WHERE status = 'active'").Scan(&subscriptionCount)
 	if err != nil {
 		log.Printf("Error getting active subscription count: %v", err)
 		subscriptionCount = 0
 	}
 
-	// Get product count from stripe_products table
+	// Get product count from stripe_products_v2 table
 	var productCount int
-	err = db.DB.QueryRow("SELECT COUNT(*) FROM stripe_products").Scan(&productCount)
+	err = db.DB.QueryRow("SELECT COUNT(*) FROM stripe_products_v2").Scan(&productCount)
 	if err != nil {
 		log.Printf("Error getting product count: %v", err)
 		productCount = 0
@@ -460,20 +460,20 @@ func getDatabaseCustomers(c *gin.Context, db *database.DB) {
 	var customers []map[string]interface{}
 	var totalCount int
 
-	// Get total count
-	err = db.DB.QueryRow("SELECT COUNT(*) FROM stripe_customers").Scan(&totalCount)
+	// Get total count (V2)
+	err = db.DB.QueryRow("SELECT COUNT(*) FROM stripe_customers_v2").Scan(&totalCount)
 	if err != nil {
 		log.Printf("Error getting customer count: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get customer count"})
 		return
 	}
 
-	// Base query for customers
+	// Base query for customers (V2)
 	baseQuery := `
 		SELECT 
-			stripe_id, name, email, created_at, updated_at, metadata
-		FROM stripe_customers 
-		ORDER BY created_at DESC 
+			stripe_id, name, email, stripe_created_at as created_at, last_synced_at as updated_at, metadata
+		FROM stripe_customers_v2 
+		ORDER BY stripe_created_at DESC 
 		LIMIT $1 OFFSET $2
 	`
 
@@ -556,13 +556,14 @@ func getDatabaseSubscriptions(c *gin.Context, db *database.DB) {
 	var subscriptions []map[string]interface{}
 	var totalCount int
 
-	// Build query with optional status filter
-	countQuery := "SELECT COUNT(*) FROM stripe_subscriptions"
+	// Build query with optional status filter (V2)
+	countQuery := "SELECT COUNT(*) FROM stripe_subscriptions_v2"
 	baseQuery := `
 		SELECT 
-			stripe_id, customer_id, status, current_period_start, current_period_end,
-			created_at
-		FROM stripe_subscriptions
+			ss.stripe_id, sc.stripe_id as customer_stripe_id, ss.status, 
+			ss.current_period_start, ss.current_period_end, ss.stripe_created_at as created_at
+		FROM stripe_subscriptions_v2 ss
+		JOIN stripe_customers_v2 sc ON sc.id = ss.customer_id
 	`
 
 	var args []interface{}
@@ -644,12 +645,14 @@ func getCustomerSubscriptions(db *database.DB, stripeCustomerID string) ([]map[s
 	query := `
 		SELECT 
 			s.stripe_id, s.status, s.current_period_start, s.current_period_end,
-			s.created_at, s.stripe_price_id, s.unit_amount, s.currency,
-			s.stripe_product_id, s.product_name
-		FROM stripe_subscriptions s
-		INNER JOIN stripe_customers c ON s.customer_id = c.id
+			s.stripe_created_at as created_at, sp.stripe_id as stripe_price_id, 
+			sp.unit_amount, sp.currency, sprod.stripe_id as stripe_product_id, sprod.name as product_name
+		FROM stripe_subscriptions_v2 s
+		INNER JOIN stripe_customers_v2 c ON s.customer_id = c.id
+		LEFT JOIN stripe_prices_v2 sp ON sp.id = s.price_id
+		LEFT JOIN stripe_products_v2 sprod ON sprod.id = sp.product_id
 		WHERE c.stripe_id = $1 
-		ORDER BY s.created_at DESC
+		ORDER BY s.stripe_created_at DESC
 	`
 
 	rows, err := db.DB.Query(query, stripeCustomerID)
@@ -958,12 +961,12 @@ func getAvailableStripeProducts(c *gin.Context, db *database.DB) {
 	for i, product := range products {
 		productID := product["id"].(int)
 
-		// Get comprehensive price information for this product
+		// Get comprehensive price information for this product (V2)
 		priceQuery := `
 			SELECT stripe_id, unit_amount, currency, recurring_interval
-			FROM stripe_prices 
+			FROM stripe_prices_v2 
 			WHERE product_id = $1 
-			ORDER BY created_at DESC 
+			ORDER BY stripe_created_at DESC 
 			LIMIT 1
 		`
 
@@ -1175,12 +1178,12 @@ func getAllStripeProducts(c *gin.Context, db *database.DB) {
 		productID := product["id"].(int) // Use the integer ID, not the stripe_id string
 		log.Printf("🔍 Looking up price for product ID %d (stripe_id: %s)", productID, product["stripe_id"])
 
-		// Try to get comprehensive price information for this product
+		// Try to get comprehensive price information for this product (V2)
 		priceQuery := `
 			SELECT stripe_id, unit_amount, currency, recurring_interval
-			FROM stripe_prices 
+			FROM stripe_prices_v2 
 			WHERE product_id = $1 
-			ORDER BY created_at DESC 
+			ORDER BY stripe_created_at DESC 
 			LIMIT 1
 		`
 
@@ -1273,7 +1276,7 @@ func importStripeProductsAsPlans(c *gin.Context, db *database.DB) {
 
 		productQuery := `
 			SELECT id, stripe_id, name, COALESCE(description, '') as description, active 
-			FROM stripe_products 
+			FROM stripe_products_v2 
 			WHERE stripe_id = $1`
 
 		err = tx.QueryRow(productQuery, stripeProductID).Scan(
@@ -1293,7 +1296,7 @@ func importStripeProductsAsPlans(c *gin.Context, db *database.DB) {
 
 		priceQuery := `
 			SELECT stripe_id, unit_amount, currency, COALESCE(recurring_interval, 'month') as recurring_interval
-			FROM stripe_prices 
+			FROM stripe_prices_v2 
 			WHERE product_id = $1 
 			ORDER BY created_at DESC 
 			LIMIT 1`
@@ -1539,12 +1542,12 @@ func debugStripeProductsData(c *gin.Context, db *database.DB) {
 		}
 	}
 
-	// Get table counts
+	// Get table counts (V2)
 	var productsCount, pricesCount int
-	db.DB.QueryRow("SELECT COUNT(*) FROM stripe_products").Scan(&productsCount)
-	db.DB.QueryRow("SELECT COUNT(*) FROM stripe_prices").Scan(&pricesCount)
+	db.DB.QueryRow("SELECT COUNT(*) FROM stripe_products_v2").Scan(&productsCount)
+	db.DB.QueryRow("SELECT COUNT(*) FROM stripe_prices_v2").Scan(&pricesCount)
 
-	// Check for products with associated prices
+	// Check for products with associated prices (V2)
 	joinQuery := `
 		SELECT 
 			p.stripe_id as product_stripe_id,
@@ -1552,8 +1555,8 @@ func debugStripeProductsData(c *gin.Context, db *database.DB) {
 			pr.stripe_id as price_stripe_id,
 			pr.unit_amount,
 			pr.currency
-		FROM stripe_products p
-		LEFT JOIN stripe_prices pr ON p.stripe_id = pr.product_id
+		FROM stripe_products_v2 p
+		LEFT JOIN stripe_prices_v2 pr ON p.id = pr.product_id
 		LIMIT 5
 	`
 
@@ -1735,11 +1738,11 @@ func getHealthRecommendations(health *database.StripeMetadataHealth) []string {
 func getStripeProductsForAccordion(c *gin.Context, db *database.DB) {
 	log.Printf("🎯 Getting Stripe products for accordion...")
 
-	// Debug: Check what products and prices we have
+	// Debug: Check what products and prices we have (V2)
 	debugQuery := `
 		SELECT p.id, p.name, pr.id as price_id, pr.unit_amount, pr.currency
-		FROM stripe_products p
-		LEFT JOIN stripe_prices pr ON p.id = pr.product_id
+		FROM stripe_products_v2 p
+		LEFT JOIN stripe_prices_v2 pr ON p.id = pr.product_id
 		WHERE p.video_approved = true OR p.active = true
 		ORDER BY p.id
 		LIMIT 10
@@ -1811,15 +1814,15 @@ func getStripeProductsForAccordion(c *gin.Context, db *database.DB) {
 		priceQuery := `
 			SELECT 
 				id,
-				stripe_id,
-				unit_amount,
-				currency,
-				recurring_interval
-			FROM stripe_prices 
-			WHERE product_id = $1 
-			ORDER BY unit_amount ASC
-			LIMIT 1
-		`
+			stripe_id,
+			unit_amount,
+			currency,
+			recurring_interval
+		FROM stripe_prices_v2 
+		WHERE product_id = $1 
+		ORDER BY unit_amount ASC
+		LIMIT 1
+	`
 
 		var priceInfo map[string]interface{}
 		var priceID int

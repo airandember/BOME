@@ -117,15 +117,16 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 				-- Priority for ordering
 				1::INTEGER as plan_priority
 				
-			FROM users u
-			JOIN stripe_customers sc ON u.stripe_customer_id = sc.stripe_id
-			JOIN stripe_subscriptions ss ON sc.id = ss.customer_id
-			LEFT JOIN stripe_prices sp ON ss.stripe_price_id = sp.stripe_id
-			LEFT JOIN stripe_products prod ON sp.product_id = prod.id  -- EXISTING FK RELATIONSHIP
-			
-			WHERE ss.status IN ('active', 'trialing')
-			  AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
-			  AND u.is_active = true
+		FROM users u
+		JOIN user_stripe_customers_v2 usc ON usc.user_id = u.id
+		JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
+		JOIN stripe_subscriptions_v2 ss ON ss.customer_id = sc.id
+		LEFT JOIN stripe_prices_v2 sp ON sp.id = ss.price_id
+		LEFT JOIN stripe_products_v2 prod ON prod.id = sp.product_id
+		
+		WHERE ss.status IN ('active', 'trialing')
+		  AND ss.current_period_end > NOW()
+		  AND u.is_active = true
 		),
 
 		legacy_subscriptions AS (
@@ -164,14 +165,15 @@ func (s *SubscriberService) GetSubscribers(limit, offset int, filters *Subscribe
 			WHERE sp.is_active = true 
 			  AND sp.deleted_at IS NULL
 			  AND u.is_active = true
-			  -- Only include if user doesn't have active Stripe subscription
-			  AND NOT EXISTS (
-				  SELECT 1 FROM stripe_customers sc2
-				  JOIN stripe_subscriptions ss2 ON sc2.id = ss2.customer_id
-				  WHERE u.stripe_customer_id = sc2.stripe_id
-					AND ss2.status IN ('active', 'trialing')
-					AND (ss2.current_period_end IS NULL OR ss2.current_period_end > NOW())
-			  )
+		  -- Only include if user doesn't have active Stripe subscription
+		  AND NOT EXISTS (
+			  SELECT 1 FROM user_stripe_customers_v2 usc2
+			  JOIN stripe_customers_v2 sc2 ON sc2.id = usc2.stripe_customer_id
+			  JOIN stripe_subscriptions_v2 ss2 ON ss2.customer_id = sc2.id
+			  WHERE usc2.user_id = u.id
+				AND ss2.status IN ('active', 'trialing')
+				AND ss2.current_period_end > NOW()
+		  )
 		)
 
 		-- Final unified result
@@ -449,22 +451,21 @@ func (s *SubscriberService) GetSubscriptionHistory(limit, offset int, filters *S
 			ss.current_period_end,
 			COALESCE(ss.stripe_id, u.stripe_customer_id) as stripe_subscription_id
 		FROM users u
-		-- Join legacy subscription plans (including inactive ones)
-		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id 
-			AND (sp.is_active = false OR sp.deleted_at IS NOT NULL)
-		-- Join Stripe customers
-		LEFT JOIN stripe_customers sc ON (
-			u.stripe_customer_id = sc.stripe_id OR 
-			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
+	-- Join legacy subscription plans (including inactive ones)
+	LEFT JOIN subscription_plans sp ON u.sub_id = sp.id 
+		AND (sp.is_active = false OR sp.deleted_at IS NOT NULL)
+	-- Join Stripe customers (V2)
+	LEFT JOIN user_stripe_customers_v2 usc ON usc.user_id = u.id
+	LEFT JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
+	-- Join EXPIRED/INACTIVE Stripe subscriptions (V2)
+	LEFT JOIN stripe_subscriptions_v2 ss ON ss.customer_id = sc.id 
+		AND (
+			ss.status IN ('canceled', 'incomplete_expired', 'past_due', 'unpaid') 
+			OR ss.current_period_end <= NOW()
 		)
-		-- Join EXPIRED/INACTIVE Stripe subscriptions
-		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id 
-			AND (
-				ss.status IN ('canceled', 'incomplete_expired', 'past_due', 'unpaid') 
-				OR (ss.current_period_end IS NOT NULL AND ss.current_period_end <= NOW())
-			)
-		-- Join Stripe products (to get product names)
-		LEFT JOIN stripe_products stripe_prod ON ss.stripe_product_id = stripe_prod.stripe_id
+	-- Join Stripe products (V2)
+	LEFT JOIN stripe_prices_v2 sp_price ON sp_price.id = ss.price_id
+	LEFT JOIN stripe_products_v2 stripe_prod ON stripe_prod.id = sp_price.product_id
 		-- Join Stripe prices (to get pricing info)
 		LEFT JOIN stripe_prices stripe_price ON ss.stripe_price_id = stripe_price.stripe_id
 		WHERE (
@@ -696,26 +697,24 @@ func (s *SubscriberService) GetSubscriberCount(filters *SubscriberFilters) (int,
 		SELECT COUNT(DISTINCT u.id)
 		FROM users u
 		-- Join legacy subscription plans (for users with sub_id)
-		LEFT JOIN subscription_plans sp ON u.sub_id = sp.id 
-			AND sp.is_active = true 
-			AND sp.deleted_at IS NULL
-		-- Join Stripe customers (for users with stripe_customer_id)
-		LEFT JOIN stripe_customers sc ON (
-			u.stripe_customer_id = sc.stripe_id OR 
-			sc.stripe_id = ANY(COALESCE(u.stripe_customer_ids, '{}'))
-		)
-		-- Join current Stripe subscriptions (for ACTIVE Stripe subs only)
-		LEFT JOIN stripe_subscriptions ss ON sc.id = ss.customer_id 
-			AND ss.status IN ('active', 'trialing')
-			AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW())
-		WHERE (
-			-- Has active legacy subscription
-			(u.sub_id IS NOT NULL AND sp.id IS NOT NULL) 
-			OR 
-			-- Has active Stripe subscription
-			(ss.id IS NOT NULL AND ss.status IN ('active', 'trialing') AND (ss.current_period_end IS NULL OR ss.current_period_end > NOW()))
-		)
-		AND u.is_active = true
+	LEFT JOIN subscription_plans sp ON u.sub_id = sp.id 
+		AND sp.is_active = true 
+		AND sp.deleted_at IS NULL
+	-- Join Stripe customers (V2)
+	LEFT JOIN user_stripe_customers_v2 usc ON usc.user_id = u.id
+	LEFT JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
+	-- Join current Stripe subscriptions (V2 - for ACTIVE Stripe subs only)
+	LEFT JOIN stripe_subscriptions_v2 ss ON ss.customer_id = sc.id 
+		AND ss.status IN ('active', 'trialing')
+		AND ss.current_period_end > NOW()
+	WHERE (
+		-- Has active legacy subscription
+		(u.sub_id IS NOT NULL AND sp.id IS NOT NULL) 
+		OR 
+		-- Has active Stripe subscription
+		(ss.id IS NOT NULL AND ss.status IN ('active', 'trialing') AND ss.current_period_end > NOW())
+	)
+	AND u.is_active = true
 	`
 
 	args := []interface{}{}
