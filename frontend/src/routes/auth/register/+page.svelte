@@ -2,6 +2,7 @@
 	import { auth } from '$lib/auth';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
 	import Navigation from '$lib/components/Navigation.svelte';
 	import OAuth2Login from '$lib/components/OAuth2Login.svelte';
 
@@ -11,6 +12,10 @@
 	let loading = false;
 	let error = '';
 	let success = false;
+	
+	// 🔗 CONTEXT PRESERVATION: Track return URL and plan context
+	let returnUrl = '/';
+	let planId = '';
 
 	onMount(() => {
 		// Redirect if already logged in
@@ -19,6 +24,21 @@
 				goto('/');
 			}
 		});
+		
+		// 🔗 Read and store subscription context from query params
+		if (typeof window !== 'undefined') {
+			returnUrl = $page.url.searchParams.get('return') || '/';
+			planId = $page.url.searchParams.get('plan_id') || '';
+			
+			// Store in sessionStorage for use after email verification
+			if (planId) {
+				sessionStorage.setItem('selected_plan_id', planId);
+				console.log('📋 Subscription context saved:', { planId, returnUrl });
+			}
+			if (returnUrl && returnUrl !== '/') {
+				sessionStorage.setItem('post_verify_return', returnUrl);
+			}
+		}
 	});
 
 	async function handleRegister() {
@@ -56,78 +76,90 @@
 </svelte:head>
 <Navigation />
 <div class="auth-container">
-	<div class="auth-card">
-		<div class="auth-header">
-			<h1>Get Started with BOME</h1>
-			<p>Join us to explore Book of Mormon evidences - we'll help you set up your account!</p>
-		</div>
-
-		{#if success}
-			<div class="success-message">
-				<h3>Welcome to BOME!</h3>
-				<p>Please check your email to complete your account setup. We'll help you create a secure password in the next step!</p>
-			</div>
-		{:else}
-			<!-- OAuth2 Registration Options -->
-		{#if !success}
-		<OAuth2Login />
-	    {/if}
-            <hr>
-			<form on:submit|preventDefault={handleRegister} class="auth-form">
-				<div class="form-row">
-					<div class="form-group">
-						<label for="firstName">First Name</label>
-						<input
-							type="text"
-							id="firstName"
-							bind:value={firstName}
-							placeholder="Enter your first name"
-							required
-						/>
-					</div>
-
-					<div class="form-group">
-						<label for="lastName">Last Name</label>
-						<input
-							type="text"
-							id="lastName"
-							bind:value={lastName}
-							placeholder="Enter your last name"
-							required
-						/>
-					</div>
+	<div class="outerNew">
+		<div class="dotNew"></div>
+		<div class="cardNew">
+			<div class="rayNew"></div>
+			
+			<!-- Auth content inside the card -->
+			<div class="auth-content">
+				<div class="auth-header">
+					<h1>Get Started with BOME</h1>
+					<p>Join us to explore Book of Mormon evidences - we'll help you set up your account!</p>
 				</div>
 
-				<div class="form-group">
-					<label for="email">Email</label>
-					<input
-						type="email"
-						id="email"
-						bind:value={email}
-						placeholder="Enter your email"
-						required
-					/>
-				</div>
-
-				{#if error}
-					<div class="error-message">
-						{error}
+				{#if success}
+					<div class="success-message">
+						<h3>Welcome to BOME!</h3>
+						<p>Please check your email to complete your account setup. We'll help you create a secure password in the next step!</p>
 					</div>
+				{:else}
+					<!-- OAuth2 Registration Options -->
+					{#if !success}
+					<OAuth2Login />
+					{/if}
+					<hr>
+					<form on:submit|preventDefault={handleRegister} class="auth-form">
+						<div class="form-row">
+							<div class="form-group">
+								<label for="firstName">First Name</label>
+								<input
+									type="text"
+									id="firstName"
+									bind:value={firstName}
+									placeholder="Enter your first name"
+									required
+								/>
+							</div>
+
+							<div class="form-group">
+								<label for="lastName">Last Name</label>
+								<input
+									type="text"
+									id="lastName"
+									bind:value={lastName}
+									placeholder="Enter your last name"
+									required
+								/>
+							</div>
+						</div>
+
+						<div class="form-group">
+							<label for="email">Email</label>
+							<input
+								type="email"
+								id="email"
+								bind:value={email}
+								placeholder="Enter your email"
+								required
+							/>
+						</div>
+
+						{#if error}
+							<div class="error-message">
+								{error}
+							</div>
+						{/if}
+
+						<button type="submit" class="btn-primary" disabled={loading}>
+							{loading ? 'Getting Started...' : 'Get Started'}
+						</button>
+					</form>
 				{/if}
 
-				<button type="submit" class="btn-primary" disabled={loading}>
-					{loading ? 'Getting Started...' : 'Get Started'}
-				</button>
-			</form>
-		{/if}
-
-		
-
-		<div class="auth-footer">
-			<p>
-				Already have an account?
-				<a href="/auth/login" class="link">Log in</a>
-			</p>
+				<div class="auth-footer">
+					<p>
+						Already have an account?
+						<a href="/auth/login" class="link">Log in</a>
+					</p>
+				</div>
+			</div>
+			
+			<!-- Decorative lines -->
+			<div class="lineNew toplNew"></div>
+			<div class="lineNew leftlNew"></div>
+			<div class="lineNew bottomlNew"></div>
+			<div class="lineNew rightlNew"></div>
 		</div>
 	</div>
 </div>
@@ -140,21 +172,6 @@
 		justify-content: center;
 		padding: 2rem;
 		background: var(--bg-color);
-		
-	}
-
-	.auth-card {
-		width: 100%;
-		max-width: 650px;
-		padding: 2.5rem;
-		border-radius: 50px;
-		/*box-shadow:  10px 10px 30px var(--primary-gold),
-             -10px -10px 30px var(--primary-gold-dark);*/
-		background: linear-gradient(145deg, var(--primary-gold), var(--primary-gold-dark));
-	}
-
-	.auth-card input {
-		background: white !important;
 	}
 
 	.auth-header {
@@ -211,8 +228,7 @@
 			inset -2px -2px 4px var(--shadow-light);
 		transition: all 0.2s ease;
 		border-radius: 14px;
-        box-shadow: inset 5px 5px 10px var(--bg-quaternary),
-            inset -5px -5px 10px var(--bg-secondary);
+        
 	}
 
 	.form-group input:focus {
@@ -309,6 +325,116 @@
 	@media (max-width: 480px) {
 		.form-row {
 			grid-template-columns: 1fr;
+		}
+	}
+
+	/* Auth content wrapper inside the animated card */
+	.auth-content {
+		position: relative;
+		z-index: 10;
+		width: 100%;
+		padding: 1.5rem;
+		overflow-y: visible;
+		/* Counter the card's breathing animation to keep content stable */
+		animation: counter-breathe 8s ease-in-out infinite;
+	}
+
+	@keyframes counter-breathe {
+		0%,
+		100% {
+			transform: scale(1);
+		}
+		50% {
+			transform: scale(1.0204); /* 1 / 0.98 ≈ 1.0204 */
+		}
+	}
+
+	/* Adjust text color for better visibility on the gradient card */
+	.cardNew .auth-header h1 {
+		color: #fff;
+		text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+	}
+
+	.cardNew .auth-header p {
+		color: #e7cab2;
+	}
+
+	.cardNew .form-group label {
+		color: #e7cab2;
+		font-weight: 600;
+	}
+
+	/* Keep form elements readable */
+	.cardNew input {
+		background: rgba(255, 255, 255, 0.95) !important;
+		color: #1a1a1a;
+	}
+
+	/* Adjust button styling */
+	.cardNew .btn-primary {
+		background: linear-gradient(135deg, #ffeb7a 0%, #ffd700 100%);
+		color: #1a1a1a;
+		font-weight: 700;
+		border: 2px solid rgba(255, 255, 255, 0.3);
+	}
+
+	.cardNew .btn-primary:hover:not(:disabled) {
+		background: linear-gradient(135deg, #ffd700 0%, #ffeb7a 100%);
+		transform: translateY(-2px);
+		box-shadow: 0 8px 20px rgba(255, 235, 122, 0.4);
+	}
+
+	/* Error and success messages */
+	.cardNew .error-message {
+		background: rgba(255, 0, 0, 0.1);
+		border: 1px solid #ff6b6b;
+		color: #fff;
+	}
+
+	.cardNew .success-message {
+		background: rgba(0, 255, 0, 0.1);
+		border: 1px solid #51cf66;
+		color: #fff;
+	}
+
+	.cardNew .success-message h3 {
+		color: #fff;
+	}
+
+	/* Auth footer links */
+	.cardNew .auth-footer p {
+		color: #e7cab2;
+	}
+
+	.cardNew .link {
+		color: #ffeb7a;
+		font-weight: 700;
+	}
+
+	.cardNew .link:hover {
+		color: #fff;
+		text-shadow: 0 0 8px #ffeb7a;
+	}
+
+	/* Adjust hr styling */
+	.cardNew hr {
+		border: none;
+		height: 1px;
+		background: linear-gradient(90deg, transparent, #888888, transparent);
+		margin: 1.5rem 0;
+	}
+
+	/* Responsive sizing for the outer container */
+	@media (max-width: 768px) {
+		.outerNew {
+			width: 95%;
+			max-width: 450px;
+			min-height: auto;
+			height: auto;
+		}
+		
+		.auth-content {
+			max-height: none;
 		}
 	}
 </style> 
