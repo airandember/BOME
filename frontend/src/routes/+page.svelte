@@ -163,7 +163,7 @@
 	<section class="zoom-section book-section active" data-section="0">
 		<div class="zoom-content">
 			<div class="book-container">
-				<img src="/Images/BOME-Background.png" alt="Book of Mormon Close-up" class="book-image" />
+				<img src="/Images/BOME-Background.webp" alt="Book of Mormon Close-up" class="book-image" />
 				<div class="book-glow"></div>
 			</div>
 			
@@ -589,6 +589,19 @@
 		filter: drop-shadow(0 0 30px rgba(255, 215, 0, 0.3));
 		filter: blur(0px);
 		align-items: left;
+		/* Fade in from black on page load */
+		animation: fadeInFromBlack 2s ease-out forwards;
+	}
+
+	@keyframes fadeInFromBlack {
+		0% {
+			opacity: 0;
+			filter: brightness(0) drop-shadow(0 0 30px rgba(255, 215, 0, 0.3));
+		}
+		100% {
+			opacity: 1;
+			filter: brightness(1) drop-shadow(0 0 30px rgba(255, 215, 0, 0.3));
+		}
 	}
 
 	.book-glow {

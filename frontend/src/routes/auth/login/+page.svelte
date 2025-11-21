@@ -2,6 +2,7 @@
 	import { auth, isAdmin } from '$lib/auth';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
 	import Navigation from '$lib/components/Navigation.svelte';
 	import OAuth2Login from '$lib/components/OAuth2Login.svelte';
 
@@ -11,6 +12,10 @@
 	let error = '';
 	let showGmailWarning = false;
 	let isGmailAccount = false;
+	
+	// 🔗 CONTEXT PRESERVATION: Track return URL and plan context
+	let returnUrl = '/';
+	let planId = '';
 
 	onMount(() => {
 		// Check if already logged in, but don't redirect immediately
@@ -20,6 +25,12 @@
 				console.log('User already authenticated');
 			}
 		});
+		
+		// 🔗 Read return URL and plan context from query params
+		if (typeof window !== 'undefined') {
+			returnUrl = $page.url.searchParams.get('return') || '/';
+			planId = $page.url.searchParams.get('plan_id') || '';
+		}
 	});
 
 	// Check if email is a Gmail account
@@ -53,11 +64,13 @@
 		const result = await auth.login(email, password);
 		
 		if (result.success) {
-			// Check user role and redirect accordingly
-			if (isAdmin()) {
+			// 🔗 CONTEXT PRESERVATION: If user was subscribing, redirect back to subscription
+			if (planId && returnUrl === '/subscription') {
+				goto(`/subscription?auto_checkout=true&plan_id=${planId}`);
+			} else if (isAdmin()) {
 				goto('/admin');
 			} else {
-				goto('/');
+				goto(returnUrl);
 			}
 		} else {
 			error = result.error || 'Login failed';
@@ -72,72 +85,85 @@
 </svelte:head>
 <Navigation />
 <div class="auth-container">
-	<div class="auth-card">
-		<div class="auth-header">
-			<h1>Welcome Back</h1>
-			<p>Sign in to your account to continue</p>
-		</div>
-
-		<!-- OAuth2 Login Options -->
-		<OAuth2Login />
-		<hr>
-        <br>
-		<form on:submit|preventDefault={handleLogin} class="auth-form">
-			<div class="form-group">
-				<label for="email">Email</label>
-				<input
-					type="email"
-					id="email"
-					bind:value={email}
-					on:input={checkEmailProvider}
-					on:blur={checkEmailProvider}
-					placeholder="Enter your email"
-					class:gmail-detected={showGmailWarning}
-					required
-				/>
-				{#if showGmailWarning}
-					<div class="gmail-warning">
-						<span class="gmail-icon">📧</span>
-						<p>
-							<strong>Gmail account detected!</strong><br>
-							Please use the "Sign in with Google" button above for the best experience.
-						</p>
-					</div>
-				{/if}
-			</div>
-
-			<div class="form-group">
-				<label for="password">Password</label>
-				<input
-					type="password"
-					id="password"
-					bind:value={password}
-					placeholder="Enter your password"
-					autocomplete="current-password"
-					required
-				/>
-			</div>
-
-			{#if error}
-				<div class="error-message">
-					{error}
+	<div class="outerNew">
+		<div class="dotNew"></div>
+		<div class="cardNew">
+			<div class="rayNew"></div>
+			
+			<!-- Auth content inside the card -->
+			<div class="auth-content">
+				<div class="auth-header">
+					<h1>Welcome Back</h1>
+					<p>Sign in to your account to continue</p>
 				</div>
-			{/if}
 
-			<button type="submit" class="btn-primary" disabled={loading}>
-				{loading ? 'Signing in...' : 'Sign In'}
-			</button>
-		</form>
+				<!-- OAuth2 Login Options -->
+				<OAuth2Login />
+				<hr>
+				<br>
+				<form on:submit|preventDefault={handleLogin} class="auth-form">
+					<div class="form-group">
+						<label for="email">Email</label>
+						<input
+							type="email"
+							id="email"
+							bind:value={email}
+							on:input={checkEmailProvider}
+							on:blur={checkEmailProvider}
+							placeholder="Enter your email"
+							class:gmail-detected={showGmailWarning}
+							required
+						/>
+						{#if showGmailWarning}
+							<div class="gmail-warning">
+								<span class="gmail-icon">📧</span>
+								<p>
+									<strong>Gmail account detected!</strong><br>
+									Please use the "Sign in with Google" button above for the best experience.
+								</p>
+							</div>
+						{/if}
+					</div>
 
-		
-		<div class="auth-footer">
-			<p>
-				Don't have an account?
-				<a href="/auth/register" class="link">Sign up</a>
-			</p>
-			<p>
-				<a href="/auth/forgot-password" class="link">Forgot your password?</a>
-			</p>
+					<div class="form-group">
+						<label for="password">Password</label>
+						<input
+							type="password"
+							id="password"
+							bind:value={password}
+							placeholder="Enter your password"
+							autocomplete="current-password"
+							required
+						/>
+					</div>
+
+					{#if error}
+						<div class="error-message">
+							{error}
+						</div>
+					{/if}
+
+					<button type="submit" class="btn-primary" disabled={loading}>
+						{loading ? 'Signing in...' : 'Sign In'}
+					</button>
+				</form>
+
+				<div class="auth-footer">
+					<p>
+						Don't have an account?
+						<a href="/auth/register{returnUrl !== '/' || planId ? `?return=${encodeURIComponent(returnUrl)}&plan_id=${planId}` : ''}" class="link">Sign up</a>
+					</p>
+					<p>
+						<a href="/auth/forgot-password" class="link">Forgot your password?</a>
+					</p>
+				</div>
+			</div>
+			
+			<!-- Decorative lines -->
+			<div class="lineNew toplNew"></div>
+			<div class="lineNew leftlNew"></div>
+			<div class="lineNew bottomlNew"></div>
+			<div class="lineNew rightlNew"></div>
 		</div>
 	</div>
 </div>
@@ -152,18 +178,6 @@
 		justify-content: center;
 		padding: 2rem;
 		background: var(--bg-color);
-	}
-
-	.auth-card {
-		width: 100%;
-		max-width: 650px;
-		min-height: 650px;
-		padding: 2.5rem;
-		background: var(--card-bg);
-	    border-radius: 18px;
-        background: linear-gradient(145deg, var(--primary-gold), var(--primary-gold-dark));
-box-shadow:  20px 20px 60px var(--bg-glass-dark),
-             -20px -20px 60px var(--bg-glass);
 	}
 
 	.auth-header {
@@ -334,6 +348,106 @@ box-shadow:  20px 20px 60px var(--bg-glass-dark),
 		to {
 			opacity: 1;
 			transform: translateY(0);
+		}
+	}
+
+	/* Auth content wrapper inside the animated card */
+	.auth-content {
+		position: relative;
+		z-index: 10;
+		width: 100%;
+		padding: 1.5rem;
+		overflow-y: visible;
+		/* Counter the card's breathing animation to keep content stable */
+		animation: counter-breathe 8s ease-in-out infinite;
+	}
+
+	@keyframes counter-breathe {
+		0%,
+		100% {
+			transform: scale(1);
+		}
+		50% {
+			transform: scale(1.0204); /* 1 / 0.98 ≈ 1.0204 */
+		}
+	}
+
+	/* Adjust text color for better visibility on the gradient card */
+	.cardNew .auth-header h1 {
+		color: #fff;
+		text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+	}
+
+	.cardNew .auth-header p {
+		color: #e7cab2;
+	}
+
+	.cardNew .form-group label {
+		color: #e7cab2;
+		font-weight: 600;
+	}
+
+	/* Keep form elements readable */
+	.cardNew input {
+		background: rgba(255, 255, 255, 0.95) !important;
+		color: #1a1a1a;
+	}
+
+	/* Adjust button styling */
+	.cardNew .btn-primary {
+		background: linear-gradient(135deg, #ffeb7a 0%, #ffd700 100%);
+		color: #1a1a1a;
+		font-weight: 700;
+		border: 2px solid rgba(255, 255, 255, 0.3);
+	}
+
+	.cardNew .btn-primary:hover:not(:disabled) {
+		background: linear-gradient(135deg, #ffd700 0%, #ffeb7a 100%);
+		transform: translateY(-2px);
+		box-shadow: 0 8px 20px rgba(255, 235, 122, 0.4);
+	}
+
+	/* Error and success messages */
+	.cardNew .error-message {
+		background: rgba(255, 0, 0, 0.1);
+		border: 1px solid #ff6b6b;
+		color: #fff;
+	}
+
+	/* Auth footer links */
+	.cardNew .auth-footer p {
+		color: #e7cab2;
+	}
+
+	.cardNew .link {
+		color: #ffeb7a;
+		font-weight: 700;
+	}
+
+	.cardNew .link:hover {
+		color: #fff;
+		text-shadow: 0 0 8px #ffeb7a;
+	}
+
+	/* Adjust hr styling */
+	.cardNew hr {
+		border: none;
+		height: 1px;
+		background: linear-gradient(90deg, transparent, #888888, transparent);
+		margin: 1.5rem 0;
+	}
+
+	/* Responsive sizing for the outer container */
+	@media (max-width: 768px) {
+		.outerNew {
+			width: 95%;
+			max-width: 450px;
+			min-height: auto;
+			height: auto;
+		}
+		
+		.auth-content {
+			max-height: none;
 		}
 	}
 </style> 

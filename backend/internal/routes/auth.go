@@ -557,6 +557,17 @@ func LoginHandler(db *database.DB, emailService *services.EmailService) gin.Hand
 			// Continue anyway - this is not critical
 		}
 
+		// 🔗 AUTO-LINK CHECK: On every login, check for new unlinked Stripe customers
+		// This ensures users get linked even if they subscribed after their last login
+		linkingService := services.NewCustomerLinkingService(db)
+		linkResult, err := linkingService.LinkUserToCustomers(user.ID)
+		if err != nil {
+			log.Printf("⚠️  [LOGIN-LINK] Failed to check for unlinked customers for user %d: %v", user.ID, err)
+		} else if linkResult.CustomersLinked > 0 {
+			log.Printf("✅ [LOGIN-LINK] Auto-linked %d new Stripe customer(s) on login for user %d (%s)", 
+				linkResult.CustomersLinked, user.ID, user.Email)
+		}
+
 		// Log successful login
 		if db != nil {
 			auditLog := &database.AuditLog{

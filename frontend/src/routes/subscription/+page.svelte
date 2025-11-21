@@ -36,6 +36,30 @@
 
 	onMount(async () => {
 		await loadSubscriptionData();
+		
+		// 🔗 AUTO-CHECKOUT: Check if user just completed registration and should auto-open checkout
+		if (isAuthenticated && typeof window !== 'undefined') {
+			const urlParams = new URLSearchParams(window.location.search);
+			const autoCheckout = urlParams.get('auto_checkout') === 'true';
+			const planId = urlParams.get('plan_id');
+			
+			if (autoCheckout && planId) {
+				// Find the plan
+				const plan = availablePlans.find(p => p.id === planId);
+				
+				if (plan) {
+					showToast(`Opening checkout for ${plan.name}...`, 'success');
+					
+					// Wait for UI to settle, then open checkout
+					setTimeout(() => {
+						startEmbeddedCheckout(plan);
+					}, 800);
+					
+					// Clean up URL (remove query params)
+					window.history.replaceState({}, '', '/subscription');
+				}
+			}
+		}
 	});
 
 	const loadSubscriptionData = async () => {
@@ -69,11 +93,18 @@
 
 	const handleSelectPlan = async (plan: PublicSubscriptionPlan) => {
 		if (!isAuthenticated) {
-			showToast('Please sign in to continue', 'warning');
-			goto('/auth/login');
+			// 🔗 CONTEXT PRESERVATION: Save selected plan for seamless post-registration flow
+			sessionStorage.setItem('selected_plan_id', plan.id);
+			sessionStorage.setItem('selected_plan_name', plan.name);
+			
+			showToast(`Please sign in to subscribe to ${plan.name}`, 'info');
+			
+			// Redirect to login with return context
+			goto(`/auth/login?return=${encodeURIComponent('/subscription')}&plan_id=${plan.id}`);
 			return;
 		}
 
+		// ✅ USER IS AUTHENTICATED: Continue with normal checkout flow
 		selectedPlan = plan;
 		
 		// Check if there are any offers for this plan

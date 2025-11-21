@@ -115,12 +115,32 @@
 					storeAuthData(tokens, data.user);
 					console.log('✅ Auto-login successful after password setup');
 					
-					showToast('Password setup successful! Welcome to BOME!', 'success');
+					// 🔗 CHECK FOR PENDING SUBSCRIPTION: If user was subscribing, redirect to checkout
+					const planId = sessionStorage.getItem('selected_plan_id');
+					const returnUrl = sessionStorage.getItem('post_verify_return');
 					
-					// Redirect to videos after a short delay
-					setTimeout(() => {
-						goto('/videos');
-					}, 2000);
+					if (planId && returnUrl === '/subscription') {
+						showToast('Account setup complete! Opening checkout...', 'success');
+						
+						// Clear session storage
+						sessionStorage.removeItem('selected_plan_id');
+						sessionStorage.removeItem('post_verify_return');
+						
+						console.log('🔗 User was subscribing - redirecting to checkout with plan:', planId);
+						
+						// Redirect to subscription page with auto-checkout
+						setTimeout(() => {
+							goto(`/subscription?auto_checkout=true&plan_id=${planId}`);
+						}, 1500);
+					} else {
+						// Normal flow - no pending subscription
+						showToast('Password setup successful! Welcome to BOME!', 'success');
+						
+						// Redirect to videos after a short delay
+						setTimeout(() => {
+							goto('/videos');
+						}, 2000);
+					}
 				} else {
 					// Fallback if no tokens returned
 					showToast('Password setup successful! Please login with your new password.', 'success');
