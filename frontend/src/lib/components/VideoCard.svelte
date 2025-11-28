@@ -100,7 +100,7 @@
 			</div>
 		{/if}
 		<div class="play-overlay">
-			<div class="play-icon">▶️</div>
+			<div class="play-icon">▶︎</div>
 		</div>
 	</div>
 
@@ -190,12 +190,13 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		background: rgba(0, 0, 0, 0.3);
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		opacity: 0;
-		transition: opacity 0.3s ease;
+		box-shadow: none;
+		transition: opacity 0.53s ease-in-out,
+		box-shadow 0.53s ease-in-out;
 	}
 
 	.video-card:hover .play-overlay {
@@ -203,15 +204,21 @@
 	}
 
 	.play-icon {
-		font-size: 3rem;
-		color: white;
-		background: rgba(0, 0, 0, 0.7);
+		position: relative;
+		font-size: 1.75rem;
+		color: var(--primary-gold);
+		background: var(--primary-bom);
 		border-radius: 50%;
 		width: 60px;
 		height: 60px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		margin: 0 auto;
+		text-align: center;
+		box-shadow: inset 10px 10px 15px -10px var(--nmph-shadow-1),
+			inset -10px -10px 15px -10px var(--nmph-shadow-2),
+			10px 10px 15px var(--primary-bom-dark);
 	}
 
 	.video-info {
