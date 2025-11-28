@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { auth } from '$lib/stores/authStore';
+	import { auth } from '$lib/auth';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	
 	// Types
@@ -131,8 +131,8 @@
 		return months > 0 ? `${years}y ${months}m` : `${years} years`;
 	}
 	
-	$: unlockedAchievements = stats?.achievements.filter(a => a.is_unlocked) || [];
-	$: lockedAchievements = stats?.achievements.filter(a => !a.is_unlocked) || [];
+	const unlockedAchievements = $derived(stats?.achievements.filter(a => a.is_unlocked) || []);
+	const lockedAchievements = $derived(stats?.achievements.filter(a => !a.is_unlocked) || []);
 </script>
 
 <svelte:head>
