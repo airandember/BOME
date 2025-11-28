@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"bome-backend/internal/database"
+
+	"github.com/lib/pq"
 )
 
 // SubscriberElasticServiceV2 provides unified access to subscriber data using v2 tables
@@ -70,6 +72,22 @@ type UnifiedSubscriberV2 struct {
 func (s *SubscriberElasticServiceV2) GetUnifiedSubscriberByIDV2(userID int) (*UnifiedSubscriberV2, error) {
 	log.Printf("🔍 [SubscriberElasticServiceV2] Fetching unified data for user %d", userID)
 
+	// TEMPORARY: Ghost subscription identifiers confirmed by Stripe (Nov 2025)
+	// These are legitimate subscriptions that need video access despite being "ghost" products
+	// Includes both product IDs (prod_*) and plan codes (Combo, SYearPlus)
+	ghostProductIDs := []string{
+		"prod_FvNAeI348dup9w", // Combo product ID
+		"prod_HEmcX1PE8TO2CO", // Combo product ID
+		"prod_HF5YzcBH5Rwr0d", // Combo product ID
+		"prod_FvNAJgnw48hwpZ", // SYearPlus product ID
+		"prod_GVV5efccnh13h9", // SYearPlus product ID
+	}
+
+	ghostPlanCodes := []string{
+		"Combo",     // Plan code
+		"SYearPlus", // Plan code
+	}
+
 	query := `
 		WITH user_primary_customer AS (
 			-- Get the user's PRIMARY Stripe customer from the linking table
@@ -117,11 +135,14 @@ func (s *SubscriberElasticServiceV2) GetUnifiedSubscriberByIDV2(userID int) (*Un
 		),
 		user_access AS (
 			-- Determine video access based on subscription and manual overrides
+			-- TEMPORARY: Includes ghost product IDs and plan codes confirmed by Stripe (Nov 2025)
 			SELECT 
 				u.id as user_id,
 				CASE 
 					WHEN u.manual_video_access = true THEN true
 					WHEN us.subscription_status IN ('active', 'trialing') AND us.video_approved = true THEN true
+					WHEN us.subscription_status IN ('active', 'trialing') AND us.product_id = ANY($2::text[]) THEN true
+					WHEN us.subscription_status IN ('active', 'trialing') AND us.product_name = ANY($3::text[]) THEN true
 					ELSE false
 				END as has_video_access,
 				u.manual_video_access as manual_access_granted,
@@ -168,7 +189,7 @@ func (s *SubscriberElasticServiceV2) GetUnifiedSubscriberByIDV2(userID int) (*Un
 	var daysUntilExpiry sql.NullInt64
 	var createdAt time.Time
 
-	err := s.db.QueryRow(query, userID).Scan(
+	err := s.db.QueryRow(query, userID, pq.Array(ghostProductIDs), pq.Array(ghostPlanCodes)).Scan(
 		&sub.ID, &sub.Email, &firstName, &lastName, &sub.Role, &sub.EmailVerified, &sub.IsActive,
 		&createdAt, &lastLogin, &stripeCustomerID,
 		&primaryCustomerID,
@@ -282,6 +303,22 @@ func (s *SubscriberElasticServiceV2) GetUnifiedSubscriberByIDV2(userID int) (*Un
 func (s *SubscriberElasticServiceV2) GetAllUnifiedSubscribersV2() ([]UnifiedSubscriberV2, error) {
 	log.Printf("🔍 [SubscriberElasticServiceV2] Fetching all unified subscriber data")
 
+	// TEMPORARY: Ghost subscription identifiers confirmed by Stripe (Nov 2025)
+	// These are legitimate subscriptions that need video access despite being "ghost" products
+	// Includes both product IDs (prod_*) and plan codes (Combo, SYearPlus)
+	ghostProductIDs := []string{
+		"prod_FvNAeI348dup9w", // Combo product ID
+		"prod_HEmcX1PE8TO2CO", // Combo product ID
+		"prod_HF5YzcBH5Rwr0d", // Combo product ID
+		"prod_FvNAJgnw48hwpZ", // SYearPlus product ID
+		"prod_GVV5efccnh13h9", // SYearPlus product ID
+	}
+
+	ghostPlanCodes := []string{
+		"Combo",     // Plan code
+		"SYearPlus", // Plan code
+	}
+
 	query := `
 		WITH user_primary_customers AS (
 			-- Get each user's PRIMARY Stripe customer
@@ -304,6 +341,7 @@ func (s *SubscriberElasticServiceV2) GetAllUnifiedSubscribersV2() ([]UnifiedSubs
 				ss.stripe_created_at,
 				sp.name as product_name,
 				sp.video_approved,
+				sp.stripe_id as product_id,
 				spr.unit_amount as product_price,
 				spr.currency as product_currency,
 				spr.recurring_interval as product_interval,
@@ -327,11 +365,14 @@ func (s *SubscriberElasticServiceV2) GetAllUnifiedSubscribersV2() ([]UnifiedSubs
 			ORDER BY u.id, ss.stripe_created_at DESC
 		),
 		user_access AS (
+			-- TEMPORARY: Includes ghost product IDs and plan codes confirmed by Stripe (Nov 2025)
 			SELECT 
 				u.id as user_id,
 				CASE 
 					WHEN u.manual_video_access = true THEN true
 					WHEN us.subscription_status IN ('active', 'trialing') AND us.video_approved = true THEN true
+					WHEN us.subscription_status IN ('active', 'trialing') AND us.product_id = ANY($1::text[]) THEN true
+					WHEN us.subscription_status IN ('active', 'trialing') AND us.product_name = ANY($2::text[]) THEN true
 					ELSE false
 				END as has_video_access,
 				u.manual_video_access as manual_access_granted,
@@ -368,7 +409,7 @@ func (s *SubscriberElasticServiceV2) GetAllUnifiedSubscribersV2() ([]UnifiedSubs
 		ORDER BY u.id
 	`
 
-	rows, err := s.db.Query(query)
+	rows, err := s.db.Query(query, pq.Array(ghostProductIDs), pq.Array(ghostPlanCodes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to query subscribers: %w", err)
 	}

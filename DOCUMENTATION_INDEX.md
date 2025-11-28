@@ -34,6 +34,16 @@ This index provides a quick reference to all major documentation in the BOME cod
 | [backend/braids/subscription-checkout/FLOW_DIAGRAM.md](backend/braids/subscription-checkout/FLOW_DIAGRAM.md) | Visual flow (frontend→backend→DB) | Developers |
 | [backend/braids/subscription-checkout/QUICK_REFERENCE.md](backend/braids/subscription-checkout/QUICK_REFERENCE.md) | Troubleshooting & operations | Developers, Support |
 
+### Video Analytics System
+
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| [backend/braids/video-analytics/README.md](backend/braids/video-analytics/README.md) | Overview & system purpose | Everyone |
+| [backend/braids/video-analytics/BRAID.md](backend/braids/video-analytics/BRAID.md) | Architecture & data tiers | Developers |
+| [backend/braids/video-analytics/METRICS_GUIDE.md](backend/braids/video-analytics/METRICS_GUIDE.md) | Every metric explained with SQL | Developers, Product, Business |
+| [backend/braids/video-analytics/IMPLEMENTATION_CHECKLIST.md](backend/braids/video-analytics/IMPLEMENTATION_CHECKLIST.md) | Phase-by-phase implementation | Developers |
+| [backend/braids/video-analytics/QUICK_START.md](backend/braids/video-analytics/QUICK_START.md) | Get tracking in 15 minutes | Developers |
+
 ### Bug Fixes & Incidents
 
 | Document | Issue | Status |
@@ -66,24 +76,30 @@ A BRAID is a documentation methodology that:
 
 ```
 backend/braids/
-└── subscription-checkout/          ✅ Complete
-    ├── README.md                   - Entry point
-    ├── BRAID.md                    - Architecture
-    ├── FLOW_DIAGRAM.md             - Visual flows
-    ├── QUICK_REFERENCE.md          - Operations guide
-    └── strands/                    - Individual flows (TODO)
-        ├── checkout-flow/
-        ├── session-verification/
-        ├── customer-linking/
-        ├── webhook-confirmation/
-        └── access-management/
+├── subscription-checkout/          ✅ Complete
+│   ├── README.md                   - Entry point
+│   ├── BRAID.md                    - Architecture
+│   ├── FLOW_DIAGRAM.md             - Visual flows
+│   ├── QUICK_REFERENCE.md          - Operations guide
+│   └── strands/                    - Individual flows (TODO)
+│       ├── checkout-flow/
+│       ├── session-verification/
+│       ├── customer-linking/
+│       ├── webhook-confirmation/
+│       └── access-management/
+│
+└── video-analytics/                🚧 In Development
+    ├── README.md                   - Entry point & overview
+    ├── BRAID.md                    - Architecture & data flow
+    ├── METRICS_GUIDE.md            - All metrics explained
+    ├── IMPLEMENTATION_CHECKLIST.md - Phase-by-phase plan
+    └── QUICK_START.md              - Get tracking in 15 min
 ```
 
 ### Planned BRAIDs
 
-- **Video Analytics** (Next up!)
-- **Video Streaming**
-- **Admin Dashboard**
+- **Video Streaming** (Player, encoding, CDN)
+- **Admin Dashboard** (UI components, charts)
 - **Authentication** (Was deleted, needs reconstruction)
 
 ---
@@ -222,9 +238,13 @@ backend/braids/
 - ✅ Subscribe-before-register handling
 
 ### In Progress
-- 🚧 Video analytics BRAID (Next!)
+- 🚧 Video analytics BRAID - Documentation complete, implementation ready
+- 🚧 V2 Stripe migration - 100% complete!
 
 ### Planned
+- ⏳ Video analytics implementation (service layer, routes, frontend)
+- ⏳ Analytics dashboard UI
+- ⏳ Revenue attribution tracking
 - ⏳ Customer portal dual-confirmation
 - ⏳ Automated testing suite
 - ⏳ Authentication BRAID reconstruction
@@ -237,10 +257,11 @@ backend/braids/
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2025-11-18 | Initial documentation index created |
+| 1.1 | 2025-11-22 | Added Video Analytics BRAID, V2 migration complete |
 
 ---
 
 **Maintained by:** BOME Development Team  
-**Last Updated:** 2025-11-18  
+**Last Updated:** 2025-11-22  
 **Questions?** Start with the relevant BRAID's README.md
 

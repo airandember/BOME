@@ -8,6 +8,7 @@
 	import EnhancedSubscriberViewModal from './EnhancedSubscriberViewModal.svelte';
 	import EnhancedSubscriberEditModal from './EnhancedSubscriberEditModal.svelte';
 	import { StripeWebhookAutoSync } from '$lib/services/webhook-auto-sync';
+	import * as XLSX from 'xlsx';
 	
 	// State
 	let showViewModal = $state(false);
@@ -196,8 +197,61 @@
 	}
 	
 	function handleExport(event: { data: any[]; format: string }) {
-		console.log('📊 Exporting', event.data.length, 'records in', event.format, 'format');
-		// TODO: Implement export functionality
+		// Use the complete filtered dataset instead of just the paginated view
+		const dataToExport = filteredData;
+		console.log('📊 Exporting', dataToExport.length, 'records in', event.format, 'format');
+		
+		try {
+			// Prepare data for export (exclude the actions column and format the data)
+			const exportData = dataToExport.map(subscriber => {
+				const mrr = Number(subscriber.mrr_contribution) || 0;
+				const arr = mrr * 12; // Calculate ARR from MRR
+				
+				return {
+					'Email': subscriber.email || '',
+					'First Name': subscriber.first_name || '',
+					'Last Name': subscriber.last_name || '',
+					'Plan': subscriber.plan_name || '',
+					'Type': subscriber.plan_legacy_status || '',
+					'Video Access': subscriber.has_video_access ? 'Yes' : 'No',
+					'Active Plan': subscriber.has_active_plan ? 'Yes' : 'No',
+					'Email Verified': subscriber.email_verified ? 'Yes' : 'No',
+					'Status': subscriber.plan_status || '',
+					'Expires': subscriber.billing_period_end ? new Date(subscriber.billing_period_end).toLocaleDateString() : '',
+					'MRR': `$${mrr.toFixed(2)}`,
+					'ARR': `$${arr.toFixed(2)}`,
+					'Days Left': subscriber.days_until_expiry !== null && subscriber.days_until_expiry !== undefined ? subscriber.days_until_expiry : ''
+				};
+			});
+			
+			// Create a new workbook and worksheet
+			const worksheet = XLSX.utils.json_to_sheet(exportData);
+			const workbook = XLSX.utils.book_new();
+			XLSX.utils.book_append_sheet(workbook, worksheet, 'Subscribers');
+			
+			// Auto-size columns (approximate)
+			const maxWidth = 50;
+			const colWidths = Object.keys(exportData[0] || {}).map(key => {
+				const maxLen = Math.max(
+					key.length,
+					...exportData.map(row => String(row[key as keyof typeof row] || '').length)
+				);
+				return { wch: Math.min(maxLen + 2, maxWidth) };
+			});
+			worksheet['!cols'] = colWidths;
+			
+			// Generate filename with timestamp
+			const timestamp = new Date().toISOString().split('T')[0];
+			const filename = `subscribers_export_${timestamp}.xlsx`;
+			
+			// Download the file
+			XLSX.writeFile(workbook, filename);
+			
+			console.log('✅ Export successful:', filename, `(${exportData.length} records)`);
+		} catch (error) {
+			console.error('❌ Export failed:', error);
+			alert('Failed to export data. Please try again.');
+		}
 	}
 	
 	function handleSubscriberUpdate(updatedSubscriber: EnhancedSubscriber) {

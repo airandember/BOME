@@ -71,7 +71,7 @@
 <style>
 	.app {
 		min-height: 100vh;
-		background: var(--bg-primary);
+		background: var(--bg-gray);
 		color: var(--text-primary);
 		transition: all var(--transition-normal);
 	}

@@ -130,12 +130,12 @@ func SetupRoutes(
 		SetupAdminStreamingRoutes(admin, db, stripeService, analyticsService, biService, subscriptionPlanStripeService, subscriptionOffersStripeService, bunnyService)
 		SetupMasterVideoRoutes(admin, db, bunnyService)
 
-	// Setup unified subscriber elastic service routes (v1) - DEPRECATED
-	// SetupSubscriberElasticRoutes(admin, db) // ⚠️ DISABLED: V1 deprecated, use V2 below
+		// Setup unified subscriber elastic service routes (v1) - DEPRECATED
+		// SetupSubscriberElasticRoutes(admin, db) // ⚠️ DISABLED: V1 deprecated, use V2 below
 
-	// Setup unified subscriber elastic service routes (v2 - PRIMARY)
-	SetupSubscriberElasticRoutesV2(admin, db)
-	fmt.Printf("✅ Subscriber Elastic V2 routes setup complete (V1 deprecated)\n")
+		// Setup unified subscriber elastic service routes (v2 - PRIMARY)
+		SetupSubscriberElasticRoutesV2(admin, db)
+		fmt.Printf("✅ Subscriber Elastic V2 routes setup complete (V1 deprecated)\n")
 
 		// Setup comparison routes (v1 vs v2)
 		SetupSubscriberComparisonRoutes(admin, db)
@@ -206,6 +206,22 @@ func SetupRoutes(
 
 		// Setup tag routes
 		SetupTagRoutes(router, db)
+
+		// Setup Video Analytics routes
+		RegisterVideoAnalyticsRoutes(v1, db, redis)
+		fmt.Printf("✅ Video Analytics routes setup complete\n")
+
+		// Setup Revenue Attribution routes
+		RegisterRevenueAttributionRoutes(v1, db)
+		fmt.Printf("✅ Revenue Attribution routes setup complete\n")
+
+		// Setup User Watch Stats routes
+		RegisterUserWatchStatsRoutes(v1, db)
+		fmt.Printf("✅ User Watch Stats routes setup complete\n")
+
+		// Setup Analytics Export routes
+		RegisterAnalyticsExportRoutes(v1, db)
+		fmt.Printf("✅ Analytics Export routes setup complete\n")
 
 		// Setup advertisement routes - COMMENTED OUT until frontend ad system is ready
 		// fmt.Printf("Setting up advertisement routes...\n")
@@ -739,6 +755,58 @@ func SetupRoutes(
 			c.JSON(http.StatusOK, gin.H{"message": "Video streaming endpoint"})
 		})
 
+		// Thumbnail proxy endpoint (handles 403 Forbidden from Bunny CDN)
+		videos.GET("/:id/thumbnail", func(c *gin.Context) {
+			videoID := c.Param("id") // This is the bunny_video_id (GUID)
+
+			// Try multiple thumbnail variations (Bunny generates different versions)
+			thumbnailURLs := []string{
+				fmt.Sprintf("https://vz-f75053f7-465.b-cdn.net/%s/thumbnail.jpg", videoID),
+				fmt.Sprintf("https://vz-f75053f7-465.b-cdn.net/%s/thumbnail_ba857e8d.jpg", videoID),
+				fmt.Sprintf("https://vz-f75053f7-465.b-cdn.net/%s/preview.webp", videoID),
+			}
+
+			client := &http.Client{Timeout: 10 * time.Second}
+
+			// Try each URL until one works
+			for _, thumbnailURL := range thumbnailURLs {
+				req, err := http.NewRequest("GET", thumbnailURL, nil)
+				if err != nil {
+					continue
+				}
+
+				// Add headers to prevent 403
+				req.Header.Set("Referer", "https://vz-f75053f7-465.b-cdn.net/")
+				req.Header.Set("User-Agent", "BOME-Backend/1.0")
+
+				// Fetch from Bunny
+				resp, err := client.Do(req)
+				if err != nil {
+					continue
+				}
+
+				// Check if successful
+				if resp.StatusCode == http.StatusOK {
+					// Success! Stream the thumbnail
+					c.Header("Content-Type", resp.Header.Get("Content-Type"))
+					c.Header("Cache-Control", "public, max-age=3600") // Cache for 1 hour
+					io.Copy(c.Writer, resp.Body)
+					resp.Body.Close()
+					return
+				}
+
+				resp.Body.Close()
+			}
+
+			// All attempts failed - return placeholder
+			// Return a 1x1 transparent PNG as fallback
+			c.Header("Content-Type", "image/png")
+			c.Header("Cache-Control", "public, max-age=60") // Cache for 1 min only
+			// 1x1 transparent PNG
+			placeholder := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82}
+			c.Data(http.StatusOK, "image/png", placeholder)
+		})
+
 		// Add blob URL endpoint for direct video data access
 		videos.GET("/:id/blob", middleware.AuthRequired(), middleware.SubscriptionValidation(subscriberElasticService), func(c *gin.Context) {
 			videoID := c.Param("id")
@@ -916,21 +984,32 @@ func SetupRoutes(
 		// Check if video exists in our database
 		dbVideo, err := db.GetVideoByBunnyID(videoID)
 		if err != nil {
-			// Video doesn't exist, create it
-			dbVideo, err = db.CreateVideo(
-				bunnyVideo.Title,
-				description,
-				bunnyVideo.GUID,
-				bunnyService.GetThumbnailURL(bunnyVideo.GUID),
-				bunnyVideo.Category,
-				bunnyVideo.Length,
-				bunnyVideo.StorageSize,
-				[]string{},
-				1,    // createdBy - system //SHOULD WE CONSIDER CHANGING THIS TO USER ID?
-				true, // vid_status
-			)
-			if err != nil {
-				fmt.Printf("Failed to create video in database: %v\n", err)
+			// Video doesn't exist (or failed to retrieve), create it
+			log.Printf("⚠️ GetVideoByBunnyID failed for %s: %v", videoID, err)
+			// Use authenticated user ID as created_by (who is accessing the video)
+			userID := c.GetInt("user_id")
+			if userID == 0 {
+				// Fallback: If not authenticated, skip database creation
+				// Return Bunny data only (will work but no analytics tracking)
+				log.Printf("⚠️ Anonymous user accessing new video %s - skipping database creation", videoID)
+				dbVideo = nil
+			} else {
+				dbVideo, err = db.CreateVideo(
+					bunnyVideo.Title,
+					description,
+					bunnyVideo.GUID,
+					bunnyService.GetThumbnailURL(bunnyVideo.GUID),
+					bunnyVideo.Category,
+					bunnyVideo.Length,
+					bunnyVideo.StorageSize,
+					[]string{},
+					userID, // created_by - authenticated user
+					true,   // vid_status
+				)
+				if err != nil {
+					fmt.Printf("Failed to create video in database: %v\n", err)
+					dbVideo = nil // Set to nil to avoid panic later
+				}
 			}
 		} else {
 			// Video exists, check if it needs updating
@@ -954,7 +1033,13 @@ func SetupRoutes(
 			if dbVideo.FileSize != bunnyVideo.StorageSize {
 				updates["file_size"] = bunnyVideo.StorageSize
 			}
-			if dbVideo.ViewCount != bunnyVideo.Views {
+
+			// Only sync view count from Bunny if we don't have detailed analytics
+			// Once we start tracking views in watch_history, that becomes our source of truth
+			var hasAnalytics bool
+			err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM watch_history WHERE video_id = $1 LIMIT 1)", dbVideo.ID).Scan(&hasAnalytics)
+			if err == nil && !hasAnalytics && dbVideo.ViewCount != bunnyVideo.Views {
+				// No analytics data yet, safe to sync from Bunny
 				updates["view_count"] = bunnyVideo.Views
 			}
 
@@ -969,9 +1054,9 @@ func SetupRoutes(
 			}
 		}
 
-		// Return the full Bunny.net response
+		// Return the full Bunny.net response with database ID for analytics
 		response := gin.H{
-			"id":             bunnyVideo.GUID,
+			"bunnyVideoId":   bunnyVideo.GUID, // Bunny GUID for playback
 			"title":          bunnyVideo.Title,
 			"description":    description,
 			"status":         status,
@@ -989,6 +1074,16 @@ func SetupRoutes(
 			"tags":           []string{}, // Bunny.net doesn't provide tags
 			"encodeProgress": 0,          // Bunny.net doesn't provide this
 			"storageSize":    bunnyVideo.StorageSize,
+		}
+
+		// Include database numeric ID if available (for analytics tracking)
+		if dbVideo != nil {
+			response["id"] = dbVideo.ID
+		} else {
+			// If video doesn't exist in DB yet, use 0 as placeholder
+			// Frontend should handle this gracefully
+			response["id"] = 0
+			log.Printf("⚠️ Video %s not in database yet, returning id=0", bunnyVideo.GUID)
 		}
 
 		c.JSON(http.StatusOK, response)
