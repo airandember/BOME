@@ -317,7 +317,7 @@ func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]Trending
 		SELECT 
 			v.id AS video_id,
 			v.title,
-			'/api/v1/videos/' || v.bunny_video_id || '/thumbnail' AS thumbnail_url,
+			'/bome-backend/api/v1/videos/' || v.bunny_video_id || '/thumbnail' AS thumbnail_url,
 			GREATEST(v.views / 10, 1) AS last_24h_views,
 			v.updated_at AS last_view_at,
 			0 AS completion_rate,
@@ -495,18 +495,18 @@ func (s *VideoAnalyticsService) GetTopVideos(limit int, days int) ([]map[string]
 				COUNT(*) FILTER (WHERE wh.last_watched_at > NOW() - INTERVAL '1 day' * $2) AS recent_views
 			FROM watch_history wh
 			GROUP BY wh.video_id
-		)
-		SELECT 
-			v.id,
-			v.title,
-			'/api/v1/videos/' || v.bunny_video_id || '/thumbnail' AS thumbnail_url,
-			v.duration,
-			-- Use analytics data if available, otherwise use master_video_list.views
-			COALESCE(av.unique_viewers, v.views, 0) AS total_views,
-			COALESCE(av.unique_viewers, v.views, 0) AS unique_viewers,
-			COALESCE(av.avg_completion, 0.0) AS avg_completion,
-			COALESCE(av.total_watch_time, 0) AS total_watch_time
-		FROM master_video_list v
+	)
+	SELECT 
+		v.id,
+		v.title,
+		'/bome-backend/api/v1/videos/' || v.bunny_video_id || '/thumbnail' AS thumbnail_url,
+		v.duration,
+		-- Use analytics data if available, otherwise use master_video_list.views
+		COALESCE(av.unique_viewers, v.views, 0) AS total_views,
+		COALESCE(av.unique_viewers, v.views, 0) AS unique_viewers,
+		COALESCE(av.avg_completion, 0.0) AS avg_completion,
+		COALESCE(av.total_watch_time, 0) AS total_watch_time
+	FROM master_video_list v
 		LEFT JOIN analytics_views av ON av.video_id = v.id
 		WHERE v.status = 'ready' AND (av.unique_viewers > 0 OR v.views > 0)
 		ORDER BY total_views DESC
