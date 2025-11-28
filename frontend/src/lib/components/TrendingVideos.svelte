@@ -2,10 +2,12 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { videoAnalytics } from '$lib/services/videoAnalytics';
+	import { config } from '$lib/config';
 	
 	// Types
 	interface TrendingVideo {
 		video_id: number;
+		bunny_video_id?: string;
 		title: string;
 		thumbnail_url: string;
 		last_24h_views?: number;
@@ -106,6 +108,16 @@
 			default:
 				return 'Top 25 most viewed videos';
 		}
+	}
+	
+	// Construct full thumbnail URL from relative path
+	function getThumbnailUrl(video: TrendingVideo): string {
+		// If thumbnail_url is already a full URL, return as-is
+		if (video.thumbnail_url.startsWith('http')) {
+			return video.thumbnail_url;
+		}
+		// Otherwise, construct using config.apiBaseUrl
+		return `${config.apiBaseUrl}/${video.thumbnail_url}`;
 	}
 	
 	function startAutoRefresh() {
@@ -246,11 +258,11 @@
 				>
 					<div class="rank-badge">#{index + 1}</div>
 					
-					<div class="thumbnail-container">
-						<img 
-							src={video.thumbnail_url || '/placeholder-video.png'} 
-							alt={video.title}
-							class="thumbnail"
+				<div class="thumbnail-container">
+					<img 
+						src={getThumbnailUrl(video) || '/placeholder-video.png'} 
+						alt={video.title}
+						class="thumbnail"
 						/>
 						{#if viewMode === 'trending' && video.trending_score !== undefined}
 							<div class="trending-overlay">

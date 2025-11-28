@@ -64,8 +64,9 @@ type VideoStats struct {
 // TrendingVideo represents a video in the trending list
 type TrendingVideo struct {
 	VideoID       int     `json:"video_id"`
+	BunnyVideoID  string  `json:"bunny_video_id"`
 	Title         string  `json:"title"`
-	ThumbnailURL  string  `json:"thumbnail_url"`
+	ThumbnailURL  string  `json:"thumbnail_url"` // Deprecated: kept for backward compatibility
 	Last24HViews  int     `json:"last_24h_views"`
 	TrendingScore float64 `json:"trending_score"`
 }
@@ -317,7 +318,8 @@ func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]Trending
 		SELECT 
 			v.id AS video_id,
 			v.title,
-			'/api/v1/videos/' || v.bunny_video_id || '/thumbnail' AS thumbnail_url,
+			v.bunny_video_id,
+			v.thumbnail_url,
 			GREATEST(v.views / 10, 1) AS last_24h_views,
 			v.updated_at AS last_view_at,
 			0 AS completion_rate,
@@ -359,6 +361,7 @@ func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]Trending
 		err := rows.Scan(
 			&video.VideoID,
 			&video.Title,
+			&video.BunnyVideoID,
 			&video.ThumbnailURL,
 			&video.Last24HViews,
 			&lastViewAt,
@@ -369,6 +372,8 @@ func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]Trending
 			log.Printf("⚠️  [Video Analytics] Error scanning row %d: %v", rowCount, err)
 			continue
 		}
+
+		// ThumbnailURL is already populated from database - no need to construct it!
 
 		// Simple score based on views and recency
 		daysSinceUpdate := time.Since(lastViewAt).Hours() / 24.0
@@ -495,18 +500,19 @@ func (s *VideoAnalyticsService) GetTopVideos(limit int, days int) ([]map[string]
 				COUNT(*) FILTER (WHERE wh.last_watched_at > NOW() - INTERVAL '1 day' * $2) AS recent_views
 			FROM watch_history wh
 			GROUP BY wh.video_id
-		)
-		SELECT 
-			v.id,
-			v.title,
-			'/api/v1/videos/' || v.bunny_video_id || '/thumbnail' AS thumbnail_url,
-			v.duration,
-			-- Use analytics data if available, otherwise use master_video_list.views
-			COALESCE(av.unique_viewers, v.views, 0) AS total_views,
-			COALESCE(av.unique_viewers, v.views, 0) AS unique_viewers,
-			COALESCE(av.avg_completion, 0.0) AS avg_completion,
-			COALESCE(av.total_watch_time, 0) AS total_watch_time
-		FROM master_video_list v
+	)
+	SELECT 
+		v.id,
+		v.title,
+		v.bunny_video_id,
+		v.thumbnail_url,
+		v.duration,
+		-- Use analytics data if available, otherwise use master_video_list.views
+		COALESCE(av.unique_viewers, v.views, 0) AS total_views,
+		COALESCE(av.unique_viewers, v.views, 0) AS unique_viewers,
+		COALESCE(av.avg_completion, 0.0) AS avg_completion,
+		COALESCE(av.total_watch_time, 0) AS total_watch_time
+	FROM master_video_list v
 		LEFT JOIN analytics_views av ON av.video_id = v.id
 		WHERE v.status = 'ready' AND (av.unique_viewers > 0 OR v.views > 0)
 		ORDER BY total_views DESC
@@ -523,17 +529,20 @@ func (s *VideoAnalyticsService) GetTopVideos(limit int, days int) ([]map[string]
 	var videos []map[string]interface{}
 	for rows.Next() {
 		var id, duration, totalViews, uniqueViewers, totalWatchTime int
-		var title, thumbnailURL string
+		var title, bunnyVideoID, thumbnailURL string
 		var avgCompletion float64
 
-		err := rows.Scan(&id, &title, &thumbnailURL, &duration, &totalViews, &uniqueViewers, &avgCompletion, &totalWatchTime)
+		err := rows.Scan(&id, &title, &bunnyVideoID, &thumbnailURL, &duration, &totalViews, &uniqueViewers, &avgCompletion, &totalWatchTime)
 		if err != nil {
 			log.Printf("⚠️  [Video Analytics] Error scanning video: %v", err)
 			continue
 		}
 
+		// ThumbnailURL is already from database - no need to construct it!
+
 		videos = append(videos, map[string]interface{}{
 			"video_id":         id,
+			"bunny_video_id":   bunnyVideoID,
 			"title":            title,
 			"thumbnail_url":    thumbnailURL,
 			"duration":         duration,
