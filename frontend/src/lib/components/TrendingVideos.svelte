@@ -164,7 +164,7 @@
 					{viewMode === 'trending' ? 'Trending Now' : 'Most Watched'}
 				</h2>
 				<p class="subtitle">
-					{viewMode === 'trending' ? 'Most watched in the last 24 hours' : getTimePeriodLabel()}
+					{viewMode === 'trending' ? 'Most watched in the last 7 days' : getTimePeriodLabel()}
 				</p>
 			</div>
 			{#if lastUpdated}

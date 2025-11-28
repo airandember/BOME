@@ -133,7 +133,7 @@ func RegisterVideoAnalyticsRoutes(router *gin.RouterGroup, db *database.DB, redi
 			log.Printf("🌐 [ROUTE] Client IP: %s", c.ClientIP())
 			log.Printf("🌐 [ROUTE] User-Agent: %s", c.GetHeader("User-Agent"))
 			log.Printf("🌐 [ROUTE] Query params: %s", c.Request.URL.RawQuery)
-			
+
 			limit, err := strconv.Atoi(c.DefaultQuery("limit", "10"))
 			if err != nil || limit <= 0 {
 				log.Printf("🌐 [ROUTE] Invalid limit parameter, using default: 10")
