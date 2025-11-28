@@ -1288,7 +1288,7 @@
 							<TrendingVideos limit={20} showTitle={true} autoRefresh={true} refreshInterval={60000} />
 							
 							<!-- Continue Watching Section (below trending) -->
-							{#if auth.isAuthenticated}
+							{#if $auth.isAuthenticated}
 								<div class="continue-watching-wrapper">
 									<ContinueWatching limit={10} showTitle={true} />
 								</div>
