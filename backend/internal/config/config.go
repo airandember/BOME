@@ -89,6 +89,9 @@ type Config struct {
 	MetricsPort         string
 	HealthCheckEndpoint string
 
+	// API Configuration
+	APIPathPrefix string // e.g., "/bome-backend" for production routing
+
 	// Security Configuration
 	BCryptCost    int
 	SessionSecret string
