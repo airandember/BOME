@@ -271,8 +271,13 @@ func (s *VideoAnalyticsService) GetTrendingVideos(limit int) ([]TrendingVideo, e
 		limit = 100 // Default limit - top 100 trending
 	}
 
+	// Create context with timeout (10 seconds max)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Simplified, faster query - use MATERIALIZED CTEs and limit subqueries
 	query := `
-		WITH recent_stats AS (
+		WITH recent_stats AS MATERIALIZED (
 			SELECT 
 				video_id,
 				COUNT(DISTINCT COALESCE(user_id::text, session_id)) AS last_24h_views,
@@ -280,37 +285,40 @@ func (s *VideoAnalyticsService) GetTrendingVideos(limit int) ([]TrendingVideo, e
 			FROM watch_history
 			WHERE last_watched_at > NOW() - INTERVAL '24 hours'
 			GROUP BY video_id
+			HAVING COUNT(*) > 0
+			LIMIT 500
 		),
-		video_engagement AS (
+		video_engagement AS MATERIALIZED (
 			SELECT 
 				wh.video_id,
-				COUNT(*) FILTER (WHERE wh.completed = true)::FLOAT / 
-					NULLIF(COUNT(*), 0)::FLOAT * 100 AS completion_rate
+				(COUNT(*) FILTER (WHERE wh.completed = true)::FLOAT / 
+					NULLIF(COUNT(*), 0)::FLOAT * 100) AS completion_rate
 			FROM watch_history wh
 			WHERE wh.last_watched_at > NOW() - INTERVAL '7 days'
+				AND wh.video_id IN (SELECT video_id FROM recent_stats)
 			GROUP BY wh.video_id
 		)
 		SELECT 
 			v.id AS video_id,
 			v.title,
 			'/api/v1/videos/' || v.bunny_video_id || '/thumbnail' AS thumbnail_url,
-			-- Use analytics data if available, otherwise use a portion of master_video_list.views
-			COALESCE(r.last_24h_views, GREATEST(v.views / 10, 1)) AS last_24h_views,
+			COALESCE(r.last_24h_views, 0) AS last_24h_views,
 			COALESCE(r.last_view_at, v.updated_at, v.created_at) AS last_view_at,
 			COALESCE(ve.completion_rate, 0) AS completion_rate,
 			v.likes
 		FROM master_video_list v
-		LEFT JOIN recent_stats r ON r.video_id = v.id
+		INNER JOIN recent_stats r ON r.video_id = v.id
 		LEFT JOIN video_engagement ve ON ve.video_id = v.id
-		WHERE v.status = 'ready' AND (r.last_24h_views > 0 OR v.views > 0)
-		ORDER BY last_24h_views DESC
+		WHERE v.status = 'ready'
+		ORDER BY r.last_24h_views DESC, v.views DESC
 		LIMIT $1
 	`
 
-	rows, err := s.db.Query(query, limit)
+	rows, err := s.db.QueryContext(ctx, query, limit)
 	if err != nil {
-		log.Printf("❌ [Video Analytics] Failed to get trending videos: %v", err)
-		return nil, fmt.Errorf("failed to get trending videos: %w", err)
+		log.Printf("❌ [Video Analytics] Trending query failed (timeout or error): %v", err)
+		// Fallback: use simple view count from master_video_list
+		return s.getFallbackTrendingVideos(limit)
 	}
 	defer rows.Close()
 
@@ -361,6 +369,69 @@ func (s *VideoAnalyticsService) GetTrendingVideos(limit int) ([]TrendingVideo, e
 	}
 
 	log.Printf("✅ [Video Analytics] Found %d trending videos", len(trending))
+	return trending, nil
+}
+
+// getFallbackTrendingVideos returns trending videos based purely on master_video_list.views
+// Used as a fallback when the complex analytics query times out
+func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]TrendingVideo, error) {
+	log.Printf("⚠️  [Video Analytics] Using fallback trending query (view count only)")
+
+	query := `
+		SELECT 
+			v.id AS video_id,
+			v.title,
+			'/api/v1/videos/' || v.bunny_video_id || '/thumbnail' AS thumbnail_url,
+			GREATEST(v.views / 10, 1) AS last_24h_views,
+			v.updated_at AS last_view_at,
+			0 AS completion_rate,
+			v.likes
+		FROM master_video_list v
+		WHERE v.status = 'ready' AND v.views > 0
+		ORDER BY v.views DESC, v.updated_at DESC
+		LIMIT $1
+	`
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	rows, err := s.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		log.Printf("❌ [Video Analytics] Even fallback query failed: %v", err)
+		return []TrendingVideo{}, nil // Return empty array rather than error
+	}
+	defer rows.Close()
+
+	var trending []TrendingVideo
+	for rows.Next() {
+		var video TrendingVideo
+		var lastViewAt time.Time
+		var completionRate float64
+		var likes int
+
+		err := rows.Scan(
+			&video.VideoID,
+			&video.Title,
+			&video.ThumbnailURL,
+			&video.Last24HViews,
+			&lastViewAt,
+			&completionRate,
+			&likes,
+		)
+		if err != nil {
+			log.Printf("⚠️  [Video Analytics] Error scanning fallback trending video: %v", err)
+			continue
+		}
+
+		// Simple score based on views and recency
+		daysSinceUpdate := time.Since(lastViewAt).Hours() / 24.0
+		recencyBonus := 100.0 / (1.0 + daysSinceUpdate/30.0) // Decay over 30 days
+		video.TrendingScore = (float64(video.Last24HViews) * 10) + recencyBonus
+
+		trending = append(trending, video)
+	}
+
+	log.Printf("✅ [Video Analytics] Fallback: Found %d trending videos from view counts", len(trending))
 	return trending, nil
 }
 
