@@ -65,9 +65,9 @@
 	$effect(() => {
 		if (initialLoad) {
 		const tabParam = $page.url.searchParams.get('tab');
-		console.log('🔗 Initial URL effect - tabParam:', tabParam);
+		//console.log('🔗 Initial URL effect - tabParam:', tabParam);
 		if (tabParam && ['latest', 'trending', 'collections', 'categories', 'allVideos'].includes(tabParam)) {
-			console.log('✅ Setting initial activeTab from URL to:', tabParam);
+			//console.log('✅ Setting initial activeTab from URL to:', tabParam);
 			activeTab = tabParam as typeof activeTab;
 		}
 			initialLoad = false;
@@ -77,7 +77,7 @@
 	// Load the static comprehensive search index
 	async function loadStaticSearchIndex() {
 		try {
-			console.log('📥 Loading comprehensive search index...');
+			//console.log('📥 Loading comprehensive search index...');
 			const response = await fetch('/search-index.json');
 			
 			if (!response.ok) {
@@ -88,16 +88,16 @@
 			staticSearchIndex = data.videos || [];
 			searchIndexLoaded = true;
 			
-			console.log('✅ Static search index loaded:', {
-				totalVideos: staticSearchIndex.length,
-				version: data.version,
-				generatedAt: data.generatedAt
-			});
+			//console.log('✅ Static search index loaded:', {
+			//	totalVideos: staticSearchIndex.length,
+			//	version: data.version,
+			//	generatedAt: data.generatedAt
+			//});
 			
 			// Build the Fuse index ONCE from the static JSON (never rebuild)
 			if (staticSearchIndex.length > 0) {
 				fuseIndex = new Fuse(staticSearchIndex, fuseOptions);
-				console.log('🔍 Static Fuse.js index built ONCE with', staticSearchIndex.length, 'videos');
+				//console.log('🔍 Static Fuse.js index built ONCE with', staticSearchIndex.length, 'videos');
 			}
 			
 			// Preload thumbnails for the most recent/popular videos for instant display
@@ -121,7 +121,7 @@
 		const results = fuseIndex.search(query); // No limit - show ALL matching results
 		const searchTime = performance.now() - startTime;
 		
-		console.log('⚡ Fuzzy search completed in', Math.round(searchTime), 'ms for query:', query);
+		//console.log('⚡ Fuzzy search completed in', Math.round(searchTime), 'ms for query:', query);
 		
 		// Sort by fuzzy match score first, then by date within similar relevance tiers
 		const sortedResults = [...results].sort((a, b) => {
@@ -141,23 +141,23 @@
 		// Extract the actual video objects from sorted Fuse results (create new array for immutability)
 		const videos = sortedResults.map(result => result.item);
 		
-		console.log('🎯 Search results sorted:', {
-			query,
-			totalResults: videos.length,
-			bestMatch: videos[0]?.title,
-			bestScore: results[0]?.score,
-			searchTime: Math.round(searchTime),
-			firstFewDates: videos.slice(0, 5).map(v => ({
-				title: v.title?.substring(0, 30) + '...',
-				date: v.createdAt,
-				parsed: new Date(v.createdAt || 0).toISOString()
-			})),
-			firstFewScores: sortedResults.slice(0, 5).map(r => ({
-				title: r.item.title?.substring(0, 30) + '...',
-				score: r.score,
-				date: r.item.createdAt
-			}))
-		});
+		//console.log('🎯 Search results sorted:', {
+		//	query,
+		//	totalResults: videos.length,
+		//	bestMatch: videos[0]?.title,
+		//	bestScore: results[0]?.score,
+		//	searchTime: Math.round(searchTime),
+		//	firstFewDates: videos.slice(0, 5).map(v => ({
+		//		title: v.title?.substring(0, 30) + '...',
+		//		date: v.createdAt,
+		//		parsed: new Date(v.createdAt || 0).toISOString()
+		//	})),
+		//	firstFewScores: sortedResults.slice(0, 5).map(r => ({
+		//		title: r.item.title?.substring(0, 30) + '...',
+		//		score: r.score,
+		//		date: r.item.createdAt
+		//	}))
+		//});
 		
 		// Only preload thumbnails on final search, not during typing
 		if (shouldPreloadThumbnails) {
@@ -257,7 +257,7 @@
 		console.log('💻 Desktop device - starting auto-search with debounce');
 		// Desktop: Debounce search for 300ms
 		searchTimeout = setTimeout(() => {
-			console.log('🔍 Auto-search triggered after debounce');
+			//console.log('🔍 Auto-search triggered after debounce');
 			handleOptimizedSearch();
 		}, 300);
 	}
@@ -298,45 +298,45 @@
 	
 	// Function to update currentVideos based on current state
 	function updateCurrentVideos() {
-		console.log('🔄 updateCurrentVideos called:', {
-			activeTab,
-			searchQuery: searchQuery.length,
-			videos: videos.length,
-			latestVideos: latestVideos.length,
-			searchResults: searchResults.length
-		});
+		//console.log('🔄 updateCurrentVideos called:', {
+		//	activeTab,
+		//	searchQuery: searchQuery.length,
+		//	videos: videos.length,
+		//	latestVideos: latestVideos.length,
+		//	searchResults: searchResults.length
+		//});
 		
 		// If we have a search query, use search results
 		if (searchQuery.length > 0) {
 			// Use allSearchResults if searchResults is empty but allSearchResults has data
 			const resultsToUse = searchResults.length > 0 ? searchResults : allSearchResults;
-			console.log('🔍 Setting currentVideos to search results:', {
-				searchResults: searchResults.length,
-				allSearchResults: allSearchResults.length,
-				using: resultsToUse.length
-			});
+			//console.log('🔍 Setting currentVideos to search results:', {
+			//	searchResults: searchResults.length,
+			//	allSearchResults: allSearchResults.length,
+			//	using: resultsToUse.length
+			//});
 			// Create new array to ensure reactivity
 			currentVideos = [...resultsToUse];
 		}
 		// For allVideos tab, use videos array
 		else if (activeTab === 'allVideos') {
-			console.log('📺 Setting currentVideos to videos:', videos.length);
+			//console.log('📺 Setting currentVideos to videos:', videos.length);
 			// Create new array to ensure reactivity
 			currentVideos = [...videos];
 		}
 		// For latest tab, use latestVideos array  
 		else if (activeTab === 'latest') {
-			console.log('📺 Setting currentVideos to latestVideos:', latestVideos.length);
+			//console.log('📺 Setting currentVideos to latestVideos:', latestVideos.length);
 			// Create new array to ensure reactivity
 			currentVideos = [...latestVideos];
 		}
 		// For other tabs (categories, collections), use empty
 		else {
-			console.log('📂 Setting currentVideos to empty for tab:', activeTab);
+			//console.log('📂 Setting currentVideos to empty for tab:', activeTab);
 			currentVideos = [];
 		}
 		
-		console.log('✅ currentVideos updated to length:', currentVideos.length);
+		//console.log('✅ currentVideos updated to length:', currentVideos.length);
 	}
 	
 	// We'll call updateCurrentVideos() manually where needed instead of using $effect
@@ -351,13 +351,13 @@
 	});
 
 	onMount(() => {
-		console.log('🔄 Videos page mounted');
-		console.log('📊 Cache check on mount:', {
-			categoriesLength: categories.length,
-			videosLength: videos.length,
-			initialDataLoaded,
-			loading
-		});
+		//console.log('🔄 Videos page mounted');
+		//console.log('📊 Cache check on mount:', {
+		//	categoriesLength: categories.length,
+		//	videosLength: videos.length,
+		//	initialDataLoaded,
+		//	loading
+		//});
 		
 		// Load saved category states first
 		loadCategoryStates();
@@ -367,12 +367,12 @@
 		
 		// Simple: If we have cached data, show it immediately
 		if (categories.length > 0 || videos.length > 0) {
-			console.log('✅ Using cached data on mount - setting loading=false, initialDataLoaded=true');
-			console.log('🔍 BEFORE: loading =', loading, 'initialDataLoaded =', initialDataLoaded);
-			console.trace('📍 STACK TRACE: onMount setting loading=false (cached data)');
+			//console.log('✅ Using cached data on mount - setting loading=false, initialDataLoaded=true');
+			//console.log('🔍 BEFORE: loading =', loading, 'initialDataLoaded =', initialDataLoaded);
+			//console.trace('📍 STACK TRACE: onMount setting loading=false (cached data)');
 			loading = false;
 			initialDataLoaded = true;
-			console.log('🔍 AFTER: loading =', loading, 'initialDataLoaded =', initialDataLoaded);
+			//console.log('🔍 AFTER: loading =', loading, 'initialDataLoaded =', initialDataLoaded);
 		} else {
 			console.log('❌ No cached data on mount - waiting for auth');
 		}
@@ -455,13 +455,13 @@
 	});
 
 	async function loadInitialData() {
-		console.log('🔄 loadInitialData called');
-		console.log('📊 loadInitialData state check:', {
-			initialDataLoaded,
-			loading,
-			categoriesLength: categories.length,
-			videosLength: videos.length
-		});
+		//console.log('🔄 loadInitialData called');
+		//console.log('📊 loadInitialData state check:', {
+		//	initialDataLoaded,
+		//	loading,
+		//	categoriesLength: categories.length,
+		//	videosLength: videos.length
+		//});
 		
 		// Simple check: if we already have data, don't reload
 		if (initialDataLoaded) {
@@ -470,8 +470,8 @@
 		}
 
 		try {
-			console.log('🚀 Starting loadInitialData - setting loading=true');
-			console.trace('📍 STACK TRACE: loadInitialData setting loading=true');
+			//console.log('🚀 Starting loadInitialData - setting loading=true');
+			//console.trace('📍 STACK TRACE: loadInitialData setting loading=true');
 			loading = true;
 			error = '';
 
@@ -480,7 +480,7 @@
 				const collectionsResponse = await videoService.getCollections();
 				collections = collectionsResponse.items || [];
 			} catch (err) {
-				console.warn('Failed to load collections:', err);
+			//	console.warn('Failed to load collections:', err);
 				collections = [];
 			}
 
@@ -488,7 +488,7 @@
 			try {
 				const categoriesResponse = await videoService.getTagCategories();
 				categories = categoriesResponse.categories || [];
-				console.log('✅ Loaded categories:', categories.length);
+			//	console.log('✅ Loaded categories:', categories.length);
 			} catch (err) {
 				console.error('❌ Failed to load categories:', err);
 				categories = [];
@@ -515,8 +515,8 @@
 			console.error('❌ loadInitialData failed:', err);
 			handleError(err);
 		} finally {
-			console.log('🏁 loadInitialData finished, setting loading=false');
-			console.trace('📍 STACK TRACE: loadInitialData finally block setting loading=false');
+			//console.log('🏁 loadInitialData finished, setting loading=false');
+			//console.trace('📍 STACK TRACE: loadInitialData finally block setting loading=false');
 			loading = false;
 		}
 	}
@@ -544,13 +544,13 @@
 				}
 			}
 
-			console.log('🎬 Loading videos:', {
-				page: currentPage,
-				category: selectedCategory,
-				search: searchQuery,
-				isSearching,
-				reset
-			});
+			//console.log('🎬 Loading videos:', {
+			//	page: currentPage,
+			//	category: selectedCategory,
+			//	search: searchQuery,
+			//	isSearching,
+			//	reset
+			//});
 
 			const response: VideosResponse = await videoService.getVideos(
 				currentPage,
@@ -559,22 +559,22 @@
 				isSearching ? searchQuery || undefined : undefined
 			);
 
-			console.log('📥 API Response:', {
-				videosCount: response.videos?.length || 0,
+			//console.log('📥 API Response:', {
+			//	videosCount: response.videos?.length || 0,
 				//hasMore: response.pagination?.has_more || false,
 				//currentPage: response.pagination?.current_page || 1
-			});
+			//});
 
 			const newVideos = response.videos || [];
 			
 			// Validate that search results actually match the query
 			if (isSearching && searchQuery.trim()) {
 				const validatedResults = clientSideFilter(newVideos, searchQuery);
-				console.log('✅ Search validation:', {
-					serverResults: newVideos.length,
-					validatedResults: validatedResults.length,
-					query: searchQuery
-				});
+			//	console.log('✅ Search validation:', {
+			//		serverResults: newVideos.length,
+			//		validatedResults: validatedResults.length,
+			//  	query: searchQuery
+			//	});
 				
 				// Use validated results
 				const finalResults = validatedResults.length > 0 ? validatedResults : newVideos;
@@ -610,12 +610,12 @@
 
 			// Update pagination info
 			//hasMore = response.pagination?.has_more || false;
-			console.log('📊 Load complete:', {
-				videosLoaded: newVideos.length,
-				hasMore,
-				totalInArray: isSearching ? allSearchResults.length : 
-					(activeTab === 'latest' ? latestVideos.length : videos.length)
-			});
+			//console.log('📊 Load complete:', {
+			//	videosLoaded: newVideos.length,
+			//	hasMore,
+			//	totalInArray: isSearching ? allSearchResults.length : 
+			//		(activeTab === 'latest' ? latestVideos.length : videos.length)
+			//});
 			
 			// Update currentVideos after loading more videos
 			updateCurrentVideos();
@@ -657,7 +657,7 @@
 		const cacheExpiry = 5 * 60 * 1000; // 5 minutes
 		
 		if (cached && (Date.now() - cached.timestamp) < cacheExpiry) {
-			console.log('🚀 Cache hit for search:', query);
+			//console.log('🚀 Cache hit for search:', query);
 			allSearchResults = cached.results;
 			updateCurrentVideos();
 			
@@ -669,7 +669,7 @@
 			return;
 		}
 
-		console.log('🔍 Starting fuzzy search for:', query);
+		//console.log('🔍 Starting fuzzy search for:', query);
 		// Set loading state - this will show spinner on both mobile and desktop
 		isSearching = true;
 		
@@ -707,12 +707,12 @@
 		// For search, we don't use pagination - show all results
 		hasMore = false;
 		
-		console.log('⚡ Fuzzy search complete:', {
-			query,
-			totalResults: allSearchResults.length,
-			searchTime: Math.round(searchTime),
-			cached: false
-		});
+		//console.log('⚡ Fuzzy search complete:', {
+		//	query,
+		//	totalResults: allSearchResults.length,
+		//	searchTime: Math.round(searchTime),
+		//	cached: false
+		//});
 		
 		// Stop loading and update UI
 		isSearching = false;
@@ -741,7 +741,7 @@
 			return;
 		}
 
-		console.log('🔍 Starting search for:', searchQuery);
+		//console.log('🔍 Starting search for:', searchQuery);
 		isSearching = true;
 		currentPage = 1;
 		
@@ -766,7 +766,7 @@
 			
 			// If we have very few results, also search in the local cache
 			if (allSearchResults.length < 10) {
-				console.log('🔄 Expanding search with local results');
+				//console.log('🔄 Expanding search with local results');
 				const localResults = [
 					...videos,
 					...latestVideos
@@ -785,10 +785,10 @@
 			// For search, we don't use pagination - show all results
 			hasMore = false;
 			
-			console.log('📊 Search complete:', {
-				query: searchQuery,
-				totalResults: allSearchResults.length
-			});
+			//console.log('📊 Search complete:', {
+			//	query: searchQuery,
+			//	totalResults: allSearchResults.length
+			//});
 			
 		} catch (err) {
 			console.error('❌ Search failed:', err);
@@ -802,7 +802,7 @@
 	}
 
 	function clearSearch() {
-		console.log('🧹 Clearing search');
+		//console.log('🧹 Clearing search');
 		searchResults = [];
 		allSearchResults = [];
 		isSearching = false;
@@ -821,9 +821,9 @@
 	// Debug function to show all search results (including non-matching)
 	function showAllSearchResults() {
 		if (allSearchResults.length > 0) {
-			console.log('🔍 All search results for "' + searchQuery + '":', allSearchResults);
-			console.log('✅ Filtered results:', searchResults);
-			console.log('📊 Search terms:', searchQuery.toLowerCase().trim().split(' '));
+			////console.log('🔍 All search results for "' + searchQuery + '":', allSearchResults);
+			//console.log('✅ Filtered results:', searchResults);
+			//console.log('📊 Search terms:', searchQuery.toLowerCase().trim().split(' '));
 		}
 	}
 
@@ -837,17 +837,17 @@
 			...(video.tags || [])
 		].join(' ').toLowerCase();
 		
-		console.log('🔍 Debug filter for:', video.title, {
-			searchTerms,
-			searchableText,
-			matches: searchTerms.some(term => searchableText.includes(term)) // Changed from every to some
-		});
+		//console.log('🔍 Debug filter for:', video.title, {
+		//	searchTerms,
+		//	searchableText,
+		//	matches: searchTerms.some(term => searchableText.includes(term)) // Changed from every to some
+		//});
 		
 		return searchTerms.some(term => searchableText.includes(term)); // Changed from every to some
 	}
 
 	async function handleCategoryChange() {
-		console.log('Filtering by category:', selectedCategory);
+		//console.log('Filtering by category:', selectedCategory);
 		// Don't reset initialDataLoaded - just reload videos for the selected category
 		await loadVideos(true);
 	}
@@ -873,18 +873,18 @@
 	}
 
 	function handleAuthLoadingChange(data: {loading: boolean}) {
-		console.log('🔐 Auth loading change:', data.loading);
+		//console.log('🔐 Auth loading change:', data.loading);
 		authChecking = data.loading;
 	}
 
 	function handleAccessGranted() {
-		console.log('✅ Access granted!');
-		console.log('📊 Cache check on access granted:', {
-			categoriesLength: categories.length,
-			videosLength: videos.length,
-			initialDataLoaded,
-			loading
-		});
+		//console.log('✅ Access granted!');
+		///console.log('📊 Cache check on access granted:', {
+		//	categoriesLength: categories.length,
+		//	videosLength: videos.length,
+		//	initialDataLoaded,
+		//	loading
+		//});
 		
 		// Simple: Check cache first, then load if needed
 		if (categories.length > 0 || videos.length > 0) {
@@ -901,16 +901,16 @@
 	}
 
 	function switchTab(tab: typeof activeTab) {
-		console.log('🔄 switchTab called with:', tab, 'current activeTab:', activeTab);
+		//console.log('🔄 switchTab called with:', tab, 'current activeTab:', activeTab);
 		
 		// Update the state first
 		activeTab = tab;
-		console.log('✅ activeTab set to:', activeTab);
+		//console.log('✅ activeTab set to:', activeTab);
 		
 		// Update URL parameter (this should not trigger the URL effect anymore)
 		const url = new URL($page.url);
 		url.searchParams.set('tab', tab);
-		console.log('🔗 Updating URL to:', url.toString());
+		//console.log('🔗 Updating URL to:', url.toString());
 		replaceState(url, {});
 		
 		// Clear search when switching tabs
@@ -929,7 +929,7 @@
 		// Update currentVideos after tab switch
 		updateCurrentVideos();
 		
-		console.log('🏁 switchTab complete, final activeTab:', activeTab);
+		//console.log('🏁 switchTab complete, final activeTab:', activeTab);
 	}
 
 	// Category section state for lazy loading - using Svelte 5 reactive approach with persistence
@@ -963,7 +963,7 @@
 				if (saved) {
 					const statesArray = JSON.parse(saved);
 					categoryVideoStates = new Map(statesArray);
-					console.log('🔄 Restored category states from session:', categoryVideoStates.size, 'categories');
+					//console.log('🔄 Restored category states from session:', categoryVideoStates.size, 'categories');
 				}
 			} catch (e) {
 				console.warn('Failed to load category states:', e);
@@ -988,24 +988,24 @@
 		
 		// Return cached result if available
 		if (state.data) {
-			console.log(`🔄 Returning cached result for category: ${category.name}`);
+			//console.log(`🔄 Returning cached result for category: ${category.name}`);
 			return state.data;
 		}
 
 		// Return existing promise if already loading
 		if (state.promise) {
-			console.log(`🔄 Returning existing promise for category: ${category.name}`);
+			//console.log(`🔄 Returning existing promise for category: ${category.name}`);
 			return state.promise;
 		}
 
-		console.log(`🎬 Loading videos for category: ${category.name} (ID: ${category.id})`);
-		console.log(`🔍 Full category object:`, category);
-		console.log(`🏷️ Category has ${category.tagIds?.length || 0} tag IDs:`, category.tagIds);
-		console.log(`🏷️ Raw tag_ids (if exists):`, (category as any).tag_ids);
+		//console.log(`🎬 Loading videos for category: ${category.name} (ID: ${category.id})`);
+		//console.log(`🔍 Full category object:`, category);
+		//console.log(`🏷️ Category has ${category.tagIds?.length || 0} tag IDs:`, category.tagIds);
+		//console.log(`🏷️ Raw tag_ids (if exists):`, (category as any).tag_ids);
 		
 		// Set loading state and force reactivity immediately
-		console.log(`🔄 Setting state.loading=true for category: ${category.name}`);
-		console.trace('📍 STACK TRACE: loadCategoryVideos setting state.loading=true');
+		//console.log(`🔄 Setting state.loading=true for category: ${category.name}`);
+		//console.trace('📍 STACK TRACE: loadCategoryVideos setting state.loading=true');
 		state.loading = true;
 		state.error = null;
 		
@@ -1016,34 +1016,34 @@
 		// Create and cache the loading promise
 		const loadingPromise = videoService.getVideosByTagCategory(category.id, 1, 10)
 			.then(response => {
-				console.log(`✅ Loaded ${response.videos?.length || 0} videos for category: ${category.name}`);
-				console.log(`📊 Response structure:`, { 
-					hasVideos: !!response.videos, 
-					videoCount: response.videos?.length,
-					hasPagination: !!response.pagination 
-				});
+				//console.log(`✅ Loaded ${response.videos?.length || 0} videos for category: ${category.name}`);
+				//console.log(`📊 Response structure:`, { 
+				//	hasVideos: !!response.videos, 
+				//	videoCount: response.videos?.length,
+				//	hasPagination: !!response.pagination 
+				//});
 				
 				// Log the actual videos retrieved
 				if (response.videos && response.videos.length > 0) {
-					console.log(`🎬 Videos for category "${category.name}":`, response.videos.map(video => ({
-						id: video.id,
-						title: video.title,
-						description: video.description?.substring(0, 100) + '...',
-						thumbnailUrl: video.thumbnailUrl,
-						duration: video.duration,
-						tags: video.tags
-					})));
+					//console.log(`🎬 Videos for category "${category.name}":`, response.videos.map(video => ({
+					//	id: video.id,
+					//	title: video.title,
+					//	description: video.description?.substring(0, 100) + '...',
+					//	thumbnailUrl: video.thumbnailUrl,
+					//	duration: video.duration,
+					//	tags: video.tags
+					//})));
 				} else {
 					console.log(`❌ No videos found for category "${category.name}"`);
 				}
 				
 				// Log pagination details
 				if (response.pagination) {
-					console.log(`📄 Pagination for "${category.name}":`, response.pagination);
+					//console.log(`📄 Pagination for "${category.name}":`, response.pagination);
 				}
 				
 				// Update state - CRITICAL: Set loading to false FIRST
-				console.log(`🔄 Setting state.loading=false for category: ${category.name}`);
+				///console.log(`🔄 Setting state.loading=false for category: ${category.name}`);
 				state.loading = false;
 				state.data = response;
 				state.promise = null;
@@ -1055,12 +1055,12 @@
 				// Save states to sessionStorage
 				saveCategoryStates();
 				
-				console.log(`🔄 Updated state for ${category.name}, forcing reactivity (version: ${categoryStateVersion})`);
-				console.log(`🔍 Final state for ${category.name}:`, {
-					loading: state.loading,
-					hasData: !!state.data,
-					videoCount: state.data?.videos?.length || 0
-				});
+				//console.log(`🔄 Updated state for ${category.name}, forcing reactivity (version: ${categoryStateVersion})`);
+				//console.log(`🔍 Final state for ${category.name}:`, {
+				//	loading: state.loading,
+				//	hasData: !!state.data,
+				//	videoCount: state.data?.videos?.length || 0
+				//});
 				
 				return response;
 			})
@@ -1100,25 +1100,25 @@
 	
 	// Simple category loading when tab becomes active
 	$effect(() => {
-		console.log('🔄 Category loading effect triggered:', {
-			categoriesLength: categories.length,
-			activeTab,
-			isCategoriesTab: activeTab === 'categories'
-		});
+		//console.log('🔄 Category loading effect triggered:', {
+		//	categoriesLength: categories.length,
+		//	activeTab,
+		//	isCategoriesTab: activeTab === 'categories'
+		//});
 		
 		if (categories.length > 0 && activeTab === 'categories') {
 			console.log('🎬 Loading videos for all categories...');
 			categories.forEach(category => {
 				const state = getCategoryVideoState(category.id);
-				console.log(`📊 Category ${category.name} state:`, {
-					hasData: !!state.data,
-					isLoading: state.loading,
-					hasError: !!state.error,
-					hasPromise: !!state.promise
-				});
+				//console.log(`📊 Category ${category.name} state:`, {
+				//	hasData: !!state.data,
+				//	isLoading: state.loading,
+				//	hasError: !!state.error,
+				//	hasPromise: !!state.promise
+				//});
 				
 				if (!state.data && !state.loading && !state.promise) {
-					console.log(`🚀 Triggering load for category: ${category.name}`);
+					//console.log(`🚀 Triggering load for category: ${category.name}`);
 					loadCategoryVideos(category).catch(error => {
 						console.error(`❌ Failed to load category ${category.name}:`, error);
 					});
@@ -1417,7 +1417,7 @@
 								<div class="categories-container">
 									{#each categories as category (category.id)}
 										{@const categoryState = categoryVideoStates.get(category.id) || { loading: false, data: null, error: null, promise: null }}
-										<!-- Debug: Log what template sees -->
+										<!-- Debug: Log what template sees
 										{console.log(`🎭 Template sees for ${category.name}:`, {
 											hasData: !!categoryState.data,
 											isLoading: categoryState.loading,
@@ -1427,10 +1427,15 @@
 											condition3: categoryState.error,
 											condition4: categoryState.data,
 											stateVersion: categoryStateVersion
-										})}
-										<div class="category-section debug-category" data-category-id={category.id}>
-											<div class="category-header">
-												<h3>{category.name}</h3>
+										})} -->
+									<div class="category-section debug-category" data-category-id={category.id}>
+										<div class="category-header" 
+											onclick={() => goto(`/videos/categories/${category.id}`)}
+											onkeydown={(e) => e.key === 'Enter' && goto(`/videos/categories/${category.id}`)}
+											role="button"
+											tabindex="0"
+											style="cursor: pointer;">
+											<h3>{category.name}</h3>
 												<!--<p class="category-description">{category.description}</p>
 												<div class="category-stats">
 													<span class="tag-count">{(category.tagIds?.length || (category as any).tag_ids?.length || 0)} tags</span>
@@ -1788,6 +1793,16 @@
 	.category-header {
 		margin-bottom: 1.5rem;
 		text-align: center;
+		transition: transform 0.2s ease, opacity 0.2s ease;
+		border-radius: 8px;
+		padding: 0.5rem;
+		margin: -0.5rem -0.5rem 1rem -0.5rem;
+	}
+
+	.category-header:hover {
+		transform: translateY(-2px);
+		opacity: 0.8;
+		background: rgba(212, 175, 55, 0.05);
 	}
 
 	.category-header h3 {

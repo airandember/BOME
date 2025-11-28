@@ -33,12 +33,12 @@
 					// Load category details from tag categories
 					const categoriesResponse = await videoService.getTagCategories();
 					category = categoriesResponse.categories.find(c => c.id === categoryId) || null;
-					console.log("🔴🔴🔴⚪🔴🔴🔴", category);
+					//console.log("🔴🔴🔴⚪🔴🔴🔴", category);
 				} else {
 					// It's a category name, find by name (fallback for old URLs)
 					const categoriesResponse = await videoService.getTagCategories();
 					category = categoriesResponse.categories.find(c => c.name === categoryParam) || null;
-					console.log("🔴🔴🔴⚪🔴🔴🔴", category);
+					//console.log("🔴🔴🔴⚪🔴🔴🔴", category);
 				}
 				
 				if (!category) {
@@ -119,7 +119,7 @@
 			hasMore = response.pagination.hasMore;
 			currentPage++;
 			
-			console.log(`✅ Loaded ${response.videos.length} videos for category: ${category.name} (Page ${currentPage - 1})`);
+			//console.log(`✅ Loaded ${response.videos.length} videos for category: ${category.name} (Page ${currentPage - 1})`);
 		} catch (err: any) {
 			console.error('Error loading videos:', err);
 			toastStore.error('Failed to load category videos');
@@ -167,14 +167,14 @@
 							</a>
 							<h1>{category?.name}</h1>
 						</div>
-						{#if category?.description}
+						<!--{#if category?.description}
 							<p class="category-description">{category.description}</p>
 						{/if}
 						<div class="category-stats">
 							<span>{videos.length} videos</span>
-						</div>
+						</div>-->
 					</header>
-
+					<hr class="divider">
 					<div class="video-grid">
 						{#each videos as video (video.id)}
 							<VideoCard {video} />
@@ -243,6 +243,7 @@
 		font-size: 2.5rem;
 		color: var(--color-primary);
 		margin: 0;
+		font-family: Quicksand;
 	}
 
 	.category-description {
@@ -261,7 +262,13 @@
 		font-size: 1.1rem;
 	}
 
+	.divider {
+		background-color: var(--primary-gold-dark);
+		height:3px;
+	}
+
 	.video-grid {
+		padding-top: 1.5rem;
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 		gap: 2rem;
