@@ -1285,7 +1285,7 @@
 					<!-- Trending Videos Section -->
 					{#if activeTab === 'trending'}
 						<section class="trending-section">
-							<TrendingVideos limit={20} showTitle={true} autoRefresh={true} refreshInterval={60000} />
+							<TrendingVideos limit={100} showTitle={true} autoRefresh={true} refreshInterval={60000} />
 							
 							<!-- Continue Watching Section (below trending) 
 							{#if $auth.isAuthenticated}
