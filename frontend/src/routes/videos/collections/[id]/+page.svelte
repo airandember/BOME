@@ -201,17 +201,20 @@
 				</div>
 			{:else if collection}
 				<div class="collection-header">
-					<button class="back-button" on:click={() => goto('/videos?tab=collections')}>
-						← Back to Collections
-					</button>
-					<h1>{collection.name}</h1>
-					<div class="collection-info">
+					<div class="cat_header_cont">
+						<button class="back-button" on:click={() => goto('/videos?tab=collections')}>
+							← Back to Collections
+						</button>
+						<h1>{collection.name}</h1>
+					</div>
+					<hr class="divider">
+					<!--<div class="collection-info">
 						<p>{collection.videoCount} videos in this collection</p>
 						<p class="collection-date">Created: {new Date(collection.dateCreated).toLocaleDateString()}</p>
 						{#if debugInfo}
 							<p class="debug-info">{debugInfo}</p>
 						{/if}
-					</div>
+					</div>-->
 				</div>
 
 				<div class="videos-container">
@@ -233,7 +236,7 @@
 						{#if hasMore}
 							<div class="load-more-container">
 								<button 
-									class="btn-secondary load-more-btn"
+									class="load-more-btn"
 									on:click={loadMore}
 									disabled={loadingMore}
 								>
@@ -267,12 +270,8 @@
 <Footer />
 
 <style lang="postcss">
-	.main-content-wrapper {
-		margin-top: 50px;
-	}
-
 	.collection-page {
-		padding: 2rem 0;
+		padding: 3rem 0;
 		min-height: 60vh;
 	}
 
@@ -303,9 +302,20 @@
 
 	.collection-header {
 		text-align: center;
-		margin-bottom: 3rem;
+		margin: 1.5rem 0 0 0;
+		
+		.cat_header_cont {
+			position: relative;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			margin-bottom: 0.5rem;
+		}
 		
 		.back-button {
+			position: absolute;
+			left: 0;
+			top: 0;
 			background: none;
 			border: none;
 			color: var(--color-primary);
@@ -325,6 +335,7 @@
 			font-size: 2.5rem;
 			color: var(--color-primary);
 			margin-bottom: 1rem;
+			font-family: Quicksand;
 		}
 		
 		.collection-info {
@@ -340,11 +351,16 @@
 		}
 	}
 
+	.divider {
+		background-color: var(--primary-gold-dark);
+		height:3px;
+	}
+
 	.videos-container {
 		width: 95vw;
-		max-width: 1200px;
+		max-width: 950vw;
 		margin: 0 auto;
-		padding: 0 1rem;
+		padding: 2.5rem 1rem;
 	}
 
 	.videos-grid {
