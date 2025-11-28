@@ -175,9 +175,9 @@
 					<span class="fire-icon">{viewMode === 'trending' ? '🔥' : '📊'}</span>
 					{viewMode === 'trending' ? 'Trending Now' : 'Most Watched'}
 				</h2>
-				<p class="subtitle">
+				<!--<p class="subtitle">
 					{viewMode === 'trending' ? 'Most watched in the last 7 days' : getTimePeriodLabel()}
-				</p>
+				</p>-->
 			</div>
 			{#if lastUpdated}
 				<div class="last-updated">
@@ -186,7 +186,7 @@
 			{/if}
 		</div>
 		
-		<!-- View Mode Toggle -->
+		<!-- View Mode Toggle 
 		<div class="view-toggle">
 			<button 
 				class="toggle-btn {viewMode === 'trending' ? 'active' : ''}"
@@ -194,7 +194,8 @@
 			>
 				🔥 Trending
 			</button>
-			<button 
+		</div>-->
+			<!-- <button 
 				class="toggle-btn {viewMode === 'most_watched' ? 'active' : ''}"
 				on:click={() => switchViewMode('most_watched')}
 			>
@@ -202,9 +203,9 @@
 			</button>
 		</div>
 		
-		<!-- Time Period Selector (only for Most Watched) -->
+		Time Period Selector (only for Most Watched) 
 		{#if viewMode === 'most_watched'}
-			<div class="time-period-selector">
+			<div class="time-period-selector">-->
 				<!--<button 
 					class="period-btn {timePeriod === 'week' ? 'active' : ''}"
 					on:click={() => switchTimePeriod('week')}
@@ -216,7 +217,7 @@
 					on:click={() => switchTimePeriod('month')}
 				>
 					This Month
-				</button>-->
+				</button>
 				<button 
 					class="period-btn {timePeriod === 'all-time' ? 'active' : ''}"
 					on:click={() => switchTimePeriod('all-time')}
@@ -224,7 +225,7 @@
 					All-Time
 				</button>
 			</div>
-		{/if}
+		{/if}-->
 	</div>
 {/if}
 
@@ -282,7 +283,7 @@
 								<circle cx="12" cy="12" r="3"></circle>
 							</svg>
 							{#if viewMode === 'trending' && video.last_24h_views !== undefined}
-								{formatViews(video.last_24h_views)} (24h)
+								{formatViews(video.last_24h_views)}
 							{:else if video.total_views !== undefined}
 								{formatViews(video.total_views)} total
 							{/if}
