@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { videoService, type Video } from '$lib/video';
@@ -7,6 +7,7 @@
 	import VideoCard from '$lib/components/VideoCard.svelte';
 	import SubscriptionCheck from '$lib/components/SubscriptionCheck.svelte';
 	import { toastStore } from '$lib/stores/toast';
+	import { videoAnalytics } from '$lib/services/videoAnalytics';
 
 	let video: Video | null = null;
 	let relatedVideos: Video[] = [];
@@ -17,6 +18,12 @@
 	let overlayTimeout: NodeJS.Timeout;
 	let mouseMovementTimeout: NodeJS.Timeout;
 	let authChecking = true;
+
+	// Video analytics tracking
+	let trackingInterval: NodeJS.Timeout | null = null;
+	let currentPlaybackTime: number = 0;
+	let lastTrackedPosition: number = 0;
+	let isVideoPlaying: boolean = false;
 
 	onMount(() => {
 		loadVideo();
@@ -51,23 +58,86 @@
 			document.removeEventListener('mouseleave', handleMouseLeave);
 			clearTimeout(overlayTimeout);
 			clearTimeout(mouseMovementTimeout);
+			stopAnalyticsTracking(); // Stop tracking on unmount
 		};
+	});
+
+	onDestroy(() => {
+		stopAnalyticsTracking();
 	});
 
 	async function loadVideo() {
 		try {
 			const videoId: any = $page.params.id;
+			console.log('📹 Loading video:', videoId);
 			const loadedVideo = await videoService.getVideo(videoId);
+			console.log('✅ Video loaded:', loadedVideo);
 			video = loadedVideo;
 			
 			// Load related videos
 			const relatedResponse = await videoService.getVideos(1, 6, loadedVideo.category);
 			relatedVideos = relatedResponse.videos.filter(v => v.id !== loadedVideo.id);
+			
+			// Start analytics tracking
+			startAnalyticsTracking();
 		} catch (err) {
+			console.error('❌ Failed to load video:', err);
 			error = 'Failed to load video. Please try again later.';
 			toastStore.error('Error loading video');
 		} finally {
 			loading = false;
+		}
+	}
+
+	function startAnalyticsTracking() {
+		if (!video) return;
+		
+		console.log('📊 [Video Analytics] Started tracking video:', {
+			id: video.id,
+			bunnyVideoId: video.bunnyVideoId,
+			idType: typeof video.id
+		});
+		
+		// Ensure we have a numeric ID
+		const numericId = typeof video.id === 'number' ? video.id : parseInt(video.id as any, 10);
+		if (isNaN(numericId)) {
+			console.error('❌ [Video Analytics] Invalid video ID - cannot track:', video.id);
+			return;
+		}
+		
+		// Track initial view (skip if duration unknown)
+		if (video.duration && video.duration > 0) {
+			videoAnalytics.trackProgress(numericId, 0, video.duration);
+		}
+		
+		// Track every 10 seconds based on ACTUAL playback position
+		trackingInterval = setInterval(() => {
+			if (!video || !isVideoPlaying) return; // Only track when actually playing
+			
+			const watchedSeconds = Math.floor(currentPlaybackTime);
+			
+			// Only track if position changed (video is actually playing)
+			if (watchedSeconds !== lastTrackedPosition && watchedSeconds > 0) {
+				console.log(`📊 [Video Analytics] Tracking: ${watchedSeconds}s actual playback time`);
+				// Use estimated duration for iframe (2798s based on your video)
+				const videoDuration = video.duration || 2798;
+				videoAnalytics.trackProgress(numericId, watchedSeconds, videoDuration);
+				lastTrackedPosition = watchedSeconds;
+			}
+		}, 10000); // Every 10 seconds
+	}
+
+	function handleVideoTimeUpdate(event: CustomEvent) {
+		// Update current playback position from the video player
+		currentPlaybackTime = event.detail.currentTime;
+		isVideoPlaying = !event.detail.paused;
+	}
+
+	function stopAnalyticsTracking() {
+		if (trackingInterval) {
+			clearInterval(trackingInterval);
+			trackingInterval = null;
+			console.log('📊 [Video Analytics] Stopped tracking');
 		}
 	}
 
@@ -77,6 +147,15 @@
 
 	function handleVideoEnd() {
 		showSuggestedVideos = true;
+		
+		// Track video completion
+		if (video) {
+			const numericId = typeof video.id === 'number' ? video.id : parseInt(video.id as any, 10);
+			if (!isNaN(numericId)) {
+				console.log('📊 [Video Analytics] Video completed!');
+				videoAnalytics.markComplete(numericId, video.duration || 0);
+			}
+		}
 	}
 
 	function selectSuggestedVideo(selectedVideo: Video) {
@@ -124,6 +203,7 @@
 					playbackUrl={video.playbackUrl}
 					iframeSrc={video.iframeSrc}
 					on:ended={handleVideoEnd}
+					on:timeupdate={handleVideoTimeUpdate}
 				/>
 			</div>
 

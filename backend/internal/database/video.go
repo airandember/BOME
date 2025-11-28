@@ -47,7 +47,8 @@ func (db *DB) CreateVideo(title, description, bunnyVideoID, thumbnailURL, catego
 
 	var id int
 	err = db.QueryRow(
-		`INSERT INTO videos (title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, created_by, vid_status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW()) RETURNING id`,
+		`INSERT INTO master_video_list (title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, created_by, vid_status, created_at, updated_at) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW()) RETURNING id`,
 		title, description, bunnyVideoID, thumbnailURL, duration, fileSize, "processing", category, string(tagsJSON), createdBy, vid_status,
 	).Scan(&id)
 	if err != nil {
@@ -59,20 +60,34 @@ func (db *DB) CreateVideo(title, description, bunnyVideoID, thumbnailURL, catego
 // GetVideoByID retrieves a video by ID
 func (db *DB) GetVideoByID(id int) (*Video, error) {
 	video := &Video{}
-	var tagsStr string
+	var tagsStr sql.NullString  // Handle NULL tags for older videos
+	var createdBy sql.NullInt64 // Handle NULL created_by for older videos
+	
 	err := db.QueryRow(
-		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, views, likes, created_by, created_at, updated_at FROM master_video_list WHERE id = $1`,
+		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, views, likes, created_by, created_at, updated_at, vid_status FROM master_video_list WHERE id = $1`,
 		id,
-	).Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
+	).Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("GetVideoByID failed for id %d: %v", id, err)
+	}
+
+	// Handle NULL created_by
+	if createdBy.Valid {
+		video.CreatedBy = int(createdBy.Int64)
+	} else {
+		video.CreatedBy = 0 // Default to 0 if NULL
 	}
 
 	// Parse tags from JSON string (master_video_list uses JSONB for tags)
-	if tagsStr != "" {
-		if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
+	// Handle both NULL, "null" string, and empty string
+	if tagsStr.Valid && tagsStr.String != "" && tagsStr.String != "null" {
+		if err := json.Unmarshal([]byte(tagsStr.String), &video.Tags); err != nil {
+			// Don't fail the entire query if tags are malformed, just log it
+			fmt.Printf("⚠️ Failed to unmarshal tags for video ID %d: %v (tags: %s)\n", id, err, tagsStr.String)
+			video.Tags = []string{} // Set empty array as fallback
 		}
+	} else {
+		video.Tags = []string{} // Default to empty array
 	}
 
 	return video, nil
@@ -81,20 +96,34 @@ func (db *DB) GetVideoByID(id int) (*Video, error) {
 // GetVideoByBunnyID retrieves a video by Bunny video ID
 func (db *DB) GetVideoByBunnyID(bunnyVideoID string) (*Video, error) {
 	video := &Video{}
-	var tagsStr string
+	var tagsStr sql.NullString  // Handle NULL tags for older videos
+	var createdBy sql.NullInt64 // Handle NULL created_by for older videos
+	
 	err := db.QueryRow(
-		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at, vid_status FROM videos WHERE bunny_video_id = $1`,
+		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, views, likes, created_by, created_at, updated_at, vid_status FROM master_video_list WHERE bunny_video_id = $1`,
 		bunnyVideoID,
-	).Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
+	).Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("GetVideoByBunnyID failed for %s: %v", bunnyVideoID, err)
+	}
+
+	// Handle NULL created_by
+	if createdBy.Valid {
+		video.CreatedBy = int(createdBy.Int64)
+	} else {
+		video.CreatedBy = 0 // Default to 0 if NULL
 	}
 
 	// Parse tags from JSON string
-	if tagsStr != "" {
-		if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
+	// Handle both NULL, "null" string, and empty string
+	if tagsStr.Valid && tagsStr.String != "" && tagsStr.String != "null" {
+		if err := json.Unmarshal([]byte(tagsStr.String), &video.Tags); err != nil {
+			// Don't fail the entire query if tags are malformed, just log it
+			fmt.Printf("⚠️ Failed to unmarshal tags for video %s: %v (tags: %s)\n", bunnyVideoID, err, tagsStr.String)
+			video.Tags = []string{} // Set empty array as fallback
 		}
+	} else {
+		video.Tags = []string{} // Default to empty array
 	}
 
 	return video, nil
@@ -102,7 +131,7 @@ func (db *DB) GetVideoByBunnyID(bunnyVideoID string) (*Video, error) {
 
 // GetVideos retrieves videos with pagination and filtering
 func (db *DB) GetVideos(limit, offset int, category, status string) ([]*Video, error) {
-	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, views, likes, created_by, created_at, updated_at FROM master_video_list WHERE 1=1`
+	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, views, likes, created_by, created_at, updated_at, vid_status FROM master_video_list WHERE 1=1`
 	args := []interface{}{}
 	argCount := 0
 
@@ -135,16 +164,30 @@ func (db *DB) GetVideos(limit, offset int, category, status string) ([]*Video, e
 	var videos []*Video
 	for rows.Next() {
 		video := &Video{}
-		var tagsStr string
-		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
+		var tagsStr sql.NullString  // Handle NULL tags for older videos
+		var createdBy sql.NullInt64 // Handle NULL created_by for older videos
+		
+		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
 		if err != nil {
 			return nil, err
 		}
+		
+		// Handle NULL created_by
+		if createdBy.Valid {
+			video.CreatedBy = int(createdBy.Int64)
+		} else {
+			video.CreatedBy = 0
+		}
+		
 		// Parse tags from JSONB (master_video_list uses JSONB for tags)
-		if tagsStr != "" {
-			if err := json.Unmarshal([]byte(tagsStr), &video.Tags); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal tags: %v", err)
+		// Handle both NULL, "null" string, and empty string
+		if tagsStr.Valid && tagsStr.String != "" && tagsStr.String != "null" {
+			if err := json.Unmarshal([]byte(tagsStr.String), &video.Tags); err != nil {
+				fmt.Printf("⚠️ Failed to unmarshal tags for video ID %d: %v (tags: %s)\n", video.ID, err, tagsStr.String)
+				video.Tags = []string{}
 			}
+		} else {
+			video.Tags = []string{}
 		}
 		videos = append(videos, video)
 	}
@@ -193,25 +236,25 @@ func (db *DB) GetAllVideos() ([]Video, error) {
 
 // UpdateVideoStatus updates a video's status
 func (db *DB) UpdateVideoStatus(videoID int, status string) error {
-	_, err := db.Exec(`UPDATE videos SET status = $1, updated_at = NOW() WHERE id = $2`, status, videoID)
+	_, err := db.Exec(`UPDATE master_video_list SET status = $1, updated_at = NOW() WHERE id = $2`, status, videoID)
 	return err
 }
 
 // UpdateVideoViews updates a video's view count
 func (db *DB) UpdateVideoViews(videoID int, views int) error {
-	_, err := db.Exec(`UPDATE videos SET view_count = $1, updated_at = NOW() WHERE id = $2`, views, videoID)
+	_, err := db.Exec(`UPDATE master_video_list SET views = $1, updated_at = NOW() WHERE id = $2`, views, videoID)
 	return err
 }
 
 // IncrementViewCount increments a video's view count
 func (db *DB) IncrementViewCount(videoID int) error {
-	_, err := db.Exec(`UPDATE videos SET view_count = view_count + 1, updated_at = NOW() WHERE id = $1`, videoID)
+	_, err := db.Exec(`UPDATE master_video_list SET views = views + 1, updated_at = NOW() WHERE id = $1`, videoID)
 	return err
 }
 
 // GetVideoCategories retrieves all video categories
 func (db *DB) GetVideoCategories() ([]string, error) {
-	rows, err := db.Query(`SELECT DISTINCT category FROM videos WHERE category IS NOT NULL AND category != '' ORDER BY category`)
+	rows, err := db.Query(`SELECT DISTINCT category FROM master_video_list WHERE category IS NOT NULL AND category != '' ORDER BY category`)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +276,7 @@ func (db *DB) GetVideoCategories() ([]string, error) {
 func (db *DB) SearchVideos(query string, limit, offset int) ([]*Video, error) {
 	searchQuery := `%` + query + `%`
 	rows, err := db.Query(
-		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, created_at, updated_at, vid_status FROM videos WHERE (title ILIKE $1 OR description ILIKE $1) AND status = 'ready' ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		`SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, views, likes, created_by, created_at, updated_at, vid_status FROM master_video_list WHERE (title ILIKE $1 OR description ILIKE $1) AND status = 'ready' ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
 		searchQuery, limit, offset,
 	)
 	if err != nil {
@@ -244,9 +287,30 @@ func (db *DB) SearchVideos(query string, limit, offset int) ([]*Video, error) {
 	var videos []*Video
 	for rows.Next() {
 		video := &Video{}
-		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &video.Tags, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
+		var tagsStr sql.NullString  // Handle NULL tags for older videos
+		var createdBy sql.NullInt64 // Handle NULL created_by for older videos
+		
+		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status)
 		if err != nil {
 			return nil, err
+		}
+		
+		// Handle NULL created_by
+		if createdBy.Valid {
+			video.CreatedBy = int(createdBy.Int64)
+		} else {
+			video.CreatedBy = 0
+		}
+		
+		// Parse tags from JSONB
+		// Handle both NULL, "null" string, and empty string
+		if tagsStr.Valid && tagsStr.String != "" && tagsStr.String != "null" {
+			if err := json.Unmarshal([]byte(tagsStr.String), &video.Tags); err != nil {
+				fmt.Printf("⚠️ Failed to unmarshal tags for video ID %d: %v (tags: %s)\n", video.ID, err, tagsStr.String)
+				video.Tags = []string{}
+			}
+		} else {
+			video.Tags = []string{}
 		}
 		videos = append(videos, video)
 	}
@@ -281,7 +345,7 @@ func (db *DB) UpdateVideo(videoID int, updateData map[string]interface{}) error 
 	argCount++
 	setParts = append(setParts, "updated_at = NOW()")
 
-	query := fmt.Sprintf("UPDATE videos SET %s WHERE id = $%d", strings.Join(setParts, ", "), argCount)
+	query := fmt.Sprintf("UPDATE master_video_list SET %s WHERE id = $%d", strings.Join(setParts, ", "), argCount)
 	args = append(args, videoID)
 
 	_, err := db.Exec(query, args...)
@@ -290,19 +354,19 @@ func (db *DB) UpdateVideo(videoID int, updateData map[string]interface{}) error 
 
 // DeleteVideo deletes a video from the database
 func (db *DB) DeleteVideo(videoID int) error {
-	_, err := db.Exec(`DELETE FROM videos WHERE id = $1`, videoID)
+	_, err := db.Exec(`DELETE FROM master_video_list WHERE id = $1`, videoID)
 	return err
 }
 
 // ScheduleVideo schedules a video to be published at a specific time
 func (db *DB) ScheduleVideo(videoID int, publishDate time.Time) error {
-	_, err := db.Exec(`UPDATE videos SET scheduled_publish_date = $1, status = 'scheduled', updated_at = NOW() WHERE id = $2`, publishDate, videoID)
+	_, err := db.Exec(`UPDATE master_video_list SET scheduled_publish_date = $1, status = 'scheduled', updated_at = NOW() WHERE id = $2`, publishDate, videoID)
 	return err
 }
 
 // GetScheduledVideos retrieves videos scheduled to be published before the given time
 func (db *DB) GetScheduledVideos(beforeTime time.Time) ([]*Video, error) {
-	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, view_count, like_count, created_by, scheduled_publish_date, created_at, updated_at, vid_status FROM videos WHERE status = 'scheduled' AND scheduled_publish_date <= $1`
+	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, views, likes, created_by, scheduled_publish_date, created_at, updated_at, vid_status FROM master_video_list WHERE status = 'scheduled' AND scheduled_publish_date <= $1`
 
 	rows, err := db.Query(query, beforeTime)
 	if err != nil {
@@ -325,6 +389,6 @@ func (db *DB) GetScheduledVideos(beforeTime time.Time) ([]*Video, error) {
 
 // UnscheduleVideo removes the scheduled publish date and sets status back to draft
 func (db *DB) UnscheduleVideo(videoID int) error {
-	_, err := db.Exec(`UPDATE videos SET scheduled_publish_date = NULL, status = 'draft', updated_at = NOW() WHERE id = $1`, videoID)
+	_, err := db.Exec(`UPDATE master_video_list SET scheduled_publish_date = NULL, status = 'draft', updated_at = NOW() WHERE id = $1`, videoID)
 	return err
 }

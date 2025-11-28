@@ -149,9 +149,8 @@
 
 	.video-card:hover {
 		transform: translateY(-4px);
-		box-shadow: 
-			8px 8px 16px var(--shadow-dark),
-			-4px -4px 8px var(--shadow-light);
+		box-shadow: 9px 9px 16px var(--nmph-shadow-1),
+			-9px -9px 16px var(--nmph-shadow-2);
 	}
 
 	.thumbnail-container {
@@ -217,7 +216,7 @@
 
 	.video-info {
 		padding: 1rem;
-		background: var(--bg-tertiary);
+		background: var(--bg-primary);
 
 	}
 

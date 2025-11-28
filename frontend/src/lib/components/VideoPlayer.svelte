@@ -1,6 +1,5 @@
 <script lang="ts">
-    import { onMount, createEventDispatcher } from 'svelte';
-    import { analytics } from '$lib/services/analytics-service';
+    import { onMount, onDestroy, createEventDispatcher } from 'svelte';
     import { auth } from '$lib/auth';
     import Hls from 'hls.js';
 
@@ -90,14 +89,49 @@
     const dispatch = createEventDispatcher();
     let videoElement: HTMLVideoElement;
     let errorMessage: string = '';
+    let iframePollingInterval: number | null = null;
+    let lastIframeTime = 0;
 
     function switchToIframe() {
         if (iframeSrc) {
             useIframe = true;
             isLoading = false;
             console.log('Switched to iframe playback:', iframeSrc);
+            
+            // Start polling for iframe playback progress
+            startIframeTimeTracking();
         } else {
             errorMessage = 'No iframe source available';
+        }
+    }
+    
+    function startIframeTimeTracking() {
+        // Clear any existing interval
+        if (iframePollingInterval) {
+            clearInterval(iframePollingInterval);
+        }
+        
+        console.log('📊 [VideoPlayer] Starting iframe time tracking (polling every second)');
+        
+        // Poll every second to simulate timeupdate events for iframe
+        iframePollingInterval = window.setInterval(() => {
+            lastIframeTime += 1; // Increment by 1 second
+            
+            // Dispatch timeupdate event with estimated time
+            // Note: This is an approximation since we can't get actual playback position from iframe
+            dispatch('timeupdate', {
+                currentTime: lastIframeTime,
+                duration: 0, // Unknown from iframe
+                paused: false // Assume playing
+            });
+        }, 1000);
+    }
+    
+    function stopIframeTimeTracking() {
+        if (iframePollingInterval) {
+            console.log('📊 [VideoPlayer] Stopping iframe time tracking');
+            clearInterval(iframePollingInterval);
+            iframePollingInterval = null;
         }
     }
 
@@ -234,6 +268,15 @@
         dispatch('ended');
     }
 
+    function handleTimeUpdate(event: Event) {
+        const video = event.target as HTMLVideoElement;
+        dispatch('timeupdate', {
+            currentTime: video.currentTime,
+            duration: video.duration,
+            paused: video.paused
+        });
+    }
+
     onMount(() => {
         // Priority order: Iframe -> HLS -> Direct MP4 (since videos are private)
         if (iframeSrc) {
@@ -254,7 +297,12 @@
                 hls.destroy();
                 hls = null;
             }
+            stopIframeTimeTracking();
         };
+    });
+    
+    onDestroy(() => {
+        stopIframeTimeTracking();
     });
 
     function useDirectVideo() {
@@ -292,6 +340,7 @@
                 class="video-element"
                 crossorigin="anonymous"
                 on:ended={handleVideoEnded}
+                on:timeupdate={handleTimeUpdate}
             >
                 <track kind="captions" src="" srclang="en" label="English" default />
                 Your browser does not support HTML video.

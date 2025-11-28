@@ -12,6 +12,8 @@
 	import SubscriptionCheck from '$lib/components/SubscriptionCheck.svelte';
 	import { auth, isAdmin } from '$lib/auth';
 	import { goto } from '$app/navigation';
+	import TrendingVideos from '$lib/components/TrendingVideos.svelte';
+	import ContinueWatching from '$lib/components/ContinueWatching.svelte';
 
 	let videos = $state<Video[]>([]);
 	let latestVideos = $state<Video[]>([]);
@@ -28,7 +30,7 @@
 	let loadingMore = $state(false);
 	let authChecking = $state(true);
 	let initialDataLoaded = $state(false);
-	let activeTab = $state<'latest' | 'collections' | 'categories' | 'allVideos'>('latest');
+	let activeTab = $state<'latest' | 'trending' | 'collections' | 'categories' | 'allVideos'>('latest');
 
 	let scrollThreshold = 800; // pixels from bottom to trigger auto-load (accounts for footer height)
 	let isSearching = $state(false);
@@ -62,12 +64,12 @@
 	
 	$effect(() => {
 		if (initialLoad) {
-			const tabParam = $page.url.searchParams.get('tab');
-			console.log('🔗 Initial URL effect - tabParam:', tabParam);
-			if (tabParam && ['latest', 'collections', 'categories', 'allVideos'].includes(tabParam)) {
-				console.log('✅ Setting initial activeTab from URL to:', tabParam);
-				activeTab = tabParam as typeof activeTab;
-			}
+		const tabParam = $page.url.searchParams.get('tab');
+		console.log('🔗 Initial URL effect - tabParam:', tabParam);
+		if (tabParam && ['latest', 'trending', 'collections', 'categories', 'allVideos'].includes(tabParam)) {
+			console.log('✅ Setting initial activeTab from URL to:', tabParam);
+			activeTab = tabParam as typeof activeTab;
+		}
 			initialLoad = false;
 		}
 	});
@@ -1151,11 +1153,6 @@
 			{:else}
 				<div class="video-hub">
 					<div class="container">
-						<header class="hub-header">
-							<!--<h1>Video Hub</h1>-->
-							<p>Discover our extensive collection of Book of Mormon evidence videos</p>
-						</header>
-
 						<!-- Debug Info 
 						<div style="background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px; font-family: monospace;">
 							<strong>🔍 DEBUG:</strong> activeTab = "{activeTab}" | videos.length = {videos.length} | currentVideos.length = {currentVideos.length} | loading = {loading}
@@ -1167,34 +1164,40 @@
 							<button onclick={() => { console.log('🔍 Manual currentVideos check:', { activeTab, videos: videos.length, result: activeTab === 'allVideos' ? videos : [] }); }} style="margin-top: 5px; padding: 5px 10px;">🔍 Test Logic</button>
 						</div>-->
 
-						<!-- Navigation Tabs -->
-						<div class="hub-tabs">
-							<button 
-								class="tab-button {activeTab === 'latest' ? 'active' : ''}" 
-								onclick={() => switchTab('latest')}
-							>
-								Latest Videos
-							</button>	
-							
-				
-							<button
-								class="tab-button {activeTab === 'allVideos' ? 'active' : ''}"
-								onclick={() => switchTab('allVideos')}
-							>
-								All Videos
-							</button>
-							<button 
-								class="tab-button {activeTab === 'categories' ? 'active' : ''}" 
-								onclick={() => switchTab('categories')}
-							>
-								Categories
-							</button>
-							<button 
-								class="tab-button {activeTab === 'collections' ? 'active' : ''}" 
-								onclick={() => switchTab('collections')}
-							>Collections
-							</button>
-						</div>
+					<!-- Navigation Tabs -->
+					<div class="hub-tabs">
+						<button 
+							class="tab-button {activeTab === 'latest' ? 'active' : ''}" 
+							onclick={() => switchTab('latest')}
+						>
+							Latest Videos
+						</button>	
+						
+						<button 
+							class="tab-button {activeTab === 'trending' ? 'active' : ''}" 
+							onclick={() => switchTab('trending')}
+						>
+							<span class="fire-icon">🔥</span> Trending
+						</button>
+			
+						<button
+							class="tab-button {activeTab === 'allVideos' ? 'active' : ''}"
+							onclick={() => switchTab('allVideos')}
+						>
+							All Videos
+						</button>
+						<button 
+							class="tab-button {activeTab === 'categories' ? 'active' : ''}" 
+							onclick={() => switchTab('categories')}
+						>
+							Categories
+						</button>
+						<button 
+							class="tab-button {activeTab === 'collections' ? 'active' : ''}" 
+							onclick={() => switchTab('collections')}
+						>Collections
+						</button>
+					</div>
 
 						<!-- All Videos Section -->
 						{#if activeTab === 'allVideos'}
@@ -1202,30 +1205,35 @@
 							<section class="all-videos">
 								<!--<h2>Book of Mormon Evidence Videos</h2>-->
 								<div class="filters-section">
-									<div class="search-bar">
-										<div class="search-input-container">
-											<input
-												type="text"
-												placeholder={isMobileDevice() ? "Search videos (press Enter or Search)" : "Search videos"}
-												bind:value={searchQuery}
-												oninput={handleSearchInput}
-												onkeydown={handleSearchKeydown}
-												class="search-input"
-											/>
-											{#if searchQuery}
-												<button class="btn-clear" onclick={handleClearSearch} title="Clear search">
-													✕
+									<div class="finder">
+										<div class="search-bar-outer">
+											<div class="search-bar-inner">
+												<div class="search-input-container">
+													<input
+														type="text"
+														placeholder={isMobileDevice() ? "Search videos (press Enter or Search)" : "Search videos"}
+														bind:value={searchQuery}
+														oninput={handleSearchInput}
+														onkeydown={handleSearchKeydown}
+														class="search-input"
+													/>
+													{#if searchQuery}
+														<button class="btn-clear" onclick={handleClearSearch} title="Clear search">
+															✕
+														</button>
+													{/if}
+												</div>
+												
+												<button class="btn-primary" onclick={handleSearchButtonClick} disabled={isSearching}>
+													{#if isSearching}
+														<LoadingSpinner size="small" />
+													{:else}
+														🔍
+													{/if}
+													Search
 												</button>
-											{/if}
+											</div>
 										</div>
-										<button class="btn-primary" onclick={handleSearchButtonClick} disabled={isSearching}>
-											{#if isSearching}
-												<LoadingSpinner size="small" />
-											{:else}
-												🔍
-											{/if}
-											Search
-										</button>
 									</div>
 									<!-- Search status now handled by toast notifications -->
 								</div>
@@ -1272,33 +1280,50 @@
 									{/if}
 								{/if}
 							</section>
-						{/if}
+					{/if}
 
+					<!-- Trending Videos Section -->
+					{#if activeTab === 'trending'}
+						<section class="trending-section">
+							<TrendingVideos limit={20} showTitle={true} autoRefresh={true} refreshInterval={60000} />
+							
+							<!-- Continue Watching Section (below trending) -->
+							{#if auth.isAuthenticated}
+								<div class="continue-watching-wrapper">
+									<ContinueWatching limit={10} showTitle={true} />
+								</div>
+							{/if}
+						</section>
+					{/if}
 
-						<!-- Latest Videos Section -->
-						{#if activeTab === 'latest'}
+					<!-- Latest Videos Section -->
+					{#if activeTab === 'latest'}
 							<section class="latest-videos">
 								<!--<h2>Latest Uploads</h2>-->
 								<div class="filters-section">
-									<div class="search-bar">
-										<div class="search-input-container">
-											<input
-												type="text"
-												placeholder={isMobileDevice() ? "Search videos (press Enter or Search)" : "Search videos"}
-												bind:value={searchQuery}
-												oninput={handleSearchInput}
-												onkeydown={handleSearchKeydown}
-												class="search-input"
-											/>
-											{#if searchQuery}
-												<button class="btn-clear" onclick={handleClearSearch} title="Clear search">
-													✕
+									<div class="finder">
+										<div class="search-bar-outer">
+											<div class="search-bar-inner">
+												<div class="search-input-container">
+													<input
+														type="text"
+														placeholder={isMobileDevice() ? "Search videos (press Enter or Search)" : "Search videos"}
+														bind:value={searchQuery}
+														oninput={handleSearchInput}
+														onkeydown={handleSearchKeydown}
+														class="search-input"
+													/>
+													{#if searchQuery}
+														<button class="btn-clear" onclick={handleClearSearch} title="Clear search">
+															✕
+														</button>
+													{/if}
+												</div>
+												<button class="btn-primary" onclick={handleSearchButtonClick} disabled={isSearching}>
+													🔍 Search
 												</button>
-											{/if}
+											</div>
 										</div>
-										<button class="btn-primary" onclick={handleSearchButtonClick} disabled={isSearching}>
-											🔍 Search
-										</button>
 									</div>
 									<!-- Search status now handled by toast notifications -->
 								</div>
@@ -1565,11 +1590,18 @@
 
 	.hub-tabs {
 		display: flex;
-		justify-content: center;
+		justify-content: space-around;
+		flex-wrap: wrap;
 		gap: 1rem;
 		margin-bottom: 2rem;
 		flex-wrap: wrap;
 		width: 100%;
+		background-color: var(--bg-primary);
+		box-shadow: 9px 9px 16px var(--nmph-shadow-1),
+			-9px -9px 16px var(--nmph-shadow-2);
+		border-radius: 10px;
+			border-bottom: 2px solid var(--bg-ghost-white);
+			padding: 1rem;
 	}
 
 	.tab-button {
@@ -1580,22 +1612,58 @@
 		border-radius: 8px;
 		cursor: pointer;
 		transition: all 0.2s;
-		font-weight: 500;
-
+		font-size: 1.5rem;
+		font-family: Quicksand;
+		font-weight: 900;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		transition: box-shadow 0.92s ease;
+		
 		&:hover {
 			background: var(--color-surface-hover);
 			border-color: var(--color-primary);
+			box-shadow: 9px 9px 16px var(--nmph-shadow-1),
+			-9px -9px 16px var(--nmph-shadow-2);
 		}
 
 		&.active {
-			background: linear-gradient(135deg, var(--primary-bom-light) 0%, var(--primary-bom-dark) 100%);
-			color: var(--primary-gold-light);
-			border-color: var(--color-primary);
+			background-color: var(--bg-glass-dark);
+			color: var(--text-primary);
+			border-bottom: 2px solid var(--bg-ghost-white);
+			box-shadow: 9px 9px 16px var(--nmph-shadow-1),
+			-9px -9px 16px var(--nmph-shadow-2);
+
+		}
+		
+		.fire-icon {
+			font-size: 1.1em;
+			animation: pulse 2s ease-in-out infinite;
+		}
+		
+		@keyframes pulse {
+			0%, 100% { transform: scale(1); }
+			50% { transform: scale(1.1); }
 		}
 	}
 
-	.all-videos, .latest-videos, .collections, .categories {
+	.all-videos, .latest-videos, .collections, .categories, .trending-section {
 		margin-bottom: 2rem;
+	}
+	
+	.trending-section {
+		animation: fadeIn 0.5s ease-out;
+	}
+	
+	.continue-watching-wrapper {
+		margin-top: 3rem;
+		padding-top: 3rem;
+		border-top: 2px solid var(--color-border);
+	}
+	
+	@keyframes fadeIn {
+		from { opacity: 0; transform: translateY(10px); }
+		to { opacity: 1; transform: translateY(0); }
 	}
 
 	.all-videos h2, .latest-videos h2, .collections h2, .categories h2 {
@@ -1611,32 +1679,49 @@
 		margin-bottom: 2rem;
 	}
 
-	.search-bar {
+	.finder {
+		border: 1px solid #fff;
+		background-color: var(--bg-primary);
+		border-radius: 15px;
+		padding: 8px;
+		box-shadow: 9px 9px 16px var(--nmph-shadow-1),
+			-9px -9px 16px var(--nmph-shadow-2);
+		margin: 1rem auto;
+	}
+
+	.search-bar-outer {
 		display: flex;
-		gap: 0.5rem;
-		max-width: 400px;
 		width: 100%;
+		padding: 0.5rem 2rem;
+		border-radius: 10px;
+		box-shadow: inset 10px 10px 15px -10px var(--nmph-shadow-1),
+			inset -10px -10px 15px -10px var(--nmph-shadow-2);
+	}
+
+	.search-bar-inner {
+		display: flex;
+		align-items: center;
 		position: relative;
+		flex: 1;
 	}
 
 	.search-input-container {
 		display: flex;
 		flex-direction: row;
 		align-items: center;
-		justify-content: center;
 		position: relative;
 		width: 100%;
+		border-radius: 10px;
 	}
 
-	.search-bar input {
+	.search-bar-inner input {
 		flex: 1;
 		padding: 0.75rem;
 		padding-right: 2.5rem; /* Make space for clear button when present */
 		border: 1px solid var(--color-border);
 		border-radius: 8px;
-		font-size: 1rem;
 		background: var(--color-surface);
-		color: var(--color-text);
+		color: var(--text-primary);
 	}
 
 	.search-bar input:focus {
@@ -1911,12 +1996,17 @@
 	}
 
 	.search-input {
-		transition: border-color 0.2s ease;
+		height: calc(100% + 3rem);
+		border: none;
+		background-color: transparent;
+		outline: none;
+		font-size: 1.5rem;
+		letter-spacing: 0.75px;
 	}
 
 	.search-input:focus {
 		outline: none;
-		border-color: var(--color-primary);
+		border: 1px solid var(--color-primary);
 		box-shadow: 0 0 0 2px rgba(var(--primary-bom-rgb), 0.2);
 	}
 
@@ -1985,7 +2075,7 @@
 	}
 
 	.btn-primary {
-		background: var(--color-primary);
+		background: var(--bg-glass);
 		color: var(--text-primary);
 		border: none;
 		padding: 0.75rem 1.5rem;
@@ -1995,7 +2085,8 @@
 		transition: background 0.2s;
 
 		&:hover {
-			background: var(--color-primary-hover);
+			background: var(--primary-glass-dark);
+			color: var(--text-primary);
 		}
 
 		&:disabled {
