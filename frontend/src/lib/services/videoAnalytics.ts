@@ -57,7 +57,7 @@ export interface ContinueWatchingVideo {
 export class VideoAnalyticsService {
 	private sessionId: string;
 	private lastReportedTime: Map<number, number> = new Map();
-	private apiBaseUrl: string = '/api/v1';
+	private apiBaseUrl: string = '/bome-backend/api/v1';
 	private trackingInterval: number = 10; // Report every 10 seconds
 	
 	constructor() {
