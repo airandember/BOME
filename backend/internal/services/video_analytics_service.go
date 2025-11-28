@@ -256,126 +256,62 @@ func (s *VideoAnalyticsService) GetVideoStats(videoID int, period string) (*Vide
 // HYBRID APPROACH: Uses detailed analytics if available, falls back to master_video_list.views
 // CACHED: Results cached in Redis for 5 minutes
 func (s *VideoAnalyticsService) GetTrendingVideos(limit int) ([]TrendingVideo, error) {
-	log.Printf("📊 [Video Analytics] Getting top %d trending videos", limit)
+	startTime := time.Now()
+	log.Printf("📊 [Video Analytics] ========================================")
+	log.Printf("📊 [Video Analytics] GetTrendingVideos called with limit=%d", limit)
 
 	// Try Redis cache first
 	cacheKey := fmt.Sprintf("analytics:trending:%d", limit)
 	if s.redis != nil {
+		log.Printf("📊 [Video Analytics] Checking Redis cache: %s", cacheKey)
 		if cached, err := s.getFromCache(cacheKey); err == nil {
-			log.Printf("✅ [Video Analytics] Returning cached trending videos")
+			duration := time.Since(startTime)
+			log.Printf("✅ [Video Analytics] Cache HIT! Returning cached data in %v", duration)
+			log.Printf("📊 [Video Analytics] ========================================")
 			return cached.([]TrendingVideo), nil
 		}
+		log.Printf("📊 [Video Analytics] Cache MISS - fetching from database")
+	} else {
+		log.Printf("⚠️  [Video Analytics] Redis not available - no caching")
 	}
 
 	if limit <= 0 || limit > 100 {
+		log.Printf("📊 [Video Analytics] Adjusting limit from %d to 100 (max)", limit)
 		limit = 100 // Default limit - top 100 trending
 	}
 
-	// Create context with timeout (10 seconds max)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	// Use optimized fallback query directly
+	// master_video_list.views is auto-synced from watch_history via trigger
+	// This is fast (<100ms) and accurate
+	log.Printf("⚡ [Video Analytics] Using optimized query (master_video_list.views)")
 
-	// Simplified, faster query - use MATERIALIZED CTEs and limit subqueries
-	query := `
-		WITH recent_stats AS MATERIALIZED (
-			SELECT 
-				video_id,
-				COUNT(DISTINCT COALESCE(user_id::text, session_id)) AS last_24h_views,
-				MAX(last_watched_at) AS last_view_at
-			FROM watch_history
-			WHERE last_watched_at > NOW() - INTERVAL '24 hours'
-			GROUP BY video_id
-			HAVING COUNT(*) > 0
-			LIMIT 500
-		),
-		video_engagement AS MATERIALIZED (
-			SELECT 
-				wh.video_id,
-				(COUNT(*) FILTER (WHERE wh.completed = true)::FLOAT / 
-					NULLIF(COUNT(*), 0)::FLOAT * 100) AS completion_rate
-			FROM watch_history wh
-			WHERE wh.last_watched_at > NOW() - INTERVAL '7 days'
-				AND wh.video_id IN (SELECT video_id FROM recent_stats)
-			GROUP BY wh.video_id
-		)
-		SELECT 
-			v.id AS video_id,
-			v.title,
-			'/api/v1/videos/' || v.bunny_video_id || '/thumbnail' AS thumbnail_url,
-			COALESCE(r.last_24h_views, 0) AS last_24h_views,
-			COALESCE(r.last_view_at, v.updated_at, v.created_at) AS last_view_at,
-			COALESCE(ve.completion_rate, 0) AS completion_rate,
-			v.likes
-		FROM master_video_list v
-		INNER JOIN recent_stats r ON r.video_id = v.id
-		LEFT JOIN video_engagement ve ON ve.video_id = v.id
-		WHERE v.status = 'ready'
-		ORDER BY r.last_24h_views DESC, v.views DESC
-		LIMIT $1
-	`
-
-	rows, err := s.db.QueryContext(ctx, query, limit)
+	videos, err := s.getFallbackTrendingVideos(limit)
 	if err != nil {
-		log.Printf("❌ [Video Analytics] Trending query failed (timeout or error): %v", err)
-		// Fallback: use simple view count from master_video_list
-		return s.getFallbackTrendingVideos(limit)
-	}
-	defer rows.Close()
-
-	var trending []TrendingVideo
-	for rows.Next() {
-		var video TrendingVideo
-		var lastViewAt time.Time
-		var completionRate float64
-		var likes int
-
-		err := rows.Scan(
-			&video.VideoID,
-			&video.Title,
-			&video.ThumbnailURL,
-			&video.Last24HViews,
-			&lastViewAt,
-			&completionRate,
-			&likes,
-		)
-		if err != nil {
-			log.Printf("⚠️  [Video Analytics] Error scanning trending video: %v", err)
-			continue
-		}
-
-		// Calculate trending score with time decay
-		hoursSinceView := time.Since(lastViewAt).Hours()
-		timeDecay := 1.0
-		if hoursSinceView > 0 {
-			// Decay over 72 hours (3 days)
-			timeDecay = 1.0 / (1.0 + (hoursSinceView / 72.0))
-		}
-
-		// Velocity: views per hour over last 24 hours
-		velocity := float64(video.Last24HViews) / 24.0
-
-		// Engagement: completion rate + likes factor
-		engagement := (completionRate + float64(likes)*2) / 2
-
-		// Combined trending score
-		video.TrendingScore = ((velocity * 0.5) + (engagement * 0.3)) * timeDecay * 100
-
-		trending = append(trending, video)
+		duration := time.Since(startTime)
+		log.Printf("❌ [Video Analytics] Failed after %v: %v", duration, err)
+		log.Printf("📊 [Video Analytics] ========================================")
+		return nil, err
 	}
 
 	// Cache results for 5 minutes
-	if s.redis != nil {
-		s.setCache(cacheKey, trending, 5*time.Minute)
+	if s.redis != nil && len(videos) > 0 {
+		log.Printf("📊 [Video Analytics] Caching %d videos in Redis for 5 minutes", len(videos))
+		s.setCache(cacheKey, videos, 5*time.Minute)
 	}
 
-	log.Printf("✅ [Video Analytics] Found %d trending videos", len(trending))
-	return trending, nil
+	duration := time.Since(startTime)
+	log.Printf("✅ [Video Analytics] Successfully returned %d videos in %v", len(videos), duration)
+	log.Printf("📊 [Video Analytics] ========================================")
+	return videos, nil
 }
 
 // getFallbackTrendingVideos returns trending videos based purely on master_video_list.views
 // Used as a fallback when the complex analytics query times out
 func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]TrendingVideo, error) {
-	log.Printf("⚠️  [Video Analytics] Using fallback trending query (view count only)")
+	startTime := time.Now()
+	log.Printf("⚡ [Video Analytics] ========================================")
+	log.Printf("⚡ [Video Analytics] getFallbackTrendingVideos started")
+	log.Printf("⚡ [Video Analytics] Requested limit: %d", limit)
 
 	query := `
 		SELECT 
@@ -392,18 +328,29 @@ func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]Trending
 		LIMIT $1
 	`
 
+	log.Printf("⚡ [Video Analytics] Creating context with 5s timeout")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	log.Printf("⚡ [Video Analytics] Executing query against master_video_list...")
+	queryStart := time.Now()
 	rows, err := s.db.QueryContext(ctx, query, limit)
+	queryDuration := time.Since(queryStart)
+
 	if err != nil {
-		log.Printf("❌ [Video Analytics] Even fallback query failed: %v", err)
+		log.Printf("❌ [Video Analytics] Query failed after %v: %v", queryDuration, err)
+		log.Printf("❌ [Video Analytics] Context error: %v", ctx.Err())
+		log.Printf("⚡ [Video Analytics] ========================================")
 		return []TrendingVideo{}, nil // Return empty array rather than error
 	}
 	defer rows.Close()
+	log.Printf("✅ [Video Analytics] Query completed in %v", queryDuration)
 
+	log.Printf("⚡ [Video Analytics] Scanning rows...")
 	var trending []TrendingVideo
+	rowCount := 0
 	for rows.Next() {
+		rowCount++
 		var video TrendingVideo
 		var lastViewAt time.Time
 		var completionRate float64
@@ -419,7 +366,7 @@ func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]Trending
 			&likes,
 		)
 		if err != nil {
-			log.Printf("⚠️  [Video Analytics] Error scanning fallback trending video: %v", err)
+			log.Printf("⚠️  [Video Analytics] Error scanning row %d: %v", rowCount, err)
 			continue
 		}
 
@@ -429,9 +376,18 @@ func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]Trending
 		video.TrendingScore = (float64(video.Last24HViews) * 10) + recencyBonus
 
 		trending = append(trending, video)
+
+		if rowCount <= 3 {
+			log.Printf("⚡ [Video Analytics] Row %d: ID=%d, Title=%s, Views=%d, Score=%.2f",
+				rowCount, video.VideoID, video.Title, video.Last24HViews, video.TrendingScore)
+		}
 	}
 
-	log.Printf("✅ [Video Analytics] Fallback: Found %d trending videos from view counts", len(trending))
+	totalDuration := time.Since(startTime)
+	log.Printf("✅ [Video Analytics] Scanned %d rows successfully", rowCount)
+	log.Printf("✅ [Video Analytics] Returning %d trending videos", len(trending))
+	log.Printf("✅ [Video Analytics] Total duration: %v", totalDuration)
+	log.Printf("⚡ [Video Analytics] ========================================")
 	return trending, nil
 }
 

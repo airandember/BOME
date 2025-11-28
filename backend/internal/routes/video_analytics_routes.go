@@ -128,22 +128,36 @@ func RegisterVideoAnalyticsRoutes(router *gin.RouterGroup, db *database.DB, redi
 
 		// Trending videos endpoint
 		analytics.GET("/trending", func(c *gin.Context) {
+			log.Printf("🌐 [ROUTE] ============================================")
+			log.Printf("🌐 [ROUTE] Received GET /analytics/trending")
+			log.Printf("🌐 [ROUTE] Client IP: %s", c.ClientIP())
+			log.Printf("🌐 [ROUTE] User-Agent: %s", c.GetHeader("User-Agent"))
+			log.Printf("🌐 [ROUTE] Query params: %s", c.Request.URL.RawQuery)
+
 			limit, err := strconv.Atoi(c.DefaultQuery("limit", "10"))
 			if err != nil || limit <= 0 {
+				log.Printf("🌐 [ROUTE] Invalid limit parameter, using default: 10")
 				limit = 10
 			}
+			log.Printf("🌐 [ROUTE] Requested limit: %d", limit)
 
+			log.Printf("📤 [ROUTE→SERVICE] Calling GetTrendingVideos()")
 			trending, err := analyticsService.GetTrendingVideos(limit)
 			if err != nil {
-				log.Printf("❌ [Video Analytics] Failed to get trending: %v", err)
+				log.Printf("❌ [ROUTE] GetTrendingVideos failed: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get trending videos"})
+				log.Printf("🌐 [ROUTE] ============================================")
 				return
 			}
+			log.Printf("✅ [ROUTE←SERVICE] Received %d trending videos", len(trending))
 
+			log.Printf("📤 [ROUTE→CLIENT] Sending JSON response")
 			c.JSON(http.StatusOK, gin.H{
 				"trending": trending,
 				"count":    len(trending),
 			})
+			log.Printf("✅ [ROUTE] Response sent successfully")
+			log.Printf("🌐 [ROUTE] ============================================")
 		})
 
 		// User engagement endpoint (authenticated only)
