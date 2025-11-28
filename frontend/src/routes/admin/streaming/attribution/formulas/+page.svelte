@@ -284,11 +284,11 @@
 	{:else}
 		<!-- Formula Cards -->
 		<div class="formulas-grid">
-		{#each formulas as formula}
-			<div class="formula-card {formula.is_default ? 'default' : ''} {formula.is_active ? '' : 'inactive'}">
-				{@const typeInfo = getFormulaTypeInfo(formula.formula_type)}
-					<!-- Card Header -->
-					<div class="card-header">
+	{#each formulas as formula}
+		{@const typeInfo = getFormulaTypeInfo(formula.formula_type)}
+		<div class="formula-card {formula.is_default ? 'default' : ''} {formula.is_active ? '' : 'inactive'}">
+			<!-- Card Header -->
+			<div class="card-header">
 						<div class="card-title-row">
 							<span class="formula-emoji">{typeInfo.emoji}</span>
 							<div>
@@ -463,37 +463,38 @@
 						</div>
 					</div>
 					
-					<!-- Formula Preview -->
-					<div class="formula-preview">
-						<h4>📊 Formula Preview</h4>
-						<div class="preview-content">
-							{@const selectedType = formulaTypes.find(t => t.type === newFormula.formula_type)}
-							<div class="preview-header">
-								<span class="preview-emoji">{selectedType?.emoji}</span>
-								<strong>{selectedType?.name}</strong>
+			<!-- Formula Preview -->
+			<div class="formula-preview">
+				<h4>📊 Formula Preview</h4>
+				{#if true}
+					{@const selectedType = formulaTypes.find(t => t.type === newFormula.formula_type)}
+					<div class="preview-content">
+						<div class="preview-header">
+							<span class="preview-emoji">{selectedType?.emoji}</span>
+							<strong>{selectedType?.name}</strong>
+						</div>
+						<p class="preview-description">{selectedType?.description}</p>
+						
+						{#if Object.keys(selectedType?.config || {}).length > 0}
+							<div class="preview-config">
+								<strong>Default Configuration:</strong>
+								<pre>{JSON.stringify(selectedType?.config, null, 2)}</pre>
 							</div>
-							<p class="preview-description">{selectedType?.description}</p>
-							
-							{#if Object.keys(selectedType?.config || {}).length > 0}
-								<div class="preview-config">
-									<strong>Default Configuration:</strong>
-									<pre>{JSON.stringify(selectedType?.config, null, 2)}</pre>
-								</div>
-							{/if}
-							
-							<div class="preview-settings">
-								<div class="preview-setting">
-									<span class="setting-icon">📅</span>
-									<span>Looks back <strong>{newFormula.attribution_window_days} days</strong></span>
-								</div>
-								<div class="preview-setting">
-									<span class="setting-icon">⏱️</span>
-									<span>Requires <strong>{newFormula.min_watch_percentage}% watch</strong></span>
-								</div>
+						{/if}
+						
+						<div class="preview-settings">
+							<div class="preview-setting">
+								<span class="setting-icon">📅</span>
+								<span>Looks back <strong>{newFormula.attribution_window_days} days</strong></span>
+							</div>
+							<div class="preview-setting">
+								<span class="setting-icon">⏱️</span>
+								<span>Requires <strong>{newFormula.min_watch_percentage}% watch</strong></span>
 							</div>
 						</div>
 					</div>
-				</div>
+				{/if}
+			</div>
 				
 				<div class="modal-footer">
 					<button type="button" class="btn-secondary" onclick={() => showCreateModal = false}>
