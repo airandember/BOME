@@ -6,6 +6,7 @@
  */
 
 import { goto } from '$app/navigation';
+import { config } from '$lib/config';
 
 // Types
 export interface VideoTrackingEvent {
@@ -57,12 +58,15 @@ export interface ContinueWatchingVideo {
 export class VideoAnalyticsService {
 	private sessionId: string;
 	private lastReportedTime: Map<number, number> = new Map();
-	private apiBaseUrl: string = '/api/v1';
+	private apiBaseUrl: string;
 	private trackingInterval: number = 10; // Report every 10 seconds
 	
 	constructor() {
+		// Use centralized config for API base URL
+		this.apiBaseUrl = config.apiBaseUrl;
 		this.sessionId = this.getOrCreateSessionId();
 		console.log('📊 [Video Analytics] Service initialized with session:', this.sessionId);
+		console.log('📊 [Video Analytics] API Base URL:', this.apiBaseUrl);
 	}
 	
 	/**
