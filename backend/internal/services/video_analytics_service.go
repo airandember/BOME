@@ -319,6 +319,7 @@ func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]Trending
 			v.id AS video_id,
 			v.title,
 			v.bunny_video_id,
+			v.thumbnail_url,
 			GREATEST(v.views / 10, 1) AS last_24h_views,
 			v.updated_at AS last_view_at,
 			0 AS completion_rate,
@@ -361,6 +362,7 @@ func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]Trending
 			&video.VideoID,
 			&video.Title,
 			&video.BunnyVideoID,
+			&video.ThumbnailURL,
 			&video.Last24HViews,
 			&lastViewAt,
 			&completionRate,
@@ -371,8 +373,7 @@ func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]Trending
 			continue
 		}
 
-		// Generate thumbnail URL (frontend will construct full path using VITE_API_BASE_URL)
-		video.ThumbnailURL = fmt.Sprintf("videos/%s/thumbnail", video.BunnyVideoID)
+		// ThumbnailURL is already populated from database - no need to construct it!
 
 		// Simple score based on views and recency
 		daysSinceUpdate := time.Since(lastViewAt).Hours() / 24.0
@@ -504,6 +505,7 @@ func (s *VideoAnalyticsService) GetTopVideos(limit int, days int) ([]map[string]
 		v.id,
 		v.title,
 		v.bunny_video_id,
+		v.thumbnail_url,
 		v.duration,
 		-- Use analytics data if available, otherwise use master_video_list.views
 		COALESCE(av.unique_viewers, v.views, 0) AS total_views,
@@ -527,17 +529,16 @@ func (s *VideoAnalyticsService) GetTopVideos(limit int, days int) ([]map[string]
 	var videos []map[string]interface{}
 	for rows.Next() {
 		var id, duration, totalViews, uniqueViewers, totalWatchTime int
-		var title, bunnyVideoID string
+		var title, bunnyVideoID, thumbnailURL string
 		var avgCompletion float64
 
-		err := rows.Scan(&id, &title, &bunnyVideoID, &duration, &totalViews, &uniqueViewers, &avgCompletion, &totalWatchTime)
+		err := rows.Scan(&id, &title, &bunnyVideoID, &thumbnailURL, &duration, &totalViews, &uniqueViewers, &avgCompletion, &totalWatchTime)
 		if err != nil {
 			log.Printf("⚠️  [Video Analytics] Error scanning video: %v", err)
 			continue
 		}
 
-		// Generate relative thumbnail URL (frontend constructs full path)
-		thumbnailURL := fmt.Sprintf("videos/%s/thumbnail", bunnyVideoID)
+		// ThumbnailURL is already from database - no need to construct it!
 
 		videos = append(videos, map[string]interface{}{
 			"video_id":         id,
