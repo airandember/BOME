@@ -702,7 +702,7 @@
 		gap: var(--space-md);
 		padding: var(--space-md);
 		text-decoration: none;
-		color: var(--text-primary);
+		color: var(--bg-ghost-white);
 		border-radius: var(--radius-lg);
 		transition: all var(--transition-normal);
 		position: relative;
@@ -733,7 +733,7 @@
 
 	.dropdown-item-subtitle {
 		font-size: var(--text-xs);
-		color: var(--text-secondary);
+		color: var(--text-muted);
 	}
 
 	.free-badge {
