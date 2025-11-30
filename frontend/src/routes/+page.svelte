@@ -202,7 +202,7 @@
 					</div>
 				</a>-->
 
-				<a href="/videos" class="" on:click|preventDefault={handleGetStarted}>
+				<a href="/videos" class="watch-card" on:click|preventDefault={handleGetStarted}>
 					<div class="outer">
 						<div class="dot"></div>
 						<div class="card">
@@ -1357,18 +1357,18 @@
 			font-size: clamp(3rem, 5.5vw, 5rem);
 		}
 		
-		.hero-quote {
-			font-size: 1.2rem;
-			margin-top: 2rem;
-			max-width: 700px;
-			padding: 0 2rem 1rem 2rem;
+		.hero-quote p {
+			font-size: 2.5rem !important;
 		}
 		
 		.navigation-cards {
 			gap: 5rem;
 			bottom: 5%;
 			left: 50%;
-			padding: 0 2rem 1rem 2rem;
+			width: 100vw;
+			box-sizing: border-box;
+			height: 87vh;
+			padding: 0 0;
 		}
 		
 		.nav-card {
@@ -1391,6 +1391,91 @@
 		
 		.nav-card p {
 			font-size: 0.9rem;
+		}
+
+		.watch-card {
+			display: flex;
+			justify-content: center;
+			align-items: end;
+			width: 100vw;
+			height: 100%;
+			box-sizing: border-box;
+			max-width: 600px;
+		}
+
+		.watch-card .outer {
+			width: 80%;
+			height:35%;
+		}
+
+		.watch-card .outer .card {
+			height: 100%;
+		}
+
+		.watch-card .outer .card .text {
+			font-size: 3.25rem;
+		}
+
+	}
+
+	@media (max-width: 1024px) {
+		.hero-quote p {
+			font-size: 2.5rem !important;
+		}
+		
+		.navigation-cards {
+			gap: 5rem;
+			bottom: 5%;
+			left: 50%;
+			width: 100vw;
+			box-sizing: border-box;
+			height: 87vh;
+			padding: 0 0;
+		}
+		
+		.nav-card {
+			width: 550px;
+			min-height: 80px;
+			padding: 0.5rem;
+		}
+
+		.nav-card-content {
+			padding: 0.25rem
+		}
+		
+		.card-action {
+			font-size: 2.5rem;
+		}
+		
+		.nav-card h3 {
+			font-size: clamp(1rem, 1.5vw, 1.1rem);
+		}
+		
+		.nav-card p {
+			font-size: 0.9rem;
+		}
+
+		.watch-card {
+			display: flex;
+			justify-content: center;
+			align-items: end;
+			width: 100vw;
+			height: 100%;
+			box-sizing: border-box;
+			
+		}
+
+		.watch-card .outer {
+			width: 80%;
+			height:35%;
+		}
+
+		.watch-card .outer .card {
+			height: 100%;
+		}
+
+		.watch-card .outer .card .text {
+			font-size: 3rem;
 		}
 	}
 
@@ -1430,7 +1515,10 @@
 			flex-direction: column;
 			gap: 1.5rem;
 			align-items: center;
-			bottom: 5%;
+			bottom: 8%;
+			height: 87vh;
+			width: 100vw;
+			padding: 0 0;
 		}
 
 		.nav-card {
@@ -1460,6 +1548,30 @@
 		.nav-card p {
 			font-size: 0.9rem;
 		}
+
+		.watch-card {
+			display: flex;
+			justify-content: center;
+			align-items: end;
+			width: 100vw;
+			height: 100%;
+			box-sizing: border-box;
+			
+		}
+
+		.watch-card .outer {
+			width: 80%;
+			height:45%;
+		}
+
+		.watch-card .outer .card {
+			height: 100%;
+		}
+
+		.watch-card .outer .card .text {
+			font-size: 2.5rem;
+		}
+
 
 		.globe {
 			width: 400px;
@@ -1576,9 +1688,12 @@
 		}
 
 		.hero-quote {
-			font-size: 1rem;
-			padding: 0 0.5rem;
+			width: 95vw;
+			font-size: clamp(1.5rem, 32px, 2.5rem) !important;
+			padding: 1rem;
 			margin-bottom: 2rem;
+			border-radius: 15px;
+			
 		}
 
 		/* Navigation cards mobile optimization */
@@ -1588,6 +1703,7 @@
 			padding: 0 1rem;
 			width: calc(100vw - 2rem);
 			box-sizing: border-box;
+			height: 87vh;
 		}
 
 		.nav-card {
@@ -1621,6 +1737,29 @@
 		.nav-card p {
 			font-size: 0.8rem;
 			line-height: 1.3;
+		}
+
+		.watch-card {
+			display: flex;
+			justify-content: center;
+			align-items: end;
+			width: 100vw;
+			height: 100vh;
+			box-sizing: border-box;
+			
+		}
+
+		.watch-card .outer {
+			width: 80%;
+			height:35%;
+		}
+
+		.watch-card .outer .card {
+			height: 100%;
+		}
+
+		.watch-card .outer .card .text {
+			font-size: 2.5rem;
 		}
 
 		/* Image sizing fixes */

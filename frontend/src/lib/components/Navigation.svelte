@@ -12,6 +12,7 @@
 	let isAdmin = false;
 	let isAdvertiser = false;
 	let isVideoDropdownOpen = false;
+	let isContactSupportDropdownOpen = false;
 
 	// Subscribe to auth store
 	auth.subscribe(state => {
@@ -48,6 +49,15 @@
 		await auth.logout();
 		goto('/auth/login');
 		closeMenu();
+	};
+
+	const getSupportMailtoLink = () => {
+		if (!browser) return '#';
+		const currentDate = new Date().toLocaleString();
+		const currentUrl = window.location.href;
+		const subject = `Help Needed! - ${currentDate}`;
+		const body = `Current URL: ${currentUrl}%0D%0A%0D%0APlease describe your issue below:%0D%0A`;
+		return `mailto:support@bookofmormonevidence.org?subject=${encodeURIComponent(subject)}&body=${body}`;
 	};
 </script>
 
@@ -111,7 +121,37 @@
 						<div class="premium-badge">Premium</div>
 					</a>
 				</div>
+				
 			</div>
+
+		<div class="nav-dropdown">
+			<button 
+				class="nav-link mobile-video-dropdown-menu-trigger dropdown-trigger support-button" 
+				on:click={() => isContactSupportDropdownOpen = !isContactSupportDropdownOpen}
+			> 
+			<div class="wordSymbolCombiner">
+				<span>🔧</span>
+				<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<polyline points="6,9 12,15 18,9"></polyline>
+				</svg>
+			</div>	
+			</button>
+			
+			<div class="nav-dropdown-menu" class:open={isContactSupportDropdownOpen}>
+				<a href={getSupportMailtoLink()} class="dropdown-item support-item" on:click={() => { closeMenu(); isContactSupportDropdownOpen = false; }}>
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+						<polyline points="22,6 12,13 2,6"></polyline>
+					</svg>
+					<div class="dropdown-item-content">
+						<span class="dropdown-item-title">Email Support</span>
+						<span class="dropdown-item-subtitle">Get help from our team</span>
+					</div>
+					<div class="support-badge">Support</div>
+				</a>
+			</div>
+			
+		</div>
 			
 			<!-- REMOVE WHEN ARTICLES AND EVENTS ARE UP
 			
@@ -234,6 +274,7 @@
 							</svg>
 							<span>Logout</span>
 						</button>
+
 					</div>
 				</div>
 			{:else}
@@ -661,7 +702,7 @@
 		gap: var(--space-md);
 		padding: var(--space-md);
 		text-decoration: none;
-		color: var(--text-primary);
+		color: var(--bg-ghost-white);
 		border-radius: var(--radius-lg);
 		transition: all var(--transition-normal);
 		position: relative;
@@ -692,7 +733,7 @@
 
 	.dropdown-item-subtitle {
 		font-size: var(--text-xs);
-		color: var(--text-secondary);
+		color: var(--text-muted);
 	}
 
 	.free-badge {
@@ -725,6 +766,43 @@
 	.premium-item:hover {
 		border-color: rgba(245, 158, 11, 0.3);
 		background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.1) 100%);
+	}
+
+	.support-button {
+		color: white;
+		border-radius: var(--radius-lg);
+		padding: var(--space-sm) var(--space-md);
+	}
+
+	.support-button:hover {
+		background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+		transform: translateY(-2px);
+		box-shadow: var(--shadow-lg);
+	}
+
+	.support-button:hover::after {
+		width: 0;
+	}
+
+	.support-badge {
+		background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+		color: white;
+		font-size: 10px;
+		font-weight: 600;
+		padding: 4px 8px;
+		border-radius: var(--radius-sm);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.support-item {
+		border: 1px solid rgba(239, 68, 68, 0.2);
+		background: linear-gradient(135deg, rgba(239, 68, 68, 0.05) 0%, rgba(220, 38, 38, 0.05) 100%);
+	}
+
+	.support-item:hover {
+		border-color: rgba(239, 68, 68, 0.3);
+		background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.1) 100%);
 	}
 
 	/* Close dropdown when clicking outside */
