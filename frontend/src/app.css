@@ -180,6 +180,8 @@
 	--bg-ghost-white: rgba(255, 255, 255, 1);
 	--bg-large-gradient: linear-gradient(105deg, var(--primary-gold-dark) 30%, var(--primary-bom-dark) 100%);
 	--bg-large-gradient2: linear-gradient(45deg, var(--primary-gold-dark) 30%, var(--primary-bom-dark) 100%);
+	--bg-large-gradient3: linear-gradient(135deg, var(--primary-gold-light) 30%, var(--primary-bom-dark) 60%,
+	var(--primary-gold-dark) 80%, var(--primary-bom-dark) 100%);
 
 	
 	/* Shadows */
@@ -349,9 +351,9 @@ a:hover {
 	width: 600px;
 	min-height: 250px;
 	height: auto;
-	border-radius: 10px;
+	border-radius: 15px;
 	padding: 1px;
-	background: radial-gradient(circle 230px at 55% 0%, rgb(255, 234, 112), rgba(68, 39, 7, 0.05));
+	background: radial-gradient(circle 230px at 55% 0%, var(--primary-gold-light), rgba(68, 39, 7, 0.05));
 	position: relative;
 	animation: breathe 8s ease-in-out infinite;
   }

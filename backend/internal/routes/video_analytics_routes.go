@@ -28,43 +28,30 @@ func RegisterVideoAnalyticsRoutes(router *gin.RouterGroup, db *database.DB, redi
 	{
 		// Video tracking endpoint (authenticated users only - video page requires auth)
 		analytics.POST("/video/track", middleware.AuthRequired(), func(c *gin.Context) {
-			log.Printf("🌐 [ROUTE] ============================================")
-			log.Printf("🌐 [ROUTE] Received POST /analytics/video/track")
-			log.Printf("🌐 [ROUTE] Client IP: %s, User-Agent: %s", c.ClientIP(), c.GetHeader("User-Agent"))
-
 			var req services.VideoTrackingRequest
 
 			if err := c.ShouldBindJSON(&req); err != nil {
-				log.Printf("❌ [ROUTE] Invalid JSON: %v", err)
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
 
-			log.Printf("📦 [ROUTE] Request payload: video_id=%d, duration=%ds, percentage=%.2f%%",
-				req.VideoID, req.WatchedDuration, req.WatchedPercentage)
-
 			// Get user ID from auth context (always present due to AuthRequired middleware)
 			userID, exists := c.Get("user_id")
 			if !exists {
-				log.Printf("❌ [ROUTE] No user_id in context despite AuthRequired")
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
 				return
 			}
 
 			uid := userID.(int)
 			req.UserID = &uid
-			log.Printf("🔐 [ROUTE] Authenticated user: %d", uid)
 
 			// Capture IP and User-Agent server-side
 			req.IPAddress = c.ClientIP()
 			req.UserAgent = c.GetHeader("User-Agent")
-			log.Printf("📝 [ROUTE] Enhanced request with IP=%s, UA=%s", req.IPAddress, req.UserAgent[:50])
 
 			// Check circuit breaker
-			log.Printf("🛡️  [ROUTE] Checking circuit breaker...")
 			if !resilience.ShouldAllowRequest() {
 				// Circuit is open, drop this request (graceful degradation)
-				log.Printf("⚠️ [ROUTE] Circuit breaker OPEN - throttling request")
 				c.JSON(http.StatusOK, gin.H{
 					"status":   "throttled",
 					"video_id": req.VideoID,
@@ -72,34 +59,26 @@ func RegisterVideoAnalyticsRoutes(router *gin.RouterGroup, db *database.DB, redi
 				})
 				return
 			}
-			log.Printf("✅ [ROUTE] Circuit breaker OK - proceeding")
 
 			// Record the view
-			log.Printf("📤 [ROUTE→SERVICE] Calling analyticsService.RecordView()")
 			if err := analyticsService.RecordView(req); err != nil {
-				log.Printf("❌ [ROUTE] RecordView failed: %v", err)
+				log.Printf("❌ [Analytics] RecordView failed: %v", err)
 				resilience.RecordFailure()
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to track view"})
 				return
 			}
-			log.Printf("✅ [ROUTE←SERVICE] RecordView successful")
 
 			// Record success
 			resilience.RecordSuccess()
 
 			// If user is authenticated, also update watch history
 			if req.UserID != nil && req.WatchedDuration > 0 {
-				log.Printf("📤 [ROUTE→HISTORY] Updating watch history for user %d", *req.UserID)
 				if err := watchHistoryService.UpdateProgress(*req.UserID, req.VideoID, req.WatchedDuration); err != nil {
-					log.Printf("⚠️  [ROUTE] Watch history update failed (non-fatal): %v", err)
-					// Don't fail the request - tracking is more important than history
-				} else {
-					log.Printf("✅ [ROUTE←HISTORY] Watch history updated")
+					// Non-fatal - tracking is more important than history
+					log.Printf("⚠️ [Analytics] Watch history update failed: %v", err)
 				}
 			}
 
-			log.Printf("📤 [ROUTE→FRONTEND] Sending 200 OK response")
-			log.Printf("🌐 [ROUTE] ============================================")
 			c.JSON(http.StatusOK, gin.H{
 				"status":   "tracked",
 				"video_id": req.VideoID,
@@ -128,36 +107,22 @@ func RegisterVideoAnalyticsRoutes(router *gin.RouterGroup, db *database.DB, redi
 
 		// Trending videos endpoint
 		analytics.GET("/trending", func(c *gin.Context) {
-			log.Printf("🌐 [ROUTE] ============================================")
-			log.Printf("🌐 [ROUTE] Received GET /analytics/trending")
-			log.Printf("🌐 [ROUTE] Client IP: %s", c.ClientIP())
-			log.Printf("🌐 [ROUTE] User-Agent: %s", c.GetHeader("User-Agent"))
-			log.Printf("🌐 [ROUTE] Query params: %s", c.Request.URL.RawQuery)
-
 			limit, err := strconv.Atoi(c.DefaultQuery("limit", "10"))
 			if err != nil || limit <= 0 {
-				log.Printf("🌐 [ROUTE] Invalid limit parameter, using default: 10")
 				limit = 10
 			}
-			log.Printf("🌐 [ROUTE] Requested limit: %d", limit)
 
-			log.Printf("📤 [ROUTE→SERVICE] Calling GetTrendingVideos()")
 			trending, err := analyticsService.GetTrendingVideos(limit)
 			if err != nil {
-				log.Printf("❌ [ROUTE] GetTrendingVideos failed: %v", err)
+				log.Printf("❌ [Analytics] GetTrendingVideos failed: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get trending videos"})
-				log.Printf("🌐 [ROUTE] ============================================")
 				return
 			}
-			log.Printf("✅ [ROUTE←SERVICE] Received %d trending videos", len(trending))
 
-			log.Printf("📤 [ROUTE→CLIENT] Sending JSON response")
 			c.JSON(http.StatusOK, gin.H{
 				"trending": trending,
 				"count":    len(trending),
 			})
-			log.Printf("✅ [ROUTE] Response sent successfully")
-			log.Printf("🌐 [ROUTE] ============================================")
 		})
 
 		// User engagement endpoint (authenticated only)

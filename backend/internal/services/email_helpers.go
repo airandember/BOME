@@ -222,11 +222,8 @@ func (s *EmailService) storeVerificationToken(userID int, token, email string, e
 func (s *EmailService) getBaseURL() string {
 	// Get from environment variable first
 	if baseURL := os.Getenv("PUBLIC_APP_URL"); baseURL != "" {
-		log.Printf("🔍 [EMAIL] Using PUBLIC_APP_URL: %s", baseURL)
-
 		// Override for development - if it's pointing to frontend, use backend instead
 		if strings.Contains(baseURL, "localhost:5173") {
-			log.Printf("🔄 [EMAIL] Development override: changing localhost:5173 to localhost:8080")
 			return "http://localhost:8080"
 		}
 
@@ -234,23 +231,49 @@ func (s *EmailService) getBaseURL() string {
 		// This ensures email verification URLs use the same routing as all other API calls
 		if strings.Contains(baseURL, "bookofmormonevidence.org") && !strings.Contains(baseURL, "/bome-backend") {
 			baseURL = baseURL + "/bome-backend"
-			log.Printf("🔧 [EMAIL] Production fix: Added /bome-backend path: %s", baseURL)
 		}
 
 		return baseURL
 	}
 
-	log.Printf("🔍 [EMAIL] PUBLIC_APP_URL not found, checking database...")
-
 	// Try to get from database settings
 	if baseURL, err := s.db.GetEmailSetting("app_base_url"); err == nil && baseURL != "" {
-		log.Printf("🔍 [EMAIL] Using database app_base_url: %s", baseURL)
 		return baseURL
 	}
 
 	// Development fallback with warning - use backend port for API endpoints
-	log.Printf("⚠️ [EMAIL] No base URL configured! Using development fallback: http://localhost:8080")
 	return "http://localhost:8080"
+}
+
+// getFrontendBaseURL returns the frontend URL WITHOUT /bome-backend suffix
+// Used for links that go directly to frontend pages (e.g., password reset, account settings)
+func (s *EmailService) getFrontendBaseURL() string {
+	// Get from environment variable first
+	if baseURL := os.Getenv("PUBLIC_APP_URL"); baseURL != "" {
+		// Development: frontend runs on port 5173
+		if strings.Contains(baseURL, "localhost:8080") {
+			return "http://localhost:5173"
+		}
+		if strings.Contains(baseURL, "localhost:5173") {
+			return baseURL
+		}
+
+		// Production: strip /bome-backend if present, return just the domain
+		baseURL = strings.TrimSuffix(baseURL, "/bome-backend")
+		baseURL = strings.TrimSuffix(baseURL, "/")
+		return baseURL
+	}
+
+	// Try to get from database settings
+	if baseURL, err := s.db.GetEmailSetting("app_base_url"); err == nil && baseURL != "" {
+		// Strip backend path if present
+		baseURL = strings.TrimSuffix(baseURL, "/bome-backend")
+		baseURL = strings.TrimSuffix(baseURL, "/")
+		return baseURL
+	}
+
+	// Development fallback - frontend port
+	return "http://localhost:5173"
 }
 
 func (s *EmailService) isEmailEnabled() (bool, error) {

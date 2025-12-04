@@ -74,47 +74,29 @@ type TrendingVideo struct {
 // RecordView records a video view event using async Redis buffer
 // Returns immediately without blocking on database writes
 func (s *VideoAnalyticsService) RecordView(req VideoTrackingRequest) error {
-	log.Printf("🎯 [SERVICE] ========================================")
-	log.Printf("🎯 [SERVICE] RecordView called")
-	log.Printf("🎯 [SERVICE] Video: %d, User: %v, Duration: %ds, Percentage: %.2f%%",
-		req.VideoID, req.UserID, req.WatchedDuration, req.WatchedPercentage)
-
 	// Use async buffer if available (production mode)
 	if s.buffer != nil {
-		log.Printf("📤 [SERVICE→BUFFER] Buffer available, adding event to Redis")
 		err := s.buffer.AddEvent(req)
 		if err != nil {
 			// Buffer failed, fall back to direct DB write
-			log.Printf("⚠️ [SERVICE] Buffer.AddEvent failed: %v", err)
-			log.Printf("🔄 [SERVICE] Falling back to direct DB write")
+			log.Printf("⚠️ [Analytics] Buffer failed, using direct DB: %v", err)
 			return s.recordViewDirect(req)
 		}
-		log.Printf("✅ [SERVICE←BUFFER] Event buffered successfully (async)")
-		log.Printf("⚡ [SERVICE] Returning immediately (non-blocking)")
-		log.Printf("🎯 [SERVICE] ========================================")
 		return nil
 	}
 
 	// No buffer available, write directly (fallback mode)
-	log.Printf("⚠️ [SERVICE] No buffer available (Redis not configured)")
-	log.Printf("📤 [SERVICE→DB] Using direct DB write (fallback)")
-	result := s.recordViewDirect(req)
-	log.Printf("🎯 [SERVICE] ========================================")
-	return result
+	return s.recordViewDirect(req)
 }
 
 // recordViewDirect performs direct synchronous DB write (fallback)
 func (s *VideoAnalyticsService) recordViewDirect(req VideoTrackingRequest) error {
-	log.Printf("💾 [SERVICE-DB] Direct DB write started")
-	log.Printf("💾 [SERVICE-DB] Completed status: %.2f%% >= 95%% = %v", req.WatchedPercentage, req.WatchedPercentage >= 95.0)
-
 	completed := req.WatchedPercentage >= 95.0
 
 	var query string
 	var args []interface{}
 
 	if req.UserID != nil {
-		log.Printf("💾 [SERVICE-DB] Using authenticated user path (user_id=%d)", *req.UserID)
 		// Authenticated user - UPSERT on (user_id, video_id)
 		query = `
 			INSERT INTO watch_history (
@@ -138,7 +120,6 @@ func (s *VideoAnalyticsService) recordViewDirect(req VideoTrackingRequest) error
 		`
 		args = []interface{}{req.UserID, req.VideoID, req.WatchedDuration, req.WatchedPercentage, completed}
 	} else {
-		log.Printf("💾 [SERVICE-DB] Using anonymous user path (session_id=%s)", req.SessionID)
 		// Anonymous user - UPSERT on (session_id, video_id)
 		query = `
 			INSERT INTO watch_history (
@@ -163,20 +144,17 @@ func (s *VideoAnalyticsService) recordViewDirect(req VideoTrackingRequest) error
 		args = []interface{}{req.SessionID, req.VideoID, req.WatchedDuration, req.WatchedPercentage, completed}
 	}
 
-	log.Printf("💾 [SERVICE-DB] Executing UPSERT to watch_history table")
 	_, err := s.db.Exec(query, args...)
 	if err != nil {
-		log.Printf("❌ [SERVICE-DB] Database UPSERT failed: %v", err)
+		log.Printf("❌ [Analytics] DB write failed: %v", err)
 		return fmt.Errorf("failed to record view: %w", err)
 	}
 
-	log.Printf("✅ [SERVICE-DB] UPSERT successful - watch_history updated")
 	return nil
 }
 
 // GetVideoStats retrieves aggregated statistics for a video
 func (s *VideoAnalyticsService) GetVideoStats(videoID int, period string) (*VideoStats, error) {
-	log.Printf("📊 [Video Analytics] Getting stats for video %d (period: %s)", videoID, period)
 
 	// Parse period into time range
 	var startTime time.Time
@@ -247,9 +225,6 @@ func (s *VideoAnalyticsService) GetVideoStats(videoID int, period string) (*Vide
 		(stats.AvgPercentage * 0.3) +
 		((100 - stats.BounceRate) * 0.3)
 
-	log.Printf("✅ [Video Analytics] Stats retrieved: views=%d, unique=%d, engagement=%.2f",
-		stats.TotalViews, stats.UniqueViewers, stats.EngagementScore)
-
 	return &stats, nil
 }
 
@@ -257,62 +232,37 @@ func (s *VideoAnalyticsService) GetVideoStats(videoID int, period string) (*Vide
 // HYBRID APPROACH: Uses detailed analytics if available, falls back to master_video_list.views
 // CACHED: Results cached in Redis for 5 minutes
 func (s *VideoAnalyticsService) GetTrendingVideos(limit int) ([]TrendingVideo, error) {
-	startTime := time.Now()
-	log.Printf("📊 [Video Analytics] ========================================")
-	log.Printf("📊 [Video Analytics] GetTrendingVideos called with limit=%d", limit)
-
 	// Try Redis cache first
 	cacheKey := fmt.Sprintf("analytics:trending:%d", limit)
 	if s.redis != nil {
-		log.Printf("📊 [Video Analytics] Checking Redis cache: %s", cacheKey)
 		if cached, err := s.getFromCache(cacheKey); err == nil {
-			duration := time.Since(startTime)
-			log.Printf("✅ [Video Analytics] Cache HIT! Returning cached data in %v", duration)
-			log.Printf("📊 [Video Analytics] ========================================")
 			return cached.([]TrendingVideo), nil
 		}
-		log.Printf("📊 [Video Analytics] Cache MISS - fetching from database")
-	} else {
-		log.Printf("⚠️  [Video Analytics] Redis not available - no caching")
 	}
 
 	if limit <= 0 || limit > 100 {
-		log.Printf("📊 [Video Analytics] Adjusting limit from %d to 100 (max)", limit)
 		limit = 100 // Default limit - top 100 trending
 	}
 
 	// Use optimized fallback query directly
 	// master_video_list.views is auto-synced from watch_history via trigger
-	// This is fast (<100ms) and accurate
-	log.Printf("⚡ [Video Analytics] Using optimized query (master_video_list.views)")
-
 	videos, err := s.getFallbackTrendingVideos(limit)
 	if err != nil {
-		duration := time.Since(startTime)
-		log.Printf("❌ [Video Analytics] Failed after %v: %v", duration, err)
-		log.Printf("📊 [Video Analytics] ========================================")
+		log.Printf("❌ [Analytics] GetTrendingVideos failed: %v", err)
 		return nil, err
 	}
 
 	// Cache results for 5 minutes
 	if s.redis != nil && len(videos) > 0 {
-		log.Printf("📊 [Video Analytics] Caching %d videos in Redis for 5 minutes", len(videos))
 		s.setCache(cacheKey, videos, 5*time.Minute)
 	}
 
-	duration := time.Since(startTime)
-	log.Printf("✅ [Video Analytics] Successfully returned %d videos in %v", len(videos), duration)
-	log.Printf("📊 [Video Analytics] ========================================")
 	return videos, nil
 }
 
 // getFallbackTrendingVideos returns trending videos based purely on master_video_list.views
 // Used as a fallback when the complex analytics query times out
 func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]TrendingVideo, error) {
-	startTime := time.Now()
-	log.Printf("⚡ [Video Analytics] ========================================")
-	log.Printf("⚡ [Video Analytics] getFallbackTrendingVideos started")
-	log.Printf("⚡ [Video Analytics] Requested limit: %d", limit)
 
 	query := `
 		SELECT 
@@ -330,29 +280,18 @@ func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]Trending
 		LIMIT $1
 	`
 
-	log.Printf("⚡ [Video Analytics] Creating context with 5s timeout")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	log.Printf("⚡ [Video Analytics] Executing query against master_video_list...")
-	queryStart := time.Now()
 	rows, err := s.db.QueryContext(ctx, query, limit)
-	queryDuration := time.Since(queryStart)
-
 	if err != nil {
-		log.Printf("❌ [Video Analytics] Query failed after %v: %v", queryDuration, err)
-		log.Printf("❌ [Video Analytics] Context error: %v", ctx.Err())
-		log.Printf("⚡ [Video Analytics] ========================================")
+		log.Printf("❌ [Analytics] Trending query failed: %v", err)
 		return []TrendingVideo{}, nil // Return empty array rather than error
 	}
 	defer rows.Close()
-	log.Printf("✅ [Video Analytics] Query completed in %v", queryDuration)
 
-	log.Printf("⚡ [Video Analytics] Scanning rows...")
 	var trending []TrendingVideo
-	rowCount := 0
 	for rows.Next() {
-		rowCount++
 		var video TrendingVideo
 		var lastViewAt time.Time
 		var completionRate float64
@@ -369,7 +308,6 @@ func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]Trending
 			&likes,
 		)
 		if err != nil {
-			log.Printf("⚠️  [Video Analytics] Error scanning row %d: %v", rowCount, err)
 			continue
 		}
 
@@ -381,24 +319,13 @@ func (s *VideoAnalyticsService) getFallbackTrendingVideos(limit int) ([]Trending
 		video.TrendingScore = (float64(video.Last24HViews) * 10) + recencyBonus
 
 		trending = append(trending, video)
-
-		if rowCount <= 3 {
-			log.Printf("⚡ [Video Analytics] Row %d: ID=%d, Title=%s, Views=%d, Score=%.2f",
-				rowCount, video.VideoID, video.Title, video.Last24HViews, video.TrendingScore)
-		}
 	}
 
-	totalDuration := time.Since(startTime)
-	log.Printf("✅ [Video Analytics] Scanned %d rows successfully", rowCount)
-	log.Printf("✅ [Video Analytics] Returning %d trending videos", len(trending))
-	log.Printf("✅ [Video Analytics] Total duration: %v", totalDuration)
-	log.Printf("⚡ [Video Analytics] ========================================")
 	return trending, nil
 }
 
 // GetUserEngagement retrieves engagement metrics for a specific user
 func (s *VideoAnalyticsService) GetUserEngagement(userID int, days int) (map[string]interface{}, error) {
-	log.Printf("📊 [Video Analytics] Getting engagement for user %d (last %d days)", userID, days)
 
 	if days <= 0 {
 		days = 30 // Default to 30 days
@@ -461,9 +388,6 @@ func (s *VideoAnalyticsService) GetUserEngagement(userID int, days int) (map[str
 		engagement["last_view"] = lastView.Time
 	}
 
-	log.Printf("✅ [Video Analytics] User engagement: %d videos, %.2f hours watched",
-		videosWatched, totalWatchTime.Float64/3600)
-
 	return engagement, nil
 }
 
@@ -471,13 +395,10 @@ func (s *VideoAnalyticsService) GetUserEngagement(userID int, days int) (map[str
 // HYBRID APPROACH: Uses detailed analytics if available, falls back to master_video_list.views
 // CACHED: Results cached in Redis for 10 minutes
 func (s *VideoAnalyticsService) GetTopVideos(limit int, days int) ([]map[string]interface{}, error) {
-	log.Printf("📊 [Video Analytics] Getting top %d videos (last %d days)", limit, days)
-
 	// Try Redis cache first
 	cacheKey := fmt.Sprintf("analytics:top_videos:%d:%d", limit, days)
 	if s.redis != nil {
 		if cached, err := s.getFromCache(cacheKey); err == nil {
-			log.Printf("✅ [Video Analytics] Returning cached top videos")
 			return cached.([]map[string]interface{}), nil
 		}
 	}
@@ -558,7 +479,6 @@ func (s *VideoAnalyticsService) GetTopVideos(limit int, days int) ([]map[string]
 		s.setCache(cacheKey, videos, 10*time.Minute)
 	}
 
-	log.Printf("✅ [Video Analytics] Retrieved %d top videos (using hybrid query)", len(videos))
 	return videos, nil
 }
 
@@ -615,9 +535,7 @@ func (s *VideoAnalyticsService) InvalidateCache() {
 	if len(keys) > 0 {
 		err = s.redis.Client.Del(ctx, keys...).Err()
 		if err != nil {
-			log.Printf("⚠️ [Video Analytics] Failed to invalidate cache: %v", err)
-		} else {
-			log.Printf("✅ [Video Analytics] Invalidated %d cache entries", len(keys))
+			log.Printf("⚠️ [Analytics] Failed to invalidate cache: %v", err)
 		}
 	}
 }

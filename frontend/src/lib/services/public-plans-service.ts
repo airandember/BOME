@@ -11,6 +11,7 @@ export interface PublicSubscriptionPlan {
 	interval: 'month' | 'year' | 'week' | 'day';
 	interval_count: number;
 	stripe_price_id?: string;
+	stripe_product_id?: string;
 	features: string[];
 	is_active: boolean;
 	promotion_end_date?: string;
