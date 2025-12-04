@@ -6,6 +6,8 @@
 	export let canSelect: boolean = false; // Show "Keep This One" button (for multiple active subscriptions)
 	export let isSelected: boolean = false; // Is this the selected subscription to keep?
 	export let onSelect: ((id: string) => void) | undefined = undefined;
+	// For annual plans: provide the equivalent monthly plan price to show savings
+	export let monthlyEquivalentPrice: number | undefined = undefined; // in cents
 	// onCancel removed - users should contact support for cancellations
 
 	$: statusColor = UserSubscriptionService.getStatusColor(subscription.status);
@@ -14,6 +16,25 @@
 	$: formattedInterval = UserSubscriptionService.formatInterval(subscription.interval);
 	$: formattedStart = UserSubscriptionService.formatDate(subscription.current_period_start);
 	$: formattedEnd = UserSubscriptionService.formatDate(subscription.current_period_end);
+
+	// Calculate monthly breakdown for annual plans
+	$: isAnnual = subscription.interval === 'year';
+	$: monthlyBreakdown = isAnnual ? subscription.price / 12 : null;
+	$: formattedMonthlyBreakdown = monthlyBreakdown 
+		? UserSubscriptionService.formatPrice(monthlyBreakdown, subscription.currency)
+		: null;
+
+	// Calculate savings if monthly equivalent price is provided
+	$: monthlyCostIfBilledMonthly = monthlyEquivalentPrice ? monthlyEquivalentPrice * 12 : null;
+	$: savings = isAnnual && monthlyCostIfBilledMonthly 
+		? monthlyCostIfBilledMonthly - subscription.price 
+		: null;
+	$: formattedSavings = savings 
+		? UserSubscriptionService.formatPrice(savings, subscription.currency)
+		: null;
+	$: savingsPercentage = savings && monthlyCostIfBilledMonthly
+		? Math.round((savings / monthlyCostIfBilledMonthly) * 100)
+		: null;
 
 	function handleSelect() {
 		if (onSelect) {
@@ -45,6 +66,22 @@
 			<span class="info-label">Price:</span>
 			<span class="info-value">{formattedPrice}/{subscription.interval}</span>
 		</div>
+
+		{#if isAnnual && monthlyBreakdown}
+			<div class="info-row highlight">
+				<span class="info-label">💰 Monthly Breakdown:</span>
+				<span class="info-value">{formattedMonthlyBreakdown}/month</span>
+			</div>
+		{/if}
+
+		{#if isAnnual && savings && formattedSavings && savingsPercentage}
+			<div class="info-row savings">
+				<span class="info-label">✨ Annual Savings:</span>
+				<span class="info-value savings-value">
+					{formattedSavings} ({savingsPercentage}% off)
+				</span>
+			</div>
+		{/if}
 
 		<div class="info-row">
 			<span class="info-label">Started:</span>
@@ -239,6 +276,23 @@
 		margin-top: 0.25rem;
 	}
 
+	.info-row.highlight {
+		background: #eff6ff;
+		padding: 0.5rem;
+		border-radius: 6px;
+		border-bottom: none;
+		border: 1px solid #bfdbfe;
+	}
+
+	.info-row.savings {
+		background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+		padding: 0.5rem;
+		border-radius: 6px;
+		border-bottom: none;
+		border: 1px solid #6ee7b7;
+		margin-top: 0.25rem;
+	}
+
 	.info-label {
 		font-weight: 600;
 		color: #6b7280;
@@ -249,6 +303,12 @@
 		font-weight: 500;
 		color: #111827;
 		font-size: 0.875rem;
+	}
+
+	.savings-value {
+		color: #065f46;
+		font-weight: 700;
+		font-size: 0.9375rem;
 	}
 
 	.info-value[data-color='red'] {

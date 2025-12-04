@@ -51,11 +51,11 @@
 		closeMenu();
 	};
 
-	const getSupportMailtoLink = () => {
+	const getSupportMailtoLink = (category: string = 'General Help') => {
 		if (!browser) return '#';
 		const currentDate = new Date().toLocaleString();
 		const currentUrl = window.location.href;
-		const subject = `Help Needed! - ${currentDate}`;
+		const subject = `${category} - ${currentDate}`;
 		const body = `Current URL: ${currentUrl}%0D%0A%0D%0APlease describe your issue below:%0D%0A`;
 		return `mailto:support@bookofmormonevidence.org?subject=${encodeURIComponent(subject)}&body=${body}`;
 	};
@@ -79,7 +79,7 @@
 
 		<div class="nav-menu" class:open={isMenuOpen}>
 			<a href="/" class="nav-link" on:click={closeMenu}>
-				<span>Home</span>
+				<span title="Home">Home</span>
 			</a>
 			<a href="/subscription" class="nav-link" on:click={closeMenu}>
 				<span>Subscribe</span>
@@ -130,26 +130,86 @@
 				on:click={() => isContactSupportDropdownOpen = !isContactSupportDropdownOpen}
 			> 
 			<div class="wordSymbolCombiner">
-				<span>🔧</span>
+				<span>Support</span>
 				<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<polyline points="6,9 12,15 18,9"></polyline>
 				</svg>
 			</div>	
 			</button>
 			
-			<div class="nav-dropdown-menu" class:open={isContactSupportDropdownOpen}>
-				<a href={getSupportMailtoLink()} class="dropdown-item support-item" on:click={() => { closeMenu(); isContactSupportDropdownOpen = false; }}>
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-						<polyline points="22,6 12,13 2,6"></polyline>
-					</svg>
-					<div class="dropdown-item-content">
-						<span class="dropdown-item-title">Email Support</span>
-						<span class="dropdown-item-subtitle">Get help from our team</span>
-					</div>
-					<div class="support-badge">Support</div>
-				</a>
-			</div>
+		<div class="nav-dropdown-menu" class:open={isContactSupportDropdownOpen}>
+			<a href={getSupportMailtoLink('Sign Up / Login Support')} class="dropdown-item support-item" on:click={() => { closeMenu(); isContactSupportDropdownOpen = false; }}>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+					<polyline points="10,17 15,12 10,7"></polyline>
+					<line x1="15" y1="12" x2="3" y2="12"></line>
+				</svg>
+				<div class="dropdown-item-content">
+					<span class="dropdown-item-title">Sign Up / Login Support</span>
+					<span class="dropdown-item-subtitle">Help with account access</span>
+				</div>
+				<div class="support-badge">Support</div>
+			</a>
+			
+			<a href={getSupportMailtoLink('Streaming Help')} class="dropdown-item support-item" on:click={() => { closeMenu(); isContactSupportDropdownOpen = false; }}>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<polygon points="5,3 19,12 5,21"></polygon>
+				</svg>
+				<div class="dropdown-item-content">
+					<span class="dropdown-item-title">Streaming Help</span>
+					<span class="dropdown-item-subtitle">Video playback issues</span>
+				</div>
+				<div class="support-badge">Support</div>
+			</a>
+			
+			<a href={getSupportMailtoLink('General Help')} class="dropdown-item support-item" on:click={() => { closeMenu(); isContactSupportDropdownOpen = false; }}>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+					<polyline points="22,6 12,13 2,6"></polyline>
+				</svg>
+				<div class="dropdown-item-content">
+					<span class="dropdown-item-title">General Help</span>
+					<span class="dropdown-item-subtitle">Get help from our team</span>
+				</div>
+				<div class="support-badge">Support</div>
+			</a>
+			
+			<a href={getSupportMailtoLink('Bug Report')} class="dropdown-item bug-item" on:click={() => { closeMenu(); isContactSupportDropdownOpen = false; }}>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<rect x="8" y="6" width="8" height="12" rx="2"></rect>
+					<path d="M4 10h4M4 14h4M16 10h4M16 14h4M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M8 18v3M16 18v3"></path>
+				</svg>
+				<div class="dropdown-item-content">
+					<span class="dropdown-item-title">Bug Report</span>
+					<span class="dropdown-item-subtitle">Report unexpected behavior</span>
+				</div>
+				<div class="bug-badge">Bug</div>
+			</a>
+			
+			<a href={getSupportMailtoLink('Feature Request')} class="dropdown-item feature-item" on:click={() => { closeMenu(); isContactSupportDropdownOpen = false; }}>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+					<path d="M2 17l10 5 10-5"></path>
+					<path d="M2 12l10 5 10-5"></path>
+				</svg>
+				<div class="dropdown-item-content">
+					<span class="dropdown-item-title">Feature Request</span>
+					<span class="dropdown-item-subtitle">Suggest improvements</span>
+				</div>
+				<div class="feature-badge">Idea</div>
+			</a>
+			
+			<a href={getSupportMailtoLink('Compliments')} class="dropdown-item compliment-item" on:click={() => { closeMenu(); isContactSupportDropdownOpen = false; }}>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+				</svg>
+				<div class="dropdown-item-content">
+					<span class="dropdown-item-title">Compliments</span>
+					<span class="dropdown-item-subtitle">Share your feedback</span>
+				</div>
+				<div class="compliment-badge">💙</div>
+			</a>
+		</div>
 			
 		</div>
 			
@@ -675,8 +735,8 @@
 		top: calc(100% + 8px);
 		left: 0;
 		min-width: 280px;
-		background: var(--bg-glass);
-		backdrop-filter: blur(20px);
+		background: var(--bg-glass-dark);
+		backdrop-filter: blur(100px);
 		-webkit-backdrop-filter: blur(20px);
 		border: 1px solid rgba(255, 255, 255, 0.1);
 		border-radius: var(--radius-xl);
@@ -705,7 +765,11 @@
 		border-radius: var(--radius-lg);
 		transition: all var(--transition-normal);
 		position: relative;
+		backdrop-filter: blur(100px);
+		-webkit-backdrop-filter: blur(100px);
+		background-color: var(--bg-glass-dark);
 	}
+	
 
 	.nav-dropdown-menu .dropdown-item:hover {
 		background: var(--bg-glass);
@@ -716,6 +780,9 @@
 		width: 20px;
 		height: 20px;
 		flex-shrink: 0;
+		color: var(--text-primary);
+		
+		overflow:visible;
 	}
 
 	.dropdown-item-content {
@@ -732,7 +799,7 @@
 
 	.dropdown-item-subtitle {
 		font-size: var(--text-xs);
-		color: var(--text-muted);
+		color: var(--text-primary);
 	}
 
 	.free-badge {
@@ -768,7 +835,7 @@
 	}
 
 	.support-button {
-		color: white;
+		color: var(--text-primary);
 		border-radius: var(--radius-lg);
 		padding: var(--space-sm) var(--space-md);
 	}
@@ -802,6 +869,64 @@
 	.support-item:hover {
 		border-color: rgba(239, 68, 68, 0.3);
 		background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.1) 100%);
+	}
+
+	.bug-badge {
+		background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+		color: white;
+		font-size: 10px;
+		font-weight: 600;
+		padding: 4px 8px;
+		border-radius: var(--radius-sm);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.bug-item {
+		border: 1px solid rgba(249, 115, 22, 0.2);
+		background: linear-gradient(135deg, rgba(249, 115, 22, 0.05) 0%, rgba(234, 88, 12, 0.05) 100%);
+	}
+
+	.bug-item:hover {
+		border-color: rgba(249, 115, 22, 0.3);
+		background: linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(234, 88, 12, 0.1) 100%);
+	}
+
+	.feature-badge {
+		background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+		color: white;
+		font-size: 10px;
+		font-weight: 600;
+		padding: 4px 8px;
+		border-radius: var(--radius-sm);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.feature-item {
+		border: 1px solid rgba(139, 92, 246, 0.2);
+		background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(124, 58, 237, 0.05) 100%);
+	}
+
+	.feature-item:hover {
+		border-color: rgba(139, 92, 246, 0.3);
+		background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(124, 58, 237, 0.1) 100%);
+	}
+
+	.compliment-badge {
+		font-size: 16px;
+		padding: 4px 8px;
+		border-radius: var(--radius-sm);
+	}
+
+	.compliment-item {
+		border: 1px solid rgba(59, 130, 246, 0.2);
+		background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(37, 99, 235, 0.05) 100%);
+	}
+
+	.compliment-item:hover {
+		border-color: rgba(59, 130, 246, 0.3);
+		background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.1) 100%);
 	}
 
 	/* Close dropdown when clicking outside */

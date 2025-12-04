@@ -794,20 +794,20 @@ func (s *EmailService) VerifyEmail(token string) error {
 	return nil
 }
 
-// SendPasswordResetEmail sends a password reset email (placeholder for now)
+// SendPasswordResetEmail sends a password reset email
 func (s *EmailService) SendPasswordResetEmail(name, email, token string) error {
 	log.Printf("🔍 [EMAIL] Sending password reset email to: %s", email)
+
+	// Use frontend URL (NOT backend API URL) since reset-password is a frontend page
+	frontendBaseURL := s.getFrontendBaseURL()
+	resetURL := fmt.Sprintf("%s/auth/reset-password?token=%s", frontendBaseURL, token)
 
 	// In development mode, just log the email instead of sending
 	if s.isDevelopmentMode() {
 		log.Printf("📧 [EMAIL] [DEV MODE] Password reset email to %s with token %s", email, token[:8]+"...")
-		log.Printf("🔗 Reset URL: %s/auth/reset-password?token=%s", s.getBaseURL(), token)
+		log.Printf("🔗 Reset URL: %s", resetURL)
 		return nil
 	}
-
-	// Get base URL from settings or use default
-	baseURL := s.getBaseURL()
-	resetURL := fmt.Sprintf("%s/auth/reset-password?token=%s", baseURL, token)
 
 	// Get support email from database
 	supportEmail, err := s.db.GetEmailSetting("support_email")
@@ -821,8 +821,10 @@ func (s *EmailService) SendPasswordResetEmail(name, email, token string) error {
 		ResetURL:     resetURL,
 		CompanyName:  "BOME",
 		SupportEmail: supportEmail,
-		BaseURL:      baseURL,
+		BaseURL:      frontendBaseURL,
 	}
+
+	log.Printf("🔗 [EMAIL] Password reset URL: %s", resetURL)
 
 	// Send email using Resend
 	return s.sendTemplatedEmail(

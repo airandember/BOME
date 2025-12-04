@@ -48,14 +48,14 @@ func (s *WatchHistoryService) UpdateProgress(userID, videoID, position int) erro
 		return fmt.Errorf("invalid userID or videoID")
 	}
 
-	log.Printf("📝 [Watch History] Updating progress: user=%d, video=%d, position=%ds", userID, videoID, position)
-
+	// Note: ON CONFLICT must match the partial unique index from migration 067
+	// which has: WHERE user_id IS NOT NULL
 	query := `
 		INSERT INTO watch_history (
 			user_id, video_id, last_position, completed,
 			first_watched_at, last_watched_at
 		) VALUES ($1, $2, $3, false, NOW(), NOW())
-		ON CONFLICT (user_id, video_id)
+		ON CONFLICT (user_id, video_id) WHERE user_id IS NOT NULL
 		DO UPDATE SET
 			last_position = EXCLUDED.last_position,
 			last_watched_at = NOW()
@@ -68,7 +68,6 @@ func (s *WatchHistoryService) UpdateProgress(userID, videoID, position int) erro
 		return fmt.Errorf("failed to update watch history: %w", err)
 	}
 
-	log.Printf("✅ [Watch History] Progress updated successfully")
 	return nil
 }
 
@@ -78,14 +77,13 @@ func (s *WatchHistoryService) MarkComplete(userID, videoID int) error {
 		return fmt.Errorf("invalid userID or videoID")
 	}
 
-	log.Printf("✓ [Watch History] Marking complete: user=%d, video=%d", userID, videoID)
-
+	// Note: ON CONFLICT must match the partial unique index from migration 067
 	query := `
 		INSERT INTO watch_history (
 			user_id, video_id, last_position, completed,
 			first_watched_at, last_watched_at
 		) VALUES ($1, $2, 0, true, NOW(), NOW())
-		ON CONFLICT (user_id, video_id)
+		ON CONFLICT (user_id, video_id) WHERE user_id IS NOT NULL
 		DO UPDATE SET
 			completed = true,
 			last_watched_at = NOW()
@@ -97,13 +95,11 @@ func (s *WatchHistoryService) MarkComplete(userID, videoID int) error {
 		return fmt.Errorf("failed to mark video complete: %w", err)
 	}
 
-	log.Printf("✅ [Watch History] Video marked as complete")
 	return nil
 }
 
 // GetHistory retrieves a user's watch history for a specific video
 func (s *WatchHistoryService) GetHistory(userID, videoID int) (*WatchHistory, error) {
-	log.Printf("🔍 [Watch History] Getting history: user=%d, video=%d", userID, videoID)
 
 	query := `
 		SELECT 
@@ -125,7 +121,6 @@ func (s *WatchHistoryService) GetHistory(userID, videoID int) (*WatchHistory, er
 	)
 
 	if err == sql.ErrNoRows {
-		log.Printf("ℹ️  [Watch History] No history found")
 		return nil, nil // No history found (not an error)
 	}
 
@@ -141,13 +136,11 @@ func (s *WatchHistoryService) GetHistory(userID, videoID int) (*WatchHistory, er
 		history.WatchPercentage = float64(history.LastPosition) / float64(duration) * 100
 	}
 
-	log.Printf("✅ [Watch History] History retrieved: position=%ds, completed=%v", history.LastPosition, history.Completed)
 	return &history, nil
 }
 
 // GetContinueWatching retrieves a user's "Continue Watching" list
 func (s *WatchHistoryService) GetContinueWatching(userID int, limit int) ([]ContinueWatchingVideo, error) {
-	log.Printf("📺 [Watch History] Getting continue watching list for user %d", userID)
 
 	if limit <= 0 || limit > 50 {
 		limit = 20 // Default limit
@@ -200,13 +193,11 @@ func (s *WatchHistoryService) GetContinueWatching(userID int, limit int) ([]Cont
 		videos = append(videos, video)
 	}
 
-	log.Printf("✅ [Watch History] Found %d videos in continue watching", len(videos))
 	return videos, nil
 }
 
 // GetCompletedVideos retrieves a user's completed videos
 func (s *WatchHistoryService) GetCompletedVideos(userID int, limit int, offset int) ([]ContinueWatchingVideo, error) {
-	log.Printf("✓ [Watch History] Getting completed videos for user %d", userID)
 
 	if limit <= 0 || limit > 100 {
 		limit = 20
@@ -256,13 +247,11 @@ func (s *WatchHistoryService) GetCompletedVideos(userID int, limit int, offset i
 		videos = append(videos, video)
 	}
 
-	log.Printf("✅ [Watch History] Found %d completed videos", len(videos))
 	return videos, nil
 }
 
 // GetWatchStats retrieves overall watch statistics for a user
 func (s *WatchHistoryService) GetWatchStats(userID int) (map[string]interface{}, error) {
-	log.Printf("📊 [Watch History] Getting watch stats for user %d", userID)
 
 	query := `
 		SELECT 
@@ -310,29 +299,19 @@ func (s *WatchHistoryService) GetWatchStats(userID int) (map[string]interface{},
 		stats["last_watch"] = lastWatch.Time
 	}
 
-	log.Printf("✅ [Watch History] Stats: %d total, %d completed", totalVideos, completedVideos)
 	return stats, nil
 }
 
 // ClearHistory removes a specific video from a user's watch history
 func (s *WatchHistoryService) ClearHistory(userID, videoID int) error {
-	log.Printf("🗑️  [Watch History] Clearing history: user=%d, video=%d", userID, videoID)
-
 	query := `DELETE FROM watch_history WHERE user_id = $1 AND video_id = $2`
 
-	result, err := s.db.Exec(query, userID, videoID)
+	_, err := s.db.Exec(query, userID, videoID)
 	if err != nil {
 		log.Printf("❌ [Watch History] Failed to clear history: %v", err)
 		return fmt.Errorf("failed to clear watch history: %w", err)
 	}
 
-	rows, _ := result.RowsAffected()
-	if rows == 0 {
-		log.Printf("ℹ️  [Watch History] No history found to clear")
-		return nil
-	}
-
-	log.Printf("✅ [Watch History] History cleared successfully")
 	return nil
 }
 

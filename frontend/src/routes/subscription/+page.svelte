@@ -68,7 +68,7 @@
 			
 			// Load all subscription data in one call
 			const subscriptionData = await publicPlansService.getAllSubscriptionData();
-			
+			console.log('Subscription data:', subscriptionData);
 			// Combine all plans
 			availablePlans = [
 				...subscriptionData.promotional_plans,
@@ -321,6 +321,62 @@
 		return '';
 	};
 
+	// Find the monthly equivalent plan for an annual plan (or vice versa)
+	const findEquivalentPlan = (plan: PublicSubscriptionPlan, targetInterval: 'month' | 'year') => {
+		// First try to match by stripe_product_id (most reliable)
+		if (plan.stripe_product_id) {
+			const match = availablePlans.find(p => 
+				p.stripe_product_id === plan.stripe_product_id &&
+				p.interval === targetInterval &&
+				p.is_active
+			);
+			if (match) return match;
+		}
+
+		// Fallback: Try to match by name pattern (e.g., "Monthly" vs "Yearly", or similar base names)
+		// Remove interval-related words from the name for comparison
+		const baseName = plan.name.toLowerCase()
+			.replace(/\b(monthly|yearly|annual|month|year)\b/gi, '')
+			.trim();
+		
+		return availablePlans.find(p => {
+			const pBaseName = p.name.toLowerCase()
+				.replace(/\b(monthly|yearly|annual|month|year)\b/gi, '')
+				.trim();
+			return pBaseName === baseName && 
+				p.interval === targetInterval && 
+				p.is_active &&
+				p.sub_type === plan.sub_type; // Match same subscription type
+		});
+	};
+
+	// Calculate monthly breakdown for annual plans
+	const getMonthlyBreakdown = (plan: PublicSubscriptionPlan) => {
+		if (plan.interval === 'year') {
+			return plan.price / 12;
+		}
+		return null;
+	};
+
+	// Calculate savings for annual plans vs monthly
+	const calculateAnnualSavings = (plan: PublicSubscriptionPlan) => {
+		if (plan.interval !== 'year') return null;
+
+		const monthlyPlan = findEquivalentPlan(plan, 'month');
+		if (!monthlyPlan) return null;
+
+		const annualCostIfBilledMonthly = monthlyPlan.price * 12;
+		const actualAnnualCost = plan.price;
+		const savings = annualCostIfBilledMonthly - actualAnnualCost;
+		const savingsPercentage = Math.round((savings / annualCostIfBilledMonthly) * 100);
+
+		return {
+			amount: savings,
+			percentage: savingsPercentage,
+			monthlyEquivalent: monthlyPlan.price
+		};
+	};
+
 	const getItemName = (itemId: number | string | undefined) => {
 		if (!itemId) return 'Unknown Item';
 		
@@ -354,7 +410,7 @@
 		</header>
 		{#if !isAuthenticated}
 		<div class="auth-notice">
-			<p>💡 <strong>New here?</strong> You can browse plans without signing up. Create an account when you're ready to subscribe!</p>
+			<p>Create an account when you're ready to subscribe! </p>
 		</div>
 	{/if}
 		{#if loading}
@@ -374,62 +430,90 @@
 							
 							<div class="plans-grid">
 								{#each availablePlans.filter(plan => plan.sub_type === 'prmo' && plan.is_active) as plan}
-									<div class="plan-card promotional">
-										<div class="plan-header">
-											<h3>{plan.name}</h3>
-										</div>
-										<div class="plan-price">
-											{formatPrice(plan.price, plan.currency)}
-											<span class="interval">/{plan.interval}</span>
-										</div>
-										<div class="promo-badge">Limited Time</div>
-										<br>
-										
-										<div class="plan-description">
-											<p>{plan.description}</p>
-										</div>
-
-										<div class="plan-features">
-											<ul>
-												{#each plan.features.slice(0, 5) as feature}
-													<li>
-														<svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-															<polyline points="20,6 9,17 4,12"></polyline>
-														</svg>
-														{feature}
-													</li>
-												{/each}
-											</ul>
-										</div>
-
-										{#if getPlanOffers(plan.id).length > 0}
-											<div class="offers-section">
-												<h4>Special Bonus</h4>
-												{#each getPlanOffers(plan.id) as offer}
-													<div class="offer-badge">
-														<svg class="gift-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-															<polyline points="20,12 20,22 4,22 4,12"></polyline>
-															<rect x="2" y="7" width="20" height="5"></rect>
-															<line x1="12" y1="22" x2="12" y2="7"></line>
-															<polyline points="7,7 12,2 17,7"></polyline>
-															<polyline points="7,7 12,12 17,7"></polyline>
-														</svg>
-														{formatDiscount(offer)} - {getItemName(offer.item_id)}
-													</div>
-												{/each}
+									{@const monthlyBreakdown = plan.interval === 'year' ? getMonthlyBreakdown(plan) : null}
+									{@const savings = plan.interval === 'year' ? calculateAnnualSavings(plan) : null}
+									
+									<div class="outerNew plan-outer promotional">
+										<!-- Floating % OFF badge -->
+										{#if savings && savings.percentage > 0}
+											<div class="discount-tab promo">
+												<span class="discount-value">{savings.percentage}% OFF</span>
 											</div>
 										{/if}
+										
+										<div class="promo-badge">Limited Time</div>
+										
+										<div class="cardNew plan-card promotional">
+											<div class="rayNew"></div>
+											
+											<div class="plan-content">
+												<!-- Main content - vertically centered -->
+												<div class="plan-main">
+													<div class="plan-header">
+														<h1>{plan.name}</h1>
+													</div>
 
-																		<button 
-									class="btn btn-primary btn-full btn-bottom" 
-									on:click={() => handleSelectPlan(plan)}
-								>
-									{#if !isAuthenticated}
-										Sign In to Subscribe
-									{:else}
-										Subscribe to {plan.name}
-									{/if}
-								</button>
+													<div class="plan-pricing">
+														{#if plan.interval === 'year' && monthlyBreakdown && savings}
+															<div class="original-price">
+																{formatPrice(savings.monthlyEquivalent, plan.currency)}
+															</div>
+															<div class="hero-price">
+																{formatPrice(monthlyBreakdown, plan.currency)}
+																<span class="price-interval">/month</span>
+															</div>
+														{:else}
+															<div class="hero-price">
+																{formatPrice(plan.price, plan.currency)}
+																<span class="price-interval">/{plan.interval}</span>
+															</div>
+														{/if}
+													</div>
+
+													{#if plan.description}
+														<div class="plan-description">
+															<p>{plan.description}</p>
+														</div>
+													{/if}
+												</div>
+
+												<!-- Offers - outside plan-main so button stays at bottom -->
+												{#if getPlanOffers(plan.id).length > 0}
+													<div class="offers-section">
+														<h4>Special Bonus</h4>
+														{#each getPlanOffers(plan.id) as offer}
+															<div class="offer-badge">
+																<svg class="gift-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+																	<polyline points="20,12 20,22 4,22 4,12"></polyline>
+																	<rect x="2" y="7" width="20" height="5"></rect>
+																	<line x1="12" y1="22" x2="12" y2="7"></line>
+																	<polyline points="7,7 12,2 17,7"></polyline>
+																	<polyline points="7,7 12,12 17,7"></polyline>
+																</svg>
+																{formatDiscount(offer)} - {getItemName(offer.item_id)}
+															</div>
+														{/each}
+													</div>
+												{/if}
+
+												<button 
+													class="btn btn-primary btn-full btn-cta" 
+													on:click={() => handleSelectPlan(plan)}
+												>
+													{#if !isAuthenticated}
+														Sign In to Subscribe
+													{:else}
+														Subscribe Now
+													{/if}
+												</button>
+
+												{#if plan.interval === 'year'}
+													<div class="billed-at">
+														Billed at {formatPrice(plan.price, plan.currency)}.
+													</div>
+												{/if}
+											</div>
+										</div>
 									</div>
 								{/each}
 							</div>
@@ -443,70 +527,99 @@
 						
 						<div class="plans-grid">
 							{#each availablePlans.filter(plan => plan.sub_type === 'stnd') as plan}
+								{@const monthlyBreakdown = plan.interval === 'year' ? getMonthlyBreakdown(plan) : null}
+								{@const savings = plan.interval === 'year' ? calculateAnnualSavings(plan) : null}
+								
 								<!-- Animated card wrapper -->
 								<div class="outerNew plan-outer">
+									<!-- Floating % OFF badge (like a card sticking up) -->
+									{#if savings && savings.percentage > 0}
+										<div class="discount-tab">
+											<span class="discount-value">{savings.percentage}% OFF</span>
+										</div>
+									{/if}
+									
 									{#if plan.popular}
 										<div class="popular-badge">Most Popular</div>
 									{/if}
+									
 									<div class="cardNew plan-card">
 										<div class="rayNew"></div>
 										
 										<!-- Card content -->
 										<div class="plan-content">
-											<div class="plan-header">
-												<h3>{plan.name}</h3>
-											</div>
-											<div class="plan-price">
-												{formatPrice(plan.price, plan.currency)}
-												<span class="interval">/{plan.interval}</span>
-											</div>
-											
-											<br>
-											<div class="plan-description">
-												<p>{plan.description}</p>
-											</div>
-
-											<div class="plan-features">
-												<ul>
-													{#each plan.features.slice(0, 5) as feature}
-														<li>
-															<svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-																<polyline points="20,6 9,17 4,12"></polyline>
-															</svg>
-															{feature}
-														</li>
-													{/each}
-												</ul>
-											</div>
-
-									{#if getPlanOffers(plan.id).length > 0}
-										<div class="offers-section">
-											<h4>Special Bonus</h4>
-											{#each getPlanOffers(plan.id) as offer}
-												<div class="offer-badge">
-													<svg class="gift-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-														<polyline points="20,12 20,22 4,22 4,12"></polyline>
-														<rect x="2" y="7" width="20" height="5"></rect>
-														<line x1="12" y1="22" x2="12" y2="7"></line>
-														<polyline points="7,7 12,2 17,7"></polyline>
-														<polyline points="7,7 12,12 17,7"></polyline>
-													</svg>
-													{formatDiscount(offer)} - {getItemName(offer.item_id)}
+											<!-- Main content - vertically centered -->
+											<div class="plan-main">
+												<!-- Plan Name -->
+												<div class="plan-header">
+													<h1>{plan.name}</h1>
 												</div>
-											{/each}
-										</div>
-									{/if}
 
+												<!-- Pricing Section -->
+												<div class="plan-pricing">
+													{#if plan.interval === 'year' && monthlyBreakdown && savings}
+														<!-- Yearly plan: Show monthly breakdown as hero price -->
+														<div class="original-price">
+															{formatPrice(savings.monthlyEquivalent, plan.currency)}
+														</div>
+														<div class="hero-price">
+															{formatPrice(monthlyBreakdown, plan.currency)}
+															<span class="price-interval">/month</span>
+														</div>
+													{:else}
+														<!-- Monthly plan: Show regular price -->
+														<div class="hero-price">
+															{formatPrice(plan.price, plan.currency)}
+															<span class="price-interval">/{plan.interval}</span>
+														</div>
+													{/if}
+												</div>
+
+												<!-- Description -->
+												{#if plan.description}
+													<div class="plan-description">
+														<p>{plan.description}</p>
+													</div>
+												{/if}
+											</div>
+
+											<!-- Offers - outside plan-main so button stays at bottom -->
+											{#if getPlanOffers(plan.id).length > 0}
+												<div class="offers-section">
+													<h4>Special Bonus</h4>
+													{#each getPlanOffers(plan.id) as offer}
+														<div class="offer-badge">
+															<svg class="gift-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+																<polyline points="20,12 20,22 4,22 4,12"></polyline>
+																<rect x="2" y="7" width="20" height="5"></rect>
+																<line x1="12" y1="22" x2="12" y2="7"></line>
+																<polyline points="7,7 12,2 17,7"></polyline>
+																<polyline points="7,7 12,12 17,7"></polyline>
+															</svg>
+															{formatDiscount(offer)} - {getItemName(offer.item_id)}
+														</div>
+													{/each}
+												</div>
+											{/if}
+
+											<!-- CTA Button -->
 											<button 
-												class="btn btn-primary btn-full btn-bottom" 
+												class="btn btn-primary btn-full btn-cta" 
 												on:click={() => handleSelectPlan(plan)}
 											>
 												{#if !isAuthenticated}
 													Sign In to Subscribe
 												{:else}
-													Subscribe to {plan.name}
+													Subscribe Now
 												{/if}
 											</button>
+
+											<!-- Billed at footer for yearly plans -->
+											{#if plan.interval === 'year'}
+												<div class="billed-at">
+													Billed at {formatPrice(plan.price, plan.currency)}.
+												</div>
+											{/if}
 										</div>
 									</div>
 								</div>
@@ -604,10 +717,10 @@
 			</div>
 			
 			<div class="modal-actions">
-				<button class="btn btn-outline" on:click={handleDeclineOffer}>
+				<button class="btn-outline" on:click={handleDeclineOffer}>
 					No Thanks
 				</button>
-				<button class="btn btn-primary" on:click={handleAcceptOffer}>
+				<button class="btn-primary" on:click={handleAcceptOffer}>
 					Add Offer to Cart
 				</button>
 			</div>
@@ -616,22 +729,11 @@
 {/if}
 <Footer />
 <style>
-
-	.btn-bottom {
-		position: absolute;
-		bottom: 1rem;
-		left: 10%;
-		width: 80% !important;
-		height: 3rem;
-		background: var(--secondary-gradient);
-		color: var(--text-primary);
-	}
-
 	.subscription-page {
 		min-height: 100vh;
 		max-width: 100vw;
 		padding: 0;
-		background: var(--secondary-gradient);
+		background: var(--bg-primary);
 	}
 
 	.container {
@@ -710,7 +812,6 @@
 		gap: 3rem;
 	}
 
-	
 
 	.cart-container {
 		width: 0;
@@ -802,7 +903,6 @@
 	}
 
 	.plans-section {
-		background: var(--bg-primary);
 		border-radius: 20px;
 		padding: 2rem;
 		box-shadow: var(--neumorphic-shadow);
@@ -832,16 +932,17 @@
 
 	/* Animated card wrapper for plan cards */
 	.plan-outer {
-		max-width: 350px;
-		min-height: 500px;
-		height: auto;
+		width: 320px;
+		min-height: 520px;
+		height: 520px; /* Fixed height for uniform cards */
 		position: relative;
+		padding-top: 20px; /* Space for floating discount tab */
 	}
 
 	.plan-outer::before {
 		content: '';
 		position: absolute;
-		inset: -2px;
+		inset: 20px -2px -2px -2px; /* Adjusted for padding-top */
 		border-radius: 22px;
 		background: radial-gradient(circle at center, rgba(212, 175, 55, 0.3), transparent 70%);
 		animation: breathe 8s ease-in-out infinite;
@@ -849,18 +950,55 @@
 		pointer-events: none;
 	}
 
+	/* Floating discount tab - looks like a card sticking up */
+	.discount-tab {
+		position: absolute;
+		top: -15px;
+		right: 24px;
+		z-index: 20;
+		background: linear-gradient(135deg, #00d4aa 0%, #00b894 100%);
+		color: #0a3d31;
+		padding: 0.5rem 1rem;
+		border-radius: 8px;
+		font-size: 1.2rem;
+		font-weight: 700;
+		box-shadow: 
+			0 4px 12px rgba(0, 212, 170, 0.4),
+			0 2px 4px rgba(0, 0, 0, 0.2);
+		transform: translateY(0);
+	}
+
+	.discount-tab::after {
+		content: '';
+		position: absolute;
+		bottom: -6px;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 0;
+		height: 0;
+		border-left: 8px solid transparent;
+		border-right: 8px solid transparent;
+		border-top: 6px solid #00b894;
+	}
+
+	.discount-value {
+		letter-spacing: 0.5px;
+		text-transform: uppercase;
+	}
+
 	.plan-card {
 		border-radius: 20px;
-		padding: 2rem;
+		padding: 1.5rem;
 		border: 1px solid var(--border-color);
 		transition: all 0.3s ease;
 		position: relative;
 		overflow: hidden;
 		width: 100%;
-		min-height: 480px;
 		height: 100%;
-		background: linear-gradient(145deg, var(--primary-bom), var(--primary-bom-dark));
-		box-shadow:  7px 7px 14px var(--bg-dark);
+		background: var(--bg-primary);
+		box-shadow: 7px 7px 14px var(--bg-dark);
+		display: flex;
+		flex-direction: column;
 	}
 
 	.plan-outer:hover {
@@ -871,58 +1009,117 @@
 		box-shadow: var(--neumorphic-shadow-hover);
 	}
 
-	/* Plan content wrapper to counter-animate */
+	/* Plan content - flexbox for proper distribution */
 	.plan-content {
-		position: relative;
-		z-index: 2;
-		width: 100%;
+		display: flex;
+		flex-direction: column;
 		height: 100%;
+		gap: 0.75rem;
+	}
+
+	/* Wrapper for vertically centering main content */
+	.plan-main {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		align-items: center;
+		gap: 0.5rem;
 	}
 
 	.plan-header {
 		text-align: center;
-		margin-bottom: 1.5rem;
-		position: relative;
-		text-align: center;
-		display: flex;
-		justify-content: center;
-		align-items: center;
 	}
 
-	.plan-header h3 {
+	.plan-header h1 {
 		font-size: 2rem;
 		font-weight: 700;
-		color: var(--primary-gold);
-		margin-bottom: 0.5rem;
+		color: var(--primary-gold-dark);
+		margin: 0;
 	}
 
-	.plan-price {
-		font-size: 2rem;
+	/* Pricing section */
+	.plan-pricing {
+		text-align: left;
+	}
+
+	.original-price {
+		font-size: 1rem;
+		color: var(--text-muted);
+		text-decoration: line-through;
+		opacity: 0.7;
+		margin-bottom: 0.25rem;
+	}
+
+	.hero-price {
+		font-size: 3.5rem;
 		font-weight: 900;
 		color: var(--primary-gold);
-		margin-bottom: 0.5rem;
-		text-align: center;
+		line-height: 1;
 	}
 
-	.interval {
+	.price-interval {
 		font-size: 1rem;
-		color: var(--primary-gold-dark);
 		font-weight: 400;
+		color: var(--primary-gold-dark);
+	}
+
+	/* CTA Button */
+	.btn-cta {
+		margin-top: auto;
+		width: 100%;
+		padding: 0.875rem 1.5rem;
+		font-size: 1rem;
+		font-weight: 600;
+		border-radius: 10px;
+		transition: all 0.2s ease;
+	}
+
+	.btn-cta:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);
+	}
+
+	/* Billed at footer */
+	.billed-at {
+		text-align: center;
+		font-size: 0.89rem;
+		color: var(--text-primary);
+		padding-top: 0.75rem;
+		margin-top: 0.5rem;
+		border-top: 1px solid var(--border-color);
+	}
+
+	/* Promotional card variant */
+	.plan-outer.promotional .plan-card {
+		background: linear-gradient(145deg, #1a1a2e, #16213e);
+		border-color: var(--primary-gold);
+	}
+
+	.discount-tab.promo {
+		background: linear-gradient(135deg, #ffd700 0%, #daa520 100%);
+		color: #1a1a2e;
+	}
+
+	.discount-tab.promo::after {
+		border-top-color: #daa520;
 	}
 
 	.popular-badge,
 	.promo-badge {
 		position: absolute;
-		top: 0;
-		right: 1rem;
+		top: 20px; /* Adjusted for padding-top on plan-outer */
+		left: 24px;
 		color: white;
 		background: linear-gradient(135deg, var(--primary-gold), var(--primary-gold-dark));
 		padding: 0.5rem 1rem;
 		border-radius: 0 0 10px 10px;
-		font-size: 0.875rem;
+		font-size: 0.75rem;
 		font-weight: 600;
 		z-index: 10;
 		box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
 	}
 
 	.promo-badge {
@@ -931,17 +1128,20 @@
 
 	.plan-description {
 		text-align: center;
-		margin-bottom: 1.5rem;
+		margin-bottom: 0.5rem;
 	}
 
 	.plan-description p {
-		color: var(--primary-gold-light);
-		font-size: 1rem;
-		line-height: 1.6;
+		color: var(--text-muted);
+		font-size: 0.875rem;
+		line-height: 1.5;
+		margin: 0;
 	}
 
 	.plan-features {
-		margin-bottom: 1.5rem;
+		flex: 1; /* Takes available space */
+		overflow-y: auto;
+		margin-bottom: 0.5rem;
 	}
 
 	.plan-features ul {
@@ -950,27 +1150,30 @@
 		margin: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
+		gap: 0.5rem;
 	}
 
 	.plan-features li {
 		display: flex;
-		align-items: center;
-		gap: 0.75rem;
+		align-items: flex-start;
+		gap: 0.5rem;
 		color: var(--text-primary);
-		font-size: 0.95rem;
+		font-size: 0.85rem;
+		line-height: 1.4;
 	}
 
 	.check-icon {
-		width: 18px;
-		height: 18px;
+		width: 16px;
+		height: 16px;
+		min-width: 16px;
 		color: var(--success-color);
 		flex-shrink: 0;
+		margin-top: 2px;
 	}
 
 	.offers-section {
-		margin-bottom: 1.5rem;
-		padding: 1rem;
+		margin-bottom: 0.5rem;
+		padding: 0.75rem;
 		background: rgba(var(--primary-color-rgb), 0.1);
 		border-radius: 12px;
 		border: 1px solid rgba(var(--primary-color-rgb), 0.2);
@@ -1295,6 +1498,10 @@
 		text-align: center;
 	}
 
+	.auth-notice p {
+		color: var(--text-primary);
+	}
+
 	/* Modal Styles */
 	.modal-overlay {
 		position: fixed;
@@ -1507,6 +1714,16 @@
 			width: 100%;
 		}
 
+		.plans-grid {
+			flex-direction: column;
+			align-items: center;
+		}
+
+		.plan-outer {
+			width: 100%;
+			max-width: 350px;
+		}
+
 		.cart-container {
 			flex: none;
 			width: 100%;
@@ -1524,6 +1741,10 @@
 			flex-direction: column;
 			align-items: flex-start;
 			gap: 0.25rem;
+		}
+
+		.hero-price {
+			font-size: 2rem;
 		}
 	}
 </style> 
