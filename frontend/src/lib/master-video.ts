@@ -231,6 +231,29 @@ export class MasterVideoService {
 		return response.json();
 	}
 
+	// Sync view counts from Bunny.net (restores accurate view counts)
+	async syncViewsFromBunny(): Promise<{
+		success: boolean;
+		message: string;
+		result: {
+			started_at: string;
+			completed_at: string;
+			duration: string;
+			total_videos: number;
+			updated: number;
+			skipped: number;
+			not_found: number;
+			errors: number;
+			error_details?: string[];
+			top_videos?: Array<{ id: number; title: string; views: number }>;
+		};
+	}> {
+		const response = await apiRequest('/admin/master-videos/sync/views-from-bunny', {
+			method: 'POST'
+		});
+		return response.json();
+	}
+
 	// Get all conflicts
 	async getConflicts(): Promise<{
 		success: boolean;

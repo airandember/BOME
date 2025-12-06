@@ -83,9 +83,16 @@ export class VideoAnalyticsService {
 			return;
 		}
 		
-		// Only report if enough time has passed since last report
+		// Don't track 0 seconds - wait for at least 1 second of playback
+		// This prevents 400 errors from backend validation and is more meaningful data
 		const currentSecond = Math.floor(currentTime);
-		const lastReported = this.lastReportedTime.get(videoId) || -999; // Start with large negative
+		if (currentSecond < 1) {
+			console.log(`⏭️  [FRONTEND] Skipping - waiting for at least 1 second of playback`);
+			return;
+		}
+		
+		// Only report if enough time has passed since last report
+		const lastReported = this.lastReportedTime.get(videoId) || 0; // Start at 0, first report at 10s
 		const secondsSinceLastReport = currentSecond - lastReported;
 		
 		if (secondsSinceLastReport < this.trackingInterval) {

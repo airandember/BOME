@@ -749,7 +749,7 @@
 
 	.page-header {
 		text-align: center;
-		margin-bottom: 5rem;
+		margin-bottom: 1rem;
 		height: 165px;
 		width:  100vw;
 		background: var(--bg-primary);

@@ -4,6 +4,7 @@
 	export let analytics: any;
 	export let AbsoluteTotalVideos: number;
 	export let checkingConflicts: boolean;
+	export let syncingViews: boolean = false;
 
 	const dispatch = createEventDispatcher();
 
@@ -18,6 +19,10 @@
 
 	function showTagAnalytics() {
 		dispatch('showTagAnalytics');
+	}
+
+	function syncViewsFromBunny() {
+		dispatch('syncViewsFromBunny');
 	}
 </script>
 
@@ -78,13 +83,29 @@
 				{/if}
 			</button>
 			
-			<button class="bt btn-secondary"
-				style="background: linear-gradient(135deg, #f59e0b, #d97706); border-radius: 10px; padding: 0.5rem 1rem;"
-				on:click={showTagAnalytics}
-			>
-				<span style="color: white !important; font-size: clamp(12px, 1vw, 2.5rem);">Tags<br>🏷️ </span>
-			</button>
-		</div>
+		<button class="bt btn-secondary"
+			style="background: linear-gradient(135deg, #f59e0b, #d97706); border-radius: 10px; padding: 0.5rem 1rem;"
+			on:click={showTagAnalytics}
+		>
+			<span style="color: white !important; font-size: clamp(12px, 1vw, 2.5rem);">Tags<br>🏷️ </span>
+		</button>
+
+		<button 
+			class="btn btn-secondary" 
+			style="background: linear-gradient(135deg, #10b981, #059669);"
+			on:click={syncViewsFromBunny} 
+			disabled={syncingViews}
+		>
+			{#if syncingViews}
+				<div class="bouncing-rabbit-container">
+					<div class="bouncing-rabbit">📊</div>
+				</div>
+				<span style="color: white !important; font-size: clamp(10px, 0.8vw, 1.5rem);">Syncing...</span>
+			{:else}
+				<span style="color: white !important; font-size: clamp(12px, 1vw, 2.5rem);">Sync Views<br>📊</span>
+			{/if}
+		</button>
+	</div>
 		<a
 			href="/admin/streaming/upload"
 			class="btn bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
