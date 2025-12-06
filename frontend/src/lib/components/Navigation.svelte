@@ -772,7 +772,7 @@
 	
 
 	.nav-dropdown-menu .dropdown-item:hover {
-		background: var(--bg-glass);
+		background: var(--bg-glass-darker);
 		transform: translateX(4px);
 	}
 
@@ -780,7 +780,7 @@
 		width: 20px;
 		height: 20px;
 		flex-shrink: 0;
-		color: var(--text-primary);
+		color: var(--bg-ghost-white);
 		
 		overflow:visible;
 	}
@@ -799,7 +799,7 @@
 
 	.dropdown-item-subtitle {
 		font-size: var(--text-xs);
-		color: var(--text-primary);
+		color: var(--text-ghost-white);
 	}
 
 	.free-badge {
