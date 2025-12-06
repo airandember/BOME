@@ -197,7 +197,8 @@
 			<!-- Fullscreen Video Player -->
 			<div class="video-container">
 				<VideoPlayer 
-					videoId={video.bunnyVideoId} 
+					videoId={video.bunnyVideoId}
+					databaseId={video.id}
 					title={video.title}
 					poster={video.thumbnailUrl}
 					playbackUrl={video.playbackUrl}

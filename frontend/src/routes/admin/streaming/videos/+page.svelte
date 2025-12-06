@@ -22,6 +22,7 @@
 	let isUploading = false;
 	let uploadProgress = 0;
 	let checkingConflicts = false;
+	let syncingViews = false;
 
 	// Conflict check results
 	let lastConflictCheck: any = null;
@@ -221,6 +222,40 @@
 			console.error('Error checking conflicts:', error);
 		} finally {
 			checkingConflicts = false;
+		}
+	}
+
+	// Sync view counts from Bunny.net (restores accurate view counts)
+	async function syncViewsFromBunny() {
+		try {
+			syncingViews = true;
+			showToast('Syncing view counts from Bunny.net...', 'info');
+			
+			const response = await masterVideoService.syncViewsFromBunny();
+			
+			if (response.success) {
+				const result = response.result;
+				const message = `Views sync complete: ${result.updated} updated, ${result.skipped} unchanged`;
+				showToast(message, 'success');
+				
+				// Show top videos in console for verification
+				if (result.top_videos && result.top_videos.length > 0) {
+					console.log('📊 Top 10 Videos by Views:');
+					result.top_videos.forEach((v, i) => {
+						console.log(`  #${i + 1}: ${v.title} (${v.views} views)`);
+					});
+				}
+				
+				// Reload analytics to reflect updated view counts
+				await loadAnalytics();
+			} else {
+				showToast('Views sync failed', 'error');
+			}
+		} catch (error) {
+			showToast('Failed to sync views from Bunny.net', 'error');
+			console.error('Error syncing views:', error);
+		} finally {
+			syncingViews = false;
 		}
 	}
 
@@ -517,8 +552,10 @@
 			{analytics}
 			{AbsoluteTotalVideos}
 			{checkingConflicts}
+			{syncingViews}
 			on:checkConflicts={checkConflicts}
 			on:showTagAnalytics={showTagAnalyticsModal}
+			on:syncViewsFromBunny={syncViewsFromBunny}
 		/>
 
 		<!-- Video Filters 

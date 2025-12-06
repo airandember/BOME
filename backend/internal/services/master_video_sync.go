@@ -77,6 +77,135 @@ func (s *MasterVideoSyncService) SyncFromBunny(userID int) (*SyncResult, error) 
 	return result, nil
 }
 
+// ViewsSyncResult represents the result of a views sync operation
+type ViewsSyncResult struct {
+	StartedAt    time.Time `json:"started_at"`
+	CompletedAt  time.Time `json:"completed_at"`
+	Duration     string    `json:"duration"`
+	TotalVideos  int       `json:"total_videos"`
+	Updated      int       `json:"updated"`
+	Skipped      int       `json:"skipped"`
+	NotFound     int       `json:"not_found"`
+	Errors       int       `json:"errors"`
+	ErrorDetails []string  `json:"error_details,omitempty"`
+	TopVideos    []struct {
+		ID    int    `json:"id"`
+		Title string `json:"title"`
+		Views int    `json:"views"`
+	} `json:"top_videos,omitempty"`
+}
+
+// SyncViewsFromBunny fetches actual view counts from Bunny.net and updates master_video_list
+// This fixes the views that were incorrectly set by the old trigger
+func (s *MasterVideoSyncService) SyncViewsFromBunny() (*ViewsSyncResult, error) {
+	log.Println("🔄 Starting views sync from Bunny.net...")
+
+	result := &ViewsSyncResult{
+		StartedAt:    time.Now(),
+		ErrorDetails: []string{},
+	}
+
+	// Fetch all videos from Bunny.net
+	bunnyVideos, err := s.bunnyService.FetchAllVideos()
+	if err != nil {
+		result.ErrorDetails = append(result.ErrorDetails, fmt.Sprintf("Failed to fetch Bunny videos: %v", err))
+		return result, err
+	}
+
+	log.Printf("✅ Fetched %d videos from Bunny.net", len(bunnyVideos))
+
+	// Create a map for quick lookup: bunny_video_id -> views
+	bunnyViewsMap := make(map[string]int)
+	for _, v := range bunnyVideos {
+		bunnyViewsMap[v.GUID] = v.Views
+	}
+
+	// Get all videos from master_video_list
+	rows, err := s.db.Query(`
+		SELECT id, bunny_video_id, title, views 
+		FROM master_video_list 
+		WHERE bunny_video_id IS NOT NULL AND bunny_video_id != ''
+		ORDER BY id
+	`)
+	if err != nil {
+		result.ErrorDetails = append(result.ErrorDetails, fmt.Sprintf("Failed to query master_video_list: %v", err))
+		return result, err
+	}
+	defer rows.Close()
+
+	// Process each video
+	for rows.Next() {
+		var id int
+		var bunnyVideoID, title string
+		var currentViews int
+
+		if err := rows.Scan(&id, &bunnyVideoID, &title, &currentViews); err != nil {
+			result.Errors++
+			result.ErrorDetails = append(result.ErrorDetails, fmt.Sprintf("Failed to scan row: %v", err))
+			continue
+		}
+
+		result.TotalVideos++
+
+		// Look up the Bunny.net view count
+		bunnyViews, found := bunnyViewsMap[bunnyVideoID]
+		if !found {
+			result.NotFound++
+			log.Printf("⚠️ Video %d (%s) not found in Bunny.net", id, bunnyVideoID)
+			continue
+		}
+
+		// Only update if different
+		if currentViews != bunnyViews {
+			_, err := s.db.Exec(`UPDATE master_video_list SET views = $1, updated_at = NOW() WHERE id = $2`, bunnyViews, id)
+			if err != nil {
+				result.Errors++
+				result.ErrorDetails = append(result.ErrorDetails, fmt.Sprintf("Failed to update video %d: %v", id, err))
+				continue
+			}
+			result.Updated++
+			log.Printf("✅ Updated video %d: %d → %d views", id, currentViews, bunnyViews)
+		} else {
+			result.Skipped++
+		}
+	}
+
+	result.CompletedAt = time.Now()
+	result.Duration = result.CompletedAt.Sub(result.StartedAt).String()
+
+	// Get top 10 videos for verification
+	topRows, err := s.db.Query(`
+		SELECT id, title, views 
+		FROM master_video_list 
+		WHERE status = 'ready'
+		ORDER BY views DESC 
+		LIMIT 10
+	`)
+	if err == nil {
+		defer topRows.Close()
+		for topRows.Next() {
+			var id, views int
+			var title string
+			if topRows.Scan(&id, &title, &views) == nil {
+				result.TopVideos = append(result.TopVideos, struct {
+					ID    int    `json:"id"`
+					Title string `json:"title"`
+					Views int    `json:"views"`
+				}{ID: id, Title: title, Views: views})
+			}
+		}
+	}
+
+	log.Printf("═══════════════════════════════════════════════════")
+	log.Printf("           VIEWS SYNC COMPLETE")
+	log.Printf("═══════════════════════════════════════════════════")
+	log.Printf("📊 Total: %d | Updated: %d | Skipped: %d | NotFound: %d | Errors: %d",
+		result.TotalVideos, result.Updated, result.Skipped, result.NotFound, result.Errors)
+	log.Printf("⏱️ Duration: %s", result.Duration)
+
+	return result, nil
+}
+
 // SyncToBunny syncs master list changes to Bunny.net
 func (s *MasterVideoSyncService) SyncToBunny() (*SyncResult, error) {
 	log.Println("Starting sync from master list to Bunny.net...")

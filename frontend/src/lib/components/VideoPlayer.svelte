@@ -1,9 +1,11 @@
 <script lang="ts">
     import { onMount, onDestroy, createEventDispatcher } from 'svelte';
     import { auth } from '$lib/auth';
+    import { videoAnalytics } from '$lib/services/videoAnalytics';
     import Hls from 'hls.js';
 
-    export let videoId: string = '';
+    export let videoId: string = '';  // Bunny GUID for playback
+    export let databaseId: number = 0;  // Database ID for analytics
     export let title: string = '';
     export let poster: string = '';
     export let playbackUrl: string = '';
@@ -24,9 +26,13 @@
         errorCount: 0
     };
 
-    // Player.js instance for iframe control
+    // Player.js instance for iframe control and analytics
     let playerJsInstance: any = null;
     let playerJsReady = false;
+    let iframeElement: HTMLIFrameElement;
+    let isPlaying = false;
+    let lastTrackedTime = -999; // For throttling analytics
+    const TRACKING_INTERVAL = 10; // Report every 10 seconds
 
     // Load Player.js library dynamically
     function loadPlayerJs(): Promise<void> {
@@ -44,10 +50,94 @@
         });
     }
 
-    // Initialize Player.js for iframe control
+    // Initialize Player.js for iframe control and accurate analytics
     async function initPlayerJs() {
-        // Player.js not needed for new iframe approach
-        isLoading = false;
+        if (!iframeElement) {
+            console.warn('⚠️ [VideoPlayer] No iframe element found for Player.js');
+            isLoading = false;
+            return;
+        }
+        
+        try {
+            console.log('🎬 [VideoPlayer] Initializing Player.js for accurate analytics...');
+            await loadPlayerJs();
+            
+            playerJsInstance = new (window as any).playerjs.Player(iframeElement);
+            
+            // Ready event - Player.js connected successfully
+            playerJsInstance.on('ready', () => {
+                console.log('✅ [VideoPlayer] Player.js ready - accurate analytics enabled!');
+                playerJsReady = true;
+                isLoading = false;
+            });
+            
+            // Play event - video started/resumed
+            playerJsInstance.on('play', () => {
+                console.log('▶️ [VideoPlayer] Video started playing');
+                isPlaying = true;
+                dispatch('play');
+            });
+            
+            // Pause event - video paused (ACCURATE detection!)
+            playerJsInstance.on('pause', () => {
+                console.log('⏸️ [VideoPlayer] Video paused');
+                isPlaying = false;
+                dispatch('pause');
+            });
+            
+            // Timeupdate event - get accurate playback position
+            playerJsInstance.on('timeupdate', (data: { seconds: number; duration: number }) => {
+                const currentSecond = Math.floor(data.seconds);
+                
+                // Dispatch event for parent component
+                dispatch('timeupdate', {
+                    currentTime: data.seconds,
+                    duration: data.duration,
+                    paused: !isPlaying
+                });
+                
+                // Throttle analytics tracking (every 10 seconds)
+                if (currentSecond - lastTrackedTime >= TRACKING_INTERVAL && isPlaying) {
+                    lastTrackedTime = currentSecond;
+                    
+                    // Use databaseId for analytics (not the Bunny GUID)
+                    if (databaseId > 0 && data.duration > 0) {
+                        console.log(`📊 [VideoPlayer] Tracking: ${currentSecond}s / ${data.duration}s (video DB ID: ${databaseId})`);
+                        videoAnalytics.trackProgress(databaseId, data.seconds, data.duration);
+                    }
+                }
+            });
+            
+            // Ended event - video completed
+            playerJsInstance.on('ended', () => {
+                console.log('🏁 [VideoPlayer] Video ended');
+                isPlaying = false;
+                
+                // Mark as complete in analytics using databaseId
+                if (databaseId > 0) {
+                    // Get duration from last known value or estimate
+                    playerJsInstance.getDuration((duration: number) => {
+                        if (duration > 0) {
+                            console.log(`✅ [VideoPlayer] Marking video ${databaseId} as complete`);
+                            videoAnalytics.markComplete(databaseId, duration);
+                        }
+                    });
+                }
+                
+                dispatch('ended');
+            });
+            
+            // Error event
+            playerJsInstance.on('error', (error: any) => {
+                console.error('❌ [VideoPlayer] Player.js error:', error);
+                performanceMetrics.errorCount++;
+            });
+            
+        } catch (error) {
+            console.error('❌ [VideoPlayer] Failed to initialize Player.js:', error);
+            console.log('📊 [VideoPlayer] Falling back to basic iframe (no accurate analytics)');
+            isLoading = false;
+        }
     }
 
     // Subscribe to auth store
@@ -89,49 +179,36 @@
     const dispatch = createEventDispatcher();
     let videoElement: HTMLVideoElement;
     let errorMessage: string = '';
-    let iframePollingInterval: number | null = null;
-    let lastIframeTime = 0;
+
+    // Helper function to add ?api=1 to iframe URL for Player.js support
+    function getIframeSrcWithApi(src: string): string {
+        if (!src) return '';
+        const url = new URL(src);
+        url.searchParams.set('api', '1');
+        return url.toString();
+    }
 
     function switchToIframe() {
         if (iframeSrc) {
             useIframe = true;
-            isLoading = false;
-            console.log('Switched to iframe playback:', iframeSrc);
+            isLoading = true; // Will be set to false when Player.js is ready
+            console.log('🎬 [VideoPlayer] Switched to iframe playback with Player.js analytics');
             
-            // Start polling for iframe playback progress
-            startIframeTimeTracking();
+            // Initialize Player.js after iframe is mounted (next tick)
+            setTimeout(() => {
+                initPlayerJs();
+            }, 100);
         } else {
             errorMessage = 'No iframe source available';
         }
     }
     
-    function startIframeTimeTracking() {
-        // Clear any existing interval
-        if (iframePollingInterval) {
-            clearInterval(iframePollingInterval);
-        }
-        
-        console.log('📊 [VideoPlayer] Starting iframe time tracking (polling every second)');
-        
-        // Poll every second to simulate timeupdate events for iframe
-        iframePollingInterval = window.setInterval(() => {
-            lastIframeTime += 1; // Increment by 1 second
-            
-            // Dispatch timeupdate event with estimated time
-            // Note: This is an approximation since we can't get actual playback position from iframe
-            dispatch('timeupdate', {
-                currentTime: lastIframeTime,
-                duration: 0, // Unknown from iframe
-                paused: false // Assume playing
-            });
-        }, 1000);
-    }
-    
-    function stopIframeTimeTracking() {
-        if (iframePollingInterval) {
-            console.log('📊 [VideoPlayer] Stopping iframe time tracking');
-            clearInterval(iframePollingInterval);
-            iframePollingInterval = null;
+    // Cleanup Player.js instance
+    function cleanupPlayerJs() {
+        if (playerJsInstance) {
+            console.log('🧹 [VideoPlayer] Cleaning up Player.js instance');
+            playerJsInstance = null;
+            playerJsReady = false;
         }
     }
 
@@ -280,13 +357,13 @@
     onMount(() => {
         // Priority order: Iframe -> HLS -> Direct MP4 (since videos are private)
         if (iframeSrc) {
-            console.log('Using iframe playback (recommended for private videos)');
+            console.log('🎬 [VideoPlayer] Using iframe playback with Player.js analytics');
             switchToIframe();
         } else if (playbackUrl && playbackUrl.includes('playlist.m3u8')) {
-            console.log('Trying HLS playback');
+            console.log('🎬 [VideoPlayer] Trying HLS playback');
             initHls();
         } else if (directVideoUrl) {
-            console.log('Trying direct MP4 playback:', directVideoUrl);
+            console.log('🎬 [VideoPlayer] Trying direct MP4 playback:', directVideoUrl);
             useDirectVideo();
         } else {
             errorMessage = 'No valid video URL provided';
@@ -297,12 +374,16 @@
                 hls.destroy();
                 hls = null;
             }
-            stopIframeTimeTracking();
+            cleanupPlayerJs();
         };
     });
     
     onDestroy(() => {
-        stopIframeTimeTracking();
+        cleanupPlayerJs();
+        // Reset analytics tracking for this video using databaseId
+        if (databaseId > 0) {
+            videoAnalytics.resetTracking(databaseId);
+        }
     });
 
     function useDirectVideo() {
@@ -319,16 +400,15 @@
     <div class="video-container">
         {#if useIframe && iframeSrc}
             <iframe 
+                bind:this={iframeElement}
                 title='{title || "BOME Video"}' 
-                src="{iframeSrc}" 
+                src="{getIframeSrcWithApi(iframeSrc)}" 
                 loading="lazy" 
                 style="border:0;position:absolute;top:0;height:100vh;width:100%;" 
                 allow="accelerometer;gyroscope;autoplay;encrypted-media;picture-in-picture;"
-        
-                allowfullscreen="true"
+                allowfullscreen={true}
                 on:load={() => {
-                    isLoading = false;
-                    console.log('Iframe loaded successfully');
+                    console.log('✅ [VideoPlayer] Iframe loaded, Player.js will initialize...');
                 }}
             ></iframe>
         {:else if videoId && (proxyUrl || directVideoUrl)}

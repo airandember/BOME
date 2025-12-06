@@ -448,6 +448,24 @@ func SetupMasterVideoRoutes(router *gin.RouterGroup, db *database.DB, bunnyServi
 				"result":  result,
 			})
 		})
+
+		// Sync view counts from Bunny.net (restores accurate view counts)
+		sync.POST("/views-from-bunny", func(c *gin.Context) {
+			result, err := masterVideoService.SyncViewsFromBunny()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error":   "Views sync failed",
+					"details": err.Error(),
+				})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"message": fmt.Sprintf("Views sync completed: %d updated, %d skipped", result.Updated, result.Skipped),
+				"result":  result,
+			})
+		})
 	}
 
 	// Conflict resolution routes
