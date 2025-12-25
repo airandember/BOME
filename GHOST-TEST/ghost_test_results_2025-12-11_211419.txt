@@ -1,0 +1,38 @@
+STRIPE GHOST PRODUCT TEST RESULTS
+=================================
+Date: 2025-12-11 21:14:19 MST
+API Key: sk_live_51FO...aHcC
+
+RESULTS:
+  prod_TVXu8WrKNoTC4A: ARCHIVED
+  prod_HEmcX1PE8TO2CO: DELETED
+  prod_FvNAeI348dup9w: DELETED
+  prod_HF5YzcBH5Rwr0d: DELETED
+  prod_GVV5efccnh13h9: DELETED
+  prod_FvNAJgnw48hwpZ: DELETED
+  prod_KG0YNos3k94WAS: ACTIVE
+
+
+CURL COMMANDS TO REPRODUCE:
+============================
+
+curl https://api.stripe.com/v1/products/prod_HEmcX1PE8TO2CO \
+  -u "sk_live_51FO...REDACTED:"
+
+curl https://api.stripe.com/v1/products/prod_FvNAeI348dup9w \
+  -u "sk_live_51FO...REDACTED:"
+
+curl https://api.stripe.com/v1/products/prod_HF5YzcBH5Rwr0d \
+  -u "sk_live_51FO...REDACTED:"
+
+curl https://api.stripe.com/v1/products/prod_GVV5efccnh13h9 \
+  -u "sk_live_51FO...REDACTED:"
+
+curl https://api.stripe.com/v1/products/prod_FvNAJgnw48hwpZ \
+  -u "sk_live_51FO...REDACTED:"
+
+curl https://api.stripe.com/v1/products/prod_KG0YNos3k94WAS \
+  -u "sk_live_51FO...REDACTED:"
+
+curl https://api.stripe.com/v1/products/prod_TVXu8WrKNoTC4A \
+  -u "sk_live_51FO...REDACTED:"

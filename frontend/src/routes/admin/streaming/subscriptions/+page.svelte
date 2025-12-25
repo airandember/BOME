@@ -852,9 +852,10 @@
 <StripeImportModal
 	bind:show={showStripeImportModal}
 	onClose={() => showStripeImportModal = false}
-	onImportComplete={() => {
-		// Optionally refresh plans or show success message
-		showToast('Stripe products updated successfully', 'success');
+	onImportComplete={async () => {
+		// Reload plans to show newly imported Stripe products
+		await loadPlans();
+		showToast('Stripe products imported as subscription plans', 'success');
 	}}
 />
 

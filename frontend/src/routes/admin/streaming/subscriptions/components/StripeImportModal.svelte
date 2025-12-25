@@ -41,10 +41,10 @@
 			const data = await response.json();
 			products = data.products || [];
 			
-			// Initialize selectedProducts with currently available products
+			// Initialize selectedProducts with products that already have plans in subscription_plans
 			selectedProducts = new Set(
 				products
-					.filter(p => p.available)
+					.filter(p => p.has_plan) // ✅ CHANGED: Use has_plan flag (products already in subscription_plans)
 					.map(p => p.stripe_id)
 			);
 		} catch (error) {
@@ -75,40 +75,30 @@
 	async function handleSave() {
 		saving = true;
 		try {
-			// Step 1: Update availability in stripe_products table
-			const updates = products.map(product => ({
-				stripe_id: product.stripe_id,
-				available: selectedProducts.has(product.stripe_id)
-			}));
+			// Get products that are newly selected (checked but don't already have a plan)
+			const newProductsToImport = products
+				.filter(p => selectedProducts.has(p.stripe_id) && !p.has_plan)
+				.map(p => p.stripe_id);
 
-			const availabilityResponse = await apiRequest('/admin/streaming/stripe/products/bulk-availability', {
-				method: 'PUT',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({ updates })
-			});
-
-			if (!availabilityResponse.ok) {
-				throw new Error(`Failed to update product availability: ${availabilityResponse.status}`);
+			if (newProductsToImport.length === 0) {
+				showToast('No new products to import - all selected products already have plans', 'info');
+				handleClose();
+				return;
 			}
 
-			// Step 2: Import selected products as subscription plans (only if any are selected)
-			if (selectedProducts.size > 0) {
-				const selectedProductIds = Array.from(selectedProducts);
-				
-				const importResult = await StreamingSubscriptionService.importStripeProductsAsPlans(selectedProductIds);
-				
-				showToast(`Successfully processed ${importResult.imported_count} products as subscription plans${importResult.skipped_count > 0 ? ` (${importResult.skipped_count} already existed)` : ''}`, 'success');
-			} else {
-				showToast('Product availability updated successfully', 'success');
-			}
+			// Import only the newly selected products as subscription plans
+			const importResult = await StreamingSubscriptionService.importStripeProductsAsPlans(newProductsToImport);
+			
+			showToast(
+				`Successfully imported ${importResult.imported_count} products as subscription plans${importResult.skipped_count > 0 ? ` (${importResult.skipped_count} already existed)` : ''}`, 
+				'success'
+			);
 			
 			onImportComplete();
 			handleClose();
 		} catch (error) {
-			console.error('Failed to process product selections:', error);
-			showToast('Failed to process product selections', 'error');
+			console.error('Failed to import products as plans:', error);
+			showToast('Failed to import products as subscription plans', 'error');
 		} finally {
 			saving = false;
 		}
@@ -181,7 +171,7 @@
 							<table class="products-table">
 								<thead>
 									<tr>
-										<th class="checkbox-col">Make Available</th>
+										<th class="checkbox-col">Add to Plans</th>
 										<th>Title</th>
 										<th>Stripe ID</th>
 										<th>Price</th>
@@ -216,10 +206,10 @@
 											<td class="status">
 												<div class="status-badges">
 													<span class="status-badge" class:active={product.active}>
-														{product.active ? 'Active' : 'Inactive'}
+														{product.active ? 'Active in Stripe' : 'Inactive'}
 													</span>
-													<span class="availability-badge" class:available={product.available}>
-														{product.available ? 'Available' : 'Disabled'}
+													<span class="availability-badge" class:available={product.has_plan}>
+														{product.has_plan ? '✅ Has Plan' : '⏳ No Plan Yet'}
 													</span>
 												</div>
 											</td>
