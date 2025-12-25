@@ -1,0 +1,192 @@
+================================================================================
+🔍 STRIPE GHOST PRODUCT TEST
+================================================================================
+
+🔑 Using API Key: sk_live_51FO...aHcC
+
+[1/7] Testing: prod_HEmcX1PE8TO2CO
+------------------------------------------------------------
+   HTTP Status: 404
+   Request-ID: req_Isdp7VLACxU519
+
+   JSON Response:
+   {
+     "error": {
+       "code": "resource_missing",
+       "doc_url": "https://stripe.com/docs/error-codes/resource-missing",
+       "message": "No such product: 'prod_HEmcX1PE8TO2CO'",
+       "param": "id",
+       "request_log_url": "https://dashboard.stripe.com/logs/req_Isdp7VLACxU519?t=1765512854",
+       "type": "invalid_request_error"
+     }
+   }
+
+
+   👻 STATUS: GHOST DETECTED! (resource_missing)
+
+
+[2/7] Testing: prod_FvNAeI348dup9w
+------------------------------------------------------------
+   HTTP Status: 404
+   Request-ID: req_ZhPTTH1RH4zrBY
+
+   JSON Response:
+   {
+     "error": {
+       "code": "resource_missing",
+       "doc_url": "https://stripe.com/docs/error-codes/resource-missing",
+       "message": "No such product: 'prod_FvNAeI348dup9w'",
+       "param": "id",
+       "request_log_url": "https://dashboard.stripe.com/logs/req_ZhPTTH1RH4zrBY?t=1765512855",
+       "type": "invalid_request_error"
+     }
+   }
+
+
+   👻 STATUS: GHOST DETECTED! (resource_missing)
+
+
+[3/7] Testing: prod_HF5YzcBH5Rwr0d
+------------------------------------------------------------
+   HTTP Status: 404
+   Request-ID: req_ghdTzWfvOXrIxp
+
+   JSON Response:
+   {
+     "error": {
+       "code": "resource_missing",
+       "doc_url": "https://stripe.com/docs/error-codes/resource-missing",
+       "message": "No such product: 'prod_HF5YzcBH5Rwr0d'",
+       "param": "id",
+       "request_log_url": "https://dashboard.stripe.com/logs/req_ghdTzWfvOXrIxp?t=1765512856",
+       "type": "invalid_request_error"
+     }
+   }
+
+
+   👻 STATUS: GHOST DETECTED! (resource_missing)
+
+
+[4/7] Testing: prod_GVV5efccnh13h9
+------------------------------------------------------------
+   HTTP Status: 404
+   Request-ID: req_nQmZKNyqRAHJc0
+
+   JSON Response:
+   {
+     "error": {
+       "code": "resource_missing",
+       "doc_url": "https://stripe.com/docs/error-codes/resource-missing",
+       "message": "No such product: 'prod_GVV5efccnh13h9'",
+       "param": "id",
+       "request_log_url": "https://dashboard.stripe.com/logs/req_nQmZKNyqRAHJc0?t=1765512856",
+       "type": "invalid_request_error"
+     }
+   }
+
+
+   👻 STATUS: GHOST DETECTED! (resource_missing)
+
+
+[5/7] Testing: prod_FvNAJgnw48hwpZ
+------------------------------------------------------------
+   HTTP Status: 404
+   Request-ID: req_2usvlFnLm1aHw1
+
+   JSON Response:
+   {
+     "error": {
+       "code": "resource_missing",
+       "doc_url": "https://stripe.com/docs/error-codes/resource-missing",
+       "message": "No such product: 'prod_FvNAJgnw48hwpZ'",
+       "param": "id",
+       "request_log_url": "https://dashboard.stripe.com/logs/req_2usvlFnLm1aHw1?t=1765512857",
+       "type": "invalid_request_error"
+     }
+   }
+
+
+   👻 STATUS: GHOST DETECTED! (resource_missing)
+
+
+[6/7] Testing: prod_KG0YNos3k94WAS
+------------------------------------------------------------
+   HTTP Status: 200
+   Request-ID: req_kVMVDOe2LTYZa5
+
+   JSON Response:
+   {
+     "id": "prod_KG0YNos3k94WAS",
+     "object": "product",
+     "active": true,
+     "attributes": [],
+     "created": 1632075278,
+     "default_price": null,
+     "description": null,
+     "images": [],
+     "livemode": true,
+     "marketing_features": [],
+     "metadata": {},
+     "name": "Monthly",
+     "package_dimensions": null,
+     "shippable": null,
+     "statement_descriptor": null,
+     "tax_code": "txcd_10000000",
+     "type": "service",
+     "unit_label": null,
+     "updated": 1756748199,
+     "url": null
+   }
+
+   ✅ STATUS: ACTIVE - Name: Monthly
+
+
+[7/7] Testing: prod_TVXu8WrKNoTC4A
+------------------------------------------------------------
+   HTTP Status: 200
+   Request-ID: req_f9U3ZsYjfJAKuN
+
+   JSON Response:
+   {
+     "id": "prod_TVXu8WrKNoTC4A",
+     "object": "product",
+     "active": false,
+     "attributes": [],
+     "created": 1764356088,
+     "default_price": "price_1SYWoeFpxJJNWdU8FlLMJjS7",
+     "description": null,
+     "images": [],
+     "livemode": true,
+     "marketing_features": [],
+     "metadata": {},
+     "name": "Premium Yearly",
+     "package_dimensions": null,
+     "shippable": null,
+     "statement_descriptor": null,
+     "tax_code": "txcd_10000000",
+     "type": "service",
+     "unit_label": null,
+     "updated": 1764881896,
+     "url": null
+   }
+
+   📦 STATUS: ARCHIVED - Name: Premium Yearly
+   Created: 2025-11-28
+
+
+================================================================================
+📊 SUMMARY
+================================================================================
+👻 prod_FvNAeI348dup9w: DELETED
+👻 prod_HF5YzcBH5Rwr0d: DELETED
+👻 prod_GVV5efccnh13h9: DELETED
+👻 prod_FvNAJgnw48hwpZ: DELETED
+✅ prod_KG0YNos3k94WAS: ACTIVE
+📦 prod_TVXu8WrKNoTC4A: ARCHIVED
+👻 prod_HEmcX1PE8TO2CO: DELETED
+
+📊 Results: 1 Archived, 5 Deleted (Ghost), 1 Active, 0 Errors
+
+⚠️  GHOST PRODUCTS FOUND!
+   These products return 'resource_missing' from Stripe API.
+   Send this output to Stripe support as evidence.

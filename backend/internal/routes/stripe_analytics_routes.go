@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -910,37 +909,58 @@ func triggerManualSync(c *gin.Context, syncService *services.StripeSyncService) 
 }
 
 // getAvailableStripeProducts returns all Stripe products marked as available with pricing information
+// getAvailableStripeProducts retrieves active Stripe products with pricing from V2 tables
+// ✅ UPDATED: Now reads from stripe_products_v2 (not legacy stripe_products)
+// Note: V2 table uses 'active' column instead of 'available'
 func getAvailableStripeProducts(c *gin.Context, db *database.DB) {
-	log.Printf("📦 Getting available Stripe products with pricing information...")
+	log.Printf("📦 Getting available Stripe products with pricing from V2 tables...")
 
+	// Query from V2 tables with price join for efficiency
+	// Note: V2 uses 'active' column - 'available' concept maps to active
 	query := `
-		SELECT id, stripe_id, name, description, active, available, created_at
-		FROM stripe_products
-		WHERE available = true
-		ORDER BY name ASC
+		SELECT 
+			p.id, p.stripe_id, p.name, p.description, p.active, p.video_approved,
+			p.stripe_created_at,
+			pr.stripe_id as price_stripe_id, pr.unit_amount, pr.currency, pr.recurring_interval
+		FROM stripe_products_v2 p
+		LEFT JOIN stripe_prices_v2 pr ON p.id = pr.product_id AND pr.active = true
+		WHERE p.active = true
+		ORDER BY p.name ASC
 	`
 
 	rows, err := db.DB.Query(query)
 	if err != nil {
-		log.Printf("❌ Error querying available Stripe products: %v", err)
+		log.Printf("❌ Error querying available Stripe products V2: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to fetch available Stripe products",
+			"error": "Failed to fetch available Stripe products from V2",
 		})
 		return
 	}
 	defer rows.Close()
 
-	var products []map[string]interface{}
+	// Use map to deduplicate (a product may have multiple prices)
+	productMap := make(map[int]map[string]interface{})
+	
 	for rows.Next() {
 		var id int
 		var stripeID, name string
-		var description *string
-		var active, available bool
-		var createdAt time.Time
+		var description sql.NullString
+		var active, videoApproved bool
+		var createdAt sql.NullTime
+		var priceStripeID, currency, recurringInterval sql.NullString
+		var unitAmount sql.NullInt64
 
-		err := rows.Scan(&id, &stripeID, &name, &description, &active, &available, &createdAt)
+		err := rows.Scan(
+			&id, &stripeID, &name, &description, &active, &videoApproved,
+			&createdAt, &priceStripeID, &unitAmount, &currency, &recurringInterval,
+		)
 		if err != nil {
-			log.Printf("❌ Error scanning Stripe product: %v", err)
+			log.Printf("❌ Error scanning available Stripe product V2: %v", err)
+			continue
+		}
+
+		// Skip if we already have this product (take first price)
+		if _, exists := productMap[id]; exists {
 			continue
 		}
 
@@ -948,56 +968,51 @@ func getAvailableStripeProducts(c *gin.Context, db *database.DB) {
 			"id":          id,
 			"stripe_id":   stripeID,
 			"name":        name,
-			"description": description,
+			"description": description.String,
 			"active":      active,
-			"available":   available,
-			"created_at":  createdAt.Format(time.RFC3339),
-			"price":       nil, // Will be populated below
+			"available":   active, // Map active to available for frontend compatibility
+			"created_at":  "",
+			"price":       nil,
 		}
+		
+		if createdAt.Valid {
+			product["created_at"] = createdAt.Time.Format(time.RFC3339)
+		}
+		
+		if unitAmount.Valid {
+			product["price"] = unitAmount.Int64
+			if priceStripeID.Valid {
+				product["price_id"] = priceStripeID.String
+			}
+			if currency.Valid {
+				product["currency"] = currency.String
+			}
+			if recurringInterval.Valid {
+				product["recurring_interval"] = recurringInterval.String
+			}
+		}
+		
+		productMap[id] = product
+	}
+
+	// Convert map to slice
+	var products []map[string]interface{}
+	for _, product := range productMap {
 		products = append(products, product)
 	}
 
-	// Now get pricing information for each product
-	for i, product := range products {
-		productID := product["id"].(int)
-
-		// Get comprehensive price information for this product (V2)
-		priceQuery := `
-			SELECT stripe_id, unit_amount, currency, recurring_interval
-			FROM stripe_prices_v2 
-			WHERE product_id = $1 
-			ORDER BY stripe_created_at DESC 
-			LIMIT 1
-		`
-
-		var priceStripeID, currency, recurringInterval *string
-		var unitAmount *int64
-		err := db.DB.QueryRow(priceQuery, productID).Scan(&priceStripeID, &unitAmount, &currency, &recurringInterval)
-		if err == nil && unitAmount != nil {
-			products[i]["price"] = *unitAmount
-			if priceStripeID != nil {
-				products[i]["price_id"] = *priceStripeID
-			}
-			if currency != nil {
-				products[i]["currency"] = *currency
-			}
-			if recurringInterval != nil {
-				products[i]["recurring_interval"] = *recurringInterval
-			}
-		} else if err != nil && err.Error() != "sql: no rows in result set" {
-			log.Printf("⚠️ Error getting price for available product ID %d: %v", productID, err)
-		}
-	}
-
-	log.Printf("✅ Found %d available Stripe products with pricing", len(products))
+	log.Printf("✅ Found %d available Stripe products with pricing from V2", len(products))
 
 	c.JSON(http.StatusOK, gin.H{
 		"products": products,
 		"count":    len(products),
+		"source":   "stripe_products_v2",
 	})
 }
 
-// updateStripeProductAvailability updates the availability status of a Stripe product
+// updateStripeProductAvailability updates the active status of a Stripe product in V2 tables
+// ✅ UPDATED: Now updates stripe_products_v2 (not legacy stripe_products)
+// Note: V2 uses 'active' column - 'available' from frontend maps to 'active'
 func updateStripeProductAvailability(c *gin.Context, db *database.DB) {
 	stripeID := c.Param("stripe_id")
 	if stripeID == "" {
@@ -1019,19 +1034,20 @@ func updateStripeProductAvailability(c *gin.Context, db *database.DB) {
 		return
 	}
 
-	log.Printf("🔄 Updating Stripe product %s availability to: %v", stripeID, requestBody.Available)
+	log.Printf("🔄 Updating Stripe product %s active status to: %v (V2 table)", stripeID, requestBody.Available)
 
+	// Update V2 table - map 'available' from frontend to 'active' in V2
 	query := `
-		UPDATE stripe_products 
-		SET available = $1 
+		UPDATE stripe_products_v2 
+		SET active = $1, last_synced_at = NOW()
 		WHERE stripe_id = $2
 	`
 
 	result, err := db.Exec(query, requestBody.Available, stripeID)
 	if err != nil {
-		log.Printf("❌ Error updating Stripe product availability: %v", err)
+		log.Printf("❌ Error updating Stripe product V2 active status: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to update product availability",
+			"error": "Failed to update product availability in V2",
 		})
 		return
 	}
@@ -1046,29 +1062,32 @@ func updateStripeProductAvailability(c *gin.Context, db *database.DB) {
 	}
 
 	if rowsAffected == 0 {
-		log.Printf("❌ No Stripe product found with ID: %s", stripeID)
+		log.Printf("❌ No Stripe product found in V2 with ID: %s", stripeID)
 		c.JSON(http.StatusNotFound, gin.H{
-			"error": "Stripe product not found",
+			"error": "Stripe product not found in V2 tables",
 		})
 		return
 	}
 
-	log.Printf("✅ Successfully updated Stripe product %s availability to: %v", stripeID, requestBody.Available)
+	log.Printf("✅ Successfully updated Stripe product %s active status to: %v in V2", stripeID, requestBody.Available)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":   "Product availability updated successfully",
 		"stripe_id": stripeID,
 		"available": requestBody.Available,
 		"timestamp": time.Now().Unix(),
+		"source":    "stripe_products_v2",
 	})
 }
 
 // getAllStripeProducts returns all Stripe products (both available and unavailable)
+// getAllStripeProducts retrieves all Stripe products from V2 tables
+// ✅ UPDATED: Now reads from stripe_products_v2 (not legacy stripe_products)
+// ✅ UPDATED: Now includes has_plan flag to show which products already exist in subscription_plans
 func getAllStripeProducts(c *gin.Context, db *database.DB) {
-	log.Printf("📦 Getting all Stripe products...")
+	log.Printf("📦 Getting all Stripe products from V2 tables...")
 
-	// Add detailed debugging
-	if db == nil {
+	if db == nil || db.DB == nil {
 		log.Printf("❌ Database connection is nil")
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Database connection is nil",
@@ -1076,148 +1095,124 @@ func getAllStripeProducts(c *gin.Context, db *database.DB) {
 		return
 	}
 
-	if db.DB == nil {
-		log.Printf("❌ Database DB field is nil")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Database DB field is nil",
-		})
-		return
-	}
-
-	log.Printf("✅ Database connections are valid, executing query...")
-
-	// First check if the stripe_products table exists
-	tableCheckQuery := `
-		SELECT EXISTS (
-			SELECT FROM information_schema.tables 
-			WHERE table_schema = 'public' 
-			AND table_name = 'stripe_products'
-		);
-	`
-
-	var tableExists bool
-	err := db.DB.QueryRow(tableCheckQuery).Scan(&tableExists)
+	// First, get all stripe_product_ids that already exist in subscription_plans
+	existingPlansQuery := `
+		SELECT stripe_product_id FROM subscription_plans 
+		WHERE stripe_product_id IS NOT NULL AND is_deleted = false`
+	existingPlansRows, err := db.DB.Query(existingPlansQuery)
 	if err != nil {
-		log.Printf("❌ Error checking if stripe_products table exists: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to check table existence",
-			"details": err.Error(),
-		})
-		return
+		log.Printf("⚠️ Error querying existing plans (will continue without has_plan flag): %v", err)
 	}
-
-	if !tableExists {
-		log.Printf("❌ stripe_products table does not exist")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "stripe_products table does not exist",
-		})
-		return
+	
+	existingPlans := make(map[string]bool)
+	if existingPlansRows != nil {
+		defer existingPlansRows.Close()
+		for existingPlansRows.Next() {
+			var stripeProductID string
+			if err := existingPlansRows.Scan(&stripeProductID); err == nil {
+				existingPlans[stripeProductID] = true
+			}
+		}
 	}
+	log.Printf("📋 Found %d existing subscription plans", len(existingPlans))
 
-	log.Printf("✅ stripe_products table exists, proceeding with query...")
-
-	// Start with a simple query to get just the products first
+	// Query from stripe_products_v2 with price join for efficiency
 	query := `
-		SELECT id, stripe_id, name, description, active, available, created_at
-		FROM stripe_products
-		ORDER BY name ASC
+		SELECT 
+			p.id, p.stripe_id, p.name, p.description, p.active, p.video_approved, p.is_legacy,
+			p.stripe_created_at,
+			pr.stripe_id as price_stripe_id, pr.unit_amount, pr.currency, pr.recurring_interval
+		FROM stripe_products_v2 p
+		LEFT JOIN stripe_prices_v2 pr ON p.id = pr.product_id AND pr.active = true
+		ORDER BY p.name ASC
 	`
 
-	log.Printf("🔍 Executing query: %s", query)
 	rows, err := db.DB.Query(query)
 	if err != nil {
-		log.Printf("❌ Error querying all Stripe products: %v", err)
-		log.Printf("❌ Error type: %T", err)
+		log.Printf("❌ Error querying Stripe products V2: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to fetch Stripe products",
+			"error":   "Failed to fetch Stripe products from V2",
 			"details": err.Error(),
 		})
 		return
 	}
 	defer rows.Close()
-	log.Printf("✅ Query executed successfully, processing rows...")
 
-	var products []map[string]interface{}
-	productCount := 0
-
+	// Use map to deduplicate (a product may have multiple prices)
+	productMap := make(map[int]map[string]interface{})
+	
 	for rows.Next() {
 		var id int
 		var stripeID, name string
-		var description *string
-		var active, available bool
-		var createdAt time.Time
+		var description sql.NullString
+		var active, videoApproved, isLegacy bool
+		var createdAt sql.NullTime
+		var priceStripeID, currency, recurringInterval sql.NullString
+		var unitAmount sql.NullInt64
 
-		err := rows.Scan(&id, &stripeID, &name, &description, &active, &available, &createdAt)
+		err := rows.Scan(
+			&id, &stripeID, &name, &description, &active, &videoApproved, &isLegacy,
+			&createdAt, &priceStripeID, &unitAmount, &currency, &recurringInterval,
+		)
 		if err != nil {
-			log.Printf("❌ Error scanning Stripe product: %v", err)
-			log.Printf("❌ Scan error type: %T", err)
+			log.Printf("❌ Error scanning Stripe product V2: %v", err)
 			continue
 		}
 
-		productCount++
-		log.Printf("✅ Scanned product %d: ID=%d, StripeID=%s, Name=%s", productCount, id, stripeID, name)
+		// Skip if we already have this product (take first price)
+		if _, exists := productMap[id]; exists {
+			continue
+		}
 
+		// Check if this product already has a subscription plan
+		hasPlan := existingPlans[stripeID]
+
+		// Build product map
 		product := map[string]interface{}{
 			"id":          id,
 			"stripe_id":   stripeID,
 			"name":        name,
-			"description": description,
+			"description": description.String,
 			"active":      active,
-			"available":   available,
-			"created_at":  createdAt.Format(time.RFC3339),
-			"price":       nil, // We'll add price lookup separately
+			"available":   hasPlan, // ✅ CHANGED: available = has_plan (product is in subscription_plans)
+			"has_plan":    hasPlan, // ✅ NEW: explicit flag for frontend
+			"created_at":  "",
+			"price":       nil,
 		}
+		
+		if createdAt.Valid {
+			product["created_at"] = createdAt.Time.Format(time.RFC3339)
+		}
+		
+		if unitAmount.Valid {
+			product["price"] = unitAmount.Int64
+			if priceStripeID.Valid {
+				product["price_id"] = priceStripeID.String
+			}
+			if currency.Valid {
+				product["currency"] = currency.String
+			}
+			if recurringInterval.Valid {
+				product["recurring_interval"] = recurringInterval.String
+			}
+		}
+		
+		productMap[id] = product
+	}
+
+	// Convert map to slice
+	var products []map[string]interface{}
+	for _, product := range productMap {
 		products = append(products, product)
 	}
 
-	log.Printf("✅ Processed %d products from database", len(products))
-
-	// Now try to get prices for each product
-	log.Printf("🔍 Starting price lookup for %d products...", len(products))
-	for i, product := range products {
-		productID := product["id"].(int) // Use the integer ID, not the stripe_id string
-		log.Printf("🔍 Looking up price for product ID %d (stripe_id: %s)", productID, product["stripe_id"])
-
-		// Try to get comprehensive price information for this product (V2)
-		priceQuery := `
-			SELECT stripe_id, unit_amount, currency, recurring_interval
-			FROM stripe_prices_v2 
-			WHERE product_id = $1 
-			ORDER BY stripe_created_at DESC 
-			LIMIT 1
-		`
-
-		var priceStripeID, currency, recurringInterval *string
-		var unitAmount *int64
-		err := db.DB.QueryRow(priceQuery, productID).Scan(&priceStripeID, &unitAmount, &currency, &recurringInterval)
-		if err == nil && unitAmount != nil {
-			log.Printf("✅ Found price for product ID %d: $%.2f %s %s", productID, float64(*unitAmount)/100, *currency, *recurringInterval)
-			products[i]["price"] = *unitAmount
-			if priceStripeID != nil {
-				products[i]["price_id"] = *priceStripeID
-			}
-			if currency != nil {
-				products[i]["currency"] = *currency
-			}
-			if recurringInterval != nil {
-				products[i]["recurring_interval"] = *recurringInterval
-			}
-		} else if err != nil && err.Error() != "sql: no rows in result set" {
-			log.Printf("❌ Error getting price for product ID %d: %v", productID, err)
-			log.Printf("❌ Price query error type: %T", err)
-		} else {
-			log.Printf("⚠️ No price found for product ID %d", productID)
-		}
-		// If no price found or error, price remains nil
-	}
-
-	log.Printf("✅ Price lookup completed for all products")
-
-	log.Printf("✅ Found %d total Stripe products", len(products))
+	log.Printf("✅ Found %d total Stripe products from V2 tables (%d already have plans)", len(products), len(existingPlans))
 
 	c.JSON(http.StatusOK, gin.H{
-		"products": products,
-		"count":    len(products),
+		"products":            products,
+		"count":               len(products),
+		"existing_plans":      len(existingPlans),
+		"source":              "stripe_products_v2",
 	})
 }
 
@@ -1286,7 +1281,7 @@ func importStripeProductsAsPlans(c *gin.Context, db *database.DB) {
 			continue
 		}
 
-		// Get pricing information
+		// Get pricing information from V2 tables
 		var price struct {
 			StripeID          string `json:"stripe_id"`
 			UnitAmount        int    `json:"unit_amount"`
@@ -1294,17 +1289,18 @@ func importStripeProductsAsPlans(c *gin.Context, db *database.DB) {
 			RecurringInterval string `json:"recurring_interval"`
 		}
 
+		// ✅ FIXED: Use stripe_created_at instead of created_at for V2 table
 		priceQuery := `
 			SELECT stripe_id, unit_amount, currency, COALESCE(recurring_interval, 'month') as recurring_interval
 			FROM stripe_prices_v2 
-			WHERE product_id = $1 
-			ORDER BY created_at DESC 
+			WHERE product_id = $1 AND active = true
+			ORDER BY stripe_created_at DESC 
 			LIMIT 1`
 
 		err = tx.QueryRow(priceQuery, product.ID).Scan(
 			&price.StripeID, &price.UnitAmount, &price.Currency, &price.RecurringInterval)
 		if err != nil {
-			log.Printf("No pricing found for Stripe product %s, using defaults", stripeProductID)
+			log.Printf("No pricing found for Stripe product %s (V2), using defaults", stripeProductID)
 			price.UnitAmount = 0
 			price.Currency = "usd"
 			price.RecurringInterval = "month"
@@ -1360,6 +1356,8 @@ func importStripeProductsAsPlans(c *gin.Context, db *database.DB) {
 }
 
 // bulkUpdateStripeProductAvailability updates availability for multiple products
+// bulkUpdateStripeProductAvailability bulk updates active status for multiple products in V2 tables
+// ✅ UPDATED: Now updates stripe_products_v2 (not legacy stripe_products)
 func bulkUpdateStripeProductAvailability(c *gin.Context, db *database.DB) {
 	var requestBody struct {
 		Updates []struct {
@@ -1383,7 +1381,7 @@ func bulkUpdateStripeProductAvailability(c *gin.Context, db *database.DB) {
 		return
 	}
 
-	log.Printf("🔄 Bulk updating availability for %d Stripe products", len(requestBody.Updates))
+	log.Printf("🔄 Bulk updating active status for %d Stripe products in V2 tables", len(requestBody.Updates))
 
 	// Start a transaction for bulk updates
 	tx, err := db.DB.Begin()
@@ -1400,10 +1398,11 @@ func bulkUpdateStripeProductAvailability(c *gin.Context, db *database.DB) {
 	failedUpdates := []string{}
 
 	for _, update := range requestBody.Updates {
-		query := `UPDATE stripe_products SET available = $1 WHERE stripe_id = $2`
+		// Update V2 table - map 'available' from frontend to 'active' in V2
+		query := `UPDATE stripe_products_v2 SET active = $1, last_synced_at = NOW() WHERE stripe_id = $2`
 		result, err := tx.Exec(query, update.Available, update.StripeID)
 		if err != nil {
-			log.Printf("❌ Error updating product %s: %v", update.StripeID, err)
+			log.Printf("❌ Error updating product %s in V2: %v", update.StripeID, err)
 			failedUpdates = append(failedUpdates, update.StripeID)
 			continue
 		}
@@ -1418,7 +1417,7 @@ func bulkUpdateStripeProductAvailability(c *gin.Context, db *database.DB) {
 		if rowsAffected > 0 {
 			updatedCount++
 		} else {
-			log.Printf("⚠️ No product found with ID: %s", update.StripeID)
+			log.Printf("⚠️ No product found in V2 with ID: %s", update.StripeID)
 			failedUpdates = append(failedUpdates, update.StripeID)
 		}
 	}
@@ -1432,13 +1431,14 @@ func bulkUpdateStripeProductAvailability(c *gin.Context, db *database.DB) {
 		return
 	}
 
-	log.Printf("✅ Successfully updated %d out of %d Stripe products", updatedCount, len(requestBody.Updates))
+	log.Printf("✅ Successfully updated %d out of %d Stripe products in V2", updatedCount, len(requestBody.Updates))
 
 	response := gin.H{
 		"message":       "Bulk update completed",
 		"updated_count": updatedCount,
 		"total_count":   len(requestBody.Updates),
 		"timestamp":     time.Now().Unix(),
+		"source":        "stripe_products_v2",
 	}
 
 	if len(failedUpdates) > 0 {
@@ -1735,135 +1735,105 @@ func getHealthRecommendations(health *database.StripeMetadataHealth) []string {
 }
 
 // getStripeProductsForAccordion returns Stripe products formatted for the accordion UI
+// ✅ UPDATED: Now reads from stripe_products_v2 (not legacy stripe_products)
 func getStripeProductsForAccordion(c *gin.Context, db *database.DB) {
-	log.Printf("🎯 Getting Stripe products for accordion...")
+	log.Printf("🎯 Getting Stripe products for accordion from V2 tables...")
 
-	// Debug: Check what products and prices we have (V2)
-	debugQuery := `
-		SELECT p.id, p.name, pr.id as price_id, pr.unit_amount, pr.currency
-		FROM stripe_products_v2 p
-		LEFT JOIN stripe_prices_v2 pr ON p.id = pr.product_id
-		WHERE p.video_approved = true OR p.active = true
-		ORDER BY p.id
-		LIMIT 10
-	`
-	debugRows, err := db.DB.Query(debugQuery)
-	if err == nil {
-		log.Printf("🔍 Debug - Product/Price relationships (video_approved or active products):")
-		for debugRows.Next() {
-			var prodID int
-			var prodName string
-			var priceID *int
-			var unitAmount *int
-			var currency *string
-			debugRows.Scan(&prodID, &prodName, &priceID, &unitAmount, &currency)
-			if priceID != nil {
-				log.Printf("   ✅ Product %d (%s) -> Price %d (%v %v)", prodID, prodName, *priceID, unitAmount, currency)
-			} else {
-				log.Printf("   ❌ Product %d (%s) -> No price found", prodID, prodName)
-			}
-		}
-		debugRows.Close()
-	}
-
+	// Query from stripe_products_v2 with price join
 	query := `
 		SELECT 
-			id, 
-			stripe_id, 
-			name, 
-			description, 
-			active, 
-			available,
-			video_approved,
-			livemode,
-			legacy_product,
-			created_at,
-			updated_at
-		FROM stripe_products
+			p.id, 
+			p.stripe_id, 
+			p.name, 
+			p.description, 
+			p.active, 
+			p.video_approved,
+			p.is_legacy,
+			p.stripe_created_at,
+			p.last_synced_at,
+			pr.id as price_id,
+			pr.stripe_id as price_stripe_id,
+			pr.unit_amount,
+			pr.currency,
+			pr.recurring_interval,
+			pr.active as price_active
+		FROM stripe_products_v2 p
+		LEFT JOIN stripe_prices_v2 pr ON p.id = pr.product_id AND pr.active = true
 		ORDER BY 
-			CASE WHEN video_approved THEN 0 ELSE 1 END,
-			active DESC,
-			name ASC
+			CASE WHEN p.video_approved THEN 0 ELSE 1 END,
+			p.active DESC,
+			p.name ASC
 	`
 
 	rows, err := db.DB.Query(query)
 	if err != nil {
-		log.Printf("❌ Error querying Stripe products: %v", err)
+		log.Printf("❌ Error querying Stripe products v2: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to fetch Stripe products",
+			"error": "Failed to fetch Stripe products from v2 tables",
 		})
 		return
 	}
 	defer rows.Close()
 
-	var products []map[string]interface{}
+	// Use a map to deduplicate products (a product may have multiple prices)
+	productMap := make(map[int]map[string]interface{})
+	
 	for rows.Next() {
 		var id int
 		var stripeID, name string
-		var description *string
-		var active, available, videoApproved, livemode, legacyProduct bool
-		var createdAt, updatedAt time.Time
+		var description sql.NullString
+		var active, videoApproved, isLegacy bool
+		var createdAt, lastSyncedAt sql.NullTime
+		var priceID sql.NullInt64
+		var priceStripeID, currency, recurringInterval sql.NullString
+		var unitAmount sql.NullInt64
+		var priceActive sql.NullBool
 
-		err := rows.Scan(&id, &stripeID, &name, &description, &active, &available, &videoApproved, &livemode, &legacyProduct, &createdAt, &updatedAt)
+		err := rows.Scan(
+			&id, &stripeID, &name, &description, &active, &videoApproved, &isLegacy,
+			&createdAt, &lastSyncedAt,
+			&priceID, &priceStripeID, &unitAmount, &currency, &recurringInterval, &priceActive,
+		)
 		if err != nil {
-			log.Printf("❌ Error scanning Stripe product: %v", err)
+			log.Printf("❌ Error scanning Stripe product v2: %v", err)
 			continue
 		}
 
-		// Get price information for this product
-		priceQuery := `
-			SELECT 
-				id,
-			stripe_id,
-			unit_amount,
-			currency,
-			recurring_interval
-		FROM stripe_prices_v2 
-		WHERE product_id = $1 
-		ORDER BY unit_amount ASC
-		LIMIT 1
-	`
-
-		var priceInfo map[string]interface{}
-		var priceID int
-		var priceStripeID string
-		var unitAmount *int
-		var currency *string
-		var recurringInterval *string
-
-		err = db.DB.QueryRow(priceQuery, id).Scan(&priceID, &priceStripeID, &unitAmount, &currency, &recurringInterval)
-		if err == nil {
-			priceInfo = map[string]interface{}{
-				"id":                 priceID,
-				"stripe_id":          priceStripeID,
-				"unit_amount":        unitAmount,
-				"currency":           currency,
-				"recurring_interval": recurringInterval,
-			}
-			var amountStr, currencyStr string
-			if unitAmount != nil {
-				amountStr = fmt.Sprintf("$%.2f", float64(*unitAmount)/100)
-			} else {
-				amountStr = "nil"
-			}
-			if currency != nil {
-				currencyStr = strings.ToUpper(*currency)
-			} else {
-				currencyStr = "nil"
-			}
-			log.Printf("✅ Found price for product %d (%s): %s %s", id, name, amountStr, currencyStr)
-		} else {
-			log.Printf("⚠️ No price found for product %d (%s): %v", id, name, err)
+		// Skip if we already have this product (take first price)
+		if _, exists := productMap[id]; exists {
+			continue
 		}
 
 		// Format description
 		desc := ""
-		if description != nil {
-			desc = *description
-			// Truncate long descriptions
+		if description.Valid {
+			desc = description.String
 			if len(desc) > 200 {
 				desc = desc[:200] + "..."
 			}
+		}
+
+		// Build price info if available
+		var priceInfo map[string]interface{}
+		if priceID.Valid {
+			priceInfo = map[string]interface{}{
+				"id":                 priceID.Int64,
+				"stripe_id":          priceStripeID.String,
+				"unit_amount":        unitAmount.Int64,
+				"currency":           currency.String,
+				"recurring_interval": recurringInterval.String,
+				"active":             priceActive.Bool,
+			}
+		}
+
+		// Format timestamps
+		createdAtStr := ""
+		if createdAt.Valid {
+			createdAtStr = createdAt.Time.Format("2006-01-02 15:04:05")
+		}
+		updatedAtStr := ""
+		if lastSyncedAt.Valid {
+			updatedAtStr = lastSyncedAt.Time.Format("2006-01-02 15:04:05")
 		}
 
 		product := map[string]interface{}{
@@ -1872,51 +1842,59 @@ func getStripeProductsForAccordion(c *gin.Context, db *database.DB) {
 			"name":           name,
 			"description":    desc,
 			"active":         active,
-			"available":      available,
+			"available":      active, // Map active to available for frontend compatibility
 			"video_approved": videoApproved,
-			"livemode":       livemode,
-			"created_at":     createdAt.Format("2006-01-02 15:04:05"),
-			"updated_at":     updatedAt.Format("2006-01-02 15:04:05"),
+			"livemode":       true,   // V2 only stores live mode data
+			"created_at":     createdAtStr,
+			"updated_at":     updatedAtStr,
 			"price":          priceInfo,
-			"legacy":         legacyProduct,
+			"legacy":         isLegacy,
 		}
+		productMap[id] = product
+	}
+
+	// Convert map to slice
+	var products []map[string]interface{}
+	for _, product := range productMap {
 		products = append(products, product)
 	}
 
 	// Group products by status
-	videoApproved := []map[string]interface{}{}
-	active := []map[string]interface{}{}
-	inactive := []map[string]interface{}{}
+	videoApprovedList := []map[string]interface{}{}
+	activeList := []map[string]interface{}{}
+	inactiveList := []map[string]interface{}{}
 
 	for _, product := range products {
 		if product["video_approved"].(bool) {
-			videoApproved = append(videoApproved, product)
+			videoApprovedList = append(videoApprovedList, product)
 		} else if product["active"].(bool) {
-			active = append(active, product)
+			activeList = append(activeList, product)
 		} else {
-			inactive = append(inactive, product)
+			inactiveList = append(inactiveList, product)
 		}
 	}
 
-	log.Printf("✅ Retrieved %d products: %d video-approved, %d active, %d inactive",
-		len(products), len(videoApproved), len(active), len(inactive))
+	log.Printf("✅ Retrieved %d products from V2: %d video-approved, %d active, %d inactive",
+		len(products), len(videoApprovedList), len(activeList), len(inactiveList))
 
 	c.JSON(http.StatusOK, gin.H{
 		"products": gin.H{
-			"video_approved": videoApproved,
-			"active":         active,
-			"inactive":       inactive,
+			"video_approved": videoApprovedList,
+			"active":         activeList,
+			"inactive":       inactiveList,
 		},
 		"total_count": len(products),
 		"counts": gin.H{
-			"video_approved": len(videoApproved),
-			"active":         len(active),
-			"inactive":       len(inactive),
+			"video_approved": len(videoApprovedList),
+			"active":         len(activeList),
+			"inactive":       len(inactiveList),
 		},
+		"source": "stripe_products_v2", // Indicate data source
 	})
 }
 
 // updateProductVideoApproval toggles the video_approved status for a product
+// ✅ UPDATED: Now updates stripe_products_v2 (not legacy stripe_products)
 func updateProductVideoApproval(c *gin.Context, db *database.DB) {
 	productID := c.Param("id")
 
@@ -1931,12 +1909,12 @@ func updateProductVideoApproval(c *gin.Context, db *database.DB) {
 		return
 	}
 
-	log.Printf("🔧 Updating video approval for product %s to %v", productID, request.VideoApproved)
+	log.Printf("🔧 Updating video approval for product %s to %v (V2 table)", productID, request.VideoApproved)
 
-	// Update the product
+	// Update the product in V2 table
 	query := `
-		UPDATE stripe_products 
-		SET video_approved = $1, updated_at = NOW()
+		UPDATE stripe_products_v2 
+		SET video_approved = $1, last_synced_at = NOW()
 		WHERE id = $2
 		RETURNING id, name, video_approved
 	`
@@ -1947,41 +1925,44 @@ func updateProductVideoApproval(c *gin.Context, db *database.DB) {
 
 	err := db.DB.QueryRow(query, request.VideoApproved, productID).Scan(&id, &name, &videoApproved)
 	if err != nil {
-		log.Printf("❌ Error updating product video approval: %v", err)
+		log.Printf("❌ Error updating product video approval in V2: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to update product video approval",
 		})
 		return
 	}
 
-	log.Printf("✅ Updated product %d (%s) video_approved to %v", id, name, videoApproved)
+	log.Printf("✅ Updated product %d (%s) video_approved to %v in V2 table", id, name, videoApproved)
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":             id,
 		"name":           name,
 		"video_approved": videoApproved,
 		"message":        fmt.Sprintf("Product '%s' video approval updated to %v", name, videoApproved),
+		"source":         "stripe_products_v2",
 	})
 }
 
 // updateLegacyProducts marks products older than 2 years as legacy
+// updateLegacyProducts marks old products as legacy in V2 tables
+// ✅ UPDATED: Now updates stripe_products_v2 (not legacy stripe_products)
 func updateLegacyProducts(c *gin.Context, db *database.DB) {
-	log.Printf("🕰️ Updating legacy products...")
+	log.Printf("🕰️ Updating legacy products in V2 tables...")
 
 	// Update products older than 2 years to be legacy
 	cutoffDate := time.Now().AddDate(-2, 0, 0)
 
 	query := `
-		UPDATE stripe_products 
-		SET legacy_product = true 
-		WHERE created_at < $1 AND legacy_product = false
+		UPDATE stripe_products_v2 
+		SET is_legacy = true, last_synced_at = NOW()
+		WHERE stripe_created_at < $1 AND is_legacy = false
 	`
 
 	result, err := db.DB.Exec(query, cutoffDate)
 	if err != nil {
-		log.Printf("❌ Failed to update legacy products: %v", err)
+		log.Printf("❌ Failed to update legacy products in V2: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to update legacy products",
+			"error": "Failed to update legacy products in V2",
 		})
 		return
 	}
@@ -1992,11 +1973,12 @@ func updateLegacyProducts(c *gin.Context, db *database.DB) {
 		rowsAffected = 0
 	}
 
-	log.Printf("✅ Updated %d products to legacy status", rowsAffected)
+	log.Printf("✅ Updated %d products to legacy status in V2", rowsAffected)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":       "Legacy products updated successfully",
 		"updated_count": rowsAffected,
 		"cutoff_date":   cutoffDate.Format("2006-01-02"),
+		"source":        "stripe_products_v2",
 	})
 }
