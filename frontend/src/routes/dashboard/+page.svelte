@@ -453,12 +453,39 @@
 					{/if}
 				</div>
 			</div>
-		{:else if activeTab === 'subscription'}
-			<!-- Subscription Tab Content -->
-			<div class="tab-content">
-				<SubscriptionManagement embedded={true} />
+	{:else if activeTab === 'subscription'}
+		<!-- Subscription Tab Content -->
+		<div class="tab-content">
+			<SubscriptionManagement embedded={true} />
+			
+			<!-- Stripe Customer Portal Access -->
+			<div class="stripe-portal-section glass">
+				<div class="portal-content">
+					<div class="portal-icon">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
+							<line x1="1" y1="10" x2="23" y2="10"/>
+						</svg>
+					</div>
+					<h3>Manage Billing & Payment Methods</h3>
+					<p>Access the Stripe Customer Portal to update your payment methods, view invoices, and manage your billing details.</p>
+					<a 
+						href="https://billing.stripe.com/p/login/bJe00jcaW9wU3Vf9gU2VG00" 
+						target="_blank" 
+						rel="noopener noreferrer"
+						class="btn btn-stripe"
+					>
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+							<polyline points="15 3 21 3 21 9"/>
+							<line x1="10" y1="14" x2="21" y2="3"/>
+						</svg>
+						Open Stripe Portal
+					</a>
+					<p class="portal-note">Opens in a new tab for security</p>
+				</div>
 			</div>
-		
+		</div>
 		{:else if activeTab === 'advertiser'}
 			<!-- Advertiser Tab Content -->
 			<div class="tab-content">
@@ -1067,5 +1094,86 @@
 		transform: translateY(-2px);
 		box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
 		color: var(--primary-bom-dark);
+	}
+
+	/* Stripe Portal Section */
+	.stripe-portal-section {
+		margin-top: 2rem;
+		max-width: 600px;
+		margin-left: auto;
+		margin-right: auto;
+		border-radius: 20px;
+		padding: 2rem;
+		background: linear-gradient(145deg, rgba(99, 91, 255, 0.1), rgba(99, 91, 255, 0.05));
+		border: 1px solid rgba(99, 91, 255, 0.2);
+	}
+
+	.portal-content {
+		text-align: center;
+	}
+
+	.portal-icon {
+		width: 64px;
+		height: 64px;
+		margin: 0 auto 1.5rem;
+		background: linear-gradient(135deg, #635bff, #8b7fff);
+		border-radius: 16px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: white;
+	}
+
+	.portal-icon svg {
+		width: 32px;
+		height: 32px;
+	}
+
+	.portal-content h3 {
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: var(--text-primary);
+		margin-bottom: 0.75rem;
+	}
+
+	.portal-content p {
+		color: var(--text-secondary);
+		font-size: 0.9rem;
+		line-height: 1.6;
+		margin-bottom: 1.5rem;
+	}
+
+	.btn-stripe {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.875rem 1.75rem;
+		background: linear-gradient(135deg, #635bff, #8b7fff);
+		color: white;
+		border: none;
+		border-radius: 12px;
+		font-size: 1rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.3s ease;
+		text-decoration: none;
+	}
+
+	.btn-stripe:hover {
+		background: linear-gradient(135deg, #5349ff, #7a6aff);
+		transform: translateY(-2px);
+		box-shadow: 0 8px 20px rgba(99, 91, 255, 0.3);
+	}
+
+	.btn-stripe svg {
+		width: 18px;
+		height: 18px;
+	}
+
+	.portal-note {
+		font-size: 0.75rem !important;
+		color: var(--text-muted) !important;
+		margin-top: 1rem !important;
+		margin-bottom: 0 !important;
 	}
 </style> 
