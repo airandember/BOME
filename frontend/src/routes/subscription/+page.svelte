@@ -387,6 +387,31 @@
 		};
 		return itemNames[Number(itemId)] || `Item ${itemId}`;
 	};
+
+	/**
+	 * Detects seasonal themes from plan features
+	 * Features format: ["season:", "Christmas"] or ["season:", "Easter"], etc.
+	 * Returns CSS class name for the season, or empty string if no season
+	 */
+	const getSeasonClass = (plan: PublicSubscriptionPlan): string => {
+		if (!plan.features || !Array.isArray(plan.features)) return '';
+		
+		// Look for season indicator
+		const hasSeasonMarker = plan.features.some(f => 
+			f.toLowerCase().includes('season:') || f.toLowerCase() === 'season'
+		);
+		
+		if (!hasSeasonMarker) return '';
+		
+		// Check for specific seasons
+		const features = plan.features.map(f => f.toLowerCase());
+		if (features.includes('christmas')) return 'christmas-theme';
+		if (features.includes('easter')) return 'easter-theme';
+		if (features.includes('halloween')) return 'halloween-theme';
+		if (features.includes('valentines') || features.includes("valentine's")) return 'valentines-theme';
+		
+		return '';
+	};
 </script>
 
 <svelte:head>
@@ -433,17 +458,21 @@
 									{@const monthlyBreakdown = plan.interval === 'year' ? getMonthlyBreakdown(plan) : null}
 									{@const savings = plan.interval === 'year' ? calculateAnnualSavings(plan) : null}
 									
-									<div class="outerNew plan-outer promotional">
-										<!-- Floating % OFF badge -->
-										{#if savings && savings.percentage > 0}
-											<div class="discount-tab promo">
-												<span class="discount-value">{savings.percentage}% OFF</span>
-											</div>
-										{/if}
-										
+								<div class="outerNew plan-outer promotional {getSeasonClass(plan)}">
+									<!-- Floating % OFF badge -->
+									{#if savings && savings.percentage > 0}
+										<div class="discount-tab promo">
+											<span class="discount-value">{savings.percentage}% OFF</span>
+										</div>
+									{/if}
+									
+									{#if getSeasonClass(plan) === 'christmas-theme'}
+										<div class="promo-badge christmas-badge">🎄 Holiday Special</div>
+									{:else}
 										<div class="promo-badge">Limited Time</div>
-										
-										<div class="cardNew plan-card promotional">
+									{/if}
+									
+									<div class="cardNew plan-card promotional {getSeasonClass(plan)}">
 											<div class="rayNew"></div>
 											
 											<div class="plan-content">
@@ -530,20 +559,22 @@
 								{@const monthlyBreakdown = plan.interval === 'year' ? getMonthlyBreakdown(plan) : null}
 								{@const savings = plan.interval === 'year' ? calculateAnnualSavings(plan) : null}
 								
-								<!-- Animated card wrapper -->
-								<div class="outerNew plan-outer">
-									<!-- Floating % OFF badge (like a card sticking up) -->
-									{#if savings && savings.percentage > 0}
-										<div class="discount-tab">
-											<span class="discount-value">{savings.percentage}% OFF</span>
-										</div>
-									{/if}
-									
-									{#if plan.popular}
-										<div class="popular-badge">Most Popular</div>
-									{/if}
-									
-									<div class="cardNew plan-card">
+							<!-- Animated card wrapper -->
+							<div class="outerNew plan-outer {getSeasonClass(plan)}">
+								<!-- Floating % OFF badge (like a card sticking up) -->
+								{#if savings && savings.percentage > 0}
+									<div class="discount-tab">
+										<span class="discount-value">{savings.percentage}% OFF</span>
+									</div>
+								{/if}
+								
+								{#if getSeasonClass(plan) === 'christmas-theme'}
+									<div class="popular-badge christmas-badge">🎄 Holiday Special</div>
+								{:else if plan.popular}
+									<div class="popular-badge">Most Popular</div>
+								{/if}
+								
+								<div class="cardNew plan-card {getSeasonClass(plan)}">
 										<div class="rayNew"></div>
 										
 										<!-- Card content -->
@@ -1104,6 +1135,152 @@
 	.discount-tab.promo::after {
 		border-top-color: #daa520;
 	}
+
+	/* ===============================================
+	   🎄 CHRISTMAS THEME STYLES
+	   =============================================== */
+	
+	/* Christmas card outer glow */
+	.plan-outer.christmas-theme::before {
+		background: radial-gradient(circle at center, rgba(220, 20, 60, 0.3), rgba(34, 139, 34, 0.2), transparent 70%);
+	}
+
+	/* Christmas card styling */
+	.plan-card.christmas-theme {
+		background: linear-gradient(145deg, #1a2e1a, #0f1f0f) !important;
+		border-color: #c41e3a !important;
+		position: relative;
+		overflow: hidden;
+	}
+
+	/* Snowflakes animation overlay */
+	.plan-card.christmas-theme::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-image: 
+			url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white' opacity='0.1'%3E%3Cpath d='M12 0L14 8H22L15 13L18 22L12 17L6 22L9 13L2 8H10L12 0Z'/%3E%3C/svg%3E");
+		background-size: 30px 30px;
+		opacity: 0.05;
+		pointer-events: none;
+		animation: snowfall 20s linear infinite;
+	}
+
+	@keyframes snowfall {
+		0% {
+			background-position: 0 0, 50px 50px;
+		}
+		100% {
+			background-position: 50px 100px, 100px 150px;
+		}
+	}
+
+	/* Christmas color accents */
+	.plan-outer.christmas-theme .plan-header h1 {
+		background: linear-gradient(135deg, #ff6b6b, #ffffff, #4ecdc4);
+		background-size: 200% 200%;
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
+		background-clip: text;
+		animation: christmasGlow 3s ease-in-out infinite;
+	}
+
+	@keyframes christmasGlow {
+		0%, 100% {
+			background-position: 0% 50%;
+		}
+		50% {
+			background-position: 100% 50%;
+		}
+	}
+
+	/* Christmas pricing highlight */
+	.plan-outer.christmas-theme .hero-price {
+		color: #ff6b6b;
+		text-shadow: 0 0 10px rgba(255, 107, 107, 0.3);
+	}
+
+	/* Christmas badge */
+	.christmas-badge {
+		background: linear-gradient(135deg, #c41e3a, #8b0000) !important;
+		animation: christmasPulse 2s ease-in-out infinite;
+	}
+
+	@keyframes christmasPulse {
+		0%, 100% {
+			box-shadow: 0 4px 6px rgba(196, 30, 58, 0.3);
+		}
+		50% {
+			box-shadow: 0 4px 20px rgba(196, 30, 58, 0.6), 0 0 30px rgba(34, 139, 34, 0.3);
+		}
+	}
+
+	/* Christmas discount tab */
+	.plan-outer.christmas-theme .discount-tab {
+		background: linear-gradient(135deg, #c41e3a 0%, #228b22 100%);
+		color: white;
+	}
+
+	.plan-outer.christmas-theme .discount-tab::after {
+		border-top-color: #228b22;
+	}
+
+	/* Christmas button styling */
+	.plan-outer.christmas-theme .btn-cta {
+		background: linear-gradient(135deg, #c41e3a, #8b0000);
+		border: none;
+		position: relative;
+		overflow: hidden;
+	}
+
+	.plan-outer.christmas-theme .btn-cta::before {
+		content: '🎁';
+		position: absolute;
+		left: 15px;
+		font-size: 1rem;
+	}
+
+	.plan-outer.christmas-theme .btn-cta:hover {
+		background: linear-gradient(135deg, #d42c4a, #a41010);
+		box-shadow: 0 4px 15px rgba(196, 30, 58, 0.4);
+	}
+
+	/* Christmas offers section */
+	.plan-outer.christmas-theme .offers-section {
+		background: rgba(196, 30, 58, 0.1);
+		border-color: rgba(196, 30, 58, 0.3);
+	}
+
+	.plan-outer.christmas-theme .offers-section h4 {
+		color: #ff6b6b;
+	}
+
+	/* Floating snowflakes decoration (top corners) */
+	.plan-outer.christmas-theme::after {
+		content: '❄️';
+		position: absolute;
+		top: 25px;
+		right: 20px;
+		font-size: 1.5rem;
+		opacity: 0.8;
+		animation: snowflakeFloat 3s ease-in-out infinite;
+	}
+
+	@keyframes snowflakeFloat {
+		0%, 100% {
+			transform: translateY(0) rotate(0deg);
+		}
+		50% {
+			transform: translateY(-5px) rotate(180deg);
+		}
+	}
+
+	/* ===============================================
+	   END CHRISTMAS THEME STYLES
+	   =============================================== */
 
 	.popular-badge,
 	.promo-badge {

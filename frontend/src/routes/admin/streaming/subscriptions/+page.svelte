@@ -338,17 +338,24 @@
 	async function updateSubscriptionPlan() {
 		if (!selectedPlan) return;
 		
+		// Capture plan ID before any state changes (Svelte 5 reactivity fix)
+		const planIdToUpdate = selectedPlan.id;
+		
 		try {
 			isSubmitting = true;
 			const updatedPlan = await StreamingSubscriptionService.update({
-				id: selectedPlan.id,
+				id: planIdToUpdate,
 				...formData
 			});
+			
+			// Update state FIRST with immutable update (Svelte 5)
+			subscriptionPlans = subscriptionPlans.map(plan => 
+				plan.id === planIdToUpdate ? updatedPlan : plan
+			);
+			
+			// Then close modal and reset
 			showEditModal = false;
 			resetForm();
-			subscriptionPlans = subscriptionPlans.map(plan => 
-				plan.id === selectedPlan?.id ? updatedPlan : plan
-			);
 			showToast('Subscription plan updated successfully', 'success');
 		} catch (err) {
 			console.error('Error updating subscription plan:', err);
