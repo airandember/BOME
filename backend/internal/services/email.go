@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -57,13 +58,43 @@ func NewEmailService(db *database.DB) *EmailService {
 }
 
 // isDevelopmentMode checks if we're in development mode
+// Returns true ONLY for truly local development - beta/staging environments should send real emails
 func (s *EmailService) isDevelopmentMode() bool {
-	// Check if we're running on localhost or development environment
+	env := os.Getenv("ENVIRONMENT")
 	baseURL := s.getBaseURL()
-	return strings.Contains(baseURL, "localhost") || strings.Contains(baseURL, "127.0.0.1") || strings.Contains(baseURL, "bome.test")
+
+	// Check if running on localhost (always dev mode regardless of ENVIRONMENT setting)
+	isLocalhost := strings.Contains(baseURL, "localhost") || strings.Contains(baseURL, "127.0.0.1")
+
+	// If explicitly set to development AND running locally, it's dev mode
+	// This prevents beta/staging environments with ENVIRONMENT=development from skipping emails
+	if env == "development" || env == "dev" || env == "local" {
+		if isLocalhost {
+			log.Printf("🔧 [EMAIL] Local development mode: ENVIRONMENT=%s, baseURL=%s", env, baseURL)
+			return true
+		}
+		// Running on a real server with development env - likely beta/staging
+		// Send real emails but log a warning
+		log.Printf("⚠️ [EMAIL] ENVIRONMENT=%s but running on %s - sending real emails (likely beta/staging)", env, baseURL)
+		return false
+	}
+
+	// Explicit production/staging/beta environments - never skip emails
+	if env == "production" || env == "prod" || env == "staging" || env == "beta" {
+		return false
+	}
+
+	// No ENVIRONMENT set - fall back to URL check only
+	if isLocalhost || strings.Contains(baseURL, "bome.test") {
+		log.Printf("⚠️ [EMAIL] No ENVIRONMENT set, detected local via URL (%s). Set ENVIRONMENT explicitly.", baseURL)
+		return true
+	}
+
+	return false
 }
 
 // sendMockVerificationEmail simulates sending a verification email in development
+// WARNING: This does NOT actually send an email - it only logs the contents
 func (s *EmailService) sendMockVerificationEmail(userID int, email, name string) error {
 	// Generate verification token for database consistency
 	token, err := s.generateToken()
@@ -81,6 +112,8 @@ func (s *EmailService) sendMockVerificationEmail(userID int, email, name string)
 	verificationURL := fmt.Sprintf("%s/api/v1/auth/verify-email-link?token=%s&user_id=%d", baseURL, token, userID)
 
 	// Log the mock email instead of sending
+	log.Printf("⚠️ [DEV MODE] ================== EMAIL NOT SENT (MOCK) ==================")
+	log.Printf("💡 [DEV MODE] To send real emails, set ENVIRONMENT=production")
 	log.Printf("📧 [MOCK-EMAIL] ==================== VERIFICATION EMAIL ====================")
 	log.Printf("📧 [MOCK-EMAIL] To: %s", email)
 	log.Printf("📧 [MOCK-EMAIL] Subject: 🔐 Verify Your Email - Book of Mormon Evidence")
@@ -796,7 +829,7 @@ func (s *EmailService) VerifyEmail(token string) error {
 
 // SendPasswordResetEmail sends a password reset email
 func (s *EmailService) SendPasswordResetEmail(name, email, token string) error {
-	log.Printf("🔍 [EMAIL] Sending password reset email to: %s", email)
+	log.Printf("🔍 [EMAIL] SendPasswordResetEmail called for: %s", email)
 
 	// Use frontend URL (NOT backend API URL) since reset-password is a frontend page
 	frontendBaseURL := s.getFrontendBaseURL()
@@ -804,8 +837,10 @@ func (s *EmailService) SendPasswordResetEmail(name, email, token string) error {
 
 	// In development mode, just log the email instead of sending
 	if s.isDevelopmentMode() {
-		log.Printf("📧 [EMAIL] [DEV MODE] Password reset email to %s with token %s", email, token[:8]+"...")
-		log.Printf("🔗 Reset URL: %s", resetURL)
+		log.Printf("⚠️ [EMAIL] [DEV MODE] SKIPPING password reset email to %s (email NOT sent)", email)
+		log.Printf("📧 [EMAIL] [DEV MODE] Token: %s...", token[:8])
+		log.Printf("🔗 [EMAIL] [DEV MODE] Reset URL (for testing): %s", resetURL)
+		log.Printf("💡 [EMAIL] [DEV MODE] To send real emails, set ENVIRONMENT=production")
 		return nil
 	}
 
