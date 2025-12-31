@@ -64,9 +64,12 @@
 		const result = await auth.login(email, password);
 		
 		if (result.success) {
-			// 🔗 CONTEXT PRESERVATION: If user was subscribing, redirect back to subscription
+			// 🔗 CONTEXT PRESERVATION: If user was subscribing, redirect back with auto_checkout
 			if (planId && returnUrl === '/subscription') {
 				goto(`/subscription?auto_checkout=true&plan_id=${planId}`);
+			} else if (planId && returnUrl.startsWith('/secretsub/')) {
+				// 🔐 Secret promo subscription flow - redirect back with auto_checkout
+				goto(`${returnUrl}?auto_checkout=true`);
 			} else if (isAdmin()) {
 				goto('/admin');
 			} else {

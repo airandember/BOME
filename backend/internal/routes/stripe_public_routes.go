@@ -162,6 +162,78 @@ func SetupAuthenticatedStripeRoutes(v1 *gin.RouterGroup, db *database.DB, stripe
 			})
 		})
 
+		// 🔐 SECRET PROMO: Create checkout session for hidden promo plans
+		// This endpoint is specifically for the /secretsub/[code] page
+		// Key differences from /checkout-session:
+		// - Does NOT require plan.is_active = true (allows hidden promos)
+		// - Uses stripe_price_id directly from DB (exact price, not first active)
+		authenticatedStripe.POST("/secret-checkout-session", func(c *gin.Context) {
+			var req struct {
+				PlanID    string `json:"plan_id" binding:"required"`
+				ReturnURL string `json:"return_url" binding:"required"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request", "details": err.Error()})
+				return
+			}
+
+			// Get user from context (set by AuthRequired middleware)
+			userID, exists := c.Get("user_id")
+			if !exists {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+				return
+			}
+
+			userIDInt, ok := userID.(int)
+			if !ok {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID type"})
+				return
+			}
+
+			log.Printf("🔐 [SECRET-PROMO] Creating checkout for user %d, plan %s", userIDInt, req.PlanID)
+
+			// 🔒 CHECK: Prevent users with active subscriptions from creating new ones
+			linkingService := services.NewCustomerLinkingService(db)
+			userSubService := services.NewUserSubscriptionService(db, linkingService)
+			canSubscribe, message, err := userSubService.CanUserSubscribe(userIDInt)
+			if err != nil {
+				log.Printf("❌ [SECRET-PROMO] Failed to check subscription eligibility: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify subscription status"})
+				return
+			}
+
+			if !canSubscribe {
+				log.Printf("🚫 [SECRET-PROMO] User %d blocked: %s", userIDInt, message)
+
+				var supportEmail string
+				err = db.DB.QueryRow("SELECT value FROM public_settings WHERE key = 'support_email'").Scan(&supportEmail)
+				if err != nil || supportEmail == "" {
+					supportEmail = "support@bookofmormonevidence.org"
+				}
+
+				c.JSON(http.StatusConflict, gin.H{
+					"error":         "Cannot create new subscription",
+					"message":       "You already have an active subscription",
+					"support_email": supportEmail,
+					"action":        "redirect_dashboard",
+				})
+				return
+			}
+
+			// 🔐 Use the SECRET PROMO checkout method
+			clientSecret, err := stripePublicService.CreateSecretPromoCheckoutSession(req.PlanID, req.ReturnURL, fmt.Sprintf("%v", userIDInt))
+			if err != nil {
+				log.Printf("❌ [SECRET-PROMO] Failed to create checkout session: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create checkout session", "details": err.Error()})
+				return
+			}
+
+			log.Printf("✅ [SECRET-PROMO] Checkout session created for user %d", userIDInt)
+			c.JSON(http.StatusOK, gin.H{
+				"client_secret": clientSecret,
+			})
+		})
+
 		// Verify checkout session status and grant immediate access
 		authenticatedStripe.GET("/session/:session_id", func(c *gin.Context) {
 			sessionID := c.Param("session_id")
