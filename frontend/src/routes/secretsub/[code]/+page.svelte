@@ -114,10 +114,10 @@
 			sessionStorage.setItem('selected_plan_id', PROMO_CONFIG.planId);
 			sessionStorage.setItem('selected_plan_name', PROMO_CONFIG.plan.name);
 			
-			showToast(`Please sign in to claim your ${PROMO_CONFIG.plan.name} offer`, 'info');
+			showToast(`Please sign up to claim your ${PROMO_CONFIG.plan.name} offer`, 'info');
 			
 			// Redirect to login with return context
-			goto(`/auth/login?return=${encodeURIComponent(`/secretsub/${urlCode}`)}&plan_id=secret`);
+			goto(`/auth/register?return=${encodeURIComponent(`/secretsub/${urlCode}`)}&plan_id=secret`);
 			return;
 		}
 
@@ -327,9 +327,9 @@
 			</header>
 
 			{#if !isAuthenticated}
-				<!--<div class="auth-notice">
-					<p>Sign in or create an account to claim this exclusive offer!</p>
-				</div>-->
+				<div class="auth-notice">
+					<p class="text-center">Sign up with the email you recieved the link with to claim this exclusive offer!</p>
+				</div>
 			{/if}
 
 			<div class="plan-showcase">
@@ -380,7 +380,7 @@
 								on:click={handleSubscribe}
 							>
 								{#if !isAuthenticated}
-									Sign In to {PROMO_CONFIG.ctaText}
+									Sign Up to {PROMO_CONFIG.ctaText}
 								{:else}
 									{PROMO_CONFIG.ctaText}
 								{/if}
@@ -461,6 +461,12 @@
 <Footer />
 
 <style>
+
+	.text-center {
+		color: var(--text-primary);
+		text-align: center;
+	}
+
 	.secret-sub-page {
 		min-height: 100vh;
 		background: var(--bg-primary);
