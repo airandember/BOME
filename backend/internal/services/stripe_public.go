@@ -263,6 +263,167 @@ func (s *StripePublicService) CreateEmbeddedCheckoutSession(planID, returnURL, u
 	return clientSecretStr, nil
 }
 
+// CreateSecretPromoCheckoutSession creates a checkout session for secret/hidden promo plans
+// This endpoint is specifically for plans that are not shown on the public subscription page
+// Key differences from CreateEmbeddedCheckoutSession:
+// - Does NOT require is_active = true (allows hidden promo plans)
+// - Uses stripe_price_id directly from database (ensures exact price, not first active)
+// - Only checks is_deleted = false (plan must not be deleted)
+func (s *StripePublicService) CreateSecretPromoCheckoutSession(planID, returnURL, userID string) (string, error) {
+	if !s.isEnabled {
+		return "", errors.New("Stripe public service is not enabled")
+	}
+
+	log.Printf("🔐 [SECRET-PROMO] Creating checkout session for secret plan %s, user %s", planID, userID)
+
+	// Get the encrypted secret key
+	encryptedKey, err := s.db.GetSecureSetting("stripe_secret_key")
+	if err != nil || encryptedKey == "" {
+		return "", errors.New("stripe secret key not configured")
+	}
+
+	cryptoService := GetGlobalCryptoService()
+	if cryptoService == nil {
+		log.Printf("❌ [SECRET-PROMO] Crypto service not available")
+		return "", errors.New("crypto service not available")
+	}
+
+	secretKey, err := cryptoService.DecryptString(encryptedKey)
+	if err != nil {
+		log.Printf("❌ [SECRET-PROMO] Failed to decrypt key: %v", err)
+		return "", fmt.Errorf("failed to decrypt stripe key: %w", err)
+	}
+
+	stripe.Key = secretKey
+
+	// 🔐 SECRET PROMO: Query does NOT check is_active, only is_deleted
+	// This allows hidden promo plans to still be purchasable via direct link
+	log.Printf("🔐 [SECRET-PROMO] Looking up plan details for plan ID: %s (type: %T)", planID, planID)
+
+	// DEBUG: First, let's see what ID 15 actually contains
+	var debugID int
+	var debugName, debugPriceID string
+	debugQuery := `SELECT id, name, stripe_price_id FROM subscription_plans WHERE id = 15`
+	debugErr := s.db.DB.QueryRow(debugQuery).Scan(&debugID, &debugName, &debugPriceID)
+	if debugErr != nil {
+		log.Printf("ID: %d")
+		log.Printf("🔍 [DEBUG] ID 15 query error: %v", debugErr)
+	} else {
+		log.Printf("ID: %d")
+		log.Printf("🔍 [DEBUG] ID 15 direct query: id=%d, name=%s, price_id=%s", debugID, debugName, debugPriceID)
+	}
+
+	planQuery := `SELECT stripe_price_id, stripe_product_id, name, price, currency FROM subscription_plans WHERE id = $1 AND is_deleted = false`
+
+	var stripePriceID, stripeProductID, planName, currency string
+	var price float64
+
+	err = s.db.DB.QueryRow(planQuery, planID).Scan(&stripePriceID, &stripeProductID, &planName, &price, &currency)
+	if err != nil {
+		log.Printf("❌ [SECRET-PROMO] Failed to get plan details: %v", err)
+		return "", fmt.Errorf("secret promo plan not found: %w", err)
+	}
+
+	log.Printf("🔐 [SECRET-PROMO] Found plan: %s, Price ID: %s, Product ID: %s, Price: %.2f %s",
+		planName, stripePriceID, stripeProductID, price, currency)
+
+	// 🔐 SECRET PROMO: Use stripe_price_id directly from database
+	// This ensures we use the EXACT price configured, not just any active price on the product
+	if stripePriceID == "" || len(stripePriceID) < 6 || stripePriceID[:6] != "price_" {
+		log.Printf("❌ [SECRET-PROMO] Plan %s has invalid stripe_price_id: %s", planName, stripePriceID)
+		return "", errors.New("secret promo plan is not properly configured - missing valid Stripe price ID")
+	}
+
+	log.Printf("✅ [SECRET-PROMO] Using configured price ID: %s", stripePriceID)
+
+	// Get user email
+	userQuery := `SELECT email FROM users WHERE id = $1`
+	var userEmail string
+	err = s.db.DB.QueryRow(userQuery, userID).Scan(&userEmail)
+	if err != nil {
+		log.Printf("❌ [SECRET-PROMO] Failed to get user email for ID %s: %v", userID, err)
+		return "", fmt.Errorf("user not found: %w", err)
+	}
+
+	log.Printf("🔐 [SECRET-PROMO] Using customer email: %s", userEmail)
+
+	// Check for existing Stripe customer
+	var customerID string
+	customerParams := &stripe.CustomerListParams{}
+	customerParams.Filters.AddFilter("email", "", userEmail)
+	customerParams.Filters.AddFilter("limit", "", "1")
+
+	customerIter := customer.List(customerParams)
+	if customerIter.Next() {
+		existingCustomer := customerIter.Customer()
+		customerID = existingCustomer.ID
+		log.Printf("✅ [SECRET-PROMO] Reusing existing customer: %s", customerID)
+	} else {
+		log.Printf("ℹ️  [SECRET-PROMO] No existing customer found - Stripe will create one")
+	}
+
+	// Create checkout session with the EXACT price from database
+	params := &stripe.CheckoutSessionParams{
+		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
+		LineItems: []*stripe.CheckoutSessionLineItemParams{
+			{
+				Price:    stripe.String(stripePriceID), // Use exact price from database
+				Quantity: stripe.Int64(1),
+			},
+		},
+		AllowPromotionCodes: stripe.Bool(true), // 🎟️ Enable promo code input field
+	}
+
+	if customerID != "" {
+		params.Customer = stripe.String(customerID)
+	} else {
+		params.CustomerEmail = stripe.String(userEmail)
+	}
+
+	params.AddExtra("ui_mode", "embedded")
+	params.AddExtra("return_url", returnURL)
+
+	// Add metadata to track this as a secret promo
+	params.AddMetadata("user_id", userID)
+	params.AddMetadata("plan_id", planID)
+	params.AddMetadata("checkout_type", "secret_promo")
+
+	sess, err := session.New(params)
+	if err != nil {
+		log.Printf("❌ [SECRET-PROMO] Failed to create checkout session: %v", err)
+		return "", fmt.Errorf("failed to create checkout session: %w", err)
+	}
+
+	log.Printf("✅ [SECRET-PROMO] Checkout session created: %s", sess.ID)
+
+	// Extract client secret from response
+	if sess.LastResponse == nil || sess.LastResponse.RawJSON == nil {
+		log.Printf("❌ [SECRET-PROMO] No raw JSON in session response")
+		return "", errors.New("checkout session missing raw response data")
+	}
+
+	var sessionData map[string]interface{}
+	if err := json.Unmarshal(sess.LastResponse.RawJSON, &sessionData); err != nil {
+		log.Printf("❌ [SECRET-PROMO] Failed to parse session JSON: %v", err)
+		return "", fmt.Errorf("failed to parse session response: %w", err)
+	}
+
+	clientSecret, exists := sessionData["client_secret"]
+	if !exists {
+		log.Printf("❌ [SECRET-PROMO] No client_secret in session data")
+		return "", errors.New("checkout session missing client secret")
+	}
+
+	clientSecretStr, ok := clientSecret.(string)
+	if !ok {
+		log.Printf("❌ [SECRET-PROMO] Client secret is not a string")
+		return "", errors.New("invalid client secret format")
+	}
+
+	log.Printf("✅ [SECRET-PROMO] Returning client secret for secret promo checkout")
+	return clientSecretStr, nil
+}
+
 // GetCustomerPortalURL creates a customer portal session and returns the URL
 func (s *StripePublicService) GetCustomerPortalURL(customerID, returnURL string) (string, error) {
 	if !s.isEnabled {
@@ -427,7 +588,7 @@ func (s *StripePublicService) VerifyAndGrantAccess(sessionID string, userID int)
 			log.Printf("✅ [SESSION-GRANT] Customer %s linked to user %d", customerID, userID)
 		}
 	} else if linkedUser.ID != userID {
-		log.Printf("⚠️  [SESSION-GRANT] Customer %s already linked to different user %d (session user: %d)", 
+		log.Printf("⚠️  [SESSION-GRANT] Customer %s already linked to different user %d (session user: %d)",
 			customerID, linkedUser.ID, userID)
 		// Continue anyway - the user viewing the session might be the correct one
 	}
