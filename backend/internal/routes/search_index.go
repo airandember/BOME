@@ -256,20 +256,26 @@ func getSearchIndexStats(db *database.DB) gin.HandlerFunc {
 
 		// Check if search index file exists and get its info
 		var fileInfo map[string]interface{}
+		var lastGenerated interface{}
 		indexPath := getSearchIndexPath()
 
 		if stat, err := os.Stat(indexPath); err == nil {
+			modTime := stat.ModTime()
 			fileInfo = map[string]interface{}{
 				"exists":       true,
 				"size":         stat.Size(),
 				"sizeKB":       stat.Size() / 1024,
-				"lastModified": stat.ModTime().Format("2006-01-02 15:04:05"),
-				"age":          time.Since(stat.ModTime()).String(),
+				"sizeMB":       fmt.Sprintf("%.2f", float64(stat.Size())/(1024*1024)),
+				"lastModified": modTime.Format("2006-01-02 15:04:05"),
+				"age":          time.Since(modTime).String(),
 			}
+			// Use file modification time as lastGenerated
+			lastGenerated = modTime.Format("2006-01-02 15:04:05")
 		} else {
 			fileInfo = map[string]interface{}{
 				"exists": false,
 			}
+			lastGenerated = nil
 		}
 
 		c.JSON(http.StatusOK, gin.H{
@@ -278,7 +284,7 @@ func getSearchIndexStats(db *database.DB) gin.HandlerFunc {
 				"totalVideos":   videoCount,
 				"searchIndex":   fileInfo,
 				"indexPath":     indexPath,
-				"lastGenerated": nil, // Could be enhanced to track this
+				"lastGenerated": lastGenerated,
 			},
 		})
 	}
@@ -308,21 +314,32 @@ func downloadSearchIndex() gin.HandlerFunc {
 
 // getSearchIndexPath returns the path where the search index should be stored
 func getSearchIndexPath() string {
-	// Check for custom path
+	// Check for custom path from environment variable (PREFERRED METHOD)
 	if customPath := os.Getenv("SEARCH_INDEX_PATH"); customPath != "" {
+		fmt.Printf("📁 [SEARCH-INDEX] Using SEARCH_INDEX_PATH from environment: %s\n", customPath)
 		return customPath
 	}
 
-	// Default paths to try
+	fmt.Printf("⚠️ [SEARCH-INDEX] SEARCH_INDEX_PATH not set, trying fallback paths...\n")
+
+	// Default paths to try - MUST MATCH search_index_scheduler.go
 	paths := []string{
-		"../frontend/static/search-index.json",
-		"../../frontend/static/search-index.json",
-		"/app/frontend/static/search-index.json",
-		"./search-index.json",
+		"../frontend/static/search-index.json",    // Local development
+		"../../frontend/static/search-index.json", // Alternative local path
+		"/app/frontend/static/search-index.json",  // Docker/container path
+		"./static/search-index.json",              // Same directory static folder
+		"./search-index.json",                     // Fallback to current directory
 	}
 
 	for _, path := range paths {
+		// Check if file exists (not just directory)
+		if _, err := os.Stat(path); err == nil {
+			fmt.Printf("📁 [SEARCH-INDEX] Found existing index at: %s\n", path)
+			return path
+		}
+		// Or check if directory exists for writing
 		if dir := filepath.Dir(path); dirExists(dir) {
+			fmt.Printf("📁 [SEARCH-INDEX] Using path (directory exists): %s\n", path)
 			return path
 		}
 	}

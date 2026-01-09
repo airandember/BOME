@@ -546,6 +546,30 @@
 		</div>
 	</div>
 {:else}
+	<!-- Bunny Stampede Overlay - Shows during conflict check -->
+	{#if checkingConflicts}
+		<div class="bunny-overlay">
+			<div class="bunny-message">
+				<span class="bunny-icon">🐰</span>
+				<span>Checking Bunny.net...</span>
+				<span class="bunny-icon">🐰</span>
+			</div>
+			{#each Array(50) as _, i}
+				<span 
+					class="stampede-bunny" 
+					style="
+						--delay: {Math.random() * 3}s;
+						--duration: {2 + Math.random() * 4}s;
+						--start-y: {Math.random() * 100}vh;
+						--end-y: {Math.random() * 100}vh;
+						--size: {1.5 + Math.random() * 2}rem;
+						--direction: {Math.random() > 0.5 ? 1 : -1};
+					"
+				>🐇</span>
+			{/each}
+		</div>
+	{/if}
+
 	<div class="streaming-page">
 		<!-- Video Stats -->
 		<VideoStats
@@ -651,6 +675,88 @@
 	@media (max-width: 768px) {
 		.streaming-page {
 			padding: 0;
+		}
+	}
+
+	/* ====== Bunny Stampede Overlay ====== */
+	.bunny-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: rgba(0, 0, 0, 0.85);
+		z-index: 9999;
+		overflow: hidden;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.bunny-message {
+		position: relative;
+		z-index: 10000;
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		font-size: 2rem;
+		font-weight: 700;
+		color: white;
+		text-shadow: 0 0 20px rgba(255, 165, 0, 0.8);
+		animation: pulse-glow 1.5s ease-in-out infinite;
+	}
+
+	.bunny-icon {
+		font-size: 3rem;
+		animation: bunny-bounce 0.5s ease-in-out infinite alternate;
+	}
+
+	.bunny-icon:last-child {
+		animation-delay: 0.25s;
+	}
+
+	@keyframes pulse-glow {
+		0%, 100% { text-shadow: 0 0 20px rgba(255, 165, 0, 0.8); }
+		50% { text-shadow: 0 0 40px rgba(255, 165, 0, 1), 0 0 60px rgba(255, 200, 100, 0.5); }
+	}
+
+	@keyframes bunny-bounce {
+		from { transform: translateY(0); }
+		to { transform: translateY(-10px); }
+	}
+
+	/* Individual stampede bunnies */
+	.stampede-bunny {
+		position: absolute;
+		font-size: var(--size, 2rem);
+		animation: stampede var(--duration, 3s) linear var(--delay, 0s) infinite;
+		opacity: 0.9;
+		filter: drop-shadow(0 0 8px rgba(255, 165, 0, 0.6));
+		pointer-events: none;
+	}
+
+	@keyframes stampede {
+		0% {
+			left: calc(-10% * var(--direction, 1) + 50%);
+			top: var(--start-y, 50vh);
+			transform: scaleX(var(--direction, 1)) rotate(0deg);
+			opacity: 0;
+		}
+		10% {
+			opacity: 0.9;
+		}
+		50% {
+			top: calc((var(--start-y, 50vh) + var(--end-y, 50vh)) / 2);
+			transform: scaleX(var(--direction, 1)) rotate(calc(var(--direction, 1) * 5deg));
+		}
+		90% {
+			opacity: 0.9;
+		}
+		100% {
+			left: calc(110% * var(--direction, 1) + 50%);
+			top: var(--end-y, 50vh);
+			transform: scaleX(var(--direction, 1)) rotate(0deg);
+			opacity: 0;
 		}
 	}
 </style> 

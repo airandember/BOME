@@ -1,8 +1,11 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	"bome-backend/internal/database"
@@ -170,75 +173,160 @@ func (s *SearchIndexScheduler) generateSearchIndex() error {
 
 	log.Printf("📥 Found %d videos in database", len(videos))
 
-	// Generate search index structure
+	// Convert videos to optimized search format
+	searchVideos := s.convertVideosToSearchFormat(videos)
+
+	// Generate search index structure with metadata
 	searchIndex := map[string]interface{}{
-		"version":     "1.0",
+		"version":     "2.0",
 		"generatedAt": time.Now().Format(time.RFC3339),
 		"totalVideos": len(videos),
-		"videos":      s.convertVideosToSearchFormat(videos),
+		"videos":      searchVideos,
+		"metadata": map[string]interface{}{
+			"generationTimeMs": 0, // Will be updated after generation
+			"source":           "master_video_list",
+			"indexedFields":    []string{"title", "description", "category", "tags"},
+		},
 	}
 
-	// Here you would write to the frontend static directory
-	// This could be done via:
-	// 1. Direct file write (if frontend is in same container)
-	// 2. API call to frontend service
-	// 3. Shared volume
-	// 4. Cloud storage (S3, etc.)
+	// Write the search index to file
+	indexPath := getSearchIndexOutputPath()
+	log.Printf("📝 Writing search index to: %s", indexPath)
 
-	log.Printf("✅ Search index generated with %d videos (version: %s)", len(videos), searchIndex["version"])
+	// Ensure the directory exists
+	dir := filepath.Dir(indexPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Printf("❌ Failed to create directory %s: %v", dir, err)
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Update generation time in metadata
+	generationTime := time.Since(startTime).Milliseconds()
+	if metadata, ok := searchIndex["metadata"].(map[string]interface{}); ok {
+		metadata["generationTimeMs"] = generationTime
+	}
+
+	// Marshal to COMPACT JSON for production (smaller file = faster load)
+	// Use json.Marshal instead of MarshalIndent for ~30% smaller file size
+	jsonData, err := json.Marshal(searchIndex)
+	if err != nil {
+		log.Printf("❌ Failed to marshal search index: %v", err)
+		return fmt.Errorf("failed to marshal search index: %w", err)
+	}
+
+	// Write to file
+	if err := os.WriteFile(indexPath, jsonData, 0644); err != nil {
+		log.Printf("❌ Failed to write search index file: %v", err)
+		return fmt.Errorf("failed to write search index file: %w", err)
+	}
+
+	// Get file size for logging
+	fileInfo, _ := os.Stat(indexPath)
+	fileSizeKB := int64(0)
+	if fileInfo != nil {
+		fileSizeKB = fileInfo.Size() / 1024
+	}
+
+	log.Printf("✅ Search index written successfully: %d videos, %d KB, %dms generation time", len(videos), fileSizeKB, generationTime)
 	return nil
 }
 
-// convertVideosToSearchFormat converts database videos to search index format
+// getSearchIndexOutputPath returns the path where the search index should be written
+func getSearchIndexOutputPath() string {
+	// Check for custom path from environment variable (PREFERRED METHOD)
+	if customPath := os.Getenv("SEARCH_INDEX_PATH"); customPath != "" {
+		log.Printf("📁 Using SEARCH_INDEX_PATH from environment: %s", customPath)
+		return customPath
+	}
+
+	// Log warning that env var is not set
+	log.Printf("⚠️ SEARCH_INDEX_PATH not set, trying fallback paths...")
+
+	// Try multiple paths in order of preference
+	paths := []string{
+		"../frontend/static/search-index.json",      // Local development
+		"../../frontend/static/search-index.json",   // Alternative local path
+		"/app/frontend/static/search-index.json",    // Docker/container path
+		"./static/search-index.json",                // Same directory static folder
+		"./search-index.json",                       // Fallback to current directory
+	}
+
+	for _, path := range paths {
+		dir := filepath.Dir(path)
+		if dirExists(dir) {
+			log.Printf("📁 Using fallback path: %s (directory exists)", path)
+			return path
+		}
+	}
+
+	// Default fallback - create in current directory
+	log.Printf("⚠️ No suitable directory found, using ./search-index.json")
+	return "./search-index.json"
+}
+
+// dirExists checks if a directory exists
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// convertVideosToSearchFormat converts database videos to optimized search index format
+// Pre-allocates slice for better performance with large video libraries
 func (s *SearchIndexScheduler) convertVideosToSearchFormat(videos []database.Video) []map[string]interface{} {
-	var searchVideos []map[string]interface{}
+	// Pre-allocate slice with exact capacity for performance
+	searchVideos := make([]map[string]interface{}, 0, len(videos))
 
 	for _, video := range videos {
+		// Skip videos without bunny ID (can't be played)
+		if video.BunnyVideoID == "" {
+			continue
+		}
+
 		// Generate thumbnail URLs
 		thumbnailURL := ""
-		if video.BunnyVideoID != "" {
-			if video.ThumbnailFileName != "" {
-				thumbnailURL = s.bunnyService.GetThumbnailURLWithFilename(video.BunnyVideoID, video.ThumbnailFileName)
-			} else {
-				thumbnailURL = s.bunnyService.GetThumbnailURL(video.BunnyVideoID)
-			}
+		if video.ThumbnailFileName != "" {
+			thumbnailURL = s.bunnyService.GetThumbnailURLWithFilename(video.BunnyVideoID, video.ThumbnailFileName)
+		} else {
+			thumbnailURL = s.bunnyService.GetThumbnailURL(video.BunnyVideoID)
 		}
 
-		// Fallback thumbnail
-		fallbackThumbnail := ""
-		if video.BunnyVideoID != "" {
-			fallbackThumbnail = fmt.Sprintf("https://vz-f75053f7-465.b-cdn.net/%s/thumbnail.jpg", video.BunnyVideoID)
+		// Fallback thumbnail using Bunny CDN pattern
+		fallbackThumbnail := fmt.Sprintf("https://vz-f75053f7-465.b-cdn.net/%s/thumbnail.jpg", video.BunnyVideoID)
+
+		// Use primary thumbnail or fallback
+		finalThumbnail := thumbnailURL
+		if finalThumbnail == "" {
+			finalThumbnail = fallbackThumbnail
 		}
 
+		// Build optimized search video object
+		// Only include fields needed for search and display
 		searchVideo := map[string]interface{}{
-			"id":           video.BunnyVideoID,
-			"title":        video.Title,
-			"description":  video.Description,
-			"category":     video.Category,
-			"tags":         video.Tags,
+			// Primary search fields (indexed by Fuse.js)
+			"id":          video.BunnyVideoID,
+			"title":       video.Title,
+			"description": video.Description,
+			"category":    video.Category,
+			"tags":        video.Tags,
+
+			// Display fields
 			"duration":     video.Duration,
 			"createdAt":    video.CreatedAt.Format(time.RFC3339),
-			"thumbnail":    thumbnailURL,
-			"thumbnailUrl": thumbnailURL,
-			"bunny": map[string]interface{}{
-				"guid":              video.BunnyVideoID,
-				"videoLibraryId":    "",
-				"thumbnailFileName": video.ThumbnailFileName,
-				"previewImageUrl":   fallbackThumbnail,
-				"width":             0,
-				"height":            0,
-				"length":            video.Duration,
-			},
-			"views":     video.ViewCount,
-			"status":    video.Status,
+			"thumbnail":    finalThumbnail,
+			"thumbnailUrl": finalThumbnail,
+			"views":        video.ViewCount,
+			"status":       video.Status,
+
+			// Playback URLs
 			"videoUrl":  s.bunnyService.GetStreamURL(video.BunnyVideoID),
 			"iframeSrc": s.bunnyService.GetIframeURL(video.BunnyVideoID),
-		}
 
-		// Use fallback if no thumbnail
-		if thumbnailURL == "" {
-			searchVideo["thumbnail"] = fallbackThumbnail
-			searchVideo["thumbnailUrl"] = fallbackThumbnail
+			// Bunny metadata (minimal for display)
+			"bunny": map[string]interface{}{
+				"guid":            video.BunnyVideoID,
+				"previewImageUrl": fallbackThumbnail,
+				"length":          video.Duration,
+			},
 		}
 
 		searchVideos = append(searchVideos, searchVideo)

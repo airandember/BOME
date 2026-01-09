@@ -375,33 +375,61 @@ func (db *DB) GetMasterVideos(limit, offset int, category, status, syncStatus, v
 	rowCount := 0
 	for rows.Next() {
 		rowCount++
-		log.Printf("🎬 [DB-GetMasterVideos] Processing row %d", rowCount)
+		if rowCount <= 5 || rowCount%100 == 0 {
+			log.Printf("🎬 [DB-GetMasterVideos] Processing row %d", rowCount)
+		}
 		video := &MasterVideo{}
 		var tagsStr, resolutionsStr sql.NullString
 		var tagIDsArray pq.Int64Array
 
-		// Initialize CreatedBy as a sql.NullInt64 to handle potential NULL values
+		// Handle NULL values for all potentially nullable columns
 		var createdBy sql.NullInt64
+		var resolution, thumbnailURL, videoURL, iframeSrc, playbackURL sql.NullString
+		var collectionID, syncStatus, syncNotes sql.NullString
+		var framerate sql.NullFloat64
+		var lastBunnySync, lastMasterUpdate sql.NullTime
 
 		err := rows.Scan(
 			&video.ID, &video.BunnyVideoID, &video.Title, &video.Description, &video.Category,
-			&tagsStr, &video.Tagged, &video.Duration, &video.FileSize, &video.Resolution, &video.Framerate,
-			&video.ThumbnailURL, &video.VideoURL, &video.IframeSrc, &video.PlaybackURL,
+			&tagsStr, &video.Tagged, &video.Duration, &video.FileSize, &resolution, &framerate,
+			&thumbnailURL, &videoURL, &iframeSrc, &playbackURL,
 			&video.Status, &video.Views, &video.Likes, &video.IsPublic, &video.EncodeProgress,
-			&resolutionsStr, &video.CollectionID, &video.AverageWatchTime, &video.TotalWatchTime,
-			&video.LastBunnySync, &video.LastMasterUpdate, &video.SyncStatus, &video.SyncNotes,
+			&resolutionsStr, &collectionID, &video.AverageWatchTime, &video.TotalWatchTime,
+			&lastBunnySync, &lastMasterUpdate, &syncStatus, &syncNotes,
 			&video.MetadataVersion, &createdBy, &video.CreatedAt, &video.UpdatedAt, &video.Vid_Status, &tagIDsArray,
 		)
 		if err != nil {
+			log.Printf("❌ [DB-GetMasterVideos] Scan error on row %d: %v", rowCount, err)
 			return nil, err
 		}
 
-		// Convert sql.NullInt64 to *int
+		// Convert nullable fields to struct values
 		if createdBy.Valid {
 			createdByInt := int(createdBy.Int64)
 			video.CreatedBy = &createdByInt
 		} else {
 			video.CreatedBy = nil
+		}
+
+		// Handle nullable string fields
+		video.Resolution = resolution.String
+		video.ThumbnailURL = thumbnailURL.String
+		video.VideoURL = videoURL.String
+		video.IframeSrc = iframeSrc.String
+		video.PlaybackURL = playbackURL.String
+		video.CollectionID = collectionID.String
+		video.SyncStatus = syncStatus.String
+		video.SyncNotes = syncNotes.String
+
+		// Handle nullable numeric fields
+		video.Framerate = framerate.Float64
+
+		// Handle nullable time fields
+		if lastBunnySync.Valid {
+			video.LastBunnySync = lastBunnySync.Time
+		}
+		if lastMasterUpdate.Valid {
+			video.LastMasterUpdate = lastMasterUpdate.Time
 		}
 
 		// Parse tags from JSON (handle NULL)
@@ -477,8 +505,14 @@ func (db *DB) DeleteMasterVideo(id int) error {
 
 // GetSyncConflicts retrieves unresolved sync conflicts
 func (db *DB) GetSyncConflicts(masterVideoID *int) ([]*SyncConflict, error) {
-	query := `SELECT id, master_video_id, bunny_video_id, conflict_type, field_name,
-		       master_value, bunny_value, proposed_action, admin_notes, resolved,
+	// Use COALESCE to handle NULL values for string fields
+	query := `SELECT id, master_video_id, bunny_video_id, conflict_type, 
+		       COALESCE(field_name, '') as field_name,
+		       COALESCE(master_value, '') as master_value, 
+		       COALESCE(bunny_value, '') as bunny_value, 
+		       proposed_action, 
+		       COALESCE(admin_notes, '') as admin_notes, 
+		       resolved,
 		       resolved_by, resolved_at, created_at
 		       FROM video_sync_conflicts WHERE resolved = false`
 	args := []interface{}{}
