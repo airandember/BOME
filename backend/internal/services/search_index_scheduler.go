@@ -214,7 +214,7 @@ func (s *SearchIndexScheduler) generateSearchIndex() error {
 		return fmt.Errorf("failed to marshal search index: %w", err)
 	}
 
-	// Write to file
+	// Write to primary file
 	if err := os.WriteFile(indexPath, jsonData, 0644); err != nil {
 		log.Printf("❌ Failed to write search index file: %v", err)
 		return fmt.Errorf("failed to write search index file: %w", err)
@@ -228,7 +228,41 @@ func (s *SearchIndexScheduler) generateSearchIndex() error {
 	}
 
 	log.Printf("✅ Search index written successfully: %d videos, %d KB, %dms generation time", len(videos), fileSizeKB, generationTime)
+
+	// Also write fallback copies to frontend static folders for redundancy
+	// This ensures the frontend can always load the index even if the API is down
+	writeFallbackCopies(jsonData)
+
 	return nil
+}
+
+// writeFallbackCopies writes the search index to multiple fallback locations for redundancy
+// NOTE: These fallbacks only work for LOCAL DEVELOPMENT where backend and frontend
+// share the same filesystem. In PRODUCTION with separate Docker containers,
+// the frontend must fetch from the backend API endpoint (/api/v1/search-index.json)
+func writeFallbackCopies(jsonData []byte) {
+	// Fallback paths to try (LOCAL DEVELOPMENT ONLY - frontend static folders)
+	// In production, these paths won't exist because containers have separate filesystems
+	fallbackPaths := []string{
+		"../frontend/static/search-index.json",    // Local dev: backend and frontend are siblings
+		"../../frontend/static/search-index.json", // Alternative local path
+	}
+
+	for _, path := range fallbackPaths {
+		dir := filepath.Dir(path)
+
+		// Check if directory exists
+		if !dirExists(dir) {
+			continue
+		}
+
+		// Try to write the fallback
+		if err := os.WriteFile(path, jsonData, 0644); err != nil {
+			log.Printf("⚠️ Could not write fallback to %s: %v", path, err)
+		} else {
+			log.Printf("✅ Fallback search index written to: %s", path)
+		}
+	}
 }
 
 // getSearchIndexOutputPath returns the path where the search index should be written
@@ -244,11 +278,11 @@ func getSearchIndexOutputPath() string {
 
 	// Try multiple paths in order of preference
 	paths := []string{
-		"../frontend/static/search-index.json",      // Local development
-		"../../frontend/static/search-index.json",   // Alternative local path
-		"/app/frontend/static/search-index.json",    // Docker/container path
-		"./static/search-index.json",                // Same directory static folder
-		"./search-index.json",                       // Fallback to current directory
+		"../frontend/static/search-index.json",    // Local development
+		"../../frontend/static/search-index.json", // Alternative local path
+		"/app/frontend/static/search-index.json",  // Docker/container path
+		"./static/search-index.json",              // Same directory static folder
+		"./search-index.json",                     // Fallback to current directory
 	}
 
 	for _, path := range paths {
