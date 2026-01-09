@@ -75,45 +75,60 @@
 		}
 	});
 
-	// Load the comprehensive search index from backend API
-	// This fetches from the backend API instead of static files because
-	// in production, backend and frontend are in separate containers
+	// Load the comprehensive search index from backend API with static fallback
+	// Tries backend API first, falls back to static file for backwards compatibility
 	async function loadStaticSearchIndex() {
+		let data = null;
+		
+		// Try backend API first (preferred - always up to date)
 		try {
-			//console.log('📥 Loading comprehensive search index from backend API...');
-			
-			// Fetch from backend API endpoint - this ensures we get the latest generated index
+			console.log('📥 Loading search index from backend API...');
 			const response = await fetch(`${apiBaseUrl}/search-index.json`);
 			
-			if (!response.ok) {
-				throw new Error(`Failed to load search index: ${response.status}`);
+			if (response.ok) {
+				data = await response.json();
+				console.log('✅ Search index loaded from backend API');
+			} else {
+				console.warn(`⚠️ Backend API returned ${response.status}, trying static fallback...`);
 			}
-			
-			const data = await response.json();
-			staticSearchIndex = data.videos || [];
+		} catch (apiError) {
+			console.warn('⚠️ Backend API failed, trying static fallback...', apiError);
+		}
+		
+		// Fallback to static file if API fails
+		if (!data) {
+			try {
+				console.log('📥 Trying static search index fallback...');
+				const staticResponse = await fetch('/search-index.json');
+				
+				if (staticResponse.ok) {
+					data = await staticResponse.json();
+					console.log('✅ Search index loaded from static file fallback');
+				}
+			} catch (staticError) {
+				console.warn('⚠️ Static fallback also failed:', staticError);
+			}
+		}
+		
+		// Process the data if we got it from either source
+		if (data && data.videos) {
+			staticSearchIndex = data.videos;
 			searchIndexLoaded = true;
-			
-			//console.log('✅ Search index loaded from backend API:', {
-			//	totalVideos: staticSearchIndex.length,
-			//	version: data.version,
-			//	generatedAt: data.generatedAt
-			//});
 			
 			// Build the Fuse index ONCE from the JSON (never rebuild)
 			if (staticSearchIndex.length > 0) {
 				fuseIndex = new Fuse(staticSearchIndex, fuseOptions);
-				//console.log('🔍 Fuse.js index built with', staticSearchIndex.length, 'videos');
+				console.log('🔍 Fuse.js index built with', staticSearchIndex.length, 'videos');
 			}
 			
 			// Preload thumbnails for the most recent/popular videos for instant display
 			const recentVideos = staticSearchIndex
 				.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-				.slice(0, 20); // Preload 20 most recent thumbnails
+				.slice(0, 20);
 			
-			setTimeout(() => preloadThumbnails(recentVideos), 1000); // Delay to not block initial load
-			
-		} catch (error) {
-			console.warn('⚠️ Failed to load search index from backend API:', error);
+			setTimeout(() => preloadThumbnails(recentVideos), 1000);
+		} else {
+			console.error('❌ Failed to load search index from both API and static file');
 			searchIndexLoaded = false;
 		}
 	}
