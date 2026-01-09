@@ -204,6 +204,12 @@ func SetupRoutes(
 		}
 		fmt.Printf("✅ Public test endpoint registered: POST /api/v1/test/simple-stripe-sync\n")
 
+		// 🔍 PUBLIC SEARCH INDEX ENDPOINT (NO AUTH REQUIRED)
+		// This allows the frontend to fetch the search index from the backend API
+		// instead of relying on static files (which don't work in separate containers)
+		SetupPublicSearchIndexRoutes(v1)
+		fmt.Printf("✅ Public search index route registered: GET /api/v1/search-index.json\n")
+
 		// Setup tag routes
 		SetupTagRoutes(router, db)
 

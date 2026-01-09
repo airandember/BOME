@@ -312,6 +312,40 @@ func downloadSearchIndex() gin.HandlerFunc {
 	}
 }
 
+// SetupPublicSearchIndexRoutes sets up PUBLIC search index routes (NO AUTH REQUIRED)
+// This allows the frontend to fetch the search index directly from the backend API
+func SetupPublicSearchIndexRoutes(router *gin.RouterGroup) {
+	fmt.Printf("🔧 [SEARCH-INDEX] Setting up PUBLIC search index routes...\n")
+
+	// Public endpoint to serve search index - NO AUTH
+	router.GET("/search-index.json", servePublicSearchIndex())
+	fmt.Printf("✅ [SEARCH-INDEX] Registered PUBLIC: GET /api/v1/search-index.json\n")
+}
+
+// servePublicSearchIndex serves the search index file for frontend consumption
+func servePublicSearchIndex() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		indexPath := getSearchIndexPath()
+
+		// Check if file exists
+		if _, err := os.Stat(indexPath); os.IsNotExist(err) {
+			fmt.Printf("⚠️ [SEARCH-INDEX] Public request failed - file not found at: %s\n", indexPath)
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"error":   "Search index not yet generated",
+			})
+			return
+		}
+
+		// Serve the file with proper caching headers
+		c.Header("Content-Type", "application/json")
+		c.Header("Cache-Control", "public, max-age=300") // Cache for 5 minutes
+		c.Header("Access-Control-Allow-Origin", "*")     // Allow CORS for frontend
+
+		c.File(indexPath)
+	}
+}
+
 // getSearchIndexPath returns the path where the search index should be stored
 func getSearchIndexPath() string {
 	// Check for custom path from environment variable (PREFERRED METHOD)

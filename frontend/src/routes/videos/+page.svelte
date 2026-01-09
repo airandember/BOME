@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import { replaceState } from '$app/navigation';
 	import { videoService, type Video, type VideoCategory, type VideosResponse, type BunnyCollection } from '$lib/video';
+	import { apiBaseUrl } from '$lib/config';
 	import VideoCard from '$lib/components/VideoCard.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import Navigation from '$lib/components/Navigation.svelte';
@@ -74,11 +75,15 @@
 		}
 	});
 
-	// Load the static comprehensive search index
+	// Load the comprehensive search index from backend API
+	// This fetches from the backend API instead of static files because
+	// in production, backend and frontend are in separate containers
 	async function loadStaticSearchIndex() {
 		try {
-			//console.log('📥 Loading comprehensive search index...');
-			const response = await fetch('/search-index.json');
+			//console.log('📥 Loading comprehensive search index from backend API...');
+			
+			// Fetch from backend API endpoint - this ensures we get the latest generated index
+			const response = await fetch(`${apiBaseUrl}/search-index.json`);
 			
 			if (!response.ok) {
 				throw new Error(`Failed to load search index: ${response.status}`);
@@ -88,16 +93,16 @@
 			staticSearchIndex = data.videos || [];
 			searchIndexLoaded = true;
 			
-			//console.log('✅ Static search index loaded:', {
+			//console.log('✅ Search index loaded from backend API:', {
 			//	totalVideos: staticSearchIndex.length,
 			//	version: data.version,
 			//	generatedAt: data.generatedAt
 			//});
 			
-			// Build the Fuse index ONCE from the static JSON (never rebuild)
+			// Build the Fuse index ONCE from the JSON (never rebuild)
 			if (staticSearchIndex.length > 0) {
 				fuseIndex = new Fuse(staticSearchIndex, fuseOptions);
-				//console.log('🔍 Static Fuse.js index built ONCE with', staticSearchIndex.length, 'videos');
+				//console.log('🔍 Fuse.js index built with', staticSearchIndex.length, 'videos');
 			}
 			
 			// Preload thumbnails for the most recent/popular videos for instant display
@@ -108,7 +113,7 @@
 			setTimeout(() => preloadThumbnails(recentVideos), 1000); // Delay to not block initial load
 			
 		} catch (error) {
-			console.warn('⚠️ Failed to load static search index:', error);
+			console.warn('⚠️ Failed to load search index from backend API:', error);
 			searchIndexLoaded = false;
 		}
 	}
