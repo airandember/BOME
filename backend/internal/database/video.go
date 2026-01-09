@@ -197,7 +197,11 @@ func (db *DB) GetVideos(limit, offset int, category, status string) ([]*Video, e
 
 // GetAllVideos retrieves all videos from the database for search index generation
 func (db *DB) GetAllVideos() ([]Video, error) {
-	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, views, likes, created_by, created_at, updated_at FROM master_video_list ORDER BY created_at DESC`
+	// Only return active videos (vid_status = true) for search index and public display
+	query := `SELECT id, title, description, bunny_video_id, thumbnail_url, duration, file_size, status, category, tags, views, likes, created_by, created_at, updated_at 
+		FROM master_video_list 
+		WHERE vid_status = true 
+		ORDER BY created_at DESC`
 
 	rows, err := db.Query(query)
 	if err != nil {
