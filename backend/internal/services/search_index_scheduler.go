@@ -282,21 +282,19 @@ func (s *SearchIndexScheduler) convertVideosToSearchFormat(videos []database.Vid
 			continue
 		}
 
-		// Generate thumbnail URLs
-		thumbnailURL := ""
-		if video.ThumbnailFileName != "" {
-			thumbnailURL = s.bunnyService.GetThumbnailURLWithFilename(video.BunnyVideoID, video.ThumbnailFileName)
-		} else {
-			thumbnailURL = s.bunnyService.GetThumbnailURL(video.BunnyVideoID)
-		}
+		// Use thumbnail_url from database (already contains the full correct URL)
+		// This preserves the actual thumbnail filename like thumbnail_fbf84c30.jpg
+		finalThumbnail := video.ThumbnailURL
 
-		// Fallback thumbnail using Bunny CDN pattern
-		fallbackThumbnail := fmt.Sprintf("https://vz-f75053f7-465.b-cdn.net/%s/thumbnail.jpg", video.BunnyVideoID)
-
-		// Use primary thumbnail or fallback
-		finalThumbnail := thumbnailURL
+		// Fallback only if database thumbnail_url is empty
 		if finalThumbnail == "" {
-			finalThumbnail = fallbackThumbnail
+			// Try to generate from ThumbnailFileName if available
+			if video.ThumbnailFileName != "" {
+				finalThumbnail = s.bunnyService.GetThumbnailURLWithFilename(video.BunnyVideoID, video.ThumbnailFileName)
+			} else {
+				// Last resort fallback
+				finalThumbnail = fmt.Sprintf("https://vz-f75053f7-465.b-cdn.net/%s/thumbnail.jpg", video.BunnyVideoID)
+			}
 		}
 
 		// Build optimized search video object
@@ -324,7 +322,7 @@ func (s *SearchIndexScheduler) convertVideosToSearchFormat(videos []database.Vid
 			// Bunny metadata (minimal for display)
 			"bunny": map[string]interface{}{
 				"guid":            video.BunnyVideoID,
-				"previewImageUrl": fallbackThumbnail,
+				"previewImageUrl": finalThumbnail,
 				"length":          video.Duration,
 			},
 		}
