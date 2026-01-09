@@ -212,11 +212,15 @@ func (db *DB) GetAllVideos() ([]Video, error) {
 	var videos []Video
 	for rows.Next() {
 		video := Video{}
-		var tagsStr sql.NullString // Use sql.NullString to handle NULL tags
-		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &video.ThumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
+		var tagsStr sql.NullString       // Use sql.NullString to handle NULL tags
+		var thumbnailURL sql.NullString  // Handle NULL thumbnail_url
+		err := rows.Scan(&video.ID, &video.Title, &video.Description, &video.BunnyVideoID, &thumbnailURL, &video.Duration, &video.FileSize, &video.Status, &video.Category, &tagsStr, &video.ViewCount, &video.LikeCount, &video.CreatedBy, &video.CreatedAt, &video.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
+
+		// Handle NULL thumbnail_url from database
+		video.ThumbnailURL = thumbnailURL.String
 
 		// Set ThumbnailFileName to empty string since it's not in the database yet
 		video.ThumbnailFileName = ""
