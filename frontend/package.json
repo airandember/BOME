@@ -28,8 +28,8 @@
 		"@sveltejs/vite-plugin-svelte": "^4.0.0-next.6"
 	},
 	"dependencies": {
-		"@sveltejs/adapter-node": "^5.2.16",
-		"@sveltejs/kit": "^2.30.1",
+		"@sveltejs/adapter-node": "^5.5.1",
+		"@sveltejs/kit": "^2.49.5",
 		"fuse.js": "^7.1.0",
 		"hls.js": "^1.6.7",
 		"xlsx": "^0.18.5"
