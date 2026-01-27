@@ -1162,6 +1162,73 @@ async function loadStripeSubsData() {
 		showToast('Bulk plan change feature coming soon', 'info');
 	}
 
+	// Temp Password Bulk Assignment
+	let assigningTempPasswords = $state(false);
+	let showTempPasswordModal = $state(false);
+	let tempPasswordResults = $state<any[]>([]);
+	let usersNeverLoggedIn = $state<any[]>([]);
+	let loadingNeverLoggedIn = $state(false);
+
+	async function loadUsersNeverLoggedIn() {
+		loadingNeverLoggedIn = true;
+		try {
+			const response = await apiRequest('/admin/users/never-logged-in');
+			if (response.ok) {
+				const data = await response.json();
+				usersNeverLoggedIn = data.users || [];
+				console.log(`📋 Loaded ${usersNeverLoggedIn.length} users who never logged in`);
+			}
+		} catch (error) {
+			console.error('Error loading users never logged in:', error);
+			showToast('Failed to load users', 'error');
+		} finally {
+			loadingNeverLoggedIn = false;
+		}
+	}
+
+	async function handleBulkTempPassword(sendEmail: boolean = true) {
+		if (currentSelectedCount === 0) {
+			showToast('Please select users to assign temp passwords', 'warning');
+			return;
+		}
+
+		assigningTempPasswords = true;
+		try {
+			const selectedIds = Array.from(currentSelectedItems);
+			const response = await apiRequest('/admin/users/bulk-temp-password', {
+				method: 'POST',
+				body: JSON.stringify({
+					user_ids: selectedIds,
+					send_email: sendEmail
+				})
+			});
+
+			if (response.ok) {
+				const data = await response.json();
+				tempPasswordResults = data.results || [];
+				showTempPasswordModal = true;
+				
+				if (data.assigned_count > 0) {
+					showToast(`Assigned temp passwords to ${data.assigned_count} users`, 'success');
+				}
+				if (data.error_count > 0) {
+					showToast(`${data.error_count} users could not be assigned (may have already logged in)`, 'warning');
+				}
+				
+				clearSelection();
+				await loadTabData(activeTab);
+			} else {
+				const error = await response.json();
+				showToast(error.error || 'Failed to assign temp passwords', 'error');
+			}
+		} catch (error) {
+			console.error('Error assigning temp passwords:', error);
+			showToast('Failed to assign temp passwords', 'error');
+		} finally {
+			assigningTempPasswords = false;
+		}
+	}
+
 	async function handleExport() {
 		try {
 			let blob: Blob;
@@ -1242,6 +1309,62 @@ async function loadStripeSubsData() {
 </svelte:head>
 
 <div class="subscribers-page">
+	<!-- Temp Password Assignment Panel -->
+	<details class="temp-password-panel">
+		<summary class="panel-header">
+			<span>🔑 Bulk Temp Password Assignment</span>
+			<span class="badge">{usersNeverLoggedIn.length} eligible users</span>
+		</summary>
+		<div class="panel-content">
+			<p class="panel-description">
+				Assign temporary passwords (BOME_[user_id]) to users who have never logged in. 
+				This is useful for existing Stripe subscribers who need account access.
+			</p>
+			<div class="panel-actions">
+				<button 
+					class="btn btn-secondary" 
+					onclick={loadUsersNeverLoggedIn}
+					disabled={loadingNeverLoggedIn}
+				>
+					{loadingNeverLoggedIn ? '⏳ Loading...' : '🔄 Refresh Eligible Users'}
+				</button>
+				<button 
+					class="btn btn-primary" 
+					onclick={() => handleBulkTempPassword(true)}
+					disabled={assigningTempPasswords || currentSelectedCount === 0}
+				>
+					{assigningTempPasswords ? '⏳ Assigning...' : `📧 Assign & Email (${currentSelectedCount} selected)`}
+				</button>
+				<button 
+					class="btn btn-outline" 
+					onclick={() => handleBulkTempPassword(false)}
+					disabled={assigningTempPasswords || currentSelectedCount === 0}
+				>
+					{assigningTempPasswords ? '⏳ Assigning...' : `🔑 Assign Only (no email)`}
+				</button>
+			</div>
+			{#if usersNeverLoggedIn.length > 0}
+				<div class="eligible-users-preview">
+					<h4>Users who never logged in ({usersNeverLoggedIn.length}):</h4>
+					<div class="users-list">
+						{#each usersNeverLoggedIn.slice(0, 10) as user}
+							<div class="user-item" class:has-temp={user.has_temp_password}>
+								<span class="user-email">{user.email}</span>
+								<span class="user-meta">ID: {user.id} | Stripe: {user.linked_customers > 0 ? '✅' : '❌'}</span>
+								{#if user.has_temp_password}
+									<span class="badge badge-warning">Has temp password</span>
+								{/if}
+							</div>
+						{/each}
+						{#if usersNeverLoggedIn.length > 10}
+							<p class="more-users">...and {usersNeverLoggedIn.length - 10} more users</p>
+						{/if}
+					</div>
+				</div>
+			{/if}
+		</div>
+	</details>
+
 	<!--<div class="page-header">
 		<div class="header-content">
 			<h1 class="page-title">Subscribers Management</h1>
@@ -1335,6 +1458,49 @@ async function loadStripeSubsData() {
 		onSave={(updatedSubscriber) => handleSubscriberUpdate(updatedSubscriber as EnhancedSubscriber)}
 		onCancel={() => { showEditModal = false; selectedSubscriber = null; }}
 	/>
+{/if}
+
+<!-- Temp Password Results Modal -->
+{#if showTempPasswordModal}
+<div class="modal-overlay" onclick={() => showTempPasswordModal = false}>
+	<div class="modal-content temp-password-modal" onclick={(e) => e.stopPropagation()}>
+		<div class="modal-header">
+			<h2>🔑 Temp Password Assignment Results</h2>
+			<button class="close-btn" onclick={() => showTempPasswordModal = false}>✕</button>
+		</div>
+		<div class="modal-body">
+			{#if tempPasswordResults.length > 0}
+				<table class="results-table">
+					<thead>
+						<tr>
+							<th>User ID</th>
+							<th>Email</th>
+							<th>Temp Password</th>
+							<th>Email Sent</th>
+							<th>Status</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each tempPasswordResults as result}
+							<tr class:error={result.error}>
+								<td>{result.user_id}</td>
+								<td>{result.email || '-'}</td>
+								<td class="password-cell">{result.temp_password || '-'}</td>
+								<td>{result.email_sent ? '✅' : '❌'}</td>
+								<td>{result.error || '✅ Success'}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			{:else}
+				<p>No results to display</p>
+			{/if}
+		</div>
+		<div class="modal-footer">
+			<button class="btn btn-primary" onclick={() => showTempPasswordModal = false}>Close</button>
+		</div>
+	</div>
+</div>
 {/if}
 
 <style>
@@ -1637,5 +1803,195 @@ async function loadStripeSubsData() {
 		.tab-navigation {
 			flex-wrap: wrap;
 		}
+	}
+
+	/* Temp Password Panel Styles */
+	.temp-password-panel {
+		background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+		border: 1px solid #f59e0b;
+		border-radius: 0.5rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.temp-password-panel .panel-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1rem 1.5rem;
+		cursor: pointer;
+		font-weight: 600;
+		color: #92400e;
+	}
+
+	.temp-password-panel .panel-content {
+		padding: 0 1.5rem 1.5rem;
+	}
+
+	.temp-password-panel .panel-description {
+		color: #78350f;
+		margin-bottom: 1rem;
+	}
+
+	.temp-password-panel .panel-actions {
+		display: flex;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+		margin-bottom: 1rem;
+	}
+
+	.temp-password-panel .badge {
+		background: #f59e0b;
+		color: white;
+		padding: 0.25rem 0.75rem;
+		border-radius: 9999px;
+		font-size: 0.75rem;
+		font-weight: 500;
+	}
+
+	.eligible-users-preview {
+		background: white;
+		border-radius: 0.375rem;
+		padding: 1rem;
+		margin-top: 1rem;
+	}
+
+	.eligible-users-preview h4 {
+		margin: 0 0 0.75rem 0;
+		color: #374151;
+		font-size: 0.875rem;
+	}
+
+	.users-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.user-item {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		padding: 0.5rem;
+		background: #f9fafb;
+		border-radius: 0.25rem;
+		font-size: 0.875rem;
+	}
+
+	.user-item.has-temp {
+		background: #fef3c7;
+	}
+
+	.user-email {
+		font-weight: 500;
+		color: #111827;
+	}
+
+	.user-meta {
+		color: #6b7280;
+		font-size: 0.75rem;
+	}
+
+	.badge-warning {
+		background: #f59e0b;
+		color: white;
+		padding: 0.125rem 0.5rem;
+		border-radius: 9999px;
+		font-size: 0.625rem;
+	}
+
+	.more-users {
+		color: #6b7280;
+		font-style: italic;
+		margin: 0.5rem 0 0 0;
+	}
+
+	/* Temp Password Modal */
+	.modal-overlay {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+	}
+
+	.modal-content {
+		background: white;
+		border-radius: 0.5rem;
+		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+		max-width: 800px;
+		width: 90%;
+		max-height: 80vh;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.modal-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1rem 1.5rem;
+		border-bottom: 1px solid #e5e7eb;
+	}
+
+	.modal-header h2 {
+		margin: 0;
+		font-size: 1.25rem;
+	}
+
+	.close-btn {
+		background: none;
+		border: none;
+		font-size: 1.5rem;
+		cursor: pointer;
+		color: #6b7280;
+	}
+
+	.close-btn:hover {
+		color: #111827;
+	}
+
+	.modal-body {
+		padding: 1.5rem;
+		overflow-y: auto;
+		flex: 1;
+	}
+
+	.modal-footer {
+		padding: 1rem 1.5rem;
+		border-top: 1px solid #e5e7eb;
+		display: flex;
+		justify-content: flex-end;
+	}
+
+	.results-table {
+		width: 100%;
+		border-collapse: collapse;
+	}
+
+	.results-table th,
+	.results-table td {
+		padding: 0.75rem;
+		text-align: left;
+		border-bottom: 1px solid #e5e7eb;
+	}
+
+	.results-table th {
+		background: #f9fafb;
+		font-weight: 600;
+		color: #374151;
+	}
+
+	.results-table tr.error {
+		background: #fef2f2;
+	}
+
+	.password-cell {
+		font-family: monospace;
+		background: #f3f4f6;
+		padding: 0.25rem 0.5rem;
+		border-radius: 0.25rem;
 	}
 </style> 

@@ -13,6 +13,7 @@ export interface User {
 	last_name: string;
 	email_verified: boolean;
 	password_changed: boolean;
+	temp_password_active?: boolean; // True if user is using a temporary password
 }
 
 export interface AuthTokens {
@@ -278,7 +279,9 @@ function createAuthStore() {
 					success: true, 
 					user_id: responseData.user_id,
 					email: responseData.email,
-					verification_required: responseData.verification_required
+					verification_required: responseData.verification_required,
+					temp_password_sent: responseData.temp_password_sent || false,
+					redirect_to: responseData.redirect_to || ''
 				};
 			} catch (error) {
 				console.error('Registration error:', error);

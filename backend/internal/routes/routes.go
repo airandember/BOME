@@ -111,7 +111,7 @@ func SetupRoutes(
 	// Admin routes - only setup if database is available
 	admin := v1.Group("/admin")
 	if db != nil {
-		SetupAdminRoutes(admin, db)
+		SetupAdminRoutes(admin, db, emailService)
 
 		// Database monitoring routes (for connection pool health)
 		RegisterDatabaseMonitoringRoutes(admin, db)

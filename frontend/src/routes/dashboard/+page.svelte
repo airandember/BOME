@@ -271,6 +271,25 @@
 			</button>
 		</div>
 
+		<!-- Temp Password Security Banner -->
+		{#if user?.temp_password_active}
+		<div class="temp-password-banner">
+			<div class="banner-content">
+				<div class="banner-icon">🔐</div>
+				<div class="banner-text">
+					<h3>Secure Your Account</h3>
+					<p>You're currently using a temporary password. For your security, please create a personal password.</p>
+				</div>
+				<button 
+					class="btn btn-primary banner-btn"
+					on:click={() => { activeTab = 'profile'; showChangePassword = true; }}
+				>
+					Change Password Now
+				</button>
+			</div>
+		</div>
+		{/if}
+
 		{#if activeTab === 'dashboard'}
 			<!-- Dashboard Tab Content -->
 			<div class="tab-content">
@@ -1175,5 +1194,83 @@
 		color: var(--text-muted) !important;
 		margin-top: 1rem !important;
 		margin-bottom: 0 !important;
+	}
+
+	/* Temp Password Security Banner */
+	.temp-password-banner {
+		background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+		border: 2px solid #f59e0b;
+		border-radius: 16px;
+		margin-bottom: 1.5rem;
+		padding: 1.5rem;
+		animation: pulse-glow 2s ease-in-out infinite;
+	}
+
+	@keyframes pulse-glow {
+		0%, 100% {
+			box-shadow: 0 0 5px rgba(245, 158, 11, 0.3);
+		}
+		50% {
+			box-shadow: 0 0 20px rgba(245, 158, 11, 0.5);
+		}
+	}
+
+	.temp-password-banner .banner-content {
+		display: flex;
+		align-items: center;
+		gap: 1.5rem;
+		flex-wrap: wrap;
+	}
+
+	.temp-password-banner .banner-icon {
+		font-size: 2.5rem;
+		flex-shrink: 0;
+	}
+
+	.temp-password-banner .banner-text {
+		flex: 1;
+		min-width: 200px;
+	}
+
+	.temp-password-banner .banner-text h3 {
+		color: #92400e;
+		font-size: 1.25rem;
+		font-weight: 700;
+		margin: 0 0 0.25rem 0;
+	}
+
+	.temp-password-banner .banner-text p {
+		color: #78350f;
+		margin: 0;
+		font-size: 0.875rem;
+	}
+
+	.temp-password-banner .banner-btn {
+		background: #f59e0b;
+		border: none;
+		color: white;
+		padding: 0.75rem 1.5rem;
+		font-weight: 600;
+		border-radius: 8px;
+		cursor: pointer;
+		transition: all 0.2s;
+		flex-shrink: 0;
+	}
+
+	.temp-password-banner .banner-btn:hover {
+		background: #d97706;
+		transform: translateY(-2px);
+		box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+	}
+
+	@media (max-width: 640px) {
+		.temp-password-banner .banner-content {
+			flex-direction: column;
+			text-align: center;
+		}
+
+		.temp-password-banner .banner-btn {
+			width: 100%;
+		}
 	}
 </style> 
