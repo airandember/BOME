@@ -33,16 +33,29 @@
 			
 			return () => {
 				window.removeEventListener('scroll', handleScroll);
+				// Cleanup: reset body overflow when component unmounts
+				document.body.style.overflow = '';
 			};
 		}
 	});
 
 	const toggleMenu = () => {
 		isMenuOpen = !isMenuOpen;
+		// Prevent body scroll when menu is open
+		if (browser) {
+			if (isMenuOpen) {
+				document.body.style.overflow = 'hidden';
+			} else {
+				document.body.style.overflow = '';
+			}
+		}
 	};
 
 	const closeMenu = () => {
 		isMenuOpen = false;
+		if (browser) {
+			document.body.style.overflow = '';
+		}
 	};
 
 	const handleLogout = async () => {
@@ -89,6 +102,7 @@
 			<div class="nav-dropdown">
 				<button 
 					class="nav-link mobile-video-dropdown-menu-trigger dropdown-trigger" 
+					class:open={isVideoDropdownOpen}
 					on:click={() => isVideoDropdownOpen = !isVideoDropdownOpen}
 				> 
 				<div class="wordSymbolCombiner">
@@ -127,6 +141,7 @@
 		<div class="nav-dropdown">
 			<button 
 				class="nav-link mobile-video-dropdown-menu-trigger dropdown-trigger support-button" 
+				class:open={isContactSupportDropdownOpen}
 				on:click={() => isContactSupportDropdownOpen = !isContactSupportDropdownOpen}
 			> 
 			<div class="wordSymbolCombiner">
@@ -137,7 +152,7 @@
 			</div>	
 			</button>
 			
-		<div class="nav-dropdown-menu" class:open={isContactSupportDropdownOpen}>
+		<div class="nav-dropdown-menu support-dropdown-menu" class:open={isContactSupportDropdownOpen}>
 			<a href={getSupportMailtoLink('Sign Up / Login Support')} class="dropdown-item support-item" on:click={() => { closeMenu(); isContactSupportDropdownOpen = false; }}>
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
@@ -234,6 +249,15 @@
 					<line x1="12" y1="17" x2="12" y2="21"></line>
 				</svg>
 			</a>-->
+			
+			<!-- Mobile Auth Buttons -->
+			{#if !isAuthenticated}
+				<div class="mobile-auth-buttons">
+					<a href="/auth/login" class="btn btn-ghost mobile-auth-link" on:click={closeMenu}>Login</a>
+					<a href="/auth/register" class="btn btn-primary mobile-auth-link" on:click={closeMenu}>Sign Up</a>
+				</div>
+			{/if}
+			
 			<br>
 		</div>
 
@@ -939,20 +963,51 @@
 	@media (max-width: 768px) {
 		.nav-menu {
 			position: fixed;
-			top: 80px;
+			top: 65px;
 			left: 0;
-			right: 0;
+			width: 100vw;
+			height: calc(100vh - 65px);
 			background: var(--bg-glass);
 			backdrop-filter: blur(20px);
 			-webkit-backdrop-filter: blur(20px);
 			border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 			flex-direction: column;
 			padding: var(--space-lg);
-			gap: var(--space-md);
+			gap: 0;
 			transform: translateY(-100%);
 			opacity: 0;
 			visibility: hidden;
 			transition: all var(--transition-normal);
+			overflow-y: auto;
+			overflow-x: hidden;
+			z-index: 998;
+			/* Hide scrollbar but allow scrolling */
+			scrollbar-width: none; /* Firefox */
+			-ms-overflow-style: none; /* IE and Edge */
+		}
+
+		.nav-menu::-webkit-scrollbar {
+			display: none; /* Chrome, Safari, Opera */
+		}
+
+		/* Ensure nav-actions stay above the menu */
+		.nav-actions {
+			position: relative;
+			z-index: 999;
+		}
+
+		/* Light mode mobile menu background */
+		:global([data-theme="light"]) .nav-menu,
+		:global(:not([data-theme])) .nav-menu {
+			background: rgba(255, 255, 255, 0.95);
+			border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+			box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+		}
+
+		/* Dark mode mobile menu background */
+		:global([data-theme="dark"]) .nav-menu {
+			background: rgba(10, 10, 10, 0.95);
+			border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 		}
 
 		.nav-menu.open {
@@ -966,10 +1021,45 @@
 			padding: var(--space-md);
 			border-radius: var(--radius-lg);
 			text-align: center;
+			color: var(--text-primary);
+			font-weight: 500;
+			margin: 0;
+		}
+
+		.nav-dropdown {
+			width: 100%;
+			margin: 0;
+		}
+
+		.dropdown-trigger {
+			width: 100%;
+			padding: var(--space-md);
+			margin: 0;
+			justify-content: center;
+		}
+
+		/* Ensure text is visible in light mode */
+		:global([data-theme="light"]) .nav-link,
+		:global(:not([data-theme])) .nav-link {
+			color: var(--gray-900);
+		}
+
+		:global([data-theme="dark"]) .nav-link {
+			color: var(--white);
 		}
 
 		.nav-link:hover {
 			background: var(--bg-glass);
+		}
+
+		/* Light mode hover */
+		:global([data-theme="light"]) .nav-link:hover,
+		:global(:not([data-theme])) .nav-link:hover {
+			background: rgba(0, 0, 0, 0.05);
+		}
+
+		:global([data-theme="dark"]) .nav-link:hover {
+			background: rgba(255, 255, 255, 0.1);
 		}
 
 		.mobile-menu-button {
@@ -986,6 +1076,160 @@
 
 		.nav-container {
 			height: 70px;
+			position: relative;
+			z-index: 999;
+		}
+
+		.navigation {
+			z-index: 999;
+		}
+
+		.mobile-auth-buttons {
+			display: flex;
+			flex-direction: column;
+			gap: var(--space-sm);
+			width: 100%;
+			margin-top: var(--space-md);
+		}
+
+		.mobile-auth-link {
+			width: 100%;
+			text-align: center;
+			padding: var(--space-md);
+			border-radius: var(--radius-lg);
+		}
+
+		/* Ensure mobile auth buttons are visible in light mode */
+		:global([data-theme="light"]) .mobile-auth-link.btn-ghost,
+		:global(:not([data-theme])) .mobile-auth-link.btn-ghost {
+			color: var(--gray-900);
+			border: 1px solid var(--gray-300);
+		}
+
+		:global([data-theme="light"]) .mobile-auth-link.btn-ghost:hover,
+		:global(:not([data-theme])) .mobile-auth-link.btn-ghost:hover {
+			background: rgba(0, 0, 0, 0.05);
+			border-color: var(--gray-400);
+		}
+
+		/* Ensure mobile auth buttons are visible in dark mode */
+		:global([data-theme="dark"]) .mobile-auth-link.btn-ghost {
+			color: var(--white) !important;
+			border: 1px solid rgba(255, 255, 255, 0.3) !important;
+			background: transparent !important;
+		}
+
+		:global([data-theme="dark"]) .mobile-auth-link.btn-ghost:hover {
+			background: rgba(255, 255, 255, 0.1) !important;
+			border-color: rgba(255, 255, 255, 0.5) !important;
+			color: var(--white) !important;
+		}
+
+		/* Also ensure Sign Up button is visible in dark mode */
+		:global([data-theme="dark"]) .mobile-auth-link.btn-primary {
+			color: var(--white) !important;
+		}
+
+		.nav-dropdown {
+			margin: 0;
+			padding: 0;
+		}
+
+		.nav-dropdown-menu {
+			position: relative;
+			width: 100%;
+			left: 0;
+			top: 0;
+			margin-top: 0;
+			margin-bottom: 0;
+			transform: none;
+			max-height: 0;
+			overflow: hidden;
+			opacity: 0;
+			transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out, padding 0.3s ease-in-out, margin 0.3s ease-in-out;
+			padding: 0;
+			border: none;
+			box-shadow: none;
+		}
+
+		.nav-dropdown-menu.open {
+			max-height: 500px;
+			opacity: 1;
+			padding: var(--space-sm);
+			margin-top: var(--space-sm);
+			margin-bottom: var(--space-sm);
+			border: 1px solid rgba(255, 255, 255, 0.1);
+			box-shadow: var(--shadow-xl);
+			overflow-y: auto;
+			visibility: visible;
+		}
+
+		/* Light mode dropdown background */
+		:global([data-theme="light"]) .nav-dropdown-menu.open,
+		:global(:not([data-theme])) .nav-dropdown-menu.open {
+			background: rgba(255, 255, 255, 0.98);
+			border: 1px solid rgba(0, 0, 0, 0.1);
+		}
+
+		/* Dark mode dropdown background */
+		:global([data-theme="dark"]) .nav-dropdown-menu.open {
+			background: rgba(10, 10, 10, 0.98);
+			border: 1px solid rgba(255, 255, 255, 0.1);
+		}
+
+		.nav-dropdown-menu.open {
+			transform: none;
+		}
+
+		/* Dropdown item text colors */
+		:global([data-theme="light"]) .nav-dropdown-menu .dropdown-item,
+		:global(:not([data-theme])) .nav-dropdown-menu .dropdown-item {
+			color: var(--gray-900);
+		}
+
+		:global([data-theme="dark"]) .nav-dropdown-menu .dropdown-item {
+			color: var(--white);
+		}
+
+		:global([data-theme="light"]) .nav-dropdown-menu .dropdown-item-subtitle,
+		:global(:not([data-theme])) .nav-dropdown-menu .dropdown-item-subtitle {
+			color: var(--gray-600);
+		}
+
+		:global([data-theme="dark"]) .nav-dropdown-menu .dropdown-item-subtitle {
+			color: var(--gray-300);
+		}
+
+		:global([data-theme="light"]) .nav-dropdown-menu .dropdown-item svg,
+		:global(:not([data-theme])) .nav-dropdown-menu .dropdown-item svg {
+			color: var(--gray-700);
+		}
+
+		:global([data-theme="dark"]) .nav-dropdown-menu .dropdown-item svg {
+			color: var(--white);
+		}
+
+		.support-dropdown-menu {
+			max-height: 0;
+		}
+
+		.support-dropdown-menu.open {
+			max-height: 60vh;
+		}
+
+		/* Chevron rotation for mobile */
+		.dropdown-trigger.open .chevron {
+			transform: rotate(180deg);
+		}
+
+		/* Dropdown trigger button text */
+		:global([data-theme="light"]) .dropdown-trigger,
+		:global(:not([data-theme])) .dropdown-trigger {
+			color: var(--gray-900);
+		}
+
+		:global([data-theme="dark"]) .dropdown-trigger {
+			color: var(--white);
 		}
 	}
 
@@ -994,17 +1238,19 @@
 			width: 100%;
 		}
 
-		.nav-dropdown-menu {
-			width: 90vw;
-			margin: 0 auto;
-			position: relative;
-			left: 0;
+		.nav-dropdown-menu.open {
+			max-height: 55vh;
+		}
+
+		.support-dropdown-menu.open {
+			max-height: 50vh;
 		}
 
 		.nav-dropdown {
 			text-align: center;
 			display: flex;
 			flex-direction: column;
+			width: 100%;
 		}
 		
 		.mobile-video-dropdown-menu-trigger {
@@ -1027,6 +1273,10 @@
 		.brand-logo svg {
 			width: 16px;
 			height: 16px;
+		}
+
+		.mobile-auth-buttons {
+			margin-top: var(--space-md);
 		}
 	}
 </style> 
