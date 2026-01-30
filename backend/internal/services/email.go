@@ -669,6 +669,125 @@ func (s *EmailService) SendVerificationEmail(userID int, email, name string) err
 	)
 }
 
+// TempPasswordEmailData represents data for temp password emails
+type TempPasswordEmailData struct {
+	UserName     string
+	UserEmail    string
+	TempPassword string
+	LoginURL     string
+	SupportEmail string
+	CompanyName  string
+	BaseURL      string
+}
+
+// SendTempPasswordEmail sends an email with a temporary password for auto-linked users
+func (s *EmailService) SendTempPasswordEmail(userID int, email, name, tempPassword string) error {
+	log.Printf("🔑 [EMAIL] Sending temp password email to: %s", email)
+
+	// Get base URL from settings or use default
+	baseURL := s.getBaseURL()
+	loginURL := fmt.Sprintf("%s/auth/login", baseURL)
+
+	// Get support email from database
+	supportEmail, err := s.db.GetEmailSetting("support_email")
+	if err != nil || supportEmail == "" {
+		supportEmail = "support@bookofmormonevidence.org" // fallback
+	}
+
+	// Build HTML email body
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Your BOME Account is Ready</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #3b82f6; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 8px 8px; }
+        .password-box { background: #e8f4fd; border: 2px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center; }
+        .password { font-size: 24px; font-weight: bold; color: #1e40af; font-family: monospace; letter-spacing: 2px; }
+        .btn { display: inline-block; background: #3b82f6; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; margin: 10px 0; font-weight: bold; }
+        .btn:hover { background: #2563eb; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 14px; color: #666; }
+        .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; margin: 15px 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎉 Welcome to BOME!</h1>
+    </div>
+    <div class="content">
+        <p>Hi %s,</p>
+        
+        <p>Great news! We found your existing subscription and your account is ready to go.</p>
+        
+        <p>Here's your temporary password to get started:</p>
+        
+        <div class="password-box">
+            <p style="margin: 0; font-size: 14px; color: #666;">Your Temporary Password</p>
+            <p class="password">%s</p>
+        </div>
+        
+        <p style="text-align: center;">
+            <a href="%s" class="btn">Login to Your Account →</a>
+        </p>
+        
+        <div class="warning">
+            <strong>⚠️ Important:</strong> For your security, we recommend changing this password after you log in. You can do this in your Dashboard settings.
+        </div>
+        
+        <p>If you have any questions, our support team is here to help at <a href="mailto:%s">%s</a>.</p>
+        
+        <p>Welcome aboard!<br>The BOME Team</p>
+    </div>
+    <div class="footer">
+        <p>This email was sent because your subscription was found in our system. If you didn't expect this email, please contact our support team.</p>
+    </div>
+</body>
+</html>`, name, tempPassword, loginURL, supportEmail, supportEmail)
+
+	// In development mode, just log the email
+	if s.isDevelopmentMode() {
+		log.Printf("📧 [DEV-EMAIL] Would send temp password email to %s", email)
+		log.Printf("📧 [DEV-EMAIL] Temp password: %s", tempPassword)
+		log.Printf("📧 [DEV-EMAIL] Login URL: %s", loginURL)
+		return nil
+	}
+
+	// Check if email is enabled
+	enabled, err := s.isEmailEnabled()
+	if err != nil {
+		return fmt.Errorf("failed to check email settings: %w", err)
+	}
+	if !enabled {
+		log.Printf("⚠️ [EMAIL] Email sending is disabled, skipping temp password email")
+		return nil
+	}
+
+	subject := "Your BOME Account is Ready - Temporary Password Inside"
+
+	// Record email notification
+	notificationID, err := s.recordEmailNotification(userID, email, "temp_password", subject, "temp_password", EmailData{
+		UserName:    name,
+		UserEmail:   email,
+		CompanyName: "BOME",
+		BaseURL:     baseURL,
+	})
+	if err != nil {
+		log.Printf("⚠️ [EMAIL] Failed to record temp password notification: %v", err)
+	}
+
+	// Send with Resend
+	sendErr := s.sendWithResend(email, subject, htmlBody, notificationID)
+	if sendErr != nil {
+		log.Printf("❌ [EMAIL] Resend failed for temp password email: %v", sendErr)
+		return fmt.Errorf("failed to send temp password email: %w", sendErr)
+	}
+
+	log.Printf("✅ [EMAIL] Temp password email sent successfully to %s", email)
+	return nil
+}
+
 // SendTestEmail sends a test email to verify email configuration
 func (s *EmailService) SendTestEmail(to, subject, body string, userID int) error {
 	log.Printf("🔍 [EMAIL] Sending test email to: %s", to)

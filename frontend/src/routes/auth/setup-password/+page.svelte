@@ -248,41 +248,63 @@
 				{/if}
 
 				<form on:submit|preventDefault={handlePasswordSetup} class="setup-form">
-					<div class="form-group">
-						<label for="password">New Password</label>
-						<input
-							id="password"
-							type="password"
-							bind:value={password}
-							placeholder="Enter your new password"
-							disabled={loading}
-							required
-						/>
-						<div class="password-requirements">
-							<p>Password must contain:</p>
-							<ul>
-								<li class:valid={password.length >= 8}>At least 8 characters</li>
-								<li class:valid={/[A-Z]/.test(password)}>One uppercase letter</li>
-								<li class:valid={/[a-z]/.test(password)}>One lowercase letter</li>
-								<li class:valid={/\d/.test(password)}>One number</li>
-								<li class:valid={/[!@#$%^&*(),.?":{}|<>]/.test(password)}>One special character</li>
-							</ul>
-						</div>
+					<!-- Password Requirements First -->
+					<div class="password-requirements">
+						<p>Password must contain:</p>
+						<ul>
+							<li class:valid={password.length >= 8} class:invalid={password.length > 0 && password.length < 8}>
+								<span class="validator-icon">{password.length >= 8 ? '✓' : '✗'}</span>
+								At least 8 characters
+							</li>
+							<li class:valid={/[A-Z]/.test(password)} class:invalid={password.length > 0 && !/[A-Z]/.test(password)}>
+								<span class="validator-icon">{/[A-Z]/.test(password) ? '✓' : '✗'}</span>
+								One uppercase letter
+							</li>
+							<li class:valid={/[a-z]/.test(password)} class:invalid={password.length > 0 && !/[a-z]/.test(password)}>
+								<span class="validator-icon">{/[a-z]/.test(password) ? '✓' : '✗'}</span>
+								One lowercase letter
+							</li>
+							<li class:valid={/\d/.test(password)} class:invalid={password.length > 0 && !/\d/.test(password)}>
+								<span class="validator-icon">{/\d/.test(password) ? '✓' : '✗'}</span>
+								One number
+							</li>
+							<li class:valid={/[!@#$%^&*(),.?":{}|<>]/.test(password)} class:invalid={password.length > 0 && !/[!@#$%^&*(),.?":{}|<>]/.test(password)}>
+								<span class="validator-icon">{/[!@#$%^&*(),.?":{}|<>]/.test(password) ? '✓' : '✗'}</span>
+								One special character
+							</li>
+						</ul>
 					</div>
 
-					<div class="form-group">
-						<label for="confirm-password">Confirm Password</label>
-						<input
-							id="confirm-password"
-							type="password"
-							bind:value={confirmPassword}
-							placeholder="Confirm your new password"
-							disabled={loading}
-							required
-						/>
-						{#if confirmPassword && password !== confirmPassword}
-							<div class="field-error">Passwords do not match</div>
-						{/if}
+					<!-- Password Fields Together -->
+					<div class="password-fields">
+						<div class="form-group">
+							<label for="password">New Password</label>
+							<input
+								id="password"
+								type="password"
+								bind:value={password}
+								placeholder="Enter your new password"
+								disabled={loading}
+								required
+							/>
+						</div>
+
+						<div class="form-group">
+							<label for="confirm-password">Confirm Password</label>
+							<input
+								id="confirm-password"
+								type="password"
+								bind:value={confirmPassword}
+								placeholder="Confirm your new password"
+								disabled={loading}
+								required
+							/>
+							{#if confirmPassword && password !== confirmPassword}
+								<div class="field-error">Passwords do not match</div>
+							{:else if confirmPassword && password === confirmPassword}
+								<div class="field-success">Passwords match ✓</div>
+							{/if}
+						</div>
 					</div>
 
 					<button type="submit" class="btn btn-primary btn-full" disabled={loading}>
@@ -409,7 +431,7 @@
 	}
 
 	.password-requirements {
-		margin-top: 0.75rem;
+		margin-bottom: 1.5rem;
 		padding: 1rem;
 		background: var(--bg-secondary);
 		border-radius: 0.5rem;
@@ -433,29 +455,52 @@
 		display: flex;
 		align-items: center;
 		font-size: 0.875rem;
-		color: var(--text-secondary);
+		color: #6b7280;
 		margin-bottom: 0.25rem;
+		transition: color 0.2s ease;
 	}
 
-	.password-requirements li::before {
-		content: '✗';
-		color: var(--error-color);
+	.validator-icon {
 		font-weight: bold;
 		margin-right: 0.5rem;
 		width: 1rem;
+		text-align: center;
+		color: #9ca3af;
 	}
 
-	.password-requirements li.valid::before {
-		content: '✓';
-		color: var(--success-color);
+	/* Invalid state - Red X */
+	.password-requirements li.invalid {
+		color: #dc2626;
 	}
 
+	.password-requirements li.invalid .validator-icon {
+		color: #dc2626;
+	}
+
+	/* Valid state - Green checkmark */
 	.password-requirements li.valid {
-		color: var(--success-color);
+		color: #16a34a;
+	}
+
+	.password-requirements li.valid .validator-icon {
+		color: #16a34a;
+	}
+
+	/* Password fields wrapper */
+	.password-fields {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.field-success {
+		color: #16a34a;
+		font-size: 0.875rem;
+		margin-top: 0.5rem;
 	}
 
 	.field-error {
-		color: var(--error-color);
+		color: #dc2626;
 		font-size: 0.875rem;
 		margin-top: 0.5rem;
 	}

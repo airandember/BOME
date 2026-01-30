@@ -61,8 +61,8 @@ func ValidateEmail(email string) error {
 
 // ValidatePassword validates password strength with enhanced security
 func ValidatePassword(password string) error {
-	if len(password) < 12 {
-		return fmt.Errorf("password must be at least 12 characters long")
+	if len(password) < 8 {
+		return fmt.Errorf("password must be at least 8 characters long")
 	}
 
 	if len(password) > 128 {
