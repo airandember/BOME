@@ -8,6 +8,8 @@
 	import EnhancedSubscriberViewModal from './EnhancedSubscriberViewModal.svelte';
 	import EnhancedSubscriberEditModal from './EnhancedSubscriberEditModal.svelte';
 	import { StripeWebhookAutoSync } from '$lib/services/webhook-auto-sync';
+	import { apiRequest } from '$lib/auth';
+	import { showToast } from '$lib/toast';
 	import * as XLSX from 'xlsx';
 	
 	// State
@@ -95,12 +97,18 @@
 	
 	// Bulk actions
 	const bulkActions = [
-		{ id: 'grant_access', label: 'Grant Video Access', icon: '🎬', variant: 'primary' as const },
+		{ id: 'assign_temp_password', label: 'Assign Temp Password', icon: '🔑', variant: 'primary' as const },
+		{ id: 'assign_temp_password_email', label: 'Assign Temp Pass + Email', icon: '📧', variant: 'primary' as const },
+		{ id: 'grant_access', label: 'Grant Video Access', icon: '🎬', variant: 'secondary' as const },
 		{ id: 'revoke_access', label: 'Revoke Video Access', icon: '🚫', variant: 'danger' as const },
 		{ id: 'verify_email', label: 'Mark Email Verified', icon: '✅', variant: 'secondary' as const },
-		{ id: 'send_reminder', label: 'Send Renewal Reminder', icon: '📧', variant: 'secondary' as const },
 		{ id: 'export_selected', label: 'Export Selected', icon: '📊', variant: 'secondary' as const }
 	];
+	
+	// Temp password assignment state
+	let assigningTempPasswords = $state(false);
+	let tempPasswordResults = $state<any[]>([]);
+	let showTempPasswordResultsModal = $state(false);
 	
 	// Load data on mount
 	onMount(async () => {
@@ -173,27 +181,86 @@
 		}
 	}
 	
-	function handleBulkAction(event: { action: string; items: any[]; requiresConfirmation?: boolean }) {
+	async function handleBulkAction(event: { action: string; items: any[]; requiresConfirmation?: boolean }) {
 		console.log('🔧 Bulk action:', event.action, 'on', event.items.length, 'items');
 		
-		// TODO: Implement bulk actions
 		switch (event.action) {
+			case 'assign_temp_password':
+				await assignTempPasswords(event.items, false);
+				break;
+			case 'assign_temp_password_email':
+				await assignTempPasswords(event.items, true);
+				break;
 			case 'grant_access':
 				// Grant video access to selected users
+				showToast('Grant access not yet implemented', 'warning');
 				break;
 			case 'revoke_access':
 				// Revoke video access from selected users
+				showToast('Revoke access not yet implemented', 'warning');
 				break;
 			case 'verify_email':
 				// Mark emails as verified
-				break;
-			case 'send_reminder':
-				// Send renewal reminders
+				showToast('Verify email not yet implemented', 'warning');
 				break;
 			case 'export_selected':
-				// Export selected users
+				// Export selected users - use the existing export handler
+				handleExport({ data: event.items, format: 'xlsx' });
 				break;
 		}
+	}
+	
+	// Temp password assignment
+	async function assignTempPasswords(users: EnhancedSubscriber[], sendEmail: boolean) {
+		if (users.length === 0) {
+			showToast('Please select users to assign temp passwords', 'warning');
+			return;
+		}
+		
+		assigningTempPasswords = true;
+		try {
+			const userIds = users.map(u => u.id);
+			console.log('🔑 Assigning temp passwords to', userIds.length, 'users, sendEmail:', sendEmail);
+			
+			const response = await apiRequest('/admin/users/bulk-temp-password', {
+				method: 'POST',
+				body: JSON.stringify({
+					user_ids: userIds,
+					send_email: sendEmail
+				})
+			});
+			
+			if (response.ok) {
+				const data = await response.json();
+				tempPasswordResults = data.results || [];
+				
+				if (data.assigned_count > 0) {
+					showToast(`Assigned temp passwords to ${data.assigned_count} users`, 'success');
+				}
+				if (data.error_count > 0) {
+					showToast(`${data.error_count} users could not be assigned (may already have passwords)`, 'warning');
+				}
+				
+				// Show results modal
+				showTempPasswordResultsModal = true;
+				
+				// Refresh subscriber data
+				await subscriberStoreActions.refresh();
+			} else {
+				const error = await response.json();
+				showToast(error.error || 'Failed to assign temp passwords', 'error');
+			}
+		} catch (error) {
+			console.error('Error assigning temp passwords:', error);
+			showToast('Failed to assign temp passwords', 'error');
+		} finally {
+			assigningTempPasswords = false;
+		}
+	}
+	
+	function closeTempPasswordResultsModal() {
+		showTempPasswordResultsModal = false;
+		tempPasswordResults = [];
 	}
 	
 	function handleExport(event: { data: any[]; format: string }) {
@@ -732,6 +799,69 @@
 	/>
 {/if}
 
+<!-- Temp Password Results Modal -->
+{#if showTempPasswordResultsModal}
+	<div 
+		class="modal-overlay" 
+		onclick={closeTempPasswordResultsModal}
+		onkeydown={(e) => e.key === 'Escape' && closeTempPasswordResultsModal()}
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="temp-password-modal-title"
+		tabindex="-1"
+	>
+		<div class="modal-content temp-password-modal" role="document" onclick={(e) => e.stopPropagation()}>
+			<div class="modal-header">
+				<h3 id="temp-password-modal-title">Temp Password Assignment Results</h3>
+				<button type="button" class="close-btn" onclick={closeTempPasswordResultsModal}>×</button>
+			</div>
+			<div class="modal-body">
+				{#if tempPasswordResults.length > 0}
+					<div class="results-summary">
+						<span class="success-count">
+							✅ {tempPasswordResults.filter(r => !r.error).length} assigned
+						</span>
+						<span class="error-count">
+							❌ {tempPasswordResults.filter(r => r.error).length} failed
+						</span>
+					</div>
+					<table class="results-table">
+						<thead>
+							<tr>
+								<th>User ID</th>
+								<th>Email</th>
+								<th>Temp Password</th>
+								<th>Email Sent</th>
+								<th>Status</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each tempPasswordResults as result}
+								<tr class:error={!!result.error}>
+									<td>{result.user_id}</td>
+									<td>{result.email}</td>
+									<td>{result.temp_password || '-'}</td>
+									<td>{result.email_sent ? '✅' : '❌'}</td>
+									<td class:error-text={!!result.error}>
+										{result.error || '✅ Success'}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				{:else}
+					<p>No results to display.</p>
+				{/if}
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-primary" onclick={closeTempPasswordResultsModal}>
+					Close
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
 <style>
 	.enhanced-subscribers-page {
 		padding: 1.5rem;
@@ -1154,5 +1284,131 @@
 		.kpi-grid {
 			grid-template-columns: 1fr;
 		}
+	}
+	
+	/* Temp Password Results Modal */
+	.modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+	}
+	
+	.modal-content {
+		background: white;
+		border-radius: 0.5rem;
+		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+		max-width: 800px;
+		width: 90%;
+		max-height: 80vh;
+		display: flex;
+		flex-direction: column;
+	}
+	
+	.modal-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1rem 1.5rem;
+		border-bottom: 1px solid #e5e7eb;
+	}
+	
+	.modal-header h3 {
+		margin: 0;
+		font-size: 1.25rem;
+		font-weight: 600;
+	}
+	
+	.close-btn {
+		background: none;
+		border: none;
+		font-size: 1.5rem;
+		cursor: pointer;
+		color: #6b7280;
+		padding: 0.25rem;
+		line-height: 1;
+	}
+	
+	.close-btn:hover {
+		color: #111827;
+	}
+	
+	.modal-body {
+		padding: 1.5rem;
+		overflow-y: auto;
+		flex: 1;
+	}
+	
+	.modal-footer {
+		padding: 1rem 1.5rem;
+		border-top: 1px solid #e5e7eb;
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.5rem;
+	}
+	
+	.results-summary {
+		display: flex;
+		gap: 1.5rem;
+		margin-bottom: 1rem;
+		font-weight: 600;
+	}
+	
+	.success-count {
+		color: #16a34a;
+	}
+	
+	.error-count {
+		color: #dc2626;
+	}
+	
+	.results-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.875rem;
+	}
+	
+	.results-table th,
+	.results-table td {
+		padding: 0.75rem;
+		text-align: left;
+		border-bottom: 1px solid #e5e7eb;
+	}
+	
+	.results-table th {
+		background: #f9fafb;
+		font-weight: 600;
+	}
+	
+	.results-table tr.error {
+		background: #fef2f2;
+	}
+	
+	.error-text {
+		color: #dc2626;
+	}
+	
+	.btn {
+		padding: 0.5rem 1rem;
+		border-radius: 0.375rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s;
+	}
+	
+	.btn-primary {
+		background: #3b82f6;
+		color: white;
+		border: none;
+	}
+	
+	.btn-primary:hover {
+		background: #2563eb;
 	}
 </style>
