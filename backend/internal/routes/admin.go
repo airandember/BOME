@@ -3348,6 +3348,7 @@ func BulkTempPasswordHandler(db *database.DB, emailService *services.EmailServic
 			// Get user
 			user, err := db.GetUserByID(userID)
 			if err != nil {
+				log.Printf("🔑 [BULK-TEMP-PASSWORD] User %d: not found", userID)
 				result.Error = "User not found"
 				errorCount++
 				results = append(results, result)
@@ -3357,6 +3358,7 @@ func BulkTempPasswordHandler(db *database.DB, emailService *services.EmailServic
 
 			// Check if user has ever logged in - only assign temp password to users who haven't
 			if user.LastLogin.Valid {
+				log.Printf("🔑 [BULK-TEMP-PASSWORD] User %d (%s): already logged in", userID, user.Email)
 				result.Error = "User has already logged in"
 				errorCount++
 				results = append(results, result)
@@ -3366,6 +3368,7 @@ func BulkTempPasswordHandler(db *database.DB, emailService *services.EmailServic
 			// Check if user already has a password set (set up via email verification)
 			// This prevents overwriting real passwords with temp passwords
 			if user.PasswordHash != "" {
+				log.Printf("🔑 [BULK-TEMP-PASSWORD] User %d (%s): already has password configured", userID, user.Email)
 				result.Error = "User already has a password configured"
 				errorCount++
 				results = append(results, result)
@@ -3401,6 +3404,7 @@ func BulkTempPasswordHandler(db *database.DB, emailService *services.EmailServic
 				}
 			}
 
+			log.Printf("🔑 [BULK-TEMP-PASSWORD] User %d (%s): SUCCESS - temp password assigned", userID, user.Email)
 			successCount++
 			results = append(results, result)
 		}
@@ -3419,14 +3423,19 @@ func BulkTempPasswordHandler(db *database.DB, emailService *services.EmailServic
 // GetUsersNeverLoggedInHandler returns users who have never logged in (candidates for temp passwords)
 func GetUsersNeverLoggedInHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Query users who have never logged in and have linked Stripe customers
+		// Query users who:
+		// 1. Have never logged in
+		// 2. Have at least one linked Stripe customer
+		// 3. Have no real password set (password_hash is empty)
+		// Note: temp passwords are stored in temp_password column, NOT password_hash
 		query := `
 			SELECT u.id, u.email, u.first_name, u.last_name, u.created_at,
 				   COALESCE(u.temp_password_active, FALSE) as has_temp_password,
 				   COUNT(usc.id) as linked_customers
 			FROM users u
-			LEFT JOIN user_stripe_customers_v2 usc ON usc.user_id = u.id
+			INNER JOIN user_stripe_customers_v2 usc ON usc.user_id = u.id
 			WHERE u.last_login IS NULL
+			  AND (u.password_hash IS NULL OR u.password_hash = '')
 			GROUP BY u.id, u.email, u.first_name, u.last_name, u.created_at, u.temp_password_active
 			ORDER BY u.created_at DESC
 		`

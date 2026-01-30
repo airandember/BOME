@@ -28,6 +28,7 @@
 	// State
 	let loading = $state(false);
 	let assigning = $state(false);
+	let assigningUserId = $state<number | null>(null); // Track which user is being assigned
 	let eligibleUsers = $state<EligibleUser[]>([]);
 	let filteredUsers = $state<EligibleUser[]>([]);
 	let selectedUserIds = $state<Set<number>>(new Set());
@@ -37,7 +38,6 @@
 	// Search & Filter state
 	let searchTerm = $state('');
 	let filterHasTempPassword: 'all' | 'yes' | 'no' = $state('all');
-	let filterHasStripeCustomer: 'all' | 'yes' | 'no' = $state('all');
 	let sortBy: 'email' | 'created_at' | 'id' = $state('email');
 	let sortDir: 'asc' | 'desc' = $state('asc');
 
@@ -50,12 +50,14 @@
 		return filteredUsers.slice(start, start + itemsPerPage);
 	});
 
-	// Stats
+	// Stats - all users in list have Stripe + no password (filtered at DB level)
 	let stats = $derived(() => {
 		const total = eligibleUsers.length;
 		const withTempPass = eligibleUsers.filter(u => u.has_temp_password).length;
-		const withStripe = eligibleUsers.filter(u => u.linked_customers > 0).length;
-		const needsAction = eligibleUsers.filter(u => !u.has_temp_password && u.linked_customers > 0).length;
+		// All users in this list have Stripe (required by query)
+		const withStripe = total;
+		// Users who need action: no temp password yet (all have Stripe)
+		const needsAction = eligibleUsers.filter(u => !u.has_temp_password).length;
 		return { total, withTempPass, withStripe, needsAction };
 	});
 
@@ -118,13 +120,6 @@
 			result = result.filter(u => !u.has_temp_password);
 		}
 
-		// Has Stripe customer filter
-		if (filterHasStripeCustomer === 'yes') {
-			result = result.filter(u => u.linked_customers > 0);
-		} else if (filterHasStripeCustomer === 'no') {
-			result = result.filter(u => u.linked_customers === 0);
-		}
-
 		// Sorting
 		result.sort((a, b) => {
 			let comparison = 0;
@@ -151,7 +146,6 @@
 		// Trigger on any filter change
 		searchTerm;
 		filterHasTempPassword;
-		filterHasStripeCustomer;
 		sortBy;
 		sortDir;
 		applyFilters();
@@ -189,11 +183,12 @@
 		selectedUserIds = new Set();
 	}
 
-	// Quick selection helpers
+	// Quick selection helpers - all users in list have Stripe + no password
 	function selectNeedingAction() {
 		clearSelection();
+		// All users need action if they don't have temp password yet
 		eligibleUsers
-			.filter(u => !u.has_temp_password && u.linked_customers > 0)
+			.filter(u => !u.has_temp_password)
 			.forEach(u => selectedUserIds.add(u.id));
 		selectedUserIds = new Set(selectedUserIds);
 		showToast(`Selected ${selectedUserIds.size} users needing action`, 'success');
@@ -254,6 +249,7 @@
 
 	// Single user assign
 	async function handleSingleAssign(user: EligibleUser, sendEmail: boolean) {
+		assigningUserId = user.id;
 		try {
 			const response = await apiRequest('/admin/users/bulk-temp-password', {
 				method: 'POST',
@@ -268,6 +264,10 @@
 				if (data.assigned_count > 0) {
 					showToast(`Temp password assigned to ${user.email}`, 'success');
 					await loadEligibleUsers();
+				} else if (data.error_count > 0 && data.results?.[0]?.error) {
+					// Show specific error from the backend
+					showToast(data.results[0].error, 'error');
+					await loadEligibleUsers(); // Refresh to update UI state
 				} else {
 					showToast('Failed to assign temp password', 'error');
 				}
@@ -275,6 +275,8 @@
 		} catch (error) {
 			console.error('Error:', error);
 			showToast('Failed to assign temp password', 'error');
+		} finally {
+			assigningUserId = null;
 		}
 	}
 
@@ -418,15 +420,6 @@
 			</div>
 
 			<div class="filter-group">
-				<label for="hasStripe">Stripe Customer</label>
-				<select id="hasStripe" bind:value={filterHasStripeCustomer} class="filter-select">
-					<option value="all">All</option>
-					<option value="yes">Has Stripe</option>
-					<option value="no">No Stripe</option>
-				</select>
-			</div>
-
-			<div class="filter-group">
 				<label for="sortBy">Sort By</label>
 				<select id="sortBy" bind:value={sortBy} class="filter-select">
 					<option value="email">Email</option>
@@ -553,11 +546,14 @@
 							</td>
 							<td class="date-cell">{formatDate(user.created_at)}</td>
 							<td class="actions-cell">
-								{#if !user.has_temp_password}
+								{#if assigningUserId === user.id}
+									<span class="loading-spinner">⏳</span>
+								{:else if !user.has_temp_password}
 									<button 
 										class="btn btn-sm btn-primary"
 										onclick={() => handleSingleAssign(user, true)}
 										title="Assign and send email"
+										disabled={assigningUserId !== null}
 									>
 										📧
 									</button>
@@ -565,6 +561,7 @@
 										class="btn btn-sm btn-outline"
 										onclick={() => handleSingleAssign(user, false)}
 										title="Assign only"
+										disabled={assigningUserId !== null}
 									>
 										🔑
 									</button>
@@ -974,10 +971,27 @@
 		gap: 0.25rem;
 	}
 
+	.actions-cell .loading-spinner {
+		display: inline-block;
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		from { transform: rotate(0deg); }
+		to { transform: rotate(360deg); }
+	}
+
 	.temp-pass-cell {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
+		white-space: nowrap;
+	}
+
+	.temp-pass-cell .badge {
+		display: inline-flex;
+		vertical-align: middle;
+	}
+
+	.temp-pass-cell .copy-btn {
+		vertical-align: middle;
 	}
 
 	/* Badges */
@@ -1189,18 +1203,6 @@
 		background: #fef2f2;
 	}
 
-	.password-cell {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.password-cell code {
-		background: #f3f4f6;
-		padding: 0.25rem 0.5rem;
-		border-radius: 0.25rem;
-		font-family: monospace;
-	}
 
 	.error-text {
 		color: #dc2626;
