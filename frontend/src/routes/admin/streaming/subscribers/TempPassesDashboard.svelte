@@ -11,6 +11,7 @@
 		first_name: string;
 		last_name: string;
 		has_temp_password: boolean;
+		has_password: boolean;
 		temp_password_created_at: string | null;
 		linked_customers: number;
 		created_at: string;
@@ -55,8 +56,10 @@
 		const total = eligibleUsers.length;
 		const withTempPass = eligibleUsers.filter(u => u.has_temp_password).length;
 		const withStripe = eligibleUsers.filter(u => u.linked_customers > 0).length;
-		const needsAction = eligibleUsers.filter(u => !u.has_temp_password && u.linked_customers > 0).length;
-		return { total, withTempPass, withStripe, needsAction };
+		// Only count users who need action: have Stripe, no temp password, AND no existing password
+		const needsAction = eligibleUsers.filter(u => !u.has_temp_password && u.linked_customers > 0 && !u.has_password).length;
+		const withPassword = eligibleUsers.filter(u => u.has_password).length;
+		return { total, withTempPass, withStripe, needsAction, withPassword };
 	});
 
 	// Selection helpers
@@ -193,7 +196,7 @@
 	function selectNeedingAction() {
 		clearSelection();
 		eligibleUsers
-			.filter(u => !u.has_temp_password && u.linked_customers > 0)
+			.filter(u => !u.has_temp_password && u.linked_customers > 0 && !u.has_password)
 			.forEach(u => selectedUserIds.add(u.id));
 		selectedUserIds = new Set(selectedUserIds);
 		showToast(`Selected ${selectedUserIds.size} users needing action`, 'success');
@@ -202,7 +205,7 @@
 	function selectWithoutTempPass() {
 		clearSelection();
 		eligibleUsers
-			.filter(u => !u.has_temp_password)
+			.filter(u => !u.has_temp_password && !u.has_password)
 			.forEach(u => selectedUserIds.add(u.id));
 		selectedUserIds = new Set(selectedUserIds);
 		showToast(`Selected ${selectedUserIds.size} users without temp passwords`, 'success');
@@ -268,6 +271,10 @@
 				if (data.assigned_count > 0) {
 					showToast(`Temp password assigned to ${user.email}`, 'success');
 					await loadEligibleUsers();
+				} else if (data.error_count > 0 && data.results?.[0]?.error) {
+					// Show specific error from the backend
+					showToast(data.results[0].error, 'error');
+					await loadEligibleUsers(); // Refresh to update UI state
 				} else {
 					showToast('Failed to assign temp password', 'error');
 				}
@@ -506,6 +513,7 @@
 						<th>User</th>
 						<th>ID</th>
 						<th>Stripe</th>
+						<th>Has Password</th>
 						<th>Temp Password</th>
 						<th>Created</th>
 						<th>Actions</th>
@@ -535,6 +543,13 @@
 									<span class="badge badge-muted">❌</span>
 								{/if}
 							</td>
+							<td class="password-cell">
+								{#if user.has_password}
+									<span class="badge badge-error">🔒 Yes</span>
+								{:else}
+									<span class="badge badge-muted">No</span>
+								{/if}
+							</td>
 							<td class="temp-pass-cell">
 								{#if user.has_temp_password}
 									<span class="badge badge-info">
@@ -553,7 +568,9 @@
 							</td>
 							<td class="date-cell">{formatDate(user.created_at)}</td>
 							<td class="actions-cell">
-								{#if !user.has_temp_password}
+								{#if user.has_password}
+									<span class="text-muted" title="User already has a password set">🔒 Has password</span>
+								{:else if !user.has_temp_password}
 									<button 
 										class="btn btn-sm btn-primary"
 										onclick={() => handleSingleAssign(user, true)}
@@ -975,9 +992,16 @@
 	}
 
 	.temp-pass-cell {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
+		white-space: nowrap;
+	}
+
+	.temp-pass-cell .badge {
+		display: inline-flex;
+		vertical-align: middle;
+	}
+
+	.temp-pass-cell .copy-btn {
+		vertical-align: middle;
 	}
 
 	/* Badges */
@@ -1010,6 +1034,11 @@
 	.badge-muted {
 		background: #f3f4f6;
 		color: #6b7280;
+	}
+
+	.badge-error {
+		background: #fef2f2;
+		color: #dc2626;
 	}
 
 	.copy-btn {
@@ -1190,16 +1219,7 @@
 	}
 
 	.password-cell {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.password-cell code {
-		background: #f3f4f6;
-		padding: 0.25rem 0.5rem;
-		border-radius: 0.25rem;
-		font-family: monospace;
+		white-space: nowrap;
 	}
 
 	.error-text {

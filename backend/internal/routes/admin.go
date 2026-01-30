@@ -3348,6 +3348,7 @@ func BulkTempPasswordHandler(db *database.DB, emailService *services.EmailServic
 			// Get user
 			user, err := db.GetUserByID(userID)
 			if err != nil {
+				log.Printf("🔑 [BULK-TEMP-PASSWORD] User %d: not found", userID)
 				result.Error = "User not found"
 				errorCount++
 				results = append(results, result)
@@ -3357,6 +3358,7 @@ func BulkTempPasswordHandler(db *database.DB, emailService *services.EmailServic
 
 			// Check if user has ever logged in - only assign temp password to users who haven't
 			if user.LastLogin.Valid {
+				log.Printf("🔑 [BULK-TEMP-PASSWORD] User %d (%s): already logged in", userID, user.Email)
 				result.Error = "User has already logged in"
 				errorCount++
 				results = append(results, result)
@@ -3366,6 +3368,7 @@ func BulkTempPasswordHandler(db *database.DB, emailService *services.EmailServic
 			// Check if user already has a password set (set up via email verification)
 			// This prevents overwriting real passwords with temp passwords
 			if user.PasswordHash != "" {
+				log.Printf("🔑 [BULK-TEMP-PASSWORD] User %d (%s): already has password configured", userID, user.Email)
 				result.Error = "User already has a password configured"
 				errorCount++
 				results = append(results, result)
@@ -3401,6 +3404,7 @@ func BulkTempPasswordHandler(db *database.DB, emailService *services.EmailServic
 				}
 			}
 
+			log.Printf("🔑 [BULK-TEMP-PASSWORD] User %d (%s): SUCCESS - temp password assigned", userID, user.Email)
 			successCount++
 			results = append(results, result)
 		}
@@ -3423,11 +3427,12 @@ func GetUsersNeverLoggedInHandler(db *database.DB) gin.HandlerFunc {
 		query := `
 			SELECT u.id, u.email, u.first_name, u.last_name, u.created_at,
 				   COALESCE(u.temp_password_active, FALSE) as has_temp_password,
+				   (COALESCE(u.password_hash, '') != '') as has_password,
 				   COUNT(usc.id) as linked_customers
 			FROM users u
 			LEFT JOIN user_stripe_customers_v2 usc ON usc.user_id = u.id
 			WHERE u.last_login IS NULL
-			GROUP BY u.id, u.email, u.first_name, u.last_name, u.created_at, u.temp_password_active
+			GROUP BY u.id, u.email, u.first_name, u.last_name, u.created_at, u.temp_password_active, u.password_hash
 			ORDER BY u.created_at DESC
 		`
 
@@ -3444,9 +3449,10 @@ func GetUsersNeverLoggedInHandler(db *database.DB) gin.HandlerFunc {
 			var email, firstName, lastName string
 			var createdAt time.Time
 			var hasTempPassword bool
+			var hasPassword bool
 			var linkedCustomers int
 
-			if err := rows.Scan(&id, &email, &firstName, &lastName, &createdAt, &hasTempPassword, &linkedCustomers); err != nil {
+			if err := rows.Scan(&id, &email, &firstName, &lastName, &createdAt, &hasTempPassword, &hasPassword, &linkedCustomers); err != nil {
 				log.Printf("⚠️  Failed to scan user: %v", err)
 				continue
 			}
@@ -3458,6 +3464,7 @@ func GetUsersNeverLoggedInHandler(db *database.DB) gin.HandlerFunc {
 				"last_name":         lastName,
 				"created_at":        createdAt,
 				"has_temp_password": hasTempPassword,
+				"has_password":      hasPassword,
 				"linked_customers":  linkedCustomers,
 			})
 		}
