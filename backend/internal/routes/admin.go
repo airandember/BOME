@@ -1672,7 +1672,7 @@ func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB, emailService *se
 	router.DELETE("/users/:id", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), DeleteUserHandler(db))
 	router.GET("/users/stats", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUserStatsHandler(db))
 	router.GET("/users/roles", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAvailableRolesHandler(db))
-	
+
 	// Temp Password Management
 	router.GET("/users/never-logged-in", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUsersNeverLoggedInHandler(db))
 	router.POST("/users/bulk-temp-password", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), BulkTempPasswordHandler(db, emailService))
@@ -3167,8 +3167,8 @@ func FixStripeMetadataHandler(db *database.DB) gin.HandlerFunc {
 		dryRun := c.Query("dry_run") == "true"
 
 		if dryRun {
-		// Count how many records would be fixed (V2)
-		query := `
+			// Count how many records would be fixed (V2)
+			query := `
 			SELECT COUNT(*)
 			FROM user_stripe_customers_v2 usc
 			INNER JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
@@ -3358,6 +3358,15 @@ func BulkTempPasswordHandler(db *database.DB, emailService *services.EmailServic
 			// Check if user has ever logged in - only assign temp password to users who haven't
 			if user.LastLogin.Valid {
 				result.Error = "User has already logged in"
+				errorCount++
+				results = append(results, result)
+				continue
+			}
+
+			// Check if user already has a password set (set up via email verification)
+			// This prevents overwriting real passwords with temp passwords
+			if user.PasswordHash != "" {
+				result.Error = "User already has a password configured"
 				errorCount++
 				results = append(results, result)
 				continue
