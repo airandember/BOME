@@ -3423,16 +3423,20 @@ func BulkTempPasswordHandler(db *database.DB, emailService *services.EmailServic
 // GetUsersNeverLoggedInHandler returns users who have never logged in (candidates for temp passwords)
 func GetUsersNeverLoggedInHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Query users who have never logged in and have linked Stripe customers
+		// Query users who:
+		// 1. Have never logged in
+		// 2. Have at least one linked Stripe customer
+		// 3. Have no real password set (password_hash is empty)
+		// Note: temp passwords are stored in temp_password column, NOT password_hash
 		query := `
 			SELECT u.id, u.email, u.first_name, u.last_name, u.created_at,
 				   COALESCE(u.temp_password_active, FALSE) as has_temp_password,
-				   (COALESCE(u.password_hash, '') != '') as has_password,
 				   COUNT(usc.id) as linked_customers
 			FROM users u
-			LEFT JOIN user_stripe_customers_v2 usc ON usc.user_id = u.id
+			INNER JOIN user_stripe_customers_v2 usc ON usc.user_id = u.id
 			WHERE u.last_login IS NULL
-			GROUP BY u.id, u.email, u.first_name, u.last_name, u.created_at, u.temp_password_active, u.password_hash
+			  AND (u.password_hash IS NULL OR u.password_hash = '')
+			GROUP BY u.id, u.email, u.first_name, u.last_name, u.created_at, u.temp_password_active
 			ORDER BY u.created_at DESC
 		`
 
@@ -3449,10 +3453,9 @@ func GetUsersNeverLoggedInHandler(db *database.DB) gin.HandlerFunc {
 			var email, firstName, lastName string
 			var createdAt time.Time
 			var hasTempPassword bool
-			var hasPassword bool
 			var linkedCustomers int
 
-			if err := rows.Scan(&id, &email, &firstName, &lastName, &createdAt, &hasTempPassword, &hasPassword, &linkedCustomers); err != nil {
+			if err := rows.Scan(&id, &email, &firstName, &lastName, &createdAt, &hasTempPassword, &linkedCustomers); err != nil {
 				log.Printf("⚠️  Failed to scan user: %v", err)
 				continue
 			}
@@ -3464,7 +3467,6 @@ func GetUsersNeverLoggedInHandler(db *database.DB) gin.HandlerFunc {
 				"last_name":         lastName,
 				"created_at":        createdAt,
 				"has_temp_password": hasTempPassword,
-				"has_password":      hasPassword,
 				"linked_customers":  linkedCustomers,
 			})
 		}

@@ -1209,13 +1209,14 @@ func (db *DB) GetFilteredUserCountWithRoles(role, search, status string) (int, e
 // ============================================
 
 // SetTempPassword sets a temporary password for a user
+// Note: Temp password is stored in temp_password column, NOT in password_hash
+// password_hash remains empty until user sets a real password
 func (db *DB) SetTempPassword(userID int, tempPassword string) error {
 	_, err := db.Exec(
 		`UPDATE users SET 
 			temp_password_active = TRUE, 
 			temp_password = $1, 
-			temp_password_created_at = NOW(),
-			password_hash = $1
+			temp_password_created_at = NOW()
 		WHERE id = $2`,
 		tempPassword, userID,
 	)
@@ -1296,7 +1297,7 @@ func (db *DB) GetUsersWithTempPasswordNeverLoggedIn() ([]*User, error) {
 // BulkSetTempPasswords sets temp passwords for multiple users
 func (db *DB) BulkSetTempPasswords(userIDs []int) (map[int]string, error) {
 	results := make(map[int]string)
-	
+
 	for _, userID := range userIDs {
 		tempPassword := fmt.Sprintf("BOME_%d", userID)
 		err := db.SetTempPassword(userID, tempPassword)
@@ -1306,6 +1307,6 @@ func (db *DB) BulkSetTempPasswords(userIDs []int) (map[int]string, error) {
 		}
 		results[userID] = tempPassword
 	}
-	
+
 	return results, nil
 }
