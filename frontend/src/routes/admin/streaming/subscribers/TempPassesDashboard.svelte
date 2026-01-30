@@ -53,6 +53,7 @@
 	let assignedUsers = $state<TempPasswordUser[]>([]);
 	let filteredAssignedUsers = $state<TempPasswordUser[]>([]);
 	let assignedSearchTerm = $state('');
+	let deactivatingUserId = $state<number | null>(null);
 
 	// Assigned pagination
 	let assignedCurrentPage = $state(1);
@@ -293,6 +294,33 @@
 		}
 	}
 
+	async function deactivateTempPassword(user: TempPasswordUser) {
+		if (!confirm(`Are you sure you want to deactivate the temp password for ${user.email}?`)) {
+			return;
+		}
+		
+		deactivatingUserId = user.id;
+		try {
+			const response = await apiRequest(`/admin/users/${user.id}/temp-password`, {
+				method: 'DELETE'
+			});
+			
+			if (response.ok) {
+				showToast(`Temp password deactivated for ${user.email}`, 'success');
+				// Refresh both lists
+				await Promise.all([loadEligibleUsers(), loadAssignedUsers()]);
+			} else {
+				const error = await response.json();
+				showToast(error.error || 'Failed to deactivate temp password', 'error');
+			}
+		} catch (error) {
+			console.error('Error deactivating temp password:', error);
+			showToast('Failed to deactivate temp password', 'error');
+		} finally {
+			deactivatingUserId = null;
+		}
+	}
+
 	// === LIFECYCLE ===
 	onMount(() => {
 		loadEligibleUsers();
@@ -336,7 +364,21 @@
 					<div class="stat-icon">👥</div>
 					<div class="stat-content">
 						<div class="stat-value">{eligibleStats().total}</div>
-						<div class="stat-label">Eligible Users</div>
+						<div class="stat-label">Total Eligible</div>
+					</div>
+				</div>
+				<div class="stat-card highlight-warning">
+					<div class="stat-icon">⚠️</div>
+					<div class="stat-content">
+						<div class="stat-value">{eligibleStats().needsAssignment}</div>
+						<div class="stat-label">Needs Assignment</div>
+					</div>
+				</div>
+				<div class="stat-card">
+					<div class="stat-icon">🔑</div>
+					<div class="stat-content">
+						<div class="stat-value">{eligibleStats().withTempPass}</div>
+						<div class="stat-label">Has Temp Pass</div>
 					</div>
 				</div>
 				<div class="stat-card highlight-info">
@@ -344,13 +386,6 @@
 					<div class="stat-content">
 						<div class="stat-value">{selectedUserIds.size}</div>
 						<div class="stat-label">Selected</div>
-					</div>
-				</div>
-				<div class="stat-card">
-					<div class="stat-icon">🔑</div>
-					<div class="stat-content">
-						<div class="stat-value">{assignedStats().total}</div>
-						<div class="stat-label">Already Assigned</div>
 					</div>
 				</div>
 			</div>
@@ -444,6 +479,7 @@
 								<th>Video Access</th>
 								<th>Active Plan</th>
 								<th>Verified</th>
+								<th>Temp Pass Active</th>
 								<th>Last Login</th>
 							</tr>
 						</thead>
@@ -473,6 +509,13 @@
 									</td>
 									<td>
 										<span class="badge badge-warning">No</span>
+									</td>
+									<td>
+										{#if tempPasswordUserIds().has(user.id)}
+											<span class="badge badge-success">Yes</span>
+										{:else}
+											<span class="badge badge-warning">No</span>
+										{/if}
 									</td>
 									<td class="date-cell">
 										{#if user.last_login}
@@ -583,6 +626,7 @@
 								<th>Temp Password</th>
 								<th>Assigned</th>
 								<th>Status</th>
+								<th>Actions</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -614,6 +658,16 @@
 										{:else}
 											<span class="badge badge-warning">Pending login</span>
 										{/if}
+									</td>
+									<td class="actions-cell">
+										<button 
+											class="btn btn-sm btn-danger"
+											onclick={() => deactivateTempPassword(user)}
+											disabled={deactivatingUserId === user.id}
+											title="Deactivate temp password"
+										>
+											{deactivatingUserId === user.id ? '⏳' : '❌'}
+										</button>
 									</td>
 								</tr>
 							{/each}
@@ -805,6 +859,11 @@
 	.stat-card.highlight-info {
 		border-color: #3b82f6;
 		background: #eff6ff;
+	}
+
+	.stat-card.highlight-warning {
+		border-color: #f59e0b;
+		background: #fffbeb;
 	}
 
 	.stat-card.highlight-warning {
@@ -1063,6 +1122,15 @@
 		background: #e5e7eb;
 	}
 
+	.btn-danger {
+		background: #661e1e;
+		color: white;
+	}
+
+	.btn-danger:hover:not(:disabled) {
+		background: #dc2626;
+	}
+
 	.btn-outline {
 		background: white;
 		color: #374151;
@@ -1076,6 +1144,10 @@
 	.btn-sm {
 		padding: 0.375rem 0.75rem;
 		font-size: 0.75rem;
+	}
+
+	.actions-cell {
+		text-align: center;
 	}
 
 	.btn:disabled {

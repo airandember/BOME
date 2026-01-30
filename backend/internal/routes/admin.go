@@ -1677,6 +1677,7 @@ func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB, emailService *se
 	router.GET("/users/never-logged-in", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUsersNeverLoggedInHandler(db))
 	router.GET("/users/with-temp-passwords", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUsersWithTempPasswordsHandler(db))
 	router.POST("/users/bulk-temp-password", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), BulkTempPasswordHandler(db, emailService))
+	router.DELETE("/users/:id/temp-password", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), DeactivateTempPasswordHandler(db))
 
 	// Roles and Departments
 	router.GET("/roles", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetRolesWithDepartmentsHandler(db))
@@ -3535,6 +3536,45 @@ func GetUsersWithTempPasswordsHandler(db *database.DB) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{
 			"users": users,
 			"count": len(users),
+		})
+	}
+}
+
+// DeactivateTempPasswordHandler deactivates a user's temp password
+func DeactivateTempPasswordHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userIDStr := c.Param("id")
+		userID, err := strconv.Atoi(userIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+			return
+		}
+
+		// Get user to verify they exist and have a temp password
+		user, err := db.GetUserByID(userID)
+		if err != nil || user == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+			return
+		}
+
+		if !user.TempPasswordActive {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "User does not have an active temp password"})
+			return
+		}
+
+		// Clear the temp password
+		if err := db.ClearTempPassword(userID); err != nil {
+			log.Printf("⚠️  Failed to deactivate temp password for user %d: %v", userID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to deactivate temp password"})
+			return
+		}
+
+		log.Printf("🔑 [TEMP-PASSWORD] Admin deactivated temp password for user %d (%s)", userID, user.Email)
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Temp password deactivated",
+			"user_id": userID,
+			"email":   user.Email,
 		})
 	}
 }
