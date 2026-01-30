@@ -754,8 +754,38 @@ func (s *EmailService) SendTempPasswordEmail(userID int, email, name, tempPasswo
 		return nil
 	}
 
-	// Send actual email
-	return s.sendRawEmail(email, "Your BOME Account is Ready - Temporary Password Inside", htmlBody, "temp_password", userID)
+	// Check if email is enabled
+	enabled, err := s.isEmailEnabled()
+	if err != nil {
+		return fmt.Errorf("failed to check email settings: %w", err)
+	}
+	if !enabled {
+		log.Printf("⚠️ [EMAIL] Email sending is disabled, skipping temp password email")
+		return nil
+	}
+
+	subject := "Your BOME Account is Ready - Temporary Password Inside"
+
+	// Record email notification
+	notificationID, err := s.recordEmailNotification(userID, email, "temp_password", subject, "temp_password", EmailData{
+		UserName:    name,
+		UserEmail:   email,
+		CompanyName: "BOME",
+		BaseURL:     baseURL,
+	})
+	if err != nil {
+		log.Printf("⚠️ [EMAIL] Failed to record temp password notification: %v", err)
+	}
+
+	// Send with Resend
+	sendErr := s.sendWithResend(email, subject, htmlBody, notificationID)
+	if sendErr != nil {
+		log.Printf("❌ [EMAIL] Resend failed for temp password email: %v", sendErr)
+		return fmt.Errorf("failed to send temp password email: %w", sendErr)
+	}
+
+	log.Printf("✅ [EMAIL] Temp password email sent successfully to %s", email)
+	return nil
 }
 
 // SendTestEmail sends a test email to verify email configuration
