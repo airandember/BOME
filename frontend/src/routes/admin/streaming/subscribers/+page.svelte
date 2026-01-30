@@ -18,9 +18,10 @@
 	import { apiRequest } from '$lib/auth';
 	import StripeCustomers from './customers/+page.svelte';
 	import GhostDataManager from './GhostDataManager.svelte';
+	import TempPassesDashboard from './TempPassesDashboard.svelte';
 
 	// State
-	let activeTab: 'subscribers' | 'stripe-subs' | 'ghosts' = $state('subscribers');
+	let activeTab: 'subscribers' | 'stripe-subs' | 'ghosts' | 'temp-passes' = $state('subscribers');
 	let loading = $state(false);
 	let ghostCount = $state(0);
 	
@@ -260,7 +261,7 @@ onMount(async () => {
 });
 
 // Load data for a specific tab
-async function loadTabData(tab: 'subscribers' | 'stripe-subs' | 'ghosts') {
+async function loadTabData(tab: 'subscribers' | 'stripe-subs' | 'ghosts' | 'temp-passes') {
 	console.log(`🔄 Loading data for tab: ${tab}`);
 	
 	switch (tab) {
@@ -272,6 +273,9 @@ async function loadTabData(tab: 'subscribers' | 'stripe-subs' | 'ghosts') {
 			break;
 		case 'stripe-subs':
 			await loadStripeSubsData();
+			break;
+		case 'temp-passes':
+			// TempPassesDashboard handles its own data loading
 			break;
 	}
 }
@@ -945,7 +949,7 @@ async function loadStripeSubsData() {
 
 
 	// Update the changeTab function to handle the new tab
-	async function changeTab(tab: 'subscribers' | 'stripe-subs' | 'ghosts') {
+	async function changeTab(tab: 'subscribers' | 'stripe-subs' | 'ghosts' | 'temp-passes') {
 		if (tab === activeTab) return;
 		
 		// Clear selections when switching tabs
@@ -1265,7 +1269,15 @@ async function loadStripeSubsData() {
 			onclick={() => changeTab('stripe-subs')}
 		>
 			<span class="tab-icon">🔗</span>
-			Stripe Subs <!--({stripeOnlyCount + syncedCount})-->
+			Stripe Subs
+		</button>
+		<button 
+			class="tab-button temp-passes-tab" 
+			class:active={activeTab === 'temp-passes'}
+			onclick={() => changeTab('temp-passes')}
+		>
+			<span class="tab-icon">🔑</span>
+			Temp Passes
 		</button>
 		{#if ghostCount > 0}
 		<button 
@@ -1309,6 +1321,11 @@ async function loadStripeSubsData() {
 					/>
 				{/if}
 			</div>
+		{:else if activeTab === 'temp-passes'}
+			<!-- Temp Passes Tab -->
+			<div class="temp-passes-section">
+				<TempPassesDashboard />
+			</div>
 		{:else if activeTab === 'ghosts'}
 			<!-- Ghost Data Tab -->
 			<GhostDataManager onGhostCountUpdate={loadGhostCount} />
@@ -1336,6 +1353,7 @@ async function loadStripeSubsData() {
 		onCancel={() => { showEditModal = false; selectedSubscriber = null; }}
 	/>
 {/if}
+
 
 <style>
 	/* CSS Variables for child components */
@@ -1434,6 +1452,11 @@ async function loadStripeSubsData() {
 		border-bottom-color: #9333ea;
 	}
 
+	.tab-button.temp-passes-tab.active {
+		color: #d97706;
+		border-bottom-color: #d97706;
+	}
+
 	@keyframes ghostPulse {
 		0%, 100% {
 			opacity: 1;
@@ -1453,7 +1476,8 @@ async function loadStripeSubsData() {
 	}
 
 	.subscribers-section,
-	.stripe-subs-section {
+	.stripe-subs-section,
+	.temp-passes-section {
 		padding: 1.5rem;
 	}
 
@@ -1638,4 +1662,5 @@ async function loadStripeSubsData() {
 			flex-wrap: wrap;
 		}
 	}
+
 </style> 

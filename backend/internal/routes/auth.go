@@ -115,12 +115,72 @@ func RegisterHandler(db *database.DB, emailService *services.EmailService) gin.H
 		}
 
 		// 🔄 UNIFIED FLOW: Check if user already exists
-		// If they exist, send them verification email to complete setup
+		// If they exist, check for Stripe customers and use temp password if found
 		existingUser, err := db.GetUserByEmail(req.Email)
 		if err == nil && existingUser != nil {
 			log.Printf("🔄 [UNIFIED-FLOW] Existing user attempting registration: %s (ID: %d)", existingUser.Email, existingUser.ID)
 
-			// Generate new verification token for existing user
+			// 🔒 CHECK FOR EXISTING PASSWORD: If user already has a password set, redirect to login
+			// This prevents overwriting real passwords with temp passwords
+			if existingUser.PasswordHash != "" {
+				log.Printf("🔒 [UNIFIED-FLOW] Existing user %d already has a password - redirecting to login", existingUser.ID)
+				c.JSON(http.StatusConflict, gin.H{
+					"error":       "Account already exists",
+					"message":     "You already have an account. Please log in instead.",
+					"redirect_to": "/auth/login",
+				})
+				return
+			}
+
+			// 🔗 AUTO-LINK: Attempt to link any existing Stripe customers with matching email
+			linkingService := services.NewCustomerLinkingService(db)
+			linkResult, err := linkingService.LinkUserToCustomers(existingUser.ID)
+			if err != nil {
+				log.Printf("⚠️  Failed to auto-link Stripe customers for existing user %d: %v", existingUser.ID, err)
+			} else if linkResult.CustomersLinked > 0 {
+				log.Printf("✅ Auto-linked %d Stripe customer(s) to existing user %d (%s)",
+					linkResult.CustomersLinked, existingUser.ID, existingUser.Email)
+			}
+
+			// 🔑 TEMP PASSWORD FLOW: If user has linked Stripe customers, use temp password
+			if linkResult != nil && linkResult.CustomersLinked > 0 {
+				log.Printf("🔑 [TEMP-PASSWORD] Existing user %d has Stripe subscription - using temp password flow", existingUser.ID)
+
+				// Generate temp password: BOME_[user_id]
+				tempPassword := fmt.Sprintf("BOME_%d", existingUser.ID)
+
+				// Set temp password in database
+				if err := db.SetTempPassword(existingUser.ID, tempPassword); err != nil {
+					log.Printf("❌ Failed to set temp password for existing user %d: %v", existingUser.ID, err)
+				} else {
+					// Mark email as verified since they're an existing subscriber
+					if err := db.SetUserEmailVerified(existingUser.ID); err != nil {
+						log.Printf("⚠️  Failed to set email verified for user %d: %v", existingUser.ID, err)
+					}
+
+					// Send temp password email
+					if emailService != nil {
+						fullName := existingUser.FirstName + " " + existingUser.LastName
+						if err := emailService.SendTempPasswordEmail(existingUser.ID, existingUser.Email, fullName, tempPassword); err != nil {
+							log.Printf("❌ Failed to send temp password email: %v", err)
+						} else {
+							log.Printf("✅ Temp password email sent to existing user: %s", existingUser.Email)
+						}
+					}
+
+					c.JSON(http.StatusCreated, gin.H{
+						"message":               "Your subscription was found! Check your email for your temporary password.",
+						"user_id":               existingUser.ID,
+						"email":                 existingUser.Email,
+						"verification_required": false,
+						"temp_password_sent":    true,
+						"redirect_to":           "/auth/login",
+					})
+					return
+				}
+			}
+
+			// 📧 STANDARD FLOW: No Stripe link, use email verification
 			verificationToken := services.GenerateSecureToken()
 			if err := db.SetVerificationToken(existingUser.ID, verificationToken); err != nil {
 				log.Printf("Failed to set verification token for existing user: %v", err)
@@ -136,17 +196,6 @@ func RegisterHandler(db *database.DB, emailService *services.EmailService) gin.H
 				}
 			}
 
-			// 🔗 AUTO-LINK: Attempt to link any existing Stripe customers with matching email
-			// (in case they created Stripe customer after initial registration)
-			linkingService := services.NewCustomerLinkingService(db)
-			linkResult, err := linkingService.LinkUserToCustomers(existingUser.ID)
-			if err != nil {
-				log.Printf("⚠️  Failed to auto-link Stripe customers for existing user %d: %v", existingUser.ID, err)
-			} else if linkResult.CustomersLinked > 0 {
-				log.Printf("✅ Auto-linked %d Stripe customer(s) to existing user %d (%s)", 
-					linkResult.CustomersLinked, existingUser.ID, existingUser.Email)
-			}
-
 			// Return success message (same as new user to avoid revealing account existence)
 			c.JSON(http.StatusCreated, gin.H{
 				"message":               "Registration successful. Please check your email to complete your account setup.",
@@ -157,8 +206,8 @@ func RegisterHandler(db *database.DB, emailService *services.EmailService) gin.H
 			return
 		}
 
-		// Create new user with empty password hash (will trigger password setup after verification)
-		passwordHash := "" // Empty password triggers password setup flow
+		// Create new user with empty password hash initially
+		passwordHash := "" // Will be set to temp password if auto-linked, or verified via email
 		user, err := db.CreateUser(req.Email, passwordHash, req.FirstName, req.LastName, "user")
 		if err != nil {
 			log.Printf("Failed to create user: %v", err)
@@ -168,14 +217,66 @@ func RegisterHandler(db *database.DB, emailService *services.EmailService) gin.H
 			return
 		}
 
-		// Generate email verification token
+		// Log successful registration
+		log.Printf("User registered successfully: %s (ID: %d) from %s", user.Email, user.ID, clientIP)
+
+		// 🔗 AUTO-LINK: Attempt to link any existing Stripe customers with matching email
+		linkingService := services.NewCustomerLinkingService(db)
+		linkResult, err := linkingService.LinkUserToCustomers(user.ID)
+		if err != nil {
+			log.Printf("⚠️  Failed to auto-link Stripe customers for new user %d: %v", user.ID, err)
+		} else if linkResult.CustomersLinked > 0 {
+			log.Printf("✅ Auto-linked %d Stripe customer(s) to new user %d (%s)",
+				linkResult.CustomersLinked, user.ID, user.Email)
+		}
+
+		// 🔑 TEMP PASSWORD FLOW: If user was auto-linked to Stripe, use temp password instead of email verification
+		if linkResult != nil && linkResult.CustomersLinked > 0 {
+			log.Printf("🔑 [TEMP-PASSWORD] User %d has existing Stripe subscription - using temp password flow", user.ID)
+
+			// Generate temp password: BOME_[user_id]
+			tempPassword := fmt.Sprintf("BOME_%d", user.ID)
+
+			// Set temp password in database
+			if err := db.SetTempPassword(user.ID, tempPassword); err != nil {
+				log.Printf("❌ Failed to set temp password for user %d: %v", user.ID, err)
+				// Fall back to email verification
+			} else {
+				// Mark email as verified since they're an existing subscriber
+				if err := db.SetUserEmailVerified(user.ID); err != nil {
+					log.Printf("⚠️  Failed to set email verified for user %d: %v", user.ID, err)
+				}
+
+				// Send temp password email
+				if emailService != nil {
+					fullName := user.FirstName + " " + user.LastName
+					if err := emailService.SendTempPasswordEmail(user.ID, user.Email, fullName, tempPassword); err != nil {
+						log.Printf("❌ Failed to send temp password email: %v", err)
+					} else {
+						log.Printf("✅ Temp password email sent to %s", user.Email)
+					}
+				}
+
+				c.JSON(http.StatusCreated, gin.H{
+					"message":               "Your subscription was found! Check your email for your temporary password.",
+					"user_id":               user.ID,
+					"email":                 user.Email,
+					"verification_required": false,
+					"temp_password_sent":    true,
+					"redirect_to":           "/auth/login",
+				})
+				return
+			}
+		}
+
+		// 📧 STANDARD FLOW: No auto-link, use email verification
 		verificationToken := services.GenerateSecureToken()
 		if err := db.SetVerificationToken(user.ID, verificationToken); err != nil {
 			log.Printf("Failed to set verification token: %v", err)
 			// Continue anyway - user can request new verification
 		}
 
-		// Send verification email using new email service
+		// Send verification email
 		if emailService != nil {
 			fullName := user.FirstName + " " + user.LastName
 			if err := emailService.SendVerificationEmail(user.ID, user.Email, fullName); err != nil {
@@ -186,25 +287,12 @@ func RegisterHandler(db *database.DB, emailService *services.EmailService) gin.H
 			}
 		}
 
-	// Log successful registration
-	log.Printf("User registered successfully: %s (ID: %d) from %s", user.Email, user.ID, clientIP)
-
-	// 🔗 AUTO-LINK: Attempt to link any existing Stripe customers with matching email
-	linkingService := services.NewCustomerLinkingService(db)
-	linkResult, err := linkingService.LinkUserToCustomers(user.ID)
-	if err != nil {
-		log.Printf("⚠️  Failed to auto-link Stripe customers for new user %d: %v", user.ID, err)
-	} else if linkResult.CustomersLinked > 0 {
-		log.Printf("✅ Auto-linked %d Stripe customer(s) to new user %d (%s)", 
-			linkResult.CustomersLinked, user.ID, user.Email)
-	}
-
-	c.JSON(http.StatusCreated, gin.H{
-		"message":               "Registration successful. Please check your email to complete your account setup.",
-		"user_id":               user.ID,
-		"email":                 user.Email,
-		"verification_required": true,
-	})
+		c.JSON(http.StatusCreated, gin.H{
+			"message":               "Registration successful. Please check your email to complete your account setup.",
+			"user_id":               user.ID,
+			"email":                 user.Email,
+			"verification_required": true,
+		})
 	}
 }
 
@@ -414,8 +502,24 @@ func LoginHandler(db *database.DB, emailService *services.EmailService) gin.Hand
 			return
 		}
 
+		// 🔑 TEMP PASSWORD CHECK: First check if user has active temp password
+		passwordValid := false
+		usingTempPassword := false
+
+		if user.TempPasswordActive && user.TempPassword.Valid && user.TempPassword.String == req.Password {
+			// Temp password matches - allow login
+			passwordValid = true
+			usingTempPassword = true
+			log.Printf("🔑 [TEMP-PASSWORD] User %d logged in with temp password", user.ID)
+		} else {
+			// Try regular password verification
+			if err := services.CheckPassword(user.PasswordHash, req.Password); err == nil {
+				passwordValid = true
+			}
+		}
+
 		// Verify password
-		if err := services.CheckPassword(user.PasswordHash, req.Password); err != nil {
+		if !passwordValid {
 			// Record failed attempt
 			services.EnhancedLoginRateLimiter.RecordFailedAttempt(req.Email, clientIP)
 
@@ -443,7 +547,8 @@ func LoginHandler(db *database.DB, emailService *services.EmailService) gin.Hand
 		services.EnhancedLoginRateLimiter.RecordSuccessfulAttempt(req.Email)
 
 		// 🔐 EMAIL VERIFICATION CHECK: Block login if email not verified AND no previous login
-		if !user.EmailVerified && !user.LastLogin.Valid {
+		// Skip this check for users logging in with temp password (they're verified via Stripe subscription)
+		if !user.EmailVerified && !user.LastLogin.Valid && !usingTempPassword {
 			log.Printf("🚫 Login blocked for unverified user: %s (ID: %d) - first-time login requires email verification", user.Email, user.ID)
 
 			// 📧 AUTO-SEND VERIFICATION EMAIL: Send verification email automatically
@@ -564,7 +669,7 @@ func LoginHandler(db *database.DB, emailService *services.EmailService) gin.Hand
 		if err != nil {
 			log.Printf("⚠️  [LOGIN-LINK] Failed to check for unlinked customers for user %d: %v", user.ID, err)
 		} else if linkResult.CustomersLinked > 0 {
-			log.Printf("✅ [LOGIN-LINK] Auto-linked %d new Stripe customer(s) on login for user %d (%s)", 
+			log.Printf("✅ [LOGIN-LINK] Auto-linked %d new Stripe customer(s) on login for user %d (%s)",
 				linkResult.CustomersLinked, user.ID, user.Email)
 		}
 
@@ -597,12 +702,13 @@ func LoginHandler(db *database.DB, emailService *services.EmailService) gin.Hand
 			"token_type":    tokenPair.TokenType,
 			"session_id":    session.ID,
 			"user": gin.H{
-				"id":             user.ID,
-				"email":          user.Email,
-				"role":           user.Role,
-				"first_name":     user.FirstName,
-				"last_name":      user.LastName,
-				"email_verified": user.EmailVerified,
+				"id":                   user.ID,
+				"email":                user.Email,
+				"role":                 user.Role,
+				"first_name":           user.FirstName,
+				"last_name":            user.LastName,
+				"email_verified":       user.EmailVerified,
+				"temp_password_active": user.TempPasswordActive,
 			},
 		})
 	}
@@ -842,23 +948,23 @@ func VerifyEmailLinkHandler(db *database.DB) gin.HandlerFunc {
 			log.Printf("Failed to clear verification token: %v", err)
 		}
 
-	// Update last login to complete the verification process
-	if err := db.UpdateLastLogin(user.ID); err != nil {
-		log.Printf("Failed to update last login: %v", err)
-	}
+		// Update last login to complete the verification process
+		if err := db.UpdateLastLogin(user.ID); err != nil {
+			log.Printf("Failed to update last login: %v", err)
+		}
 
-	// 🔗 AUTO-LINK: Attempt to link any existing Stripe customers with matching email
-	// (safety net in case linking didn't happen at registration)
-	linkingService := services.NewCustomerLinkingService(db)
-	linkResult, err := linkingService.LinkUserToCustomers(user.ID)
-	if err != nil {
-		log.Printf("⚠️  Failed to auto-link Stripe customers during verification for user %d: %v", user.ID, err)
-	} else if linkResult.CustomersLinked > 0 {
-		log.Printf("✅ Auto-linked %d Stripe customer(s) during email verification for user %d (%s)", 
-			linkResult.CustomersLinked, user.ID, user.Email)
-	}
+		// 🔗 AUTO-LINK: Attempt to link any existing Stripe customers with matching email
+		// (safety net in case linking didn't happen at registration)
+		linkingService := services.NewCustomerLinkingService(db)
+		linkResult, err := linkingService.LinkUserToCustomers(user.ID)
+		if err != nil {
+			log.Printf("⚠️  Failed to auto-link Stripe customers during verification for user %d: %v", user.ID, err)
+		} else if linkResult.CustomersLinked > 0 {
+			log.Printf("✅ Auto-linked %d Stripe customer(s) during email verification for user %d (%s)",
+				linkResult.CustomersLinked, user.ID, user.Email)
+		}
 
-	log.Printf("✅ Email verified via link for: %s (ID: %d)", user.Email, user.ID)
+		log.Printf("✅ Email verified via link for: %s (ID: %d)", user.Email, user.ID)
 
 		// 🔐 CHECK IF USER NEEDS PASSWORD SETUP
 		needsPasswordSetup := user.PasswordHash == "" ||
@@ -1015,8 +1121,16 @@ func ChangePasswordHandler(db *database.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Verify current password
-		if err := services.CheckPassword(user.PasswordHash, req.CurrentPassword); err != nil {
+		// Verify current password (support both regular and temp passwords)
+		passwordValid := false
+		if user.TempPasswordActive && user.TempPassword.Valid && user.TempPassword.String == req.CurrentPassword {
+			passwordValid = true
+			log.Printf("🔑 [TEMP-PASSWORD] User %d verified with temp password for password change", user.ID)
+		} else if err := services.CheckPassword(user.PasswordHash, req.CurrentPassword); err == nil {
+			passwordValid = true
+		}
+
+		if !passwordValid {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Current password is incorrect"})
 			return
 		}
@@ -1038,6 +1152,15 @@ func ChangePasswordHandler(db *database.DB) gin.HandlerFunc {
 				"error": "Service temporarily unavailable. Please try again later.",
 			})
 			return
+		}
+
+		// 🔑 Clear temp password if user had one
+		if user.TempPasswordActive {
+			if err := db.ClearTempPassword(user.ID); err != nil {
+				log.Printf("⚠️  Failed to clear temp password for user %d: %v", user.ID, err)
+			} else {
+				log.Printf("✅ Cleared temp password for user %d after password change", user.ID)
+			}
 		}
 
 		log.Printf("Password changed for: %s (ID: %d)", user.Email, user.ID)
@@ -1178,19 +1301,20 @@ func GetCurrentUserHandler(db *database.DB) gin.HandlerFunc {
 
 		c.JSON(http.StatusOK, gin.H{
 			"user": gin.H{
-				"id":             user.ID,
-				"email":          user.Email,
-				"first_name":     user.FirstName,
-				"last_name":      user.LastName,
-				"role":           user.Role,
-				"email_verified": user.EmailVerified,
-				"bio":            user.Bio,
-				"location":       user.Location,
-				"website":        user.Website,
-				"phone":          user.Phone,
-				"avatar_url":     user.AvatarURL,
-				"created_at":     user.CreatedAt,
-				"last_login":     user.LastLogin,
+				"id":                   user.ID,
+				"email":                user.Email,
+				"first_name":           user.FirstName,
+				"last_name":            user.LastName,
+				"role":                 user.Role,
+				"email_verified":       user.EmailVerified,
+				"bio":                  user.Bio,
+				"location":             user.Location,
+				"website":              user.Website,
+				"phone":                user.Phone,
+				"avatar_url":           user.AvatarURL,
+				"created_at":           user.CreatedAt,
+				"last_login":           user.LastLogin,
+				"temp_password_active": user.TempPasswordActive,
 			},
 		})
 	}
@@ -1357,26 +1481,35 @@ func SetupPasswordHandler(db *database.DB) gin.HandlerFunc {
 			log.Printf("Failed to clear password setup token: %v", err)
 		}
 
-	// Update last login to complete the setup process
-	if err := db.UpdateLastLogin(user.ID); err != nil {
-		log.Printf("Failed to update last login: %v", err)
-	}
+		// 🔑 Clear temp password if user had one
+		if user.TempPasswordActive {
+			if err := db.ClearTempPassword(user.ID); err != nil {
+				log.Printf("⚠️  Failed to clear temp password for user %d: %v", user.ID, err)
+			} else {
+				log.Printf("✅ Cleared temp password for user %d after password setup", user.ID)
+			}
+		}
 
-	// 🔗 AUTO-LINK: Attempt to link any existing Stripe customers with matching email
-	// (safety net in case linking didn't happen earlier in the flow)
-	linkingService := services.NewCustomerLinkingService(db)
-	linkResult, err := linkingService.LinkUserToCustomers(user.ID)
-	if err != nil {
-		log.Printf("⚠️  [SETUP-PASSWORD] Failed to auto-link Stripe customers for user %d: %v", user.ID, err)
-	} else if linkResult.CustomersLinked > 0 {
-		log.Printf("✅ [SETUP-PASSWORD] Auto-linked %d Stripe customer(s) during password setup for user %d (%s)", 
-			linkResult.CustomersLinked, user.ID, user.Email)
-	}
+		// Update last login to complete the setup process
+		if err := db.UpdateLastLogin(user.ID); err != nil {
+			log.Printf("Failed to update last login: %v", err)
+		}
 
-	log.Printf("✅ Password setup completed for: %s (ID: %d)", user.Email, user.ID)
+		// 🔗 AUTO-LINK: Attempt to link any existing Stripe customers with matching email
+		// (safety net in case linking didn't happen earlier in the flow)
+		linkingService := services.NewCustomerLinkingService(db)
+		linkResult, err := linkingService.LinkUserToCustomers(user.ID)
+		if err != nil {
+			log.Printf("⚠️  [SETUP-PASSWORD] Failed to auto-link Stripe customers for user %d: %v", user.ID, err)
+		} else if linkResult.CustomersLinked > 0 {
+			log.Printf("✅ [SETUP-PASSWORD] Auto-linked %d Stripe customer(s) during password setup for user %d (%s)",
+				linkResult.CustomersLinked, user.ID, user.Email)
+		}
 
-	// Generate login tokens for auto-login
-	tokenPair, err := services.GenerateTokenPair(user.ID, user.Email, user.Role, true) // email is verified
+		log.Printf("✅ Password setup completed for: %s (ID: %d)", user.Email, user.ID)
+
+		// Generate login tokens for auto-login
+		tokenPair, err := services.GenerateTokenPair(user.ID, user.Email, user.Role, true) // email is verified
 		if err != nil {
 			log.Printf("Failed to generate tokens after password setup: %v", err)
 			c.JSON(http.StatusOK, gin.H{

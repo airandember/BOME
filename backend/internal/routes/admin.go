@@ -1662,7 +1662,7 @@ func UpdateAdPlacementHandler(db *database.DB) gin.HandlerFunc {
 }
 
 // SetupAdminRoutes configures admin-related routes
-func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
+func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB, emailService *services.EmailService) {
 	// Users (require email verification for admin access)
 	router.GET("/users", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUsersHandler(db))
 	router.POST("/users", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), CreateUserHandler(db))
@@ -1672,6 +1672,10 @@ func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
 	router.DELETE("/users/:id", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), DeleteUserHandler(db))
 	router.GET("/users/stats", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUserStatsHandler(db))
 	router.GET("/users/roles", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetAvailableRolesHandler(db))
+
+	// Temp Password Management
+	router.GET("/users/never-logged-in", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUsersNeverLoggedInHandler(db))
+	router.POST("/users/bulk-temp-password", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), BulkTempPasswordHandler(db, emailService))
 
 	// Roles and Departments
 	router.GET("/roles", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetRolesWithDepartmentsHandler(db))
@@ -3163,8 +3167,8 @@ func FixStripeMetadataHandler(db *database.DB) gin.HandlerFunc {
 		dryRun := c.Query("dry_run") == "true"
 
 		if dryRun {
-		// Count how many records would be fixed (V2)
-		query := `
+			// Count how many records would be fixed (V2)
+			query := `
 			SELECT COUNT(*)
 			FROM user_stripe_customers_v2 usc
 			INNER JOIN stripe_customers_v2 sc ON sc.id = usc.stripe_customer_id
@@ -3292,4 +3296,175 @@ func linkSubscriptionsForNewUsers(db *database.DB) error {
 	}
 
 	return nil
+}
+
+// ============================================
+// BULK TEMP PASSWORD ASSIGNMENT
+// ============================================
+
+// BulkTempPasswordRequest represents a request to assign temp passwords to multiple users
+type BulkTempPasswordRequest struct {
+	UserIDs   []int `json:"user_ids" binding:"required"`
+	SendEmail bool  `json:"send_email"`
+}
+
+// BulkTempPasswordResult represents the result for a single user
+type BulkTempPasswordResult struct {
+	UserID       int    `json:"user_id"`
+	Email        string `json:"email"`
+	TempPassword string `json:"temp_password"`
+	EmailSent    bool   `json:"email_sent"`
+	Error        string `json:"error,omitempty"`
+}
+
+// BulkTempPasswordHandler handles bulk assignment of temporary passwords
+func BulkTempPasswordHandler(db *database.DB, emailService *services.EmailService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req BulkTempPasswordRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+			return
+		}
+
+		if len(req.UserIDs) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No user IDs provided"})
+			return
+		}
+
+		if len(req.UserIDs) > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Maximum 100 users per request"})
+			return
+		}
+
+		log.Printf("🔑 [BULK-TEMP-PASSWORD] Processing %d users, send_email=%v", len(req.UserIDs), req.SendEmail)
+
+		var results []BulkTempPasswordResult
+		successCount := 0
+		errorCount := 0
+
+		for _, userID := range req.UserIDs {
+			result := BulkTempPasswordResult{UserID: userID}
+
+			// Get user
+			user, err := db.GetUserByID(userID)
+			if err != nil {
+				result.Error = "User not found"
+				errorCount++
+				results = append(results, result)
+				continue
+			}
+			result.Email = user.Email
+
+			// Check if user has ever logged in - only assign temp password to users who haven't
+			if user.LastLogin.Valid {
+				result.Error = "User has already logged in"
+				errorCount++
+				results = append(results, result)
+				continue
+			}
+
+			// Check if user already has a password set (set up via email verification)
+			// This prevents overwriting real passwords with temp passwords
+			if user.PasswordHash != "" {
+				result.Error = "User already has a password configured"
+				errorCount++
+				results = append(results, result)
+				continue
+			}
+
+			// Generate temp password: BOME_[user_id]
+			tempPassword := fmt.Sprintf("BOME_%d", userID)
+			result.TempPassword = tempPassword
+
+			// Set temp password in database
+			if err := db.SetTempPassword(userID, tempPassword); err != nil {
+				result.Error = fmt.Sprintf("Failed to set temp password: %v", err)
+				errorCount++
+				results = append(results, result)
+				continue
+			}
+
+			// Mark email as verified (they're being set up by admin)
+			if err := db.SetUserEmailVerified(userID); err != nil {
+				log.Printf("⚠️  Failed to set email verified for user %d: %v", userID, err)
+			}
+
+			// Send email if requested
+			if req.SendEmail && emailService != nil {
+				fullName := user.FirstName + " " + user.LastName
+				if err := emailService.SendTempPasswordEmail(userID, user.Email, fullName, tempPassword); err != nil {
+					log.Printf("⚠️  Failed to send temp password email to user %d: %v", userID, err)
+					result.EmailSent = false
+				} else {
+					result.EmailSent = true
+					log.Printf("✅ Temp password email sent to user %d (%s)", userID, user.Email)
+				}
+			}
+
+			successCount++
+			results = append(results, result)
+		}
+
+		log.Printf("🔑 [BULK-TEMP-PASSWORD] Complete: %d success, %d errors", successCount, errorCount)
+
+		c.JSON(http.StatusOK, gin.H{
+			"success":        true,
+			"assigned_count": successCount,
+			"error_count":    errorCount,
+			"results":        results,
+		})
+	}
+}
+
+// GetUsersNeverLoggedInHandler returns users who have never logged in (candidates for temp passwords)
+func GetUsersNeverLoggedInHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Query users who have never logged in and have linked Stripe customers
+		query := `
+			SELECT u.id, u.email, u.first_name, u.last_name, u.created_at,
+				   COALESCE(u.temp_password_active, FALSE) as has_temp_password,
+				   COUNT(usc.id) as linked_customers
+			FROM users u
+			LEFT JOIN user_stripe_customers_v2 usc ON usc.user_id = u.id
+			WHERE u.last_login IS NULL
+			GROUP BY u.id, u.email, u.first_name, u.last_name, u.created_at, u.temp_password_active
+			ORDER BY u.created_at DESC
+		`
+
+		rows, err := db.Query(query)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query users"})
+			return
+		}
+		defer rows.Close()
+
+		var users []map[string]interface{}
+		for rows.Next() {
+			var id int
+			var email, firstName, lastName string
+			var createdAt time.Time
+			var hasTempPassword bool
+			var linkedCustomers int
+
+			if err := rows.Scan(&id, &email, &firstName, &lastName, &createdAt, &hasTempPassword, &linkedCustomers); err != nil {
+				log.Printf("⚠️  Failed to scan user: %v", err)
+				continue
+			}
+
+			users = append(users, map[string]interface{}{
+				"id":                id,
+				"email":             email,
+				"first_name":        firstName,
+				"last_name":         lastName,
+				"created_at":        createdAt,
+				"has_temp_password": hasTempPassword,
+				"linked_customers":  linkedCustomers,
+			})
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"users": users,
+			"count": len(users),
+		})
+	}
 }

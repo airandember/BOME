@@ -44,6 +44,10 @@ type User struct {
 	HasSubbed sql.NullBool
 	// Security fields
 	PasswordChanged bool
+	// Temp password fields for simplified signup
+	TempPasswordActive    bool
+	TempPassword          sql.NullString
+	TempPasswordCreatedAt sql.NullTime
 }
 
 // UserProfile represents the public profile data for a user
@@ -186,11 +190,13 @@ func (db *DB) GetUserByID(id int) (*User, error) {
 	err := db.QueryRow(
 		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
 		 stripe_customer_id, stripe_customer_ids,
-		 reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed, password_changed FROM users WHERE id = $1`,
+		 reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed, password_changed,
+		 COALESCE(temp_password_active, FALSE), temp_password, temp_password_created_at FROM users WHERE id = $1`,
 		id,
 	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified,
 		&user.StripeCustomerID, &user.StripeCustomerIDs,
-		&user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed, &user.PasswordChanged)
+		&user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed, &user.PasswordChanged,
+		&user.TempPasswordActive, &user.TempPassword, &user.TempPasswordCreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -203,11 +209,13 @@ func (db *DB) GetUserByEmail(email string) (*User, error) {
 	err := db.QueryRow(
 		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
 		 stripe_customer_id, stripe_customer_ids,
-		 reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed, password_changed FROM users WHERE email = $1`,
+		 reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed, password_changed,
+		 COALESCE(temp_password_active, FALSE), temp_password, temp_password_created_at FROM users WHERE email = $1`,
 		email,
 	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified,
 		&user.StripeCustomerID, &user.StripeCustomerIDs,
-		&user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed, &user.PasswordChanged)
+		&user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed, &user.PasswordChanged,
+		&user.TempPasswordActive, &user.TempPassword, &user.TempPasswordCreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -1194,4 +1202,110 @@ func (db *DB) GetFilteredUserCountWithRoles(role, search, status string) (int, e
 	var count int
 	err := db.QueryRow(query, args...).Scan(&count)
 	return count, err
+}
+
+// ============================================
+// TEMP PASSWORD FUNCTIONS
+// ============================================
+
+// SetTempPassword sets a temporary password for a user
+func (db *DB) SetTempPassword(userID int, tempPassword string) error {
+	_, err := db.Exec(
+		`UPDATE users SET 
+			temp_password_active = TRUE, 
+			temp_password = $1, 
+			temp_password_created_at = NOW(),
+			password_hash = $1
+		WHERE id = $2`,
+		tempPassword, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set temp password: %w", err)
+	}
+	log.Printf("✅ [TEMP-PASSWORD] Set temp password for user %d", userID)
+	return nil
+}
+
+// ClearTempPassword clears the temporary password for a user (after they set a real password)
+func (db *DB) ClearTempPassword(userID int) error {
+	_, err := db.Exec(
+		`UPDATE users SET 
+			temp_password_active = FALSE, 
+			temp_password = NULL, 
+			temp_password_created_at = NULL
+		WHERE id = $1`,
+		userID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to clear temp password: %w", err)
+	}
+	log.Printf("✅ [TEMP-PASSWORD] Cleared temp password for user %d", userID)
+	return nil
+}
+
+// ValidateTempPassword checks if a temp password is valid for a user
+func (db *DB) ValidateTempPassword(email string, tempPassword string) (*User, error) {
+	user := &User{}
+	err := db.QueryRow(
+		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
+		 stripe_customer_id, stripe_customer_ids,
+		 reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed, password_changed,
+		 COALESCE(temp_password_active, FALSE), temp_password, temp_password_created_at 
+		 FROM users WHERE LOWER(email) = LOWER($1) AND temp_password_active = TRUE AND temp_password = $2`,
+		email, tempPassword,
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified,
+		&user.StripeCustomerID, &user.StripeCustomerIDs,
+		&user.ResetToken, &user.ResetTokenExpiry, &user.VerificationToken, &user.Bio, &user.Location, &user.Website, &user.Phone, &user.AvatarURL, &user.Preferences, &user.LastLogin, &user.LastLogout, &user.MaxSessions, &user.CreatedAt, &user.UpdatedAt, &user.RoleID, &user.IsActive, &user.SubID, &user.HasSubbed, &user.PasswordChanged,
+		&user.TempPasswordActive, &user.TempPassword, &user.TempPasswordCreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+// GetUsersWithTempPasswordNeverLoggedIn gets users who have temp passwords but have never logged in
+func (db *DB) GetUsersWithTempPasswordNeverLoggedIn() ([]*User, error) {
+	rows, err := db.Query(
+		`SELECT id, email, first_name, last_name, role, email_verified,
+		 COALESCE(temp_password_active, FALSE), temp_password, temp_password_created_at,
+		 created_at
+		 FROM users 
+		 WHERE temp_password_active = TRUE AND last_login IS NULL
+		 ORDER BY created_at DESC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query users with temp passwords: %w", err)
+	}
+	defer rows.Close()
+
+	var users []*User
+	for rows.Next() {
+		user := &User{}
+		err := rows.Scan(&user.ID, &user.Email, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified,
+			&user.TempPasswordActive, &user.TempPassword, &user.TempPasswordCreatedAt,
+			&user.CreatedAt)
+		if err != nil {
+			log.Printf("⚠️  Failed to scan user with temp password: %v", err)
+			continue
+		}
+		users = append(users, user)
+	}
+	return users, nil
+}
+
+// BulkSetTempPasswords sets temp passwords for multiple users
+func (db *DB) BulkSetTempPasswords(userIDs []int) (map[int]string, error) {
+	results := make(map[int]string)
+	
+	for _, userID := range userIDs {
+		tempPassword := fmt.Sprintf("BOME_%d", userID)
+		err := db.SetTempPassword(userID, tempPassword)
+		if err != nil {
+			log.Printf("⚠️  Failed to set temp password for user %d: %v", userID, err)
+			continue
+		}
+		results[userID] = tempPassword
+	}
+	
+	return results, nil
 }
