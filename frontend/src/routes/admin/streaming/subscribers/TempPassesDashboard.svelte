@@ -12,7 +12,7 @@
 		last_name: string;
 		has_temp_password: boolean;
 		temp_password_created_at: string | null;
-		linked_customers: number;
+		stripe_customer_id: string | null;
 		created_at: string;
 		selected?: boolean;
 	}
@@ -50,15 +50,13 @@
 		return filteredUsers.slice(start, start + itemsPerPage);
 	});
 
-	// Stats - all users in list have Stripe + no password (filtered at DB level)
+	// Stats - all users in list have active Stripe subscription + no password (filtered at DB level)
 	let stats = $derived(() => {
 		const total = eligibleUsers.length;
 		const withTempPass = eligibleUsers.filter(u => u.has_temp_password).length;
-		// All users in this list have Stripe (required by query)
-		const withStripe = total;
-		// Users who need action: no temp password yet (all have Stripe)
+		// Users who need action: no temp password yet
 		const needsAction = eligibleUsers.filter(u => !u.has_temp_password).length;
-		return { total, withTempPass, withStripe, needsAction };
+		return { total, withTempPass, needsAction };
 	});
 
 	// Selection helpers
@@ -349,14 +347,14 @@
 			<div class="stat-icon">👥</div>
 			<div class="stat-content">
 				<div class="stat-value">{stats().total}</div>
-				<div class="stat-label">Total Eligible Users</div>
+				<div class="stat-label">Active Subscribers (No Account)</div>
 			</div>
 		</div>
 		<div class="stat-card highlight-warning">
 			<div class="stat-icon">⚠️</div>
 			<div class="stat-content">
 				<div class="stat-value">{stats().needsAction}</div>
-				<div class="stat-label">Need Action (Stripe + No Pass)</div>
+				<div class="stat-label">Need Temp Password</div>
 			</div>
 		</div>
 		<div class="stat-card">
@@ -364,13 +362,6 @@
 			<div class="stat-content">
 				<div class="stat-value">{stats().withTempPass}</div>
 				<div class="stat-label">Have Temp Password</div>
-			</div>
-		</div>
-		<div class="stat-card">
-			<div class="stat-icon">💳</div>
-			<div class="stat-content">
-				<div class="stat-value">{stats().withStripe}</div>
-				<div class="stat-label">Linked to Stripe</div>
 			</div>
 		</div>
 	</div>
@@ -498,7 +489,6 @@
 						</th>
 						<th>User</th>
 						<th>ID</th>
-						<th>Stripe</th>
 						<th>Temp Password</th>
 						<th>Created</th>
 						<th>Actions</th>
@@ -521,13 +511,6 @@
 								{/if}
 							</td>
 							<td class="id-cell">{user.id}</td>
-							<td class="stripe-cell">
-								{#if user.linked_customers > 0}
-									<span class="badge badge-success">✅ {user.linked_customers}</span>
-								{:else}
-									<span class="badge badge-muted">❌</span>
-								{/if}
-							</td>
 							<td class="temp-pass-cell">
 								{#if user.has_temp_password}
 									<span class="badge badge-info">
@@ -1005,11 +988,6 @@
 		font-weight: 500;
 	}
 
-	.badge-success {
-		background: #dcfce7;
-		color: #166534;
-	}
-
 	.badge-warning {
 		background: #fef3c7;
 		color: #92400e;
@@ -1019,11 +997,6 @@
 		background: #dbeafe;
 		color: #1e40af;
 		font-family: monospace;
-	}
-
-	.badge-muted {
-		background: #f3f4f6;
-		color: #6b7280;
 	}
 
 	.copy-btn {
