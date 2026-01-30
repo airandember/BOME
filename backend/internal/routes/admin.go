@@ -3366,15 +3366,10 @@ func BulkTempPasswordHandler(db *database.DB, emailService *services.EmailServic
 				continue
 			}
 
-			// Check if user already has a password set (set up via email verification)
-			// This prevents overwriting real passwords with temp passwords
-			if user.PasswordHash != "" {
-				log.Printf("🔑 [BULK-TEMP-PASSWORD] User %d (%s): already has password configured", userID, user.Email)
-				result.Error = "User already has a password configured"
-				errorCount++
-				results = append(results, result)
-				continue
-			}
+			// Note: We intentionally do NOT check password_hash here.
+			// Temp passwords are managed separately via temp_password, temp_password_active,
+			// and temp_password_created_at columns. Users can have both a regular password
+			// and a temp password - the login flow handles which one to use.
 
 			// Generate temp password: BOME_[user_id]
 			tempPassword := fmt.Sprintf("BOME_%d", userID)
