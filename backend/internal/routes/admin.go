@@ -3424,24 +3424,31 @@ func BulkTempPasswordHandler(db *database.DB, emailService *services.EmailServic
 func GetUsersNeverLoggedInHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Query users who:
-		// 1. Have never logged in
-		// 2. Have at least one linked Stripe customer
-		// 3. Have no real password set (password_hash is empty)
-		// Note: temp passwords are stored in temp_password column, NOT password_hash
+		// 1. Have a stripe_customer_id linked to an ACTIVE subscription
+		// 2. Have never logged in (last_login IS NULL)
+		// 3. Have no password set (password_hash is empty)
+		// 4. Have not verified their email (email_verified = FALSE)
+		// These are paying customers who haven't set up their account yet
 		query := `
 			SELECT u.id, u.email, u.first_name, u.last_name, u.created_at,
 				   COALESCE(u.temp_password_active, FALSE) as has_temp_password,
-				   COUNT(usc.id) as linked_customers
+				   u.stripe_customer_id
 			FROM users u
-			INNER JOIN user_stripe_customers_v2 usc ON usc.user_id = u.id
+			INNER JOIN stripe_customers_v2 sc ON sc.stripe_id = u.stripe_customer_id
+			INNER JOIN stripe_subscriptions ss ON ss.customer_id = sc.id
 			WHERE u.last_login IS NULL
 			  AND (u.password_hash IS NULL OR u.password_hash = '')
-			GROUP BY u.id, u.email, u.first_name, u.last_name, u.created_at, u.temp_password_active
+			  AND u.email_verified = FALSE
+			  AND ss.status = 'active'
+			  AND sc.deleted_at IS NULL
+			GROUP BY u.id, u.email, u.first_name, u.last_name, u.created_at, 
+			         u.temp_password_active, u.stripe_customer_id
 			ORDER BY u.created_at DESC
 		`
 
 		rows, err := db.Query(query)
 		if err != nil {
+			log.Printf("⚠️  Failed to query eligible users: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query users"})
 			return
 		}
@@ -3453,23 +3460,25 @@ func GetUsersNeverLoggedInHandler(db *database.DB) gin.HandlerFunc {
 			var email, firstName, lastName string
 			var createdAt time.Time
 			var hasTempPassword bool
-			var linkedCustomers int
+			var stripeCustomerID *string
 
-			if err := rows.Scan(&id, &email, &firstName, &lastName, &createdAt, &hasTempPassword, &linkedCustomers); err != nil {
+			if err := rows.Scan(&id, &email, &firstName, &lastName, &createdAt, &hasTempPassword, &stripeCustomerID); err != nil {
 				log.Printf("⚠️  Failed to scan user: %v", err)
 				continue
 			}
 
 			users = append(users, map[string]interface{}{
-				"id":                id,
-				"email":             email,
-				"first_name":        firstName,
-				"last_name":         lastName,
-				"created_at":        createdAt,
-				"has_temp_password": hasTempPassword,
-				"linked_customers":  linkedCustomers,
+				"id":                 id,
+				"email":              email,
+				"first_name":         firstName,
+				"last_name":          lastName,
+				"created_at":         createdAt,
+				"has_temp_password":  hasTempPassword,
+				"stripe_customer_id": stripeCustomerID,
 			})
 		}
+
+		log.Printf("🔑 [TEMP-PASSWORD] Found %d eligible users for temp password assignment", len(users))
 
 		c.JSON(http.StatusOK, gin.H{
 			"users": users,
