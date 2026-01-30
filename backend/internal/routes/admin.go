@@ -1675,6 +1675,7 @@ func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB, emailService *se
 
 	// Temp Password Management
 	router.GET("/users/never-logged-in", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUsersNeverLoggedInHandler(db))
+	router.GET("/users/with-temp-passwords", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUsersWithTempPasswordsHandler(db))
 	router.POST("/users/bulk-temp-password", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), BulkTempPasswordHandler(db, emailService))
 
 	// Roles and Departments
@@ -3479,6 +3480,62 @@ func GetUsersNeverLoggedInHandler(db *database.DB) gin.HandlerFunc {
 		}
 
 		log.Printf("🔑 [TEMP-PASSWORD] Found %d eligible users for temp password assignment", len(users))
+
+		c.JSON(http.StatusOK, gin.H{
+			"users": users,
+			"count": len(users),
+		})
+	}
+}
+
+// GetUsersWithTempPasswordsHandler returns users who have active temp passwords
+func GetUsersWithTempPasswordsHandler(db *database.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Query users who have active temp passwords (assigned but not yet changed to real password)
+		query := `
+			SELECT u.id, u.email, u.first_name, u.last_name, u.created_at,
+				   u.temp_password, u.temp_password_created_at, u.last_login
+			FROM users u
+			WHERE u.temp_password_active = TRUE
+			ORDER BY u.temp_password_created_at DESC
+		`
+
+		rows, err := db.Query(query)
+		if err != nil {
+			log.Printf("⚠️  Failed to query users with temp passwords: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query users"})
+			return
+		}
+		defer rows.Close()
+
+		var users []map[string]interface{}
+		for rows.Next() {
+			var id int
+			var email, firstName, lastName string
+			var createdAt time.Time
+			var tempPassword *string
+			var tempPasswordCreatedAt *time.Time
+			var lastLogin *time.Time
+
+			if err := rows.Scan(&id, &email, &firstName, &lastName, &createdAt, &tempPassword, &tempPasswordCreatedAt, &lastLogin); err != nil {
+				log.Printf("⚠️  Failed to scan user: %v", err)
+				continue
+			}
+
+			user := map[string]interface{}{
+				"id":                       id,
+				"email":                    email,
+				"first_name":               firstName,
+				"last_name":                lastName,
+				"created_at":               createdAt,
+				"temp_password":            tempPassword,
+				"temp_password_created_at": tempPasswordCreatedAt,
+				"has_logged_in":            lastLogin != nil,
+			}
+			users = append(users, user)
+		}
+
+		log.Printf("🔑 [TEMP-PASSWORD] Found %d users with active temp passwords", len(users))
 
 		c.JSON(http.StatusOK, gin.H{
 			"users": users,

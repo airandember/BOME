@@ -3,18 +3,19 @@
 	import { apiRequest } from '$lib/auth';
 	import { showToast } from '$lib/toast';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import { subscriberStore, subscriberStoreActions } from '$lib/stores/subscribers-store';
+	import type { EnhancedSubscriber } from '$lib/types/enhanced-subscriber';
 
 	// Types
-	interface EligibleUser {
+	interface TempPasswordUser {
 		id: number;
 		email: string;
 		first_name: string;
 		last_name: string;
-		has_temp_password: boolean;
-		temp_password_created_at: string | null;
-		stripe_customer_id: string | null;
+		temp_password: string;
+		temp_password_created_at: string;
 		created_at: string;
-		selected?: boolean;
+		has_logged_in: boolean;
 	}
 
 	interface TempPasswordResult {
@@ -25,84 +26,126 @@
 		error?: string;
 	}
 
-	// State
-	let loading = $state(false);
-	let assigning = $state(false);
-	let assigningUserId = $state<number | null>(null); // Track which user is being assigned
-	let eligibleUsers = $state<EligibleUser[]>([]);
-	let filteredUsers = $state<EligibleUser[]>([]);
+	// Tab state
+	let activeTab: 'eligible' | 'assigned' = $state('eligible');
+
+	// === ELIGIBLE TAB STATE ===
+	let eligibleLoading = $state(false);
+	let eligibleUsers = $state<EnhancedSubscriber[]>([]);
+	let filteredEligibleUsers = $state<EnhancedSubscriber[]>([]);
 	let selectedUserIds = $state<Set<number>>(new Set());
+	let eligibleSearchTerm = $state('');
+	let assigningTempPasswords = $state(false);
 	let tempPasswordResults = $state<TempPasswordResult[]>([]);
 	let showResultsModal = $state(false);
 
-	// Search & Filter state
-	let searchTerm = $state('');
-	let filterHasTempPassword: 'all' | 'yes' | 'no' = $state('all');
-	let sortBy: 'email' | 'created_at' | 'id' = $state('email');
-	let sortDir: 'asc' | 'desc' = $state('asc');
-
-	// Pagination state
-	let currentPage = $state(1);
-	let itemsPerPage = $state(50);
-	let totalPages = $derived(Math.ceil(filteredUsers.length / itemsPerPage));
-	let paginatedUsers = $derived(() => {
-		const start = (currentPage - 1) * itemsPerPage;
-		return filteredUsers.slice(start, start + itemsPerPage);
+	// Eligible pagination
+	let eligibleCurrentPage = $state(1);
+	let eligibleItemsPerPage = $state(50);
+	let eligibleTotalPages = $derived(Math.ceil(filteredEligibleUsers.length / eligibleItemsPerPage));
+	let paginatedEligibleUsers = $derived(() => {
+		const start = (eligibleCurrentPage - 1) * eligibleItemsPerPage;
+		return filteredEligibleUsers.slice(start, start + eligibleItemsPerPage);
 	});
 
-	// Stats - all users in list have active Stripe subscription + no password (filtered at DB level)
-	let stats = $derived(() => {
+	// === ASSIGNED TAB STATE ===
+	let assignedLoading = $state(false);
+	let assignedUsers = $state<TempPasswordUser[]>([]);
+	let filteredAssignedUsers = $state<TempPasswordUser[]>([]);
+	let assignedSearchTerm = $state('');
+
+	// Assigned pagination
+	let assignedCurrentPage = $state(1);
+	let assignedItemsPerPage = $state(50);
+	let assignedTotalPages = $derived(Math.ceil(filteredAssignedUsers.length / assignedItemsPerPage));
+	let paginatedAssignedUsers = $derived(() => {
+		const start = (assignedCurrentPage - 1) * assignedItemsPerPage;
+		return filteredAssignedUsers.slice(start, start + assignedItemsPerPage);
+	});
+
+	// === STATS ===
+	let eligibleStats = $derived(() => {
 		const total = eligibleUsers.length;
-		const withTempPass = eligibleUsers.filter(u => u.has_temp_password).length;
-		// Users who need action: no temp password yet
-		const needsAction = eligibleUsers.filter(u => !u.has_temp_password).length;
-		return { total, withTempPass, needsAction };
+		const withPassword = eligibleUsers.filter(u => u.last_login !== null).length;
+		return { total, withPassword };
 	});
 
-	// Selection helpers
+	let assignedStats = $derived(() => {
+		const total = assignedUsers.length;
+		const loggedIn = assignedUsers.filter(u => u.has_logged_in).length;
+		const pending = total - loggedIn;
+		return { total, loggedIn, pending };
+	});
+
+	// === SELECTION HELPERS ===
 	let allVisibleSelected = $derived(() => {
-		const visible = paginatedUsers();
+		const visible = paginatedEligibleUsers();
 		return visible.length > 0 && visible.every(u => selectedUserIds.has(u.id));
 	});
 
 	let someVisibleSelected = $derived(() => {
-		const visible = paginatedUsers();
+		const visible = paginatedEligibleUsers();
 		return visible.some(u => selectedUserIds.has(u.id)) && !allVisibleSelected();
 	});
 
-	// Load eligible users
+	// === LOAD FUNCTIONS ===
 	async function loadEligibleUsers() {
-		loading = true;
+		eligibleLoading = true;
 		try {
-			const response = await apiRequest('/admin/users/never-logged-in');
-			if (response.ok) {
-				const data = await response.json();
-				eligibleUsers = (data.users || []).map((u: any) => ({
-					...u,
-					selected: false
-				}));
-				applyFilters();
-				console.log(`📋 Loaded ${eligibleUsers.length} eligible users`);
-			} else {
-				throw new Error('Failed to load users');
+			// Load from subscriber store if not already loaded
+			const storeData = $subscriberStore;
+			if (storeData.subscribers.length === 0) {
+				await subscriberStoreActions.loadSubscribers();
 			}
+			
+			// Filter for eligible users: video access + active plan + not verified
+			const allSubscribers = $subscriberStore.subscribers;
+			eligibleUsers = allSubscribers.filter(sub => 
+				sub.has_video_access && 
+				sub.has_active_plan && 
+				!sub.email_verified
+			);
+			
+			applyEligibleFilters();
+			console.log(`📋 Found ${eligibleUsers.length} eligible users for temp passwords`);
 		} catch (error) {
 			console.error('Error loading eligible users:', error);
 			showToast('Failed to load eligible users', 'error');
 			eligibleUsers = [];
-			filteredUsers = [];
+			filteredEligibleUsers = [];
 		} finally {
-			loading = false;
+			eligibleLoading = false;
 		}
 	}
 
-	// Apply filters and sorting
-	function applyFilters() {
+	async function loadAssignedUsers() {
+		assignedLoading = true;
+		try {
+			const response = await apiRequest('/admin/users/with-temp-passwords');
+			if (response.ok) {
+				const data = await response.json();
+				assignedUsers = data.users || [];
+				applyAssignedFilters();
+				console.log(`🔑 Loaded ${assignedUsers.length} users with temp passwords`);
+			} else {
+				throw new Error('Failed to load users');
+			}
+		} catch (error) {
+			console.error('Error loading assigned users:', error);
+			showToast('Failed to load assigned users', 'error');
+			assignedUsers = [];
+			filteredAssignedUsers = [];
+		} finally {
+			assignedLoading = false;
+		}
+	}
+
+	// === FILTER FUNCTIONS ===
+	function applyEligibleFilters() {
 		let result = [...eligibleUsers];
 
-		// Search filter
-		if (searchTerm.trim()) {
-			const term = searchTerm.toLowerCase();
+		if (eligibleSearchTerm.trim()) {
+			const term = eligibleSearchTerm.toLowerCase();
 			result = result.filter(u => 
 				u.email.toLowerCase().includes(term) ||
 				(u.first_name || '').toLowerCase().includes(term) ||
@@ -111,58 +154,50 @@
 			);
 		}
 
-		// Has temp password filter
-		if (filterHasTempPassword === 'yes') {
-			result = result.filter(u => u.has_temp_password);
-		} else if (filterHasTempPassword === 'no') {
-			result = result.filter(u => !u.has_temp_password);
+		filteredEligibleUsers = result;
+		eligibleCurrentPage = 1;
+	}
+
+	function applyAssignedFilters() {
+		let result = [...assignedUsers];
+
+		if (assignedSearchTerm.trim()) {
+			const term = assignedSearchTerm.toLowerCase();
+			result = result.filter(u => 
+				u.email.toLowerCase().includes(term) ||
+				(u.first_name || '').toLowerCase().includes(term) ||
+				(u.last_name || '').toLowerCase().includes(term) ||
+				u.id.toString().includes(term)
+			);
 		}
 
-		// Sorting
-		result.sort((a, b) => {
-			let comparison = 0;
-			switch (sortBy) {
-				case 'email':
-					comparison = a.email.localeCompare(b.email);
-					break;
-				case 'created_at':
-					comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-					break;
-				case 'id':
-					comparison = a.id - b.id;
-					break;
-			}
-			return sortDir === 'asc' ? comparison : -comparison;
-		});
-
-		filteredUsers = result;
-		currentPage = 1; // Reset to first page when filters change
+		filteredAssignedUsers = result;
+		assignedCurrentPage = 1;
 	}
 
 	// Watch for filter changes
 	$effect(() => {
-		// Trigger on any filter change
-		searchTerm;
-		filterHasTempPassword;
-		sortBy;
-		sortDir;
-		applyFilters();
+		eligibleSearchTerm;
+		applyEligibleFilters();
 	});
 
-	// Selection handlers
+	$effect(() => {
+		assignedSearchTerm;
+		applyAssignedFilters();
+	});
+
+	// === SELECTION FUNCTIONS ===
 	function toggleSelectAll() {
-		const visible = paginatedUsers();
+		const visible = paginatedEligibleUsers();
 		if (allVisibleSelected()) {
-			// Deselect all visible
 			visible.forEach(u => selectedUserIds.delete(u.id));
 		} else {
-			// Select all visible
 			visible.forEach(u => selectedUserIds.add(u.id));
 		}
 		selectedUserIds = new Set(selectedUserIds);
 	}
 
-	function toggleUserSelection(userId: number) {
+	function toggleSelect(userId: number) {
 		if (selectedUserIds.has(userId)) {
 			selectedUserIds.delete(userId);
 		} else {
@@ -171,49 +206,31 @@
 		selectedUserIds = new Set(selectedUserIds);
 	}
 
-	function selectAllFiltered() {
-		filteredUsers.forEach(u => selectedUserIds.add(u.id));
-		selectedUserIds = new Set(selectedUserIds);
-		showToast(`Selected ${filteredUsers.length} users`, 'success');
-	}
-
 	function clearSelection() {
 		selectedUserIds = new Set();
 	}
 
-	// Quick selection helpers - all users in list have Stripe + no password
-	function selectNeedingAction() {
-		clearSelection();
-		// All users need action if they don't have temp password yet
-		eligibleUsers
-			.filter(u => !u.has_temp_password)
-			.forEach(u => selectedUserIds.add(u.id));
+	function selectAll() {
+		filteredEligibleUsers.forEach(u => selectedUserIds.add(u.id));
 		selectedUserIds = new Set(selectedUserIds);
-		showToast(`Selected ${selectedUserIds.size} users needing action`, 'success');
 	}
 
-	function selectWithoutTempPass() {
-		clearSelection();
-		eligibleUsers
-			.filter(u => !u.has_temp_password)
-			.forEach(u => selectedUserIds.add(u.id));
-		selectedUserIds = new Set(selectedUserIds);
-		showToast(`Selected ${selectedUserIds.size} users without temp passwords`, 'success');
-	}
-
-	// Bulk assign temp passwords
-	async function handleBulkAssign(sendEmail: boolean) {
+	// === TEMP PASSWORD ASSIGNMENT ===
+	async function assignTempPasswords(sendEmail: boolean) {
 		if (selectedUserIds.size === 0) {
 			showToast('Please select users to assign temp passwords', 'warning');
 			return;
 		}
 
-		assigning = true;
+		assigningTempPasswords = true;
 		try {
+			const userIds = Array.from(selectedUserIds);
+			console.log('🔑 Assigning temp passwords to', userIds.length, 'users, sendEmail:', sendEmail);
+
 			const response = await apiRequest('/admin/users/bulk-temp-password', {
 				method: 'POST',
 				body: JSON.stringify({
-					user_ids: Array.from(selectedUserIds),
+					user_ids: userIds,
 					send_email: sendEmail
 				})
 			});
@@ -221,7 +238,6 @@
 			if (response.ok) {
 				const data = await response.json();
 				tempPasswordResults = data.results || [];
-				showResultsModal = true;
 
 				if (data.assigned_count > 0) {
 					showToast(`Assigned temp passwords to ${data.assigned_count} users`, 'success');
@@ -230,9 +246,11 @@
 					showToast(`${data.error_count} users could not be assigned`, 'warning');
 				}
 
-				// Refresh the list
+				showResultsModal = true;
 				clearSelection();
-				await loadEligibleUsers();
+				
+				// Refresh both lists
+				await Promise.all([loadEligibleUsers(), loadAssignedUsers()]);
 			} else {
 				const error = await response.json();
 				showToast(error.error || 'Failed to assign temp passwords', 'error');
@@ -241,44 +259,16 @@
 			console.error('Error assigning temp passwords:', error);
 			showToast('Failed to assign temp passwords', 'error');
 		} finally {
-			assigning = false;
+			assigningTempPasswords = false;
 		}
 	}
 
-	// Single user assign
-	async function handleSingleAssign(user: EligibleUser, sendEmail: boolean) {
-		assigningUserId = user.id;
-		try {
-			const response = await apiRequest('/admin/users/bulk-temp-password', {
-				method: 'POST',
-				body: JSON.stringify({
-					user_ids: [user.id],
-					send_email: sendEmail
-				})
-			});
-
-			if (response.ok) {
-				const data = await response.json();
-				if (data.assigned_count > 0) {
-					showToast(`Temp password assigned to ${user.email}`, 'success');
-					await loadEligibleUsers();
-				} else if (data.error_count > 0 && data.results?.[0]?.error) {
-					// Show specific error from the backend
-					showToast(data.results[0].error, 'error');
-					await loadEligibleUsers(); // Refresh to update UI state
-				} else {
-					showToast('Failed to assign temp password', 'error');
-				}
-			}
-		} catch (error) {
-			console.error('Error:', error);
-			showToast('Failed to assign temp password', 'error');
-		} finally {
-			assigningUserId = null;
-		}
+	function closeResultsModal() {
+		showResultsModal = false;
+		tempPasswordResults = [];
 	}
 
-	// Format date helper
+	// === HELPERS ===
 	function formatDate(dateStr: string | null): string {
 		if (!dateStr) return '-';
 		return new Date(dateStr).toLocaleDateString('en-US', {
@@ -288,7 +278,6 @@
 		});
 	}
 
-	// Copy to clipboard
 	async function copyToClipboard(text: string) {
 		try {
 			await navigator.clipboard.writeText(text);
@@ -298,32 +287,10 @@
 		}
 	}
 
-	// Export results
-	function exportResults() {
-		if (tempPasswordResults.length === 0) return;
-
-		const csv = [
-			['User ID', 'Email', 'Temp Password', 'Email Sent', 'Status'].join(','),
-			...tempPasswordResults.map(r => [
-				r.user_id,
-				r.email,
-				r.temp_password || '',
-				r.email_sent ? 'Yes' : 'No',
-				r.error || 'Success'
-			].join(','))
-		].join('\n');
-
-		const blob = new Blob([csv], { type: 'text/csv' });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = `temp_passwords_${new Date().toISOString().split('T')[0]}.csv`;
-		a.click();
-		URL.revokeObjectURL(url);
-	}
-
+	// === LIFECYCLE ===
 	onMount(() => {
 		loadEligibleUsers();
+		loadAssignedUsers();
 	});
 </script>
 
@@ -331,311 +298,373 @@
 	<!-- Header -->
 	<div class="dashboard-header">
 		<div class="header-content">
-			<h2>🔑 Temp Password Management</h2>
-			<p>Assign temporary passwords (BOME_[user_id]) to users who have never logged in.</p>
-		</div>
-		<div class="header-actions">
-			<button class="btn btn-secondary" onclick={loadEligibleUsers} disabled={loading}>
-				{loading ? '⏳' : '🔄'} Refresh
-			</button>
+			<h2>Temp Password Management</h2>
+			<p>Assign temporary passwords to users with active subscriptions who haven't verified their email.</p>
 		</div>
 	</div>
 
-	<!-- Stats Cards -->
-	<div class="stats-grid">
-		<div class="stat-card">
-			<div class="stat-icon">👥</div>
-			<div class="stat-content">
-				<div class="stat-value">{stats().total}</div>
-				<div class="stat-label">Active Subscribers (No Account)</div>
-			</div>
-		</div>
-		<div class="stat-card highlight-warning">
-			<div class="stat-icon">⚠️</div>
-			<div class="stat-content">
-				<div class="stat-value">{stats().needsAction}</div>
-				<div class="stat-label">Need Temp Password</div>
-			</div>
-		</div>
-		<div class="stat-card">
-			<div class="stat-icon">🔑</div>
-			<div class="stat-content">
-				<div class="stat-value">{stats().withTempPass}</div>
-				<div class="stat-label">Have Temp Password</div>
-			</div>
-		</div>
+	<!-- Tabs -->
+	<div class="tabs">
+		<button 
+			class="tab-btn {activeTab === 'eligible' ? 'active' : ''}"
+			onclick={() => activeTab = 'eligible'}
+		>
+			Eligible Users
+			<span class="tab-badge">{eligibleUsers.length}</span>
+		</button>
+		<button 
+			class="tab-btn {activeTab === 'assigned' ? 'active' : ''}"
+			onclick={() => activeTab = 'assigned'}
+		>
+			Assigned
+			<span class="tab-badge">{assignedUsers.length}</span>
+		</button>
 	</div>
 
-	<!-- Quick Actions -->
-	<div class="quick-actions-section">
-		<h3>Quick Select</h3>
-		<div class="quick-actions">
-			<button class="btn btn-warning btn-sm" onclick={selectNeedingAction}>
-				⚠️ Select All Needing Action ({stats().needsAction})
-			</button>
-			<button class="btn btn-secondary btn-sm" onclick={selectWithoutTempPass}>
-				🔑 Select All Without Temp Pass
-			</button>
-			<button class="btn btn-secondary btn-sm" onclick={selectAllFiltered}>
-				✅ Select All Filtered ({filteredUsers.length})
-			</button>
-			{#if selectedUserIds.size > 0}
-				<button class="btn btn-ghost btn-sm" onclick={clearSelection}>
-					❌ Clear Selection ({selectedUserIds.size})
-				</button>
-			{/if}
-		</div>
-	</div>
-
-	<!-- Filters -->
-	<div class="filters-section">
-		<div class="filter-row">
-			<div class="filter-group search-group">
-				<label for="search">Search</label>
-				<input
-					id="search"
-					type="text"
-					bind:value={searchTerm}
-					placeholder="Search by email, name, or ID..."
-					class="filter-input"
-				/>
+	<!-- ELIGIBLE TAB -->
+	{#if activeTab === 'eligible'}
+		<div class="tab-content">
+			<!-- Stats -->
+			<div class="stats-grid">
+				<div class="stat-card">
+					<div class="stat-icon">👥</div>
+					<div class="stat-content">
+						<div class="stat-value">{eligibleStats().total}</div>
+						<div class="stat-label">Eligible Users</div>
+					</div>
+				</div>
+				<div class="stat-card highlight-info">
+					<div class="stat-icon">✅</div>
+					<div class="stat-content">
+						<div class="stat-value">{selectedUserIds.size}</div>
+						<div class="stat-label">Selected</div>
+					</div>
+				</div>
+				<div class="stat-card">
+					<div class="stat-icon">🔑</div>
+					<div class="stat-content">
+						<div class="stat-value">{assignedStats().total}</div>
+						<div class="stat-label">Already Assigned</div>
+					</div>
+				</div>
 			</div>
 
-			<div class="filter-group">
-				<label for="hasTempPass">Temp Password</label>
-				<select id="hasTempPass" bind:value={filterHasTempPassword} class="filter-select">
-					<option value="all">All</option>
-					<option value="yes">Has Temp Pass</option>
-					<option value="no">No Temp Pass</option>
-				</select>
+			<!-- Criteria Info -->
+			<div class="criteria-info">
+				<strong>Showing users with:</strong> Video Access + Active Plan + Email Not Verified
 			</div>
 
-			<div class="filter-group">
-				<label for="sortBy">Sort By</label>
-				<select id="sortBy" bind:value={sortBy} class="filter-select">
-					<option value="email">Email</option>
-					<option value="created_at">Created Date</option>
-					<option value="id">User ID</option>
-				</select>
+			<!-- Filters & Actions -->
+			<div class="filters-section">
+				<div class="filter-row">
+					<div class="filter-group search-group">
+						<label for="eligible-search">Search</label>
+						<input
+							id="eligible-search"
+							type="text"
+							bind:value={eligibleSearchTerm}
+							placeholder="Search by email, name, or ID..."
+							class="filter-input"
+						/>
+					</div>
+
+					<div class="bulk-actions">
+						<button 
+							class="btn btn-outline" 
+							onclick={selectAll}
+							disabled={filteredEligibleUsers.length === 0}
+						>
+							Select All ({filteredEligibleUsers.length})
+						</button>
+						<button 
+							class="btn btn-outline" 
+							onclick={clearSelection}
+							disabled={selectedUserIds.size === 0}
+						>
+							Clear Selection
+						</button>
+						<button 
+							class="btn btn-primary"
+							onclick={() => assignTempPasswords(false)}
+							disabled={selectedUserIds.size === 0 || assigningTempPasswords}
+						>
+							{assigningTempPasswords ? '⏳' : '🔑'} Assign Only ({selectedUserIds.size})
+						</button>
+						<button 
+							class="btn btn-primary"
+							onclick={() => assignTempPasswords(true)}
+							disabled={selectedUserIds.size === 0 || assigningTempPasswords}
+						>
+							{assigningTempPasswords ? '⏳' : '📧'} Assign + Email ({selectedUserIds.size})
+						</button>
+					</div>
+				</div>
+
+				<div class="filter-summary">
+					<span>Showing {filteredEligibleUsers.length} of {eligibleUsers.length} eligible users</span>
+					<button class="btn btn-sm btn-secondary" onclick={loadEligibleUsers} disabled={eligibleLoading}>
+						{eligibleLoading ? '⏳' : '🔄'} Refresh
+					</button>
+				</div>
 			</div>
 
-			<div class="filter-group">
-				<label for="sortDir">Order</label>
-				<select id="sortDir" bind:value={sortDir} class="filter-select">
-					<option value="asc">Ascending</option>
-					<option value="desc">Descending</option>
-				</select>
-			</div>
-		</div>
+			<!-- Users Table -->
+			<div class="table-container">
+				{#if eligibleLoading}
+					<div class="loading-container">
+						<LoadingSpinner />
+						<p>Loading eligible users...</p>
+					</div>
+				{:else if filteredEligibleUsers.length === 0}
+					<div class="empty-state">
+						<p>No eligible users found.</p>
+						<p class="hint">Eligible users have: Video Access + Active Plan + Email Not Verified</p>
+					</div>
+				{:else}
+					<table class="users-table">
+						<thead>
+							<tr>
+								<th class="checkbox-col">
+									<input 
+										type="checkbox" 
+										checked={allVisibleSelected()}
+										indeterminate={someVisibleSelected()}
+										onchange={toggleSelectAll}
+									/>
+								</th>
+								<th>User</th>
+								<th>ID</th>
+								<th>Plan</th>
+								<th>Video Access</th>
+								<th>Active Plan</th>
+								<th>Verified</th>
+								<th>Last Login</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each paginatedEligibleUsers() as user}
+								<tr class:selected={selectedUserIds.has(user.id)}>
+									<td class="checkbox-col">
+										<input 
+											type="checkbox" 
+											checked={selectedUserIds.has(user.id)}
+											onchange={() => toggleSelect(user.id)}
+										/>
+									</td>
+									<td class="user-cell">
+										<div class="user-email">{user.email}</div>
+										{#if user.first_name || user.last_name}
+											<div class="user-name">{user.first_name} {user.last_name}</div>
+										{/if}
+									</td>
+									<td class="id-cell">{user.id}</td>
+									<td>{user.plan_name || '-'}</td>
+									<td>
+										<span class="badge badge-success">Yes</span>
+									</td>
+									<td>
+										<span class="badge badge-success">Yes</span>
+									</td>
+									<td>
+										<span class="badge badge-warning">No</span>
+									</td>
+									<td class="date-cell">
+										{#if user.last_login}
+											{formatDate(user.last_login)}
+										{:else}
+											<span class="badge badge-warning">Never</span>
+										{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
 
-		<div class="filter-summary">
-			<span>Showing {filteredUsers.length} of {eligibleUsers.length} users</span>
-			{#if selectedUserIds.size > 0}
-				<span class="selection-badge">
-					{selectedUserIds.size} selected
-				</span>
-			{/if}
-		</div>
-	</div>
-
-	<!-- Bulk Actions Bar -->
-	{#if selectedUserIds.size > 0}
-		<div class="bulk-actions-bar">
-			<span class="bulk-count">
-				<strong>{selectedUserIds.size}</strong> user{selectedUserIds.size !== 1 ? 's' : ''} selected
-			</span>
-			<div class="bulk-buttons">
-				<button 
-					class="btn btn-primary"
-					onclick={() => handleBulkAssign(true)}
-					disabled={assigning}
-				>
-					{assigning ? '⏳ Assigning...' : '📧 Assign & Send Email'}
-				</button>
-				<button 
-					class="btn btn-outline"
-					onclick={() => handleBulkAssign(false)}
-					disabled={assigning}
-				>
-					{assigning ? '⏳ Assigning...' : '🔑 Assign Only (No Email)'}
-				</button>
+					<!-- Pagination -->
+					{#if eligibleTotalPages > 1}
+						<div class="pagination">
+							<button 
+								class="btn btn-sm" 
+								disabled={eligibleCurrentPage === 1}
+								onclick={() => eligibleCurrentPage = eligibleCurrentPage - 1}
+							>
+								← Previous
+							</button>
+							<span class="page-info">Page {eligibleCurrentPage} of {eligibleTotalPages}</span>
+							<button 
+								class="btn btn-sm" 
+								disabled={eligibleCurrentPage === eligibleTotalPages}
+								onclick={() => eligibleCurrentPage = eligibleCurrentPage + 1}
+							>
+								Next →
+							</button>
+						</div>
+					{/if}
+				{/if}
 			</div>
 		</div>
 	{/if}
 
-	<!-- Users Table -->
-	<div class="table-container">
-		{#if loading}
-			<div class="loading-container">
-				<LoadingSpinner />
-				<p>Loading eligible users...</p>
-			</div>
-		{:else if filteredUsers.length === 0}
-			<div class="empty-state">
-				<p>No users found matching your criteria.</p>
-			</div>
-		{:else}
-			<table class="users-table">
-				<thead>
-					<tr>
-						<th class="checkbox-col">
-							<input
-								type="checkbox"
-								checked={allVisibleSelected()}
-								indeterminate={someVisibleSelected()}
-								onchange={toggleSelectAll}
-								title="Select all visible"
-							/>
-						</th>
-						<th>User</th>
-						<th>ID</th>
-						<th>Temp Password</th>
-						<th>Created</th>
-						<th>Actions</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each paginatedUsers() as user}
-						<tr class:selected={selectedUserIds.has(user.id)} class:has-temp={user.has_temp_password}>
-							<td class="checkbox-col">
-								<input
-									type="checkbox"
-									checked={selectedUserIds.has(user.id)}
-									onchange={() => toggleUserSelection(user.id)}
-								/>
-							</td>
-							<td class="user-cell">
-								<div class="user-email">{user.email}</div>
-								{#if user.first_name || user.last_name}
-									<div class="user-name">{user.first_name} {user.last_name}</div>
-								{/if}
-							</td>
-							<td class="id-cell">{user.id}</td>
-							<td class="temp-pass-cell">
-								{#if user.has_temp_password}
-									<span class="badge badge-info">
-										🔑 BOME_{user.id}
-									</span>
-									<button 
-										class="copy-btn" 
-										onclick={() => copyToClipboard(`BOME_${user.id}`)}
-										title="Copy password"
-									>
-										📋
-									</button>
-								{:else}
-									<span class="badge badge-warning">Not set</span>
-								{/if}
-							</td>
-							<td class="date-cell">{formatDate(user.created_at)}</td>
-							<td class="actions-cell">
-								{#if assigningUserId === user.id}
-									<span class="loading-spinner">⏳</span>
-								{:else if !user.has_temp_password}
-									<button 
-										class="btn btn-sm btn-primary"
-										onclick={() => handleSingleAssign(user, true)}
-										title="Assign and send email"
-										disabled={assigningUserId !== null}
-									>
-										📧
-									</button>
-									<button 
-										class="btn btn-sm btn-outline"
-										onclick={() => handleSingleAssign(user, false)}
-										title="Assign only"
-										disabled={assigningUserId !== null}
-									>
-										🔑
-									</button>
-								{:else}
-									<span class="text-muted">Assigned</span>
-								{/if}
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-
-			<!-- Pagination -->
-			{#if totalPages > 1}
-				<div class="pagination">
-					<div class="pagination-info">
-						Page {currentPage} of {totalPages}
-					</div>
-					<div class="pagination-controls">
-						<button 
-							class="page-btn"
-							disabled={currentPage <= 1}
-							onclick={() => currentPage = 1}
-						>
-							First
-						</button>
-						<button 
-							class="page-btn"
-							disabled={currentPage <= 1}
-							onclick={() => currentPage--}
-						>
-							← Prev
-						</button>
-						<span class="page-current">{currentPage}</span>
-						<button 
-							class="page-btn"
-							disabled={currentPage >= totalPages}
-							onclick={() => currentPage++}
-						>
-							Next →
-						</button>
-						<button 
-							class="page-btn"
-							disabled={currentPage >= totalPages}
-							onclick={() => currentPage = totalPages}
-						>
-							Last
-						</button>
-					</div>
-					<div class="items-per-page">
-						<label for="perPage">Per page:</label>
-						<select id="perPage" bind:value={itemsPerPage}>
-							<option value={25}>25</option>
-							<option value={50}>50</option>
-							<option value={100}>100</option>
-							<option value={200}>200</option>
-						</select>
+	<!-- ASSIGNED TAB -->
+	{#if activeTab === 'assigned'}
+		<div class="tab-content">
+			<!-- Stats -->
+			<div class="stats-grid">
+				<div class="stat-card">
+					<div class="stat-icon">🔑</div>
+					<div class="stat-content">
+						<div class="stat-value">{assignedStats().total}</div>
+						<div class="stat-label">Total Assigned</div>
 					</div>
 				</div>
-			{/if}
-		{/if}
-	</div>
+				<div class="stat-card">
+					<div class="stat-icon">✅</div>
+					<div class="stat-content">
+						<div class="stat-value">{assignedStats().loggedIn}</div>
+						<div class="stat-label">Have Logged In</div>
+					</div>
+				</div>
+				<div class="stat-card highlight-warning">
+					<div class="stat-icon">⏳</div>
+					<div class="stat-content">
+						<div class="stat-value">{assignedStats().pending}</div>
+						<div class="stat-label">Pending Login</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Filters -->
+			<div class="filters-section">
+				<div class="filter-row">
+					<div class="filter-group search-group">
+						<label for="assigned-search">Search</label>
+						<input
+							id="assigned-search"
+							type="text"
+							bind:value={assignedSearchTerm}
+							placeholder="Search by email, name, or ID..."
+							class="filter-input"
+						/>
+					</div>
+				</div>
+
+				<div class="filter-summary">
+					<span>Showing {filteredAssignedUsers.length} of {assignedUsers.length} assigned users</span>
+					<button class="btn btn-sm btn-secondary" onclick={loadAssignedUsers} disabled={assignedLoading}>
+						{assignedLoading ? '⏳' : '🔄'} Refresh
+					</button>
+				</div>
+			</div>
+
+			<!-- Users Table -->
+			<div class="table-container">
+				{#if assignedLoading}
+					<div class="loading-container">
+						<LoadingSpinner />
+						<p>Loading assigned users...</p>
+					</div>
+				{:else if filteredAssignedUsers.length === 0}
+					<div class="empty-state">
+						<p>No users with temp passwords found.</p>
+						<p class="hint">Assign temp passwords from the Eligible tab.</p>
+					</div>
+				{:else}
+					<table class="users-table">
+						<thead>
+							<tr>
+								<th>User</th>
+								<th>ID</th>
+								<th>Temp Password</th>
+								<th>Assigned</th>
+								<th>Status</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each paginatedAssignedUsers() as user}
+								<tr class:logged-in={user.has_logged_in}>
+									<td class="user-cell">
+										<div class="user-email">{user.email}</div>
+										{#if user.first_name || user.last_name}
+											<div class="user-name">{user.first_name} {user.last_name}</div>
+										{/if}
+									</td>
+									<td class="id-cell">{user.id}</td>
+									<td class="temp-pass-cell">
+										<span class="badge badge-info">
+											{user.temp_password}
+										</span>
+										<button 
+											class="copy-btn" 
+											onclick={() => copyToClipboard(user.temp_password)}
+											title="Copy password"
+										>
+											📋
+										</button>
+									</td>
+									<td class="date-cell">{formatDate(user.temp_password_created_at)}</td>
+									<td class="status-cell">
+										{#if user.has_logged_in}
+											<span class="badge badge-success">Has logged in</span>
+										{:else}
+											<span class="badge badge-warning">Pending login</span>
+										{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+
+					<!-- Pagination -->
+					{#if assignedTotalPages > 1}
+						<div class="pagination">
+							<button 
+								class="btn btn-sm" 
+								disabled={assignedCurrentPage === 1}
+								onclick={() => assignedCurrentPage = assignedCurrentPage - 1}
+							>
+								← Previous
+							</button>
+							<span class="page-info">Page {assignedCurrentPage} of {assignedTotalPages}</span>
+							<button 
+								class="btn btn-sm" 
+								disabled={assignedCurrentPage === assignedTotalPages}
+								onclick={() => assignedCurrentPage = assignedCurrentPage + 1}
+							>
+								Next →
+							</button>
+						</div>
+					{/if}
+				{/if}
+			</div>
+		</div>
+	{/if}
 </div>
 
 <!-- Results Modal -->
 {#if showResultsModal}
 	<div 
 		class="modal-overlay" 
-		onclick={() => showResultsModal = false}
-		onkeydown={(e) => e.key === 'Escape' && (showResultsModal = false)}
+		onclick={closeResultsModal}
+		onkeydown={(e) => e.key === 'Escape' && closeResultsModal()}
 		role="dialog"
 		aria-modal="true"
-		aria-labelledby="modal-title"
+		aria-labelledby="results-modal-title"
 		tabindex="-1"
 	>
-		<div class="modal-content" onclick={(e) => e.stopPropagation()} role="document">
+		<div class="modal-content" role="document" onclick={(e) => e.stopPropagation()}>
 			<div class="modal-header">
-				<h3 id="modal-title">🔑 Assignment Results</h3>
-				<button class="close-btn" onclick={() => showResultsModal = false}>✕</button>
+				<h3 id="results-modal-title">Temp Password Assignment Results</h3>
+				<button type="button" class="close-btn" onclick={closeResultsModal}>×</button>
 			</div>
 			<div class="modal-body">
 				{#if tempPasswordResults.length > 0}
 					<div class="results-summary">
 						<span class="success-count">
-							✅ {tempPasswordResults.filter(r => !r.error).length} successful
+							{tempPasswordResults.filter(r => !r.error).length} assigned
 						</span>
-						{#if tempPasswordResults.some(r => r.error)}
-							<span class="error-count">
-								❌ {tempPasswordResults.filter(r => r.error).length} failed
-							</span>
-						{/if}
+						<span class="error-count">
+							{tempPasswordResults.filter(r => r.error).length} failed
+						</span>
 					</div>
 					<table class="results-table">
 						<thead>
@@ -649,41 +678,24 @@
 						</thead>
 						<tbody>
 							{#each tempPasswordResults as result}
-								<tr class:error={result.error}>
+								<tr class:error={!!result.error}>
 									<td>{result.user_id}</td>
-									<td>{result.email || '-'}</td>
-									<td class="password-cell">
-										{#if result.temp_password}
-											<code>{result.temp_password}</code>
-											<button 
-												class="copy-btn" 
-												onclick={() => copyToClipboard(result.temp_password)}
-											>
-												📋
-											</button>
-										{:else}
-											-
-										{/if}
-									</td>
-									<td>{result.email_sent ? '✅' : '❌'}</td>
-									<td class:error-text={result.error}>
-										{result.error || '✅ Success'}
+									<td>{result.email}</td>
+									<td>{result.temp_password || '-'}</td>
+									<td>{result.email_sent ? 'Yes' : 'No'}</td>
+									<td class:error-text={!!result.error}>
+										{result.error || 'Success'}
 									</td>
 								</tr>
 							{/each}
 						</tbody>
 					</table>
 				{:else}
-					<p>No results to display</p>
+					<p>No results to display.</p>
 				{/if}
 			</div>
 			<div class="modal-footer">
-				{#if tempPasswordResults.length > 0}
-					<button class="btn btn-secondary" onclick={exportResults}>
-						📥 Export CSV
-					</button>
-				{/if}
-				<button class="btn btn-primary" onclick={() => showResultsModal = false}>
+				<button type="button" class="btn btn-primary" onclick={closeResultsModal}>
 					Close
 				</button>
 			</div>
@@ -693,40 +705,83 @@
 
 <style>
 	.temp-passes-dashboard {
-		padding: 0;
+		padding: 1.5rem;
 	}
 
-	/* Header */
 	.dashboard-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
 		margin-bottom: 1.5rem;
-		padding-bottom: 1rem;
-		border-bottom: 1px solid #e5e7eb;
 	}
 
-	.dashboard-header h2 {
-		margin: 0 0 0.25rem 0;
+	.header-content h2 {
+		margin: 0 0 0.5rem 0;
 		font-size: 1.5rem;
-		color: #111827;
 	}
 
-	.dashboard-header p {
+	.header-content p {
 		margin: 0;
 		color: #6b7280;
 		font-size: 0.875rem;
 	}
 
-	.header-actions {
+	/* Tabs */
+	.tabs {
 		display: flex;
-		gap: 0.5rem;
+		gap: 0;
+		border-bottom: 2px solid #e5e7eb;
+		margin-bottom: 1.5rem;
 	}
 
-	/* Stats Grid */
+	.tab-btn {
+		padding: 0.75rem 1.5rem;
+		background: none;
+		border: none;
+		border-bottom: 2px solid transparent;
+		margin-bottom: -2px;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: #6b7280;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		transition: all 0.2s;
+	}
+
+	.tab-btn:hover {
+		color: #374151;
+	}
+
+	.tab-btn.active {
+		color: #3b82f6;
+		border-bottom-color: #3b82f6;
+	}
+
+	.tab-badge {
+		background: #e5e7eb;
+		color: #374151;
+		padding: 0.125rem 0.5rem;
+		border-radius: 9999px;
+		font-size: 0.75rem;
+	}
+
+	.tab-btn.active .tab-badge {
+		background: #dbeafe;
+		color: #1e40af;
+	}
+
+	.tab-content {
+		animation: fadeIn 0.2s ease;
+	}
+
+	@keyframes fadeIn {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
+
+	/* Stats */
 	.stats-grid {
 		display: grid;
-		grid-template-columns: repeat(4, 1fr);
+		grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 		gap: 1rem;
 		margin-bottom: 1.5rem;
 	}
@@ -741,17 +796,18 @@
 		gap: 1rem;
 	}
 
+	.stat-card.highlight-info {
+		border-color: #3b82f6;
+		background: #eff6ff;
+	}
+
 	.stat-card.highlight-warning {
-		background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
 		border-color: #f59e0b;
+		background: #fffbeb;
 	}
 
 	.stat-icon {
 		font-size: 1.5rem;
-	}
-
-	.stat-content {
-		flex: 1;
 	}
 
 	.stat-value {
@@ -764,35 +820,22 @@
 		font-size: 0.75rem;
 		color: #6b7280;
 		text-transform: uppercase;
-		letter-spacing: 0.5px;
 	}
 
-	/* Quick Actions */
-	.quick-actions-section {
-		background: #f9fafb;
-		border: 1px solid #e5e7eb;
+	/* Criteria Info */
+	.criteria-info {
+		background: #f0f9ff;
+		border: 1px solid #bae6fd;
 		border-radius: 0.5rem;
-		padding: 1rem;
-		margin-bottom: 1.5rem;
-	}
-
-	.quick-actions-section h3 {
-		margin: 0 0 0.75rem 0;
+		padding: 0.75rem 1rem;
 		font-size: 0.875rem;
-		color: #374151;
-		font-weight: 600;
-	}
-
-	.quick-actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
+		color: #0369a1;
+		margin-bottom: 1rem;
 	}
 
 	/* Filters */
 	.filters-section {
-		background: white;
-		border: 1px solid #e5e7eb;
+		background: #f9fafb;
 		border-radius: 0.5rem;
 		padding: 1rem;
 		margin-bottom: 1rem;
@@ -800,9 +843,9 @@
 
 	.filter-row {
 		display: flex;
-		flex-wrap: wrap;
 		gap: 1rem;
-		margin-bottom: 0.75rem;
+		flex-wrap: wrap;
+		align-items: flex-end;
 	}
 
 	.filter-group {
@@ -811,66 +854,38 @@
 		gap: 0.25rem;
 	}
 
-	.filter-group.search-group {
-		flex: 1;
-		min-width: 200px;
-	}
-
 	.filter-group label {
 		font-size: 0.75rem;
-		font-weight: 600;
-		color: #374151;
+		font-weight: 500;
+		color: #6b7280;
 	}
 
-	.filter-input, .filter-select {
+	.filter-input {
 		padding: 0.5rem;
 		border: 1px solid #d1d5db;
 		border-radius: 0.375rem;
 		font-size: 0.875rem;
+		min-width: 250px;
 	}
 
-	.filter-input:focus, .filter-select:focus {
-		outline: none;
-		border-color: #2563eb;
-		box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+	.search-group {
+		flex: 1;
+		min-width: 200px;
+	}
+
+	.bulk-actions {
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
 	}
 
 	.filter-summary {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
+		margin-top: 0.75rem;
 		font-size: 0.875rem;
 		color: #6b7280;
-	}
-
-	.selection-badge {
-		background: #2563eb;
-		color: white;
-		padding: 0.25rem 0.75rem;
-		border-radius: 9999px;
-		font-size: 0.75rem;
-		font-weight: 500;
-	}
-
-	/* Bulk Actions Bar */
-	.bulk-actions-bar {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		background: #dbeafe;
-		border: 1px solid #93c5fd;
-		border-radius: 0.5rem;
-		padding: 1rem;
-		margin-bottom: 1rem;
-	}
-
-	.bulk-count {
-		color: #1e40af;
-	}
-
-	.bulk-buttons {
-		display: flex;
-		gap: 0.5rem;
 	}
 
 	/* Table */
@@ -881,43 +896,44 @@
 		overflow: hidden;
 	}
 
+	.loading-container,
+	.empty-state {
+		padding: 3rem;
+		text-align: center;
+		color: #6b7280;
+	}
+
+	.empty-state .hint {
+		font-size: 0.875rem;
+		margin-top: 0.5rem;
+	}
+
 	.users-table {
 		width: 100%;
 		border-collapse: collapse;
 	}
 
+	.users-table th,
+	.users-table td {
+		padding: 0.75rem 1rem;
+		text-align: left;
+		border-bottom: 1px solid #e5e7eb;
+	}
+
 	.users-table th {
 		background: #f9fafb;
-		padding: 0.75rem;
-		text-align: left;
-		font-size: 0.75rem;
 		font-weight: 600;
-		color: #374151;
+		font-size: 0.75rem;
 		text-transform: uppercase;
-		letter-spacing: 0.5px;
-		border-bottom: 1px solid #e5e7eb;
-	}
-
-	.users-table td {
-		padding: 0.75rem;
-		border-bottom: 1px solid #e5e7eb;
-		font-size: 0.875rem;
-	}
-
-	.users-table tr:hover {
-		background: #f9fafb;
+		color: #6b7280;
 	}
 
 	.users-table tr.selected {
 		background: #eff6ff;
 	}
 
-	.users-table tr.has-temp {
+	.users-table tr.logged-in {
 		background: #f0fdf4;
-	}
-
-	.users-table tr.has-temp.selected {
-		background: #dcfce7;
 	}
 
 	.checkbox-col {
@@ -931,7 +947,6 @@
 
 	.user-email {
 		font-weight: 500;
-		color: #111827;
 	}
 
 	.user-name {
@@ -940,41 +955,18 @@
 	}
 
 	.id-cell {
+		color: #6b7280;
 		font-family: monospace;
-		color: #6b7280;
-	}
-
-	.date-cell {
-		color: #6b7280;
-		white-space: nowrap;
-	}
-
-	.actions-cell {
-		display: flex;
-		gap: 0.25rem;
-	}
-
-	.actions-cell .loading-spinner {
-		display: inline-block;
-		animation: spin 1s linear infinite;
-	}
-
-	@keyframes spin {
-		from { transform: rotate(0deg); }
-		to { transform: rotate(360deg); }
 	}
 
 	.temp-pass-cell {
 		white-space: nowrap;
 	}
 
-	.temp-pass-cell .badge {
-		display: inline-flex;
-		vertical-align: middle;
-	}
-
-	.temp-pass-cell .copy-btn {
-		vertical-align: middle;
+	.date-cell {
+		color: #6b7280;
+		white-space: nowrap;
+		font-size: 0.875rem;
 	}
 
 	/* Badges */
@@ -988,15 +980,20 @@
 		font-weight: 500;
 	}
 
-	.badge-warning {
-		background: #fef3c7;
-		color: #92400e;
-	}
-
 	.badge-info {
 		background: #dbeafe;
 		color: #1e40af;
 		font-family: monospace;
+	}
+
+	.badge-success {
+		background: #dcfce7;
+		color: #166534;
+	}
+
+	.badge-warning {
+		background: #fef3c7;
+		color: #92400e;
 	}
 
 	.copy-btn {
@@ -1015,175 +1012,16 @@
 	/* Pagination */
 	.pagination {
 		display: flex;
-		justify-content: space-between;
+		justify-content: center;
 		align-items: center;
+		gap: 1rem;
 		padding: 1rem;
 		border-top: 1px solid #e5e7eb;
-		background: #f9fafb;
 	}
 
-	.pagination-info {
+	.page-info {
 		font-size: 0.875rem;
 		color: #6b7280;
-	}
-
-	.pagination-controls {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.page-btn {
-		padding: 0.375rem 0.75rem;
-		border: 1px solid #d1d5db;
-		background: white;
-		border-radius: 0.375rem;
-		font-size: 0.875rem;
-		cursor: pointer;
-		transition: all 0.2s;
-	}
-
-	.page-btn:hover:not(:disabled) {
-		background: #f3f4f6;
-	}
-
-	.page-btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.page-current {
-		padding: 0.375rem 0.75rem;
-		background: #2563eb;
-		color: white;
-		border-radius: 0.375rem;
-		font-weight: 500;
-	}
-
-	.items-per-page {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.875rem;
-		color: #6b7280;
-	}
-
-	.items-per-page select {
-		padding: 0.25rem 0.5rem;
-		border: 1px solid #d1d5db;
-		border-radius: 0.375rem;
-	}
-
-	/* Loading & Empty States */
-	.loading-container, .empty-state {
-		padding: 3rem;
-		text-align: center;
-		color: #6b7280;
-	}
-
-	/* Modal */
-	.modal-overlay {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.5);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		z-index: 1000;
-	}
-
-	.modal-content {
-		background: white;
-		border-radius: 0.5rem;
-		width: 90%;
-		max-width: 800px;
-		max-height: 80vh;
-		display: flex;
-		flex-direction: column;
-		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-	}
-
-	.modal-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 1rem 1.5rem;
-		border-bottom: 1px solid #e5e7eb;
-	}
-
-	.modal-header h3 {
-		margin: 0;
-	}
-
-	.close-btn {
-		background: none;
-		border: none;
-		font-size: 1.5rem;
-		cursor: pointer;
-		color: #6b7280;
-	}
-
-	.close-btn:hover {
-		color: #111827;
-	}
-
-	.modal-body {
-		padding: 1.5rem;
-		overflow-y: auto;
-		flex: 1;
-	}
-
-	.modal-footer {
-		display: flex;
-		justify-content: flex-end;
-		gap: 0.75rem;
-		padding: 1rem 1.5rem;
-		border-top: 1px solid #e5e7eb;
-	}
-
-	.results-summary {
-		display: flex;
-		gap: 1rem;
-		margin-bottom: 1rem;
-		font-weight: 500;
-	}
-
-	.success-count {
-		color: #059669;
-	}
-
-	.error-count {
-		color: #dc2626;
-	}
-
-	.results-table {
-		width: 100%;
-		border-collapse: collapse;
-	}
-
-	.results-table th, .results-table td {
-		padding: 0.75rem;
-		text-align: left;
-		border-bottom: 1px solid #e5e7eb;
-	}
-
-	.results-table th {
-		background: #f9fafb;
-		font-weight: 600;
-	}
-
-	.results-table tr.error {
-		background: #fef2f2;
-	}
-
-
-	.error-text {
-		color: #dc2626;
-	}
-
-	.text-muted {
-		color: #9ca3af;
-		font-style: italic;
 	}
 
 	/* Buttons */
@@ -1200,18 +1038,13 @@
 		transition: all 0.2s;
 	}
 
-	.btn-sm {
-		padding: 0.25rem 0.5rem;
-		font-size: 0.75rem;
-	}
-
 	.btn-primary {
-		background: #2563eb;
+		background: #3b82f6;
 		color: white;
 	}
 
-	.btn-primary:hover {
-		background: #1d4ed8;
+	.btn-primary:hover:not(:disabled) {
+		background: #2563eb;
 	}
 
 	.btn-secondary {
@@ -1220,68 +1053,135 @@
 		border: 1px solid #d1d5db;
 	}
 
-	.btn-secondary:hover {
+	.btn-secondary:hover:not(:disabled) {
 		background: #e5e7eb;
 	}
 
 	.btn-outline {
-		background: transparent;
-		color: #2563eb;
-		border: 1px solid #2563eb;
-	}
-
-	.btn-outline:hover {
-		background: #2563eb;
-		color: white;
-	}
-
-	.btn-warning {
-		background: #f59e0b;
-		color: white;
-	}
-
-	.btn-warning:hover {
-		background: #d97706;
-	}
-
-	.btn-ghost {
-		background: transparent;
-		color: #6b7280;
-	}
-
-	.btn-ghost:hover {
-		background: #f3f4f6;
+		background: white;
 		color: #374151;
+		border: 1px solid #d1d5db;
+	}
+
+	.btn-outline:hover:not(:disabled) {
+		background: #f9fafb;
+	}
+
+	.btn-sm {
+		padding: 0.375rem 0.75rem;
+		font-size: 0.75rem;
 	}
 
 	.btn:disabled {
-		opacity: 0.6;
+		opacity: 0.5;
 		cursor: not-allowed;
 	}
 
-	/* Responsive */
-	@media (max-width: 768px) {
-		.stats-grid {
-			grid-template-columns: repeat(2, 1fr);
-		}
+	/* Modal */
+	.modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+	}
 
-		.filter-row {
-			flex-direction: column;
-		}
+	.modal-content {
+		background: white;
+		border-radius: 0.5rem;
+		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+		max-width: 800px;
+		width: 90%;
+		max-height: 80vh;
+		display: flex;
+		flex-direction: column;
+	}
 
-		.bulk-actions-bar {
-			flex-direction: column;
-			gap: 1rem;
-		}
+	.modal-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1rem 1.5rem;
+		border-bottom: 1px solid #e5e7eb;
+	}
 
-		.bulk-buttons {
-			flex-direction: column;
-			width: 100%;
-		}
+	.modal-header h3 {
+		margin: 0;
+		font-size: 1.25rem;
+		font-weight: 600;
+	}
 
-		.bulk-buttons .btn {
-			width: 100%;
-			justify-content: center;
-		}
+	.close-btn {
+		background: none;
+		border: none;
+		font-size: 1.5rem;
+		cursor: pointer;
+		color: #6b7280;
+		padding: 0.25rem;
+		line-height: 1;
+	}
+
+	.close-btn:hover {
+		color: #111827;
+	}
+
+	.modal-body {
+		padding: 1.5rem;
+		overflow-y: auto;
+		flex: 1;
+	}
+
+	.modal-footer {
+		padding: 1rem 1.5rem;
+		border-top: 1px solid #e5e7eb;
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.5rem;
+	}
+
+	.results-summary {
+		display: flex;
+		gap: 1.5rem;
+		margin-bottom: 1rem;
+		font-weight: 600;
+	}
+
+	.success-count {
+		color: #16a34a;
+	}
+
+	.error-count {
+		color: #dc2626;
+	}
+
+	.results-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.875rem;
+	}
+
+	.results-table th,
+	.results-table td {
+		padding: 0.75rem;
+		text-align: left;
+		border-bottom: 1px solid #e5e7eb;
+	}
+
+	.results-table th {
+		background: #f9fafb;
+		font-weight: 600;
+	}
+
+	.results-table tr.error {
+		background: #fef2f2;
+	}
+
+	.error-text {
+		color: #dc2626;
 	}
 </style>
