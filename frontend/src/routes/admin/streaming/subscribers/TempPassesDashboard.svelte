@@ -63,11 +63,17 @@
 		return filteredAssignedUsers.slice(start, start + assignedItemsPerPage);
 	});
 
+	// Set of user IDs that have temp passwords (for quick lookup)
+	let tempPasswordUserIds = $derived(() => {
+		return new Set(assignedUsers.map(u => u.id));
+	});
+
 	// === STATS ===
 	let eligibleStats = $derived(() => {
 		const total = eligibleUsers.length;
-		const withPassword = eligibleUsers.filter(u => u.last_login !== null).length;
-		return { total, withPassword };
+		const withTempPass = eligibleUsers.filter(u => tempPasswordUserIds().has(u.id)).length;
+		const needsAssignment = total - withTempPass;
+		return { total, withTempPass, needsAssignment };
 	});
 
 	let assignedStats = $derived(() => {
