@@ -237,7 +237,8 @@ function createAuthStore() {
 					first_name: data.user.first_name,
 					last_name: data.user.last_name,
 					email_verified: data.user.email_verified,
-					password_changed: data.user.password_changed ?? true
+					password_changed: data.user.password_changed ?? true,
+					temp_password_active: data.user.temp_password_active
 				};
 				
 				// console.log('Auth: Parsed tokens and user:', { tokens, user });

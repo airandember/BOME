@@ -15,6 +15,14 @@
 	let userId = '';
 	let userEmail = '';
 
+	// Password validation helpers (reactive)
+	$: hasMinLength = password.length >= 8;
+	$: hasUpperCase = /[A-Z]/.test(password);
+	$: hasLowerCase = /[a-z]/.test(password);
+	$: hasNumber = /\d/.test(password);
+	$: hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+	$: passwordStarted = password.length > 0;
+
 	// Get token and user ID from URL params
 	onMount(() => {
 		const urlParams = $page.url.searchParams;
@@ -252,24 +260,24 @@
 					<div class="password-requirements">
 						<p>Password must contain:</p>
 						<ul>
-							<li class:valid={password.length >= 8} class:invalid={password.length > 0 && password.length < 8}>
-								<span class="validator-icon">{password.length >= 8 ? '✓' : '✗'}</span>
+							<li class:valid={hasMinLength} class:invalid={passwordStarted && !hasMinLength}>
+								<span class="validator-icon">{hasMinLength ? '✓' : '✗'}</span>
 								At least 8 characters
 							</li>
-							<li class:valid={/[A-Z]/.test(password)} class:invalid={password.length > 0 && !/[A-Z]/.test(password)}>
-								<span class="validator-icon">{/[A-Z]/.test(password) ? '✓' : '✗'}</span>
+							<li class:valid={hasUpperCase} class:invalid={passwordStarted && !hasUpperCase}>
+								<span class="validator-icon">{hasUpperCase ? '✓' : '✗'}</span>
 								One uppercase letter
 							</li>
-							<li class:valid={/[a-z]/.test(password)} class:invalid={password.length > 0 && !/[a-z]/.test(password)}>
-								<span class="validator-icon">{/[a-z]/.test(password) ? '✓' : '✗'}</span>
+							<li class:valid={hasLowerCase} class:invalid={passwordStarted && !hasLowerCase}>
+								<span class="validator-icon">{hasLowerCase ? '✓' : '✗'}</span>
 								One lowercase letter
 							</li>
-							<li class:valid={/\d/.test(password)} class:invalid={password.length > 0 && !/\d/.test(password)}>
-								<span class="validator-icon">{/\d/.test(password) ? '✓' : '✗'}</span>
+							<li class:valid={hasNumber} class:invalid={passwordStarted && !hasNumber}>
+								<span class="validator-icon">{hasNumber ? '✓' : '✗'}</span>
 								One number
 							</li>
-							<li class:valid={/[!@#$%^&*(),.?":{}|<>]/.test(password)} class:invalid={password.length > 0 && !/[!@#$%^&*(),.?":{}|<>]/.test(password)}>
-								<span class="validator-icon">{/[!@#$%^&*(),.?":{}|<>]/.test(password) ? '✓' : '✗'}</span>
+							<li class:valid={hasSpecialChar} class:invalid={passwordStarted && !hasSpecialChar}>
+								<span class="validator-icon">{hasSpecialChar ? '✓' : '✗'}</span>
 								One special character
 							</li>
 						</ul>
