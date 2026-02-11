@@ -186,14 +186,16 @@ function createAuthStore() {
 		// Authentication methods
 		async login(email: string, password: string) {
 			try {
-				// console.log('Auth: Starting login process for:', email);
+				// Normalize email to lowercase for case-insensitive matching
+				const normalizedEmail = email.toLowerCase().trim();
+				// console.log('Auth: Starting login process for:', normalizedEmail);
 				update(state => ({ ...state, loading: true, error: null }));
 				isLoading.set(true);
 				authError.set(null);
 				
 				const response = await apiRequest('/auth/login', {
 					method: 'POST',
-					body: JSON.stringify({ email, password }),
+					body: JSON.stringify({ email: normalizedEmail, password }),
 				});
 				
 				// console.log('Auth: Login response status:', response.status);
@@ -206,7 +208,7 @@ function createAuthStore() {
 					if (response.status === 403 && error.verification_required) {
 						// Redirect to verification page with user context
 						if (browser) {
-							const verifyUrl = `/auth/verify-email?email=${encodeURIComponent(email)}&user_id=${error.user_id}`;
+							const verifyUrl = `/auth/verify-email?email=${encodeURIComponent(normalizedEmail)}&user_id=${error.user_id}`;
 							goto(verifyUrl);
 						}
 						return { 
@@ -265,9 +267,12 @@ function createAuthStore() {
 				isLoading.set(true);
 				authError.set(null);
 				
+				// Normalize email to lowercase for case-insensitive matching
+				const normalizedData = { ...data, email: data.email.toLowerCase().trim() };
+				
 				const response = await apiRequest('/auth/register', {
 					method: 'POST',
-					body: JSON.stringify(data),
+					body: JSON.stringify(normalizedData),
 				});
 				
 				if (!response.ok) {
@@ -325,13 +330,15 @@ function createAuthStore() {
 
 		async forgotPassword(email: string) {
 			try {
+				// Normalize email to lowercase for case-insensitive matching
+				const normalizedEmail = email.toLowerCase().trim();
 				update(state => ({ ...state, loading: true, error: null }));
 				isLoading.set(true);
 				authError.set(null);
 				
 				const response = await apiRequest('/auth/forgot-password', {
 					method: 'POST',
-					body: JSON.stringify({ email }),
+					body: JSON.stringify({ email: normalizedEmail }),
 				});
 				
 				if (!response.ok) {

@@ -335,8 +335,16 @@ func (s *EmailService) recordEmailNotification(userID int, emailTo, emailType, s
 		templateDataJSON = []byte("{}")
 	}
 
+	// Handle userID <= 0 by passing nil (NULL) to avoid foreign key constraint violation
+	var userIDParam interface{}
+	if userID > 0 {
+		userIDParam = userID
+	} else {
+		userIDParam = nil
+	}
+
 	var id int
-	err = s.db.DB.QueryRow(query, userID, emailTo, emailType, subject, templateName, string(templateDataJSON)).Scan(&id)
+	err = s.db.DB.QueryRow(query, userIDParam, emailTo, emailType, subject, templateName, string(templateDataJSON)).Scan(&id)
 	return id, err
 }
 

@@ -398,12 +398,12 @@ func (s *SimpleStripeSyncService) syncSubscriptions(ctx context.Context) error {
 func (s *SimpleStripeSyncService) LinkCustomersToUsers(ctx context.Context) error {
 	log.Println("🔗 Linking Stripe customers to local users...")
 
-	// Simple approach: match by email
+	// Simple approach: match by email (case-insensitive)
 	query := `
 		UPDATE users 
 		SET stripe_customer_id = sc.stripe_id
 		FROM stripe_customers sc
-		WHERE users.email = sc.email 
+		WHERE LOWER(users.email) = LOWER(sc.email) 
 		AND users.stripe_customer_id IS NULL
 		AND sc.email IS NOT NULL
 		AND sc.email != ''

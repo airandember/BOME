@@ -22,8 +22,11 @@
 
 		loading = true;
 		error = '';
+		
+		// Normalize email to lowercase
+		const normalizedEmail = email.toLowerCase().trim();
 
-		const result = await auth.forgotPassword(email);
+		const result = await auth.forgotPassword(normalizedEmail);
 		
 		if (result.success) {
 			success = true;
