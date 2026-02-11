@@ -210,7 +210,7 @@ func (db *DB) GetUserByEmail(email string) (*User, error) {
 		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
 		 stripe_customer_id, stripe_customer_ids,
 		 reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed, password_changed,
-		 COALESCE(temp_password_active, FALSE), temp_password, temp_password_created_at FROM users WHERE email = $1`,
+		 COALESCE(temp_password_active, FALSE), temp_password, temp_password_created_at FROM users WHERE LOWER(email) = LOWER($1)`,
 		email,
 	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.FirstName, &user.LastName, &user.Role, &user.EmailVerified,
 		&user.StripeCustomerID, &user.StripeCustomerIDs,
@@ -330,7 +330,7 @@ func (db *DB) UpdateLastLogout(userID int) error {
 // CheckUserExists checks if a user exists by email
 func (db *DB) CheckUserExists(email string) (bool, error) {
 	var count int
-	err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE email = $1`, email).Scan(&count)
+	err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE LOWER(email) = LOWER($1)`, email).Scan(&count)
 	if err != nil {
 		return false, err
 	}

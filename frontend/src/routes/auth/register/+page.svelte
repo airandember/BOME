@@ -53,9 +53,12 @@
 
 		loading = true;
 		error = '';
+		
+		// Normalize email to lowercase
+		const normalizedEmail = email.toLowerCase().trim();
 
 		const result = await auth.register({
-			email,
+			email: normalizedEmail,
 			first_name: firstName,
 			last_name: lastName
 		});
@@ -75,7 +78,7 @@
 				// Standard email verification flow
 				usedTempPasswordFlow = false;
 				setTimeout(() => {
-					const verifyUrl = `/auth/verify-email?email=${encodeURIComponent(email)}&user_id=${result.user_id || ''}`;
+					const verifyUrl = `/auth/verify-email?email=${encodeURIComponent(normalizedEmail)}&user_id=${result.user_id || ''}`;
 					goto(verifyUrl);
 				}, 2000);
 			}

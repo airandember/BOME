@@ -60,8 +60,11 @@
 
 		loading = true;
 		error = '';
+		
+		// Normalize email to lowercase
+		const normalizedEmail = email.toLowerCase().trim();
 
-		const result = await auth.login(email, password);
+		const result = await auth.login(normalizedEmail, password);
 		
 		if (result.success) {
 			// 🔗 CONTEXT PRESERVATION: If user was subscribing, redirect back with auto_checkout

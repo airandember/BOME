@@ -1182,11 +1182,11 @@ func (s *StripeSyncService) linkExistingUserByEmail(customerID string) (int, err
 
 	email := stripeEmail.String
 
-	// Try to find an existing user with this email
+	// Try to find an existing user with this email (case-insensitive)
 	var existingUserID int
 	err = s.db.QueryRow(`
 		SELECT id FROM users 
-		WHERE email = $1 AND is_active = true
+		WHERE LOWER(email) = LOWER($1) AND is_active = true
 	`, email).Scan(&existingUserID)
 
 	if err == nil {
@@ -1218,13 +1218,13 @@ func (s *StripeSyncService) linkExistingUserByEmail(customerID string) (int, err
 
 // syncCustomerToUserTable syncs Stripe customer data to the users table
 func (s *StripeSyncService) syncCustomerToUserTable(cust *stripe.Customer) error {
-	// Find user by stripe_customer_id or email
+	// Find user by stripe_customer_id or email (case-insensitive)
 	var userID int
 	var currentEmail string
 	err := s.db.QueryRow(`
 		SELECT id, email FROM users 
 		WHERE (stripe_customer_id = $1 OR $1 = ANY(COALESCE(stripe_customer_ids, '{}'))) 
-		   OR (email = $2 AND is_active = true)
+		   OR (LOWER(email) = LOWER($2) AND is_active = true)
 	`, cust.ID, cust.Email).Scan(&userID, &currentEmail)
 
 	if err != nil {
