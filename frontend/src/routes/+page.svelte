@@ -1629,7 +1629,7 @@
 	.navigation-cards {
 		width: 100vw;
 		position: absolute;
-		bottom: 11%;
+		bottom: 3%;
 		left: 50%;
 		transform: translateX(-50%);
 		display: flex;
@@ -1914,7 +1914,7 @@
 		
 		.navigation-cards {
 			gap: 5rem;
-			bottom: 5%;
+			bottom: 3%;
 			left: 50%;
 			width: 100vw;
 			box-sizing: border-box;
