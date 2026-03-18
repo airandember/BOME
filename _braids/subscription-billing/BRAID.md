@@ -1,4 +1,4 @@
-﻿# Braid: subscription-billing
+# Braid: subscription-billing
 
 **Architecture:** Full-Stack Braid (Frontend to Backend)
 **Last Updated:** 2025-10-17
@@ -26,11 +26,37 @@
 **Complexity**: **Very High** (Third-party integration, webhooks, billing logic)  
 **Priority**: **CRITICAL** - Revenue generation depends on this!
 
-**Critical Files**:
-- `backend/internal/routes/stripe_webhook_routes.go` (862 lines!)
-- `backend/internal/services/stripe.go` (Massive service file)
-- `backend/internal/database/subscription.go`
-- `backend/internal/database/stripe_entities.go`
+---
+
+## 📁 **Production File Map**
+
+### **Backend Files (Go)**
+```
+backend/
+├── subscription/
+│   ├── handlers/subscription.go       # Subscription routes
+│   ├── services/stripe.go             # Stripe integration
+│   ├── services/stripe_sync.go        # Stripe sync
+│   └── models/subscription.go, stripe_entities.go
+├── services/
+│   ├── payment/stripe/                # Payment services
+│   └── stripe/                        # Stripe sync, webhooks
+├── internal/
+│   ├── routes/
+│   │   ├── stripe_webhook_routes.go   # Webhook handling
+│   │   ├── subscription.go
+│   │   ├── subscription_plans.go
+│   │   └── stripe_*.go
+│   └── services/stripe*.go
+└── braids/subscription-checkout/       # Checkout flow sub-braid
+```
+
+### **Frontend Files (Svelte)**
+```
+frontend/src/
+├── routes/checkout/                    # Checkout flow
+└── routes/subscription/                # Subscription management
+```
 
 ---
 
@@ -702,7 +728,7 @@ func CheckEventProcessed(eventID string) bool {
 ## ðŸ”— **Cross-Repository Braid**
 
 > **âš ï¸ IMPORTANT**: This is the **frontend portion** of the Subscription & Billing Braid.  
-> **Backend portion**: See `_backend/braids/subscription-billing/BRAID.md`  
+> **Backend portion**: See `_braids/subscription-billing/backend/BRAID.md`  
 > **Unified context**: Both directories are part of the same braid!
 
 ---
@@ -1427,12 +1453,12 @@ export const subscriptionStore = {
 **Last Updated**: October 14, 2025  
 **Status**: Critical revenue UI  
 **Technology**: Svelte 5 + Stripe.js  
-**Backend Counterpart**: `_backend/braids/subscription-billing/`
+**Backend Counterpart**: `_braids/subscription-billing/backend/`
 
 ---
 
 **Navigate**:  
-[ðŸ  Master Index](../../../BRAIDS_INDEX.md) | [â¬…ï¸ Backend Braid](../../_backend/braids/subscription-billing/BRAID.md)
+[ðŸ  Master Index](../../../BRAIDS_INDEX.md) | [â¬…ï¸ Backend Braid](../../_braids/subscription-billing/backend/BRAID.md)
 
 
 

@@ -388,6 +388,25 @@
 		return itemNames[Number(itemId)] || `Item ${itemId}`;
 	};
 
+	/** Features to show in pricing card (excludes season: markers) */
+	const getDisplayFeatures = (plan: PublicSubscriptionPlan): string[] => {
+		if (!plan.features || !Array.isArray(plan.features)) return [];
+		return plan.features.filter(f => 
+			typeof f === 'string' && !f.toLowerCase().startsWith('season:')
+		);
+	};
+
+	/** Format price for pricing-card display (matches home page: $9<span>.97/mo</span>) */
+	const formatPriceForCard = (price: number, currency: string, suffix: string = '/mo') => {
+		const formatted = formatPrice(price, currency);
+		// formatPrice returns e.g. "$9.97" (en-US) - split before decimal
+		const dotIdx = formatted.lastIndexOf('.');
+		if (dotIdx >= 0) {
+			return { whole: formatted.slice(0, dotIdx), frac: formatted.slice(dotIdx) + suffix };
+		}
+		return { whole: formatted, frac: suffix };
+	};
+
 	/**
 	 * Detects seasonal themes from plan features
 	 * Features format: ["season:", "Christmas"] or ["season:", "Easter"], etc.
@@ -457,93 +476,65 @@
 								{#each availablePlans.filter(plan => plan.sub_type === 'prmo' && plan.is_active) as plan}
 									{@const monthlyBreakdown = plan.interval === 'year' ? getMonthlyBreakdown(plan) : null}
 									{@const savings = plan.interval === 'year' ? calculateAnnualSavings(plan) : null}
+									{@const displayFeatures = getDisplayFeatures(plan)}
 									
-								<div class="outerNew plan-outer promotional {getSeasonClass(plan)}">
-									<!-- Floating % OFF badge -->
+								{@const priceParts = plan.interval === 'year' && monthlyBreakdown
+									? formatPriceForCard(monthlyBreakdown, plan.currency, '/mo')
+									: formatPriceForCard(plan.price, plan.currency, '/' + plan.interval)}
+								<div class="pricing-card pricing-card--featured">
 									{#if savings && savings.percentage > 0}
-										<div class="discount-tab promo">
-											<span class="discount-value">{savings.percentage}% OFF</span>
-										</div>
-									{/if}
-									
-									{#if getSeasonClass(plan) === 'christmas-theme'}
-										<div class="promo-badge christmas-badge">🎄 Holiday Special</div>
+										<div class="pricing-badge">{savings.percentage}% OFF</div>
 									{:else}
-										<div class="promo-badge">Limited Time</div>
+										<div class="pricing-badge">Limited Time</div>
 									{/if}
 									
-									<div class="cardNew plan-card promotional {getSeasonClass(plan)}">
-											<div class="rayNew"></div>
-											
-											<div class="plan-content">
-												<!-- Main content - vertically centered -->
-												<div class="plan-main">
-													<div class="plan-header">
-														<h1>{plan.name}</h1>
-													</div>
-
-													<div class="plan-pricing">
-														{#if plan.interval === 'year' && monthlyBreakdown && savings}
-															<div class="original-price">
-																{formatPrice(savings.monthlyEquivalent, plan.currency)}
-															</div>
-															<div class="hero-price">
-																{formatPrice(monthlyBreakdown, plan.currency)}
-																<span class="price-interval">/month</span>
-															</div>
-														{:else}
-															<div class="hero-price">
-																{formatPrice(plan.price, plan.currency)}
-																<span class="price-interval">/{plan.interval}</span>
-															</div>
-														{/if}
-													</div>
-
-													{#if plan.description}
-														<div class="plan-description">
-															<p>{plan.description}</p>
-														</div>
-													{/if}
-												</div>
-
-												<!-- Offers - outside plan-main so button stays at bottom -->
-												{#if getPlanOffers(plan.id).length > 0}
-													<div class="offers-section">
-														<h4>Special Bonus</h4>
-														{#each getPlanOffers(plan.id) as offer}
-															<div class="offer-badge">
-																<svg class="gift-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-																	<polyline points="20,12 20,22 4,22 4,12"></polyline>
-																	<rect x="2" y="7" width="20" height="5"></rect>
-																	<line x1="12" y1="22" x2="12" y2="7"></line>
-																	<polyline points="7,7 12,2 17,7"></polyline>
-																	<polyline points="7,7 12,12 17,7"></polyline>
-																</svg>
-																{formatDiscount(offer)} - {getItemName(offer.item_id)}
-															</div>
-														{/each}
-													</div>
-												{/if}
-
-												<button 
-													class="btn btn-primary btn-full btn-cta" 
-													on:click={() => handleSelectPlan(plan)}
-												>
-													{#if !isAuthenticated}
-														Sign In to Subscribe
-													{:else}
-														Subscribe Now
-													{/if}
-												</button>
-
-												{#if plan.interval === 'year'}
-													<div class="billed-at">
-														Billed at {formatPrice(plan.price, plan.currency)}.
-													</div>
-												{/if}
-											</div>
-										</div>
+									<div class="pricing-card__plan">{plan.name}</div>
+									<div class="pricing-card__price">{priceParts.whole}<span>{priceParts.frac}</span></div>
+									<div class="pricing-card__billed">
+										{#if plan.interval === 'year'}
+											Billed annually at {formatPrice(plan.price, plan.currency)}/year
+										{:else}
+											&nbsp;
+										{/if}
 									</div>
+
+									{#if getPlanOffers(plan.id).length > 0}
+										<div class="offers-section">
+											<h4>Special Bonus</h4>
+											{#each getPlanOffers(plan.id) as offer}
+												<div class="offer-badge">
+													<svg class="gift-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+														<polyline points="20,12 20,22 4,22 4,12"></polyline>
+														<rect x="2" y="7" width="20" height="5"></rect>
+														<line x1="12" y1="22" x2="12" y2="7"></line>
+														<polyline points="7,7 12,2 17,7"></polyline>
+														<polyline points="7,7 12,12 17,7"></polyline>
+													</svg>
+													{formatDiscount(offer)} - {getItemName(offer.item_id)}
+												</div>
+											{/each}
+										</div>
+									{/if}
+
+									{#if displayFeatures.length > 0}
+										<ul class="pricing-card__features">
+											{#each displayFeatures as feature}
+												<li>{feature}</li>
+											{/each}
+										</ul>
+									{/if}
+
+									<button 
+										class="btn-sales btn-sales--gold pricing-btn" 
+										on:click={() => handleSelectPlan(plan)}
+									>
+										{#if !isAuthenticated}
+											Sign In to Subscribe
+										{:else}
+											Subscribe Now
+										{/if}
+									</button>
+								</div>
 								{/each}
 							</div>
 						</div>
@@ -558,107 +549,72 @@
 							{#each availablePlans.filter(plan => plan.sub_type === 'stnd') as plan}
 								{@const monthlyBreakdown = plan.interval === 'year' ? getMonthlyBreakdown(plan) : null}
 								{@const savings = plan.interval === 'year' ? calculateAnnualSavings(plan) : null}
+								{@const displayFeatures = getDisplayFeatures(plan)}
+								{@const priceParts = plan.interval === 'year' && monthlyBreakdown
+									? formatPriceForCard(monthlyBreakdown, plan.currency, '/mo')
+									: formatPriceForCard(plan.price, plan.currency, '/' + plan.interval)}
+								{@const isFeatured = plan.interval === 'year' || plan.popular}
 								
-							<!-- Animated card wrapper -->
-							<div class="outerNew plan-outer {getSeasonClass(plan)}">
-								<!-- Floating % OFF badge (like a card sticking up) -->
-								{#if savings && savings.percentage > 0}
-									<div class="discount-tab">
-										<span class="discount-value">{savings.percentage}% OFF</span>
-									</div>
+							<div class="pricing-card" class:pricing-card--featured={isFeatured}>
+								{#if plan.interval === 'year' && savings && savings.percentage > 0}
+									<div class="pricing-badge">{savings.percentage}% OFF</div>
+								{:else if plan.popular || plan.interval === 'year'}
+									<div class="pricing-badge">Best Value</div>
 								{/if}
 								
-								{#if getSeasonClass(plan) === 'christmas-theme'}
-									<div class="popular-badge christmas-badge">🎄 Holiday Special</div>
-								{:else if plan.popular}
-									<div class="popular-badge">Most Popular</div>
-								{/if}
-								
-								<div class="cardNew plan-card {getSeasonClass(plan)}">
-										<div class="rayNew"></div>
-										
-										<!-- Card content -->
-										<div class="plan-content">
-											<!-- Main content - vertically centered -->
-											<div class="plan-main">
-												<!-- Plan Name -->
-												<div class="plan-header">
-													<h1>{plan.name}</h1>
-												</div>
-
-												<!-- Pricing Section -->
-												<div class="plan-pricing">
-													{#if plan.interval === 'year' && monthlyBreakdown && savings}
-														<!-- Yearly plan: Show monthly breakdown as hero price -->
-														<div class="original-price">
-															{formatPrice(savings.monthlyEquivalent, plan.currency)}
-														</div>
-														<div class="hero-price">
-															{formatPrice(monthlyBreakdown, plan.currency)}
-															<span class="price-interval">/month</span>
-														</div>
-													{:else}
-														<!-- Monthly plan: Show regular price -->
-														<div class="hero-price">
-															{formatPrice(plan.price, plan.currency)}
-															<span class="price-interval">/{plan.interval}</span>
-														</div>
-													{/if}
-												</div>
-
-												<!-- Description -->
-												{#if plan.description}
-													<div class="plan-description">
-														<p>{plan.description}</p>
-													</div>
-												{/if}
-											</div>
-
-											<!-- Offers - outside plan-main so button stays at bottom -->
-											{#if getPlanOffers(plan.id).length > 0}
-												<div class="offers-section">
-													<h4>Special Bonus</h4>
-													{#each getPlanOffers(plan.id) as offer}
-														<div class="offer-badge">
-															<svg class="gift-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-																<polyline points="20,12 20,22 4,22 4,12"></polyline>
-																<rect x="2" y="7" width="20" height="5"></rect>
-																<line x1="12" y1="22" x2="12" y2="7"></line>
-																<polyline points="7,7 12,2 17,7"></polyline>
-																<polyline points="7,7 12,12 17,7"></polyline>
-															</svg>
-															{formatDiscount(offer)} - {getItemName(offer.item_id)}
-														</div>
-													{/each}
-												</div>
-											{/if}
-
-											<!-- CTA Button -->
-											<button 
-												class="btn btn-primary btn-full btn-cta" 
-												on:click={() => handleSelectPlan(plan)}
-											>
-												{#if !isAuthenticated}
-													Sign In to Subscribe
-												{:else}
-													Subscribe Now
-												{/if}
-											</button>
-
-											<!-- Billed at footer for yearly plans -->
-											{#if plan.interval === 'year'}
-												<div class="billed-at">
-													Billed at {formatPrice(plan.price, plan.currency)}.
-												</div>
-											{/if}
-										</div>
-									</div>
+								<div class="pricing-card__plan">{plan.name}</div>
+								<div class="pricing-card__price">{priceParts.whole}<span>{priceParts.frac}</span></div>
+								<div class="pricing-card__billed">
+									{#if plan.interval === 'year'}
+										Billed annually at {formatPrice(plan.price, plan.currency)}/year
+									{:else}
+										&nbsp;
+									{/if}
 								</div>
+
+								{#if getPlanOffers(plan.id).length > 0}
+									<div class="offers-section">
+										<h4>Special Bonus</h4>
+										{#each getPlanOffers(plan.id) as offer}
+											<div class="offer-badge">
+												<svg class="gift-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+													<polyline points="20,12 20,22 4,22 4,12"></polyline>
+													<rect x="2" y="7" width="20" height="5"></rect>
+													<line x1="12" y1="22" x2="12" y2="7"></line>
+													<polyline points="7,7 12,2 17,7"></polyline>
+													<polyline points="7,7 12,12 17,7"></polyline>
+												</svg>
+												{formatDiscount(offer)} - {getItemName(offer.item_id)}
+											</div>
+										{/each}
+									</div>
+								{/if}
+
+								{#if displayFeatures.length > 0}
+									<ul class="pricing-card__features">
+										{#each displayFeatures as feature}
+											<li>{feature}</li>
+										{/each}
+									</ul>
+								{/if}
+
+								<button 
+									class="btn-sales pricing-btn" 
+									class:btn-sales--gold={isFeatured}
+									class:btn-sales--charcoal={!isFeatured}
+									on:click={() => handleSelectPlan(plan)}
+								>
+									{#if !isAuthenticated}
+										Sign In to Subscribe
+									{:else}
+										Subscribe Now
+									{/if}
+								</button>
+							</div>
 							{/each}
 						</div>
 					</div>
 				</div>
-
 
 			</div>
 		{/if}
@@ -760,11 +716,22 @@
 {/if}
 <Footer />
 <style>
+	/* Sales page design tokens (from home Choose Your Plan) */
 	.subscription-page {
 		min-height: 100vh;
 		max-width: 100vw;
 		padding: 0;
 		background: var(--bg-primary);
+		--sales-navy: #0D1B3E;
+		--sales-gold: #B7953B;
+		--sales-gold-light: #D4B255;
+		--sales-charcoal: #1E2022;
+		--sales-white: #FFFFFF;
+		--sales-off-white: #F7F8FA;
+		--sales-light-gray: #E8EAF0;
+		--sales-text-muted: #9CA3AF;
+		--sales-heading-font: 'Playfair Display', Georgia, serif;
+		--sales-body-font: 'Poppins', 'Roboto', sans-serif;
 	}
 
 	.container {
@@ -954,14 +921,186 @@
 	}
 
 	.plans-grid {
-		display: flex;
-		flex-direction: row;
-		gap: 2rem;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+		gap: 32px;
 		justify-content: center;
-		align-items: center;
+		align-items: stretch;
+		max-width: 900px;
+		margin: 0 auto;
 	}
 
-	/* Animated card wrapper for plan cards */
+	/* Choose Your Plan pricing card styles (from home +page.svelte) */
+	.pricing-card {
+		border: 1px solid var(--sales-light-gray);
+		padding: 40px 32px;
+		text-align: center;
+		position: relative;
+		background: var(--sales-white);
+		transition: box-shadow 0.3s ease;
+		border-radius: 4px;
+	}
+
+	.pricing-card:hover {
+		box-shadow: 5px 5px 20px rgba(0, 0, 0, 0.08);
+	}
+
+	.pricing-card--featured {
+		border: 2px solid var(--sales-gold);
+	}
+
+	.pricing-badge {
+		position: absolute;
+		top: -14px;
+		left: 50%;
+		transform: translateX(-50%);
+		background: var(--sales-gold);
+		color: var(--sales-navy);
+		font-size: 12px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 1px;
+		padding: 6px 20px;
+		border-radius: 4px;
+	}
+
+	.pricing-card__plan {
+		font-family: var(--sales-heading-font);
+		font-size: 20px;
+		color: var(--sales-navy);
+		margin-bottom: 16px;
+	}
+
+	.pricing-card__price {
+		font-size: 48px;
+		font-weight: 700;
+		color: var(--sales-navy);
+		line-height: 1;
+	}
+
+	.pricing-card__price span {
+		font-size: 18px;
+		font-weight: 400;
+		color: var(--sales-text-muted);
+	}
+
+	.pricing-card__billed {
+		font-size: 13px;
+		color: var(--sales-text-muted);
+		margin-top: 4px;
+		margin-bottom: 28px;
+		min-height: 20px;
+	}
+
+	.pricing-card__features {
+		list-style: none;
+		text-align: left;
+		margin-bottom: 32px;
+		padding: 0;
+	}
+
+	.pricing-card__features li {
+		padding: 8px 0;
+		font-size: 14px;
+		color: #555;
+		border-bottom: 1px solid #f0f0f0;
+		padding-left: 24px;
+		position: relative;
+	}
+
+	.pricing-card__features li::before {
+		content: "\2713";
+		position: absolute;
+		left: 0;
+		color: var(--sales-gold);
+		font-weight: 700;
+	}
+
+	.pricing-card__features li:last-child {
+		border-bottom: none;
+	}
+
+	.pricing-btn {
+		width: 100%;
+	}
+
+	/* Sales page button styles */
+	.subscription-page .btn-sales {
+		display: inline-block;
+		font-family: var(--sales-body-font);
+		font-weight: 600;
+		font-size: 14px;
+		letter-spacing: 1px;
+		text-transform: uppercase;
+		padding: 16px 40px;
+		border: 2px solid transparent;
+		cursor: pointer;
+		transition: all 0.3s ease;
+		text-decoration: none;
+		border-radius: 4px;
+		width: 100%;
+	}
+
+	.subscription-page .btn-sales--charcoal {
+		background: var(--sales-charcoal);
+		color: var(--sales-white);
+		border-color: var(--sales-charcoal);
+	}
+
+	.subscription-page .btn-sales--charcoal:hover {
+		background: transparent;
+		color: var(--sales-charcoal);
+		border-color: var(--sales-charcoal);
+	}
+
+	.subscription-page .btn-sales--gold {
+		background: var(--sales-gold);
+		color: var(--sales-navy);
+		border-color: var(--sales-gold);
+	}
+
+	.subscription-page .btn-sales--gold:hover {
+		background: transparent;
+		color: var(--sales-gold);
+		border-color: var(--sales-gold);
+	}
+
+	/* Offers section inside pricing card */
+	.pricing-card .offers-section {
+		margin-bottom: 24px;
+		padding: 12px 16px;
+		background: rgba(183, 149, 59, 0.1);
+		border-radius: 8px;
+		border: 1px solid rgba(183, 149, 59, 0.3);
+		text-align: center;
+	}
+
+	.pricing-card .offers-section h4 {
+		font-size: 12px;
+		font-weight: 700;
+		color: var(--sales-navy);
+		margin-bottom: 8px;
+		text-transform: uppercase;
+		letter-spacing: 1px;
+	}
+
+	.pricing-card .offer-badge {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8px;
+		font-size: 14px;
+		color: var(--sales-navy);
+		font-weight: 600;
+	}
+
+	.pricing-card .gift-icon {
+		width: 16px;
+		height: 16px;
+		flex-shrink: 0;
+	}
+
+	/* Legacy plan-outer (kept for any remaining refs, can remove if unused) */
 	.plan-outer {
 		width: 320px;
 		min-height: 520px;
@@ -1892,13 +2031,10 @@
 		}
 
 		.plans-grid {
-			flex-direction: column;
-			align-items: center;
-		}
-
-		.plan-outer {
-			width: 100%;
-			max-width: 350px;
+			grid-template-columns: 1fr;
+			max-width: 400px;
+			margin-left: auto;
+			margin-right: auto;
 		}
 
 		.cart-container {

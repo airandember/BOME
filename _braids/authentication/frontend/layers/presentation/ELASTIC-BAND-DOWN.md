@@ -10,8 +10,8 @@
 **Purpose**: Define how frontend consumes backend authentication API
 
 > **⚠️ CROSS-REPOSITORY CONTRACT**  
-> **This file**: `_frontend/braids/authentication/layers/presentation/ELASTIC-BAND-DOWN.md`  
-> **Connects to**: `_backend/braids/authentication/layers/application/ELASTIC-BAND-UP.md`
+> **This file**: `_braids/authentication/frontend/layers/presentation/ELASTIC-BAND-DOWN.md`  
+> **Connects to**: `_braids/authentication/backend/layers/application/ELASTIC-BAND-UP.md`
 
 ---
 
@@ -126,7 +126,7 @@ async login(email: string, password: string): Promise<LoginResponse> {
 
 **Backend Handler**: `POST /api/v1/auth/login`  
 **Backend File**: `backend/internal/routes/auth.go:LoginHandler()`  
-**See**: `_backend/braids/authentication/layers/business-logic/ELASTIC-BAND-UP.md`
+**See**: `_braids/authentication/backend/layers/business-logic/ELASTIC-BAND-UP.md`
 
 ---
 
@@ -736,8 +736,8 @@ export interface ApiError {
 - Error Handler: `frontend/src/lib/api/errorHandler.ts`
 
 **Backend Contract**:
-- API Definitions: `_backend/braids/authentication/layers/application/ELASTIC-BAND-UP.md`
-- Business Logic: `_backend/braids/authentication/layers/business-logic/ELASTIC-BAND-UP.md`
+- API Definitions: `_braids/authentication/backend/layers/application/ELASTIC-BAND-UP.md`
+- Business Logic: `_braids/authentication/backend/layers/business-logic/ELASTIC-BAND-UP.md`
 
 ---
 

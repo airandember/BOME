@@ -6,7 +6,7 @@
 ## 🔗 **Cross-Repository Braid**
 
 > **⚠️ IMPORTANT**: This is the **frontend portion** of the Video Streaming Braid.  
-> **Backend portion**: See `_backend/braids/video-streaming/BRAID.md`  
+> **Backend portion**: See `_braids/video-streaming/backend/BRAID.md`  
 > **Unified context**: Both directories are part of the same braid!
 
 ---
@@ -679,10 +679,10 @@ export const videoStore = {
 **Last Updated**: October 14, 2025  
 **Status**: Core business UI  
 **Technology**: Svelte 5 + HLS.js  
-**Backend Counterpart**: `_backend/braids/video-streaming/`
+**Backend Counterpart**: `_braids/video-streaming/backend/`
 
 ---
 
 **Navigate**:  
-[🏠 Master Index](../../../BRAIDS_INDEX.md) | [⬅️ Backend Braid](../../_backend/braids/video-streaming/BRAID.md)
+[🏠 Master Index](../../../BRAIDS_INDEX.md) | [⬅️ Backend Braid](../../_braids/video-streaming/backend/BRAID.md)
 

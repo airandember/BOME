@@ -170,10 +170,8 @@ func (s *AnalyticsService) GetRealTimeAnalytics() (map[string]interface{}, error
 
 // GetSystemHealth returns system health metrics
 func (s *AnalyticsService) GetSystemHealth() (*SystemHealth, error) {
-	// Call the database function which already has full implementation
 	health, err := s.db.GetSystemHealth()
 	if err != nil {
-		// Return default health on error
 		return &SystemHealth{
 			Uptime:      0,
 			CPUUsage:    0,
@@ -181,8 +179,13 @@ func (s *AnalyticsService) GetSystemHealth() (*SystemHealth, error) {
 			DiskUsage:   0,
 		}, nil
 	}
-
-	return health, nil
+	return &SystemHealth{
+		Status:      health.Status,
+		Uptime:      health.Uptime,
+		CPUUsage:    health.CPUUsage,
+		MemoryUsage: health.MemoryUsage,
+		DiskUsage:   health.DiskUsage,
+	}, nil
 }
 
 // GetMonitoringData returns monitoring data for the admin dashboard

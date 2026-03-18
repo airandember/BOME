@@ -64,8 +64,8 @@ func (uc *LoginUser) Execute(input LoginUserInput) (*LoginUserOutput, error) {
 		return nil, fmt.Errorf("invalid email or password")
 	}
 
-	// 4. Check if user is active
-	if !user.IsActive {
+	// 4. Check if user is active (IsActive is sql.NullBool: invalid/NULL or false = inactive)
+	if !user.IsActive.Valid || !user.IsActive.Bool {
 		return nil, fmt.Errorf("account is deactivated. Please contact support.")
 	}
 
@@ -90,18 +90,9 @@ func (uc *LoginUser) Execute(input LoginUserInput) (*LoginUserOutput, error) {
 	}
 
 	// 8. Create session record
-	session := &authModels.Session{
-		UserID:       user.ID,
-		TokenID:      extractTokenID(tokenPair.AccessToken, uc.cryptoSvc),
-		DeviceInfo:   input.DeviceInfo,
-		IPAddress:    input.ClientIP,
-		UserAgent:    input.UserAgent,
-		LastActivity: time.Now(),
-		IsActive:     true,
-		ExpiresAt:    time.Now().Add(7 * 24 * time.Hour), // Refresh token expiry
-	}
-
-	if err := authModels.CreateSession(uc.db, session); err != nil {
+	expiresAt := time.Now().Add(7 * 24 * time.Hour) // Refresh token expiry
+	_, err = authModels.CreateSession(uc.db, user.ID, extractTokenID(tokenPair.AccessToken, uc.cryptoSvc), input.DeviceInfo, input.ClientIP, input.UserAgent, expiresAt)
+	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
@@ -112,13 +103,14 @@ func (uc *LoginUser) Execute(input LoginUserInput) (*LoginUserOutput, error) {
 	}
 
 	// 10. Create audit log
+	loginDesc := "User logged in successfully"
 	auditLog := &authModels.AuditLog{
-		UserID:      user.ID,
-		Action:      "login",
-		IPAddress:   input.ClientIP,
-		UserAgent:   input.UserAgent,
-		Status:      "success",
-		Description: "User logged in successfully",
+		UserID:     &user.ID,
+		Action:     "login",
+		IPAddress:  input.ClientIP,
+		UserAgent:  input.UserAgent,
+		Status:     "success",
+		Details:    &loginDesc,
 	}
 
 	if err := authModels.CreateAuditLog(uc.db, auditLog); err != nil {

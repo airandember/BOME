@@ -60,7 +60,7 @@ func (uc *VerifyEmail) Execute(input VerifyEmailInput) (*VerifyEmailOutput, erro
 	}
 
 	// 4. Verify email
-	if err := authModels.SetUserEmailVerified(uc.db, user.ID, true); err != nil {
+	if err := authModels.SetUserEmailVerified(uc.db, user.ID); err != nil {
 		return nil, fmt.Errorf("failed to verify email: %w", err)
 	}
 
@@ -71,12 +71,13 @@ func (uc *VerifyEmail) Execute(input VerifyEmailInput) (*VerifyEmailOutput, erro
 	}
 
 	// 6. Create audit log
+	details := "Email verified successfully"
 	auditLog := &authModels.AuditLog{
-		UserID:      user.ID,
-		Action:      "email_verified",
-		IPAddress:   "", // Not available in use case
-		Status:      "success",
-		Description: "Email verified successfully",
+		UserID:     &user.ID,
+		Action:     "email_verified",
+		IPAddress:  "", // Not available in use case
+		Status:     "success",
+		Details:    &details,
 	}
 
 	if err := authModels.CreateAuditLog(uc.db, auditLog); err != nil {

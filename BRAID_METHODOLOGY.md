@@ -62,42 +62,51 @@ The initial implementation of a braid or strand, marking it as complete and prod
 
 ## 📁 Directory Structure
 
-### Standard BRAID Structure
+### Production Code vs Braid Documentation
+
+BRAID documentation lives separately from production code. Understanding this mapping is essential:
+
+| Purpose | Location | Description |
+|---------|----------|-------------|
+| **Documentation** | `_braids/{braid-name}/` | Context, contracts, strand flows, ELASTIC-BAND docs |
+| **Production backend** | `backend/` | Actual Go code (domain modules: authentication/, subscription/, etc.) |
+| **Production frontend** | `frontend/` | Actual SvelteKit/UI code (routes, lib, components) |
+
+**Mapping**: Each braid's BRAID.md should include a **File Map** section linking `_braids` documentation to `backend/` and `frontend/` file paths. Production code uses domain-based folders (e.g., `backend/authentication/handlers/`) that map to braid layers conceptually.
+
+### Standard BRAID Structure (Documentation)
 
 ```
-_backend/
-└── braids/
-    └── {braid-name}/                    # e.g., authentication
-        ├── BRAID.md                     # Overview of entire braid
-        ├── GETTING_STARTED.md           # Setup instructions
-        ├── PILOT_COMPLETE.md            # Marks initial completion
-        ├── COMPLETION_STATUS.md         # Current status
-        │
-        ├── layers/
-        │   ├── persistence/
-        │   │   ├── ELASTIC-BAND-UP.md
-        │   │   └── schema/
-        │   │       ├── {table-name}-table.md
-        │   │       └── ...
-        │   │
-        │   ├── data-access/
-        │   │   └── ELASTIC-BAND-UP.md
-        │   │
-        │   ├── business-logic/
-        │   │   └── ELASTIC-BAND-UP.md
-        │   │
-        │   └── application/
-        │       └── ELASTIC-BAND-UP.md
-        │
-        └── strands/
-            ├── {strand-name}/           # e.g., user-login
-            │   └── STRAND.md
-            └── ...
-
-_frontend/
-└── braids/
-    └── {braid-name}/
-        ├── BRAID.md
+_braids/
+└── {braid-name}/                        # e.g., authentication
+    ├── BRAID.md                         # Overview of entire braid
+    ├── GETTING_STARTED.md               # Setup instructions
+    ├── PILOT_COMPLETE.md                # Marks initial completion
+    ├── COMPLETION_STATUS.md             # Current status
+    │
+    ├── backend/
+    │   ├── layers/
+    │   │   ├── persistence/
+    │   │   │   ├── ELASTIC-BAND-UP.md
+    │   │   │   └── schema/
+    │   │   │       ├── {table-name}-table.md
+    │   │   │       └── ...
+    │   │   │
+    │   │   ├── data-access/
+    │   │   │   └── ELASTIC-BAND-UP.md
+    │   │   │
+    │   │   ├── business-logic/
+    │   │   │   └── ELASTIC-BAND-UP.md
+    │   │   │
+    │   │   └── application/
+    │   │       └── ELASTIC-BAND-UP.md
+    │   │
+    │   └── strands/
+    │       ├── {strand-name}/           # e.g., user-login
+    │       │   └── STRAND.md
+    │       └── ...
+    │
+    └── frontend/
         └── layers/
             ├── application/
             │   └── ELASTIC-BAND-DOWN.md

@@ -1,4 +1,6 @@
-﻿# 🧬 BOME Braids - Unified Architecture
+# 🧬 BOME Braids - Unified Architecture
+
+**Methodology:** See [BRAID_METHODOLOGY.md](BRAID_METHODOLOGY.md) or `_BRAIDS/BRAID_METHODOLOGY.md` for the BRAID methodology guide. Use `_braids/` (lowercase) as the canonical path.
 
 **Last Updated:** 2025-10-17  
 **Project:** BOME (Video Streaming Platform)  

@@ -13,9 +13,10 @@ import (
 	"time"
 	"unicode"
 
-	"bome-backend/authentication/models"
-	"bome-backend/authentication/middleware"
-	"bome-backend/authentication/services"
+	"bome-backend/internal/database"
+	"bome-backend/internal/middleware"
+	"bome-backend/internal/routes"
+	"bome-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -46,7 +47,7 @@ type CreateUserRequest struct {
 }
 
 // GetUsersHandler handles retrieving users for admin
-func GetUsersHandler(db *models.DB) gin.HandlerFunc {
+func GetUsersHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Mock user data for development mode or when database is not available
 		if db == nil {
@@ -249,7 +250,7 @@ func GetUsersHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // GetUserHandler handles retrieving a single user for admin
-func GetUserHandler(db *models.DB) gin.HandlerFunc {
+func GetUserHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, err := strconv.Atoi(c.Param("id"))
 		if err != nil {
@@ -268,7 +269,7 @@ func GetUserHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // UpdateUserHandler handles updating a user for admin
-func UpdateUserHandler(db *models.DB) gin.HandlerFunc {
+func UpdateUserHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, err := strconv.Atoi(c.Param("id"))
 		if err != nil {
@@ -296,7 +297,7 @@ func UpdateUserHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // DeleteUserHandler handles deleting a user for admin
-func DeleteUserHandler(db *models.DB) gin.HandlerFunc {
+func DeleteUserHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, err := strconv.Atoi(c.Param("id"))
 		if err != nil {
@@ -318,7 +319,7 @@ func DeleteUserHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // GetAnalyticsHandler handles retrieving analytics data
-func GetAnalyticsHandler(db *models.DB) gin.HandlerFunc {
+func GetAnalyticsHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get query parameters for filtering
 		period := c.DefaultQuery("period", "7d")
@@ -400,7 +401,7 @@ func GetAnalyticsHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // PostAnalyticsBatchHandler handles batch analytics event submissions
-func PostAnalyticsBatchHandler(db *models.DB) gin.HandlerFunc {
+func PostAnalyticsBatchHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// For now, just return success to prevent errors
 		// This can be implemented later when proper analytics storage is needed
@@ -413,7 +414,7 @@ func PostAnalyticsBatchHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // GetSystemHealthHandler handles retrieving system health information
-func GetSystemHealthHandler(db *models.DB) gin.HandlerFunc {
+func GetSystemHealthHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Mock system health data for development mode
 		if db == nil {
@@ -480,7 +481,7 @@ func GetSystemHealthHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // GetDetailedAnalyticsHandler handles retrieving detailed analytics for specific metrics
-func GetDetailedAnalyticsHandler(db *models.DB) gin.HandlerFunc {
+func GetDetailedAnalyticsHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		metric := c.Param("metric")
 		period := c.DefaultQuery("period", "7d")
@@ -572,7 +573,7 @@ func GetDetailedAnalyticsHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // GetRealTimeAnalyticsHandler handles retrieving real-time analytics data
-func GetRealTimeAnalyticsHandler(db *models.DB) gin.HandlerFunc {
+func GetRealTimeAnalyticsHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Provide a valid real-time payload (DB-backed can be added later)
 		realTimeData := map[string]interface{}{
@@ -600,7 +601,7 @@ func GetRealTimeAnalyticsHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // ExportAnalyticsHandler handles exporting analytics data
-func ExportAnalyticsHandler(db *models.DB) gin.HandlerFunc {
+func ExportAnalyticsHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		format := c.DefaultQuery("format", "csv")
 		metric := c.Query("metric")
@@ -639,7 +640,7 @@ func ExportAnalyticsHandler(db *models.DB) gin.HandlerFunc {
 // Video management handlers
 
 // GetAdminVideosHandler handles retrieving all videos for admin with pagination and filtering
-func GetAdminVideosHandler(db *models.DB) gin.HandlerFunc {
+func GetAdminVideosHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Mock video data for development mode
 		if db == nil {
@@ -836,7 +837,7 @@ func GetAdminVideosHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // GetAdminVideoHandler handles retrieving a single video for admin
-func GetAdminVideoHandler(db *models.DB) gin.HandlerFunc {
+func GetAdminVideoHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		videoID, err := strconv.Atoi(c.Param("id"))
 		if err != nil {
@@ -907,7 +908,7 @@ func GetAdminVideoHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // UpdateVideoHandler handles updating video details for admin
-func UpdateVideoHandler(db *models.DB) gin.HandlerFunc {
+func UpdateVideoHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		videoID, err := strconv.Atoi(c.Param("id"))
 		if err != nil {
@@ -937,7 +938,7 @@ func UpdateVideoHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // DeleteVideoHandler handles deleting a video for admin
-func DeleteVideoHandler(db *models.DB) gin.HandlerFunc {
+func DeleteVideoHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		videoID, err := strconv.Atoi(c.Param("id"))
 		if err != nil {
@@ -968,7 +969,7 @@ func DeleteVideoHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // BulkVideoOperationHandler handles bulk operations on videos
-func BulkVideoOperationHandler(db *models.DB) gin.HandlerFunc {
+func BulkVideoOperationHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			Operation string `json:"operation" binding:"required"`
@@ -1020,7 +1021,7 @@ func BulkVideoOperationHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // GetVideoStatsHandler handles getting video statistics for admin
-func GetVideoStatsHandler(db *models.DB) gin.HandlerFunc {
+func GetVideoStatsHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Mock stats for development mode
 		if db == nil {
@@ -1070,7 +1071,7 @@ func GetVideoStatsHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // GetVideoCategoriesHandler handles getting video categories for admin
-func GetVideoCategoriesHandler(db *models.DB) gin.HandlerFunc {
+func GetVideoCategoriesHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Mock categories for development mode
 		if db == nil {
@@ -1098,7 +1099,7 @@ func GetVideoCategoriesHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // ScheduleVideoHandler handles scheduling a video for admin
-func ScheduleVideoHandler(db *models.DB) gin.HandlerFunc {
+func ScheduleVideoHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		videoID, err := strconv.Atoi(c.Param("id"))
 		if err != nil {
@@ -1137,7 +1138,7 @@ func ScheduleVideoHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // UnscheduleVideoHandler handles unscheduling a video for admin
-func UnscheduleVideoHandler(db *models.DB) gin.HandlerFunc {
+func UnscheduleVideoHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		videoID, err := strconv.Atoi(c.Param("id"))
 		if err != nil {
@@ -1161,7 +1162,7 @@ func UnscheduleVideoHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // GetScheduledVideosHandler handles retrieving scheduled videos for admin
-func GetScheduledVideosHandler(db *models.DB) gin.HandlerFunc {
+func GetScheduledVideosHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Mock scheduled videos for development mode
 		if db == nil {
@@ -1268,7 +1269,7 @@ func GetScheduledVideosHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // Advertisement Placement Handlers
-func GetAdPlacementsHandler(db *models.DB) gin.HandlerFunc {
+func GetAdPlacementsHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Mock ad placement data for development
 		placements := []map[string]interface{}{
@@ -1330,7 +1331,7 @@ func GetAdPlacementsHandler(db *models.DB) gin.HandlerFunc {
 	}
 }
 
-func GetAdPlacementsPerformanceHandler(db *models.DB) gin.HandlerFunc {
+func GetAdPlacementsPerformanceHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Mock placement performance data
 		performance := map[string]interface{}{
@@ -1419,7 +1420,7 @@ func GetAdPlacementsPerformanceHandler(db *models.DB) gin.HandlerFunc {
 	}
 }
 
-func CreateAdPlacementHandler(db *models.DB) gin.HandlerFunc {
+func CreateAdPlacementHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			Name        string `json:"name" binding:"required"`
@@ -1458,7 +1459,7 @@ func CreateAdPlacementHandler(db *models.DB) gin.HandlerFunc {
 	}
 }
 
-func UpdateAdPlacementHandler(db *models.DB) gin.HandlerFunc {
+func UpdateAdPlacementHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		placementID := c.Param("id")
 
@@ -1499,7 +1500,7 @@ func UpdateAdPlacementHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // SetupAdminRoutes configures admin-related routes
-func SetupAdminRoutes(router *gin.RouterGroup, db *models.DB) {
+func SetupAdminRoutes(router *gin.RouterGroup, db *database.DB) {
 	// Users (require email verification for admin access)
 	router.GET("/users", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), GetUsersHandler(db))
 	router.POST("/users", middleware.AuthRequired(), middleware.RequireEmailVerificationForDashboard(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), CreateUserHandler(db))
@@ -1641,7 +1642,7 @@ func SetupAdminRoutes(router *gin.RouterGroup, db *models.DB) {
 	router.PUT("/placements/:id", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), UpdateAdPlacementHandler(db))
 
 	// Database Management
-	router.GET("/database/export", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), DatabaseExportHandler(db))
+	router.GET("/database/export", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), routes.DatabaseExportHandler(db))
 	router.POST("/database/fix-stripe-metadata", middleware.AuthRequired(), middleware.AdminRequired(), middleware.SessionActivityTracker(db), FixStripeMetadataHandler(db))
 
 	// Design System Routes
@@ -1843,7 +1844,7 @@ func SetupMockDesignSystemRoutes(router *gin.RouterGroup) {
 }
 
 // GetCrossSubsiteAnalyticsHandler handles retrieving cross-subsite analytics
-func GetCrossSubsiteAnalyticsHandler(db *models.DB) gin.HandlerFunc {
+func GetCrossSubsiteAnalyticsHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		timeframe := c.DefaultQuery("timeframe", "24h")
 		subsite := c.DefaultQuery("subsite", "all")
@@ -1882,7 +1883,7 @@ func GetCrossSubsiteAnalyticsHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // GetWebhookAnalyticsHandler handles retrieving webhook analytics
-func GetWebhookAnalyticsHandler(db *models.DB) gin.HandlerFunc {
+func GetWebhookAnalyticsHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		timeframe := c.DefaultQuery("timeframe", "24h")
 
@@ -1920,7 +1921,7 @@ func GetWebhookAnalyticsHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // GetUserStatsHandler handles retrieving user statistics
-func GetUserStatsHandler(db *models.DB) gin.HandlerFunc {
+func GetUserStatsHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get total users
 		totalUsers, err := db.GetUserCount()
@@ -1989,7 +1990,7 @@ func GetUserStatsHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // GetAvailableRolesHandler returns all available roles for filtering
-func GetAvailableRolesHandler(db *models.DB) gin.HandlerFunc {
+func GetAvailableRolesHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Mock roles data for development mode
 		if db == nil {
@@ -2097,7 +2098,7 @@ func GetAvailableRolesHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // GetRolesWithDepartmentsHandler returns all roles with department information
-func GetRolesWithDepartmentsHandler(db *models.DB) gin.HandlerFunc {
+func GetRolesWithDepartmentsHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Mock roles data for development mode
 		if db == nil {
@@ -2256,7 +2257,7 @@ func GetRolesWithDepartmentsHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // GetDepartmentsHandler returns all departments
-func GetDepartmentsHandler(db *models.DB) gin.HandlerFunc {
+func GetDepartmentsHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Mock departments data for development mode
 		if db == nil {
@@ -2314,7 +2315,7 @@ func GetDepartmentsHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // GetRolesAndDepartmentsHandler returns both roles and departments in a single response
-func GetRolesAndDepartmentsHandler(db *models.DB) gin.HandlerFunc {
+func GetRolesAndDepartmentsHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		log.Printf("🔍 GetRolesAndDepartmentsHandler: Starting request")
 
@@ -2598,7 +2599,7 @@ func GetRolesAndDepartmentsHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // CreateUserHandler handles creating a new user for admin
-func CreateUserHandler(db *models.DB) gin.HandlerFunc {
+func CreateUserHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req CreateUserRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -2725,7 +2726,7 @@ type BulkCreateUserResponse struct {
 }
 
 // CreateBulkUsersHandler handles creating multiple users in a single request
-func CreateBulkUsersHandler(db *models.DB) gin.HandlerFunc {
+func CreateBulkUsersHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req BulkCreateUserRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -2807,7 +2808,7 @@ func CreateBulkUsersHandler(db *models.DB) gin.HandlerFunc {
 }
 
 // processSingleUserCreation handles the creation of a single user within the bulk operation
-func processSingleUserCreation(db *models.DB, userReq CreateUserRequest, response *BulkCreateUserResponse, c *gin.Context) error {
+func processSingleUserCreation(db *database.DB, userReq CreateUserRequest, response *BulkCreateUserResponse, c *gin.Context) error {
 	// Validate and sanitize input
 	userReq.Email = strings.ToLower(services.SanitizeString(userReq.Email))
 	userReq.FirstName = services.SanitizeString(userReq.FirstName)
@@ -2992,7 +2993,7 @@ func processSingleUserCreation(db *models.DB, userReq CreateUserRequest, respons
 }
 
 // FixStripeMetadataHandler handles fixing corrupted Stripe customer metadata
-func FixStripeMetadataHandler(db *models.DB) gin.HandlerFunc {
+func FixStripeMetadataHandler(db *database.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		log.Printf("🔧 Admin initiated Stripe metadata fix")
 
@@ -3106,7 +3107,7 @@ func cleanNameForStripeImport(name string) string {
 }
 
 // linkSubscriptionsForNewUsers attempts to link active Stripe subscriptions to newly created users
-func linkSubscriptionsForNewUsers(db *models.DB) error {
+func linkSubscriptionsForNewUsers(db *database.DB) error {
 	// This is the same logic as LinkSubscriptionsToUsers but simplified for the admin context
 	query := `
 		UPDATE users 

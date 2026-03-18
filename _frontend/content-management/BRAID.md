@@ -6,7 +6,7 @@
 ## 🔗 **Cross-Repository Braid**
 
 > **⚠️ IMPORTANT**: This is the **frontend portion** of the Content Management Braid.  
-> **Backend portion**: See `_backend/braids/content-management/BRAID.md`  
+> **Backend portion**: See `_braids/content-management/backend/BRAID.md`  
 > **Unified context**: Both directories are part of the same braid!
 
 ---
@@ -611,10 +611,10 @@ export function calculateReadTime(content: string): number {
 **Last Updated**: October 14, 2025  
 **Status**: Core structure defined, implementation in progress  
 **Technology**: Svelte 5 + TypeScript  
-**Backend Counterpart**: `_backend/braids/content-management/`
+**Backend Counterpart**: `_braids/content-management/backend/`
 
 ---
 
 **Navigate**:  
-[🏠 Master Index](../../../BRAIDS_INDEX.md) | [⬅️ Backend Braid](../../_backend/braids/content-management/BRAID.md)
+[🏠 Master Index](../../../BRAIDS_INDEX.md) | [⬅️ Backend Braid](../../_braids/content-management/backend/BRAID.md)
 

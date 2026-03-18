@@ -1,4 +1,4 @@
-﻿# Braid: advertisement-system
+# Braid: advertisement-system
 
 **Architecture:** Full-Stack Braid (Frontend to Backend)
 **Last Updated:** 2025-10-17
@@ -28,7 +28,21 @@
 
 ---
 
-## ðŸŽ¯ **Key Features**
+## **File Map** (Production Code)
+
+| Layer | Production Path | Description |
+|-------|-----------------|-------------|
+| Handlers | `backend/advertisement/handlers/advertisement.go` | Ad API handlers |
+| Services | `backend/advertisement/services/advertisement.go` | Ad serving logic |
+| Models | `backend/advertisement/models/advertisement.go` | Ad/campaign data models |
+| Routes | `backend/internal/routes/advertisement.go` | Ad API routes |
+| Database | `backend/internal/database/advertisement.go` | Ad tables |
+
+**Frontend:** `frontend/src/routes/advertise/`, `frontend/src/lib/` (AdDisplay component)
+
+---
+
+## **Key Features**
 
 ### **1. Advertiser Management**:
 - Advertiser account creation
@@ -578,7 +592,7 @@ Ad serving, impression tracking, and click handling
 ## ðŸ”— **Cross-Repository Braid**
 
 > **âš ï¸ IMPORTANT**: This is the **frontend portion** of the Advertisement System Braid.  
-> **Backend portion**: See `_backend/braids/advertisement-system/BRAID.md`  
+> **Backend portion**: See `_braids/advertisement-system/backend/BRAID.md`  
 > **Unified context**: Both directories are part of the same braid!
 
 ---
@@ -1129,12 +1143,12 @@ export const campaigns = {
 **Last Updated**: October 14, 2025  
 **Status**: Core structure defined  
 **Technology**: Svelte 5 + TypeScript  
-**Backend Counterpart**: `_backend/braids/advertisement-system/`
+**Backend Counterpart**: `_braids/advertisement-system/backend/`
 
 ---
 
 **Navigate**:  
-[ðŸ  Master Index](../../../BRAIDS_INDEX.md) | [â¬…ï¸ Backend Braid](../../_backend/braids/advertisement-system/BRAID.md)
+[ðŸ  Master Index](../../../BRAIDS_INDEX.md) | [â¬…ï¸ Backend Braid](../../_braids/advertisement-system/backend/BRAID.md)
 
 
 

@@ -6,7 +6,7 @@
 ## 🔗 **Cross-Repository Braid**
 
 > **⚠️ IMPORTANT**: This is the **frontend portion** of the Advertisement System Braid.  
-> **Backend portion**: See `_backend/braids/advertisement-system/BRAID.md`  
+> **Backend portion**: See `_braids/advertisement-system/backend/BRAID.md`  
 > **Unified context**: Both directories are part of the same braid!
 
 ---
@@ -557,10 +557,10 @@ export const campaigns = {
 **Last Updated**: October 14, 2025  
 **Status**: Core structure defined  
 **Technology**: Svelte 5 + TypeScript  
-**Backend Counterpart**: `_backend/braids/advertisement-system/`
+**Backend Counterpart**: `_braids/advertisement-system/backend/`
 
 ---
 
 **Navigate**:  
-[🏠 Master Index](../../../BRAIDS_INDEX.md) | [⬅️ Backend Braid](../../_backend/braids/advertisement-system/BRAID.md)
+[🏠 Master Index](../../../BRAIDS_INDEX.md) | [⬅️ Backend Braid](../../_braids/advertisement-system/backend/BRAID.md)
 

@@ -66,17 +66,16 @@ func (uc *RegisterUser) Execute(input RegisterUserInput) (*RegisterUserOutput, e
 		return nil, fmt.Errorf("user with email %s already exists", input.Email)
 	}
 
-	// 5. Create user with unverified email
-	newUser := &authModels.User{
-		Email:         input.Email,
-		FirstName:     input.FirstName,
-		LastName:      input.LastName,
-		Role:          "user", // Default role
-		EmailVerified: false,
+	// 5. Create user with unverified email (temporary password until they set one after verification)
+	tempPassword := uc.cryptoSvc.GenerateSecureToken()
+	passwordHash, err := uc.cryptoSvc.HashPassword(tempPassword)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
 	// 6. Save user to database
-	if err := authModels.CreateUser(uc.db, newUser); err != nil {
+	newUser, err := authModels.CreateUser(uc.db, input.Email, passwordHash, input.FirstName, input.LastName, "user")
+	if err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
@@ -91,7 +90,7 @@ func (uc *RegisterUser) Execute(input RegisterUserInput) (*RegisterUserOutput, e
 			fmt.Printf("Failed to store verification token: %v\n", err)
 		} else {
 			// Send verification email
-			if err := uc.emailService.SendVerificationEmail(input.Email, token, input.FirstName); err != nil {
+			if err := uc.emailService.SendVerificationEmail(newUser.ID, input.Email, input.FirstName); err != nil {
 				// Log error but don't fail registration
 				fmt.Printf("Failed to send verification email: %v\n", err)
 			}

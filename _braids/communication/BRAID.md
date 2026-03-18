@@ -1,4 +1,4 @@
-﻿# Braid: communication
+# Braid: communication
 
 **Architecture:** Full-Stack Braid (Frontend to Backend)
 **Last Updated:** 2025-10-17
@@ -25,6 +25,28 @@
 **Technology**: Go, Resend (Email Service), PostgreSQL  
 **Complexity**: Medium (Email Integration, Templates, Queuing)  
 **Dependencies**: Auth Braid (user identity), User Mgmt Braid (preferences)
+
+---
+
+## 📁 **File Map** (Production Code)
+
+### **Backend Files (Go)**:
+```
+backend/
+├── internal/
+│   ├── services/email.go              # Email sending (Resend/SMTP)
+│   └── routes/email_usage_routes.go   # Email usage analytics
+├── communication/
+│   └── services/email-service.go       # Communication services
+└── authentication/                     # Auth braid - triggers verification emails
+```
+
+### **Frontend Files (Svelte)**:
+```
+frontend/src/
+└── routes/
+    └── contact/+page.svelte            # Contact form
+```
 
 ---
 
@@ -455,7 +477,7 @@ ENVIRONMENT=development
 ## ðŸ”— **Cross-Repository Braid**
 
 > **âš ï¸ IMPORTANT**: This is the **frontend portion** of the Communication Braid.  
-> **Backend portion**: See `_backend/braids/communication/BRAID.md`  
+> **Backend portion**: See `_braids/communication/backend/BRAID.md`  
 > **Unified context**: Both directories are part of the same braid!
 
 ---
@@ -859,7 +881,7 @@ analytics.track('email_unsubscribed', {
 ## ðŸ”— **Related Documentation**
 
 ### **Backend Portion**:
-- [`_backend/braids/communication/BRAID.md`](../../_backend/braids/communication/BRAID.md)
+- [`_braids/communication/backend/BRAID.md`](../../_braids/communication/backend/BRAID.md)
 
 ### **API Contracts** (Future):
 - Email preferences API
@@ -895,12 +917,12 @@ analytics.track('email_unsubscribed', {
 **Last Updated**: October 14, 2025  
 **Status**: Core structure defined, implementation in progress  
 **Technology**: Svelte 5 + TypeScript  
-**Backend Counterpart**: `_backend/braids/communication/`
+**Backend Counterpart**: `_braids/communication/backend/`
 
 ---
 
 **Navigate**:  
-[ðŸ  Master Index](../../../BRAIDS_INDEX.md) | [â¬…ï¸ Backend Braid](../../_backend/braids/communication/BRAID.md) | [ðŸ”— User Mgmt Braid](../user-management/BRAID.md)
+[ðŸ  Master Index](../../../BRAIDS_INDEX.md) | [â¬…ï¸ Backend Braid](../../_braids/communication/backend/BRAID.md) | [ðŸ”— User Mgmt Braid](../user-management/BRAID.md)
 
 
 

@@ -1,25 +1,24 @@
 package handlers
 
 import (
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
-	"bome-backend/authentication/models"
-	"bome-backend/authentication/services"
-
-	"database/sql"
-	"encoding/json"
+	"bome-backend/internal/database"
+	"bome-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
 )
 
 type AnalyticsHandler struct {
-	db                 *models.DB
+	db                 *database.DB
 	planHistoryService *services.PlanHistoryService
 }
 
-func NewAnalyticsHandler(db *models.DB, planHistoryService *services.PlanHistoryService) *AnalyticsHandler {
+func NewAnalyticsHandler(db *database.DB, planHistoryService *services.PlanHistoryService) *AnalyticsHandler {
 	return &AnalyticsHandler{
 		db:                 db,
 		planHistoryService: planHistoryService,
@@ -27,7 +26,7 @@ func NewAnalyticsHandler(db *models.DB, planHistoryService *services.PlanHistory
 }
 
 // SetupAnalyticsRoutes sets up analytics-related routes
-func SetupAnalyticsRoutes(router *gin.RouterGroup, db *models.DB, planHistoryService *services.PlanHistoryService) {
+func SetupAnalyticsRoutes(router *gin.RouterGroup, db *database.DB, planHistoryService *services.PlanHistoryService) {
 	handler := NewAnalyticsHandler(db, planHistoryService)
 
 	// Analytics overview endpoint

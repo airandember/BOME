@@ -184,7 +184,7 @@
 						<path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
 					</svg>
 				</div>
-				<div class="stat-value">${metrics.monthlyRevenue.toLocaleString()}</div>
+				<div class="stat-value">{metrics.monthlyRevenue.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</div>
 				<div class="stat-change positive">+8% from last month</div>
 			</div>
 

@@ -139,5 +139,5 @@
 ---
 
 **Last Updated**: October 14, 2025  
-**Backend**: `_backend/braids/admin-dashboard/`
+**Backend**: `_braids/admin-dashboard/backend/`
 

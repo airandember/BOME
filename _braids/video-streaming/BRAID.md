@@ -1,4 +1,4 @@
-﻿# Braid: video-streaming
+# Braid: video-streaming
 
 **Architecture:** Full-Stack Braid (Frontend to Backend)
 **Last Updated:** 2025-10-17
@@ -26,13 +26,37 @@
 **Complexity**: **Very High** (CDN Integration, Video Processing, Adaptive Streaming)  
 **Priority**: **CRITICAL** - Core business functionality!
 
-**Critical Files**:
-- `backend/internal/services/bunny.go` (Bunny.net integration)
-- `backend/internal/services/bunny_optimized.go` (Performance optimized)
-- `backend/internal/services/master_video_sync.go` (Video synchronization)
-- `backend/internal/database/video.go`
-- `backend/internal/database/master_video.go`
-- `backend/internal/routes/video.go`
+---
+
+## 📁 **Production File Map**
+
+### **Backend Files (Go)**
+```
+backend/
+├── video-streaming/
+│   ├── handlers/video.go               # Video routes
+│   ├── handlers/master_video_routes.go # Master video sync routes
+│   ├── services/bunny.go               # Bunny.net integration
+│   ├── services/bunny_optimized.go     # Performance optimized
+│   └── models/video.go, master_video.go
+├── internal/
+│   ├── routes/video.go                 # Video API routes
+│   ├── routes/master_video_routes.go  # Master video routes
+│   ├── routes/search_index.go          # Video search
+│   ├── database/video.go
+│   ├── database/master_video.go
+│   └── services/
+│       ├── bunny.go, bunny_optimized.go
+│       └── master_video_sync.go        # Video synchronization
+└── braids/video-analytics/             # Video analytics sub-braid
+```
+
+### **Frontend Files (Svelte)**
+```
+frontend/src/
+├── routes/videos/                      # Video listing, playback
+└── lib/components/                    # VideoCard, player components
+```
 
 ---
 
@@ -670,7 +694,7 @@ func GetVideoAnalytics(videoID int, dateRange DateRange) (*VideoAnalytics, error
 ## ðŸ”— **Cross-Repository Braid**
 
 > **âš ï¸ IMPORTANT**: This is the **frontend portion** of the Video Streaming Braid.  
-> **Backend portion**: See `_backend/braids/video-streaming/BRAID.md`  
+> **Backend portion**: See `_braids/video-streaming/backend/BRAID.md`  
 > **Unified context**: Both directories are part of the same braid!
 
 ---
@@ -1343,12 +1367,12 @@ export const videoStore = {
 **Last Updated**: October 14, 2025  
 **Status**: Core business UI  
 **Technology**: Svelte 5 + HLS.js  
-**Backend Counterpart**: `_backend/braids/video-streaming/`
+**Backend Counterpart**: `_braids/video-streaming/backend/`
 
 ---
 
 **Navigate**:  
-[ðŸ  Master Index](../../../BRAIDS_INDEX.md) | [â¬…ï¸ Backend Braid](../../_backend/braids/video-streaming/BRAID.md)
+[ðŸ  Master Index](../../../BRAIDS_INDEX.md) | [â¬…ï¸ Backend Braid](../../_braids/video-streaming/backend/BRAID.md)
 
 
 

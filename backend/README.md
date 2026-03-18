@@ -79,6 +79,26 @@ scripts\setup-database.bat
    go run main.go
    ```
 
+### Startup Troubleshooting
+
+**"connectex: No connection could be made... target machine actively refused it"**
+
+PostgreSQL is not running or not reachable. Options:
+
+1. **Start PostgreSQL** (recommended):
+   - Windows: Start the PostgreSQL service or run `pg_ctl start`
+   - Mac: `brew services start postgresql`
+   - Linux: `sudo systemctl start postgresql`
+
+2. **Run without database** (frontend-only dev, limited features):
+   ```bash
+   # Add to .env or run with:
+   set GRACEFUL_DB_FAILURE=true   # Windows
+   export GRACEFUL_DB_FAILURE=true # Mac/Linux
+   go run main.go
+   ```
+   Note: API routes that need the database will fail; the server will start on port 8080.
+
 ### Running the Application
 
 ```bash

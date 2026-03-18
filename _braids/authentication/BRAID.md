@@ -1,4 +1,4 @@
-﻿# Braid: authentication
+# Braid: authentication
 
 **Architecture:** Full-Stack Braid (Frontend to Backend)
 **Last Updated:** 2025-10-17
@@ -762,8 +762,8 @@ auth.login(email, password).then(() => {
 ## ðŸ”— **Related Documentation**
 
 ### **Backend Portion of This Braid**:
-- [`_backend/braids/authentication/BRAID.md`](../../_backend/braids/authentication/BRAID.md) - Backend overview
-- [`_backend/braids/authentication/layers/application/ELASTIC-BAND-UP.md`](../../_backend/braids/authentication/layers/application/ELASTIC-BAND-UP.md) - API contracts
+- [Backend Architecture](#backend-architecture) - Backend overview (this document)
+- [backend/layers/application/ELASTIC-BAND-UP.md](backend/layers/application/ELASTIC-BAND-UP.md) - API contracts
 
 ### **Frontend Elastic Band**:
 - [`layers/presentation/ELASTIC-BAND-DOWN.md`](layers/presentation/ELASTIC-BAND-DOWN.md) - Frontend â†’ Backend contract
@@ -788,7 +788,7 @@ auth.login(email, password).then(() => {
 - Navigation: `frontend/src/lib/components/Navigation.svelte`
 
 **API Documentation**:
-- See `_backend/braids/authentication/layers/business-logic/ELASTIC-BAND-UP.md`
+- See [backend/layers/business-logic/ELASTIC-BAND-UP.md](backend/layers/business-logic/ELASTIC-BAND-UP.md)
 
 ---
 
@@ -816,7 +816,7 @@ auth.login(email, password).then(() => {
 
 ### **Adding New Auth Pages**:
 1. Create page in `frontend/src/routes/auth/`
-2. Document in `_frontend/braids/authentication/layers/presentation/pages/`
+2. Document in `frontend/layers/presentation/pages/`
 3. Add to navigation if needed
 4. Update this BRAID.md
 
@@ -837,12 +837,12 @@ auth.login(email, password).then(() => {
 **Last Updated**: October 14, 2025  
 **Status**: Complete frontend documentation  
 **Technology**: Svelte 5 + TypeScript  
-**Backend Counterpart**: `_backend/braids/authentication/`
+**Backend Counterpart**: `_braids/authentication/backend/`
 
 ---
 
 **Navigate**:  
-[ðŸ  Master Index](../../../BRAIDS_INDEX.md) | [â¬…ï¸ Backend Braid](../../_backend/braids/authentication/BRAID.md) | [ðŸ“š Getting Started](../../_backend/braids/authentication/GETTING_STARTED.md)
+[ðŸ  Master Index](../../../BRAIDS_INDEX.md) | [â¬…ï¸ Backend Braid](#backend-architecture) | [ðŸ“š Getting Started](backend/GETTING_STARTED.md)
 
 
 

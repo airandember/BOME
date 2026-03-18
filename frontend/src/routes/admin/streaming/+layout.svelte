@@ -298,7 +298,7 @@
 							</div>
 							<div class="stat-item">
 							<span class="stat-label">Projected Monthly Revenue</span>
-							<span class="stat-value">{formatCurrency(quickMonthlyRevenue)}</span>
+							<span class="stat-value">{quickMonthlyRevenue.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</span>
 							</div>
 							<div class="stat-item">
 								<span class="stat-label">Churn Rate</span>

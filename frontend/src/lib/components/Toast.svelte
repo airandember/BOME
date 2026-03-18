@@ -68,14 +68,6 @@
 		transition:fly="{{ y: -50, duration: 300 }}"
 		role="alert"
 		aria-live="polite"
-		tabindex="0"
-		on:click={handleClick}
-		on:keydown={(e) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				e.preventDefault();
-				handleClick();
-			}
-		}}
 	>
 		{#if showIcon}
 			<div class="toast-icon">
