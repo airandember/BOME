@@ -25,7 +25,7 @@ The Authentication Braid is a **complete documentation system** that maps your a
 9. **Total time**: 30-45 minutes ⏰
 
 **New Way** (With Braid):
-1. Open `_backend/braids/authentication/strands/user-login/STRAND.md`
+1. Open `_braids/authentication/backend/strands/user-login/STRAND.md`
 2. Read complete login flow (5 minutes)
 3. See exact lines in each file
 4. Understand error points
@@ -74,7 +74,7 @@ The Authentication Braid is a **complete documentation system** that maps your a
 ## 📚 **Braid Structure**
 
 ```
-_backend/braids/authentication/
+_braids/authentication/backend/
 │
 ├── BRAID.md                          ← Start here! Complete overview
 ├── GETTING_STARTED.md                ← You are here

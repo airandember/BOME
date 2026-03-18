@@ -6,7 +6,7 @@
 ## 🔗 **Cross-Repository Braid**
 
 > **⚠️ IMPORTANT**: This is the **frontend portion** of the User Management Braid.  
-> **Backend portion**: See `_backend/braids/user-management/BRAID.md`  
+> **Backend portion**: See `_braids/user-management/backend/BRAID.md`  
 > **Unified context**: Both directories are part of the same braid!
 
 ---
@@ -489,10 +489,10 @@ interface AdminUsersState {
 ## 🔗 **Related Documentation**
 
 ### **Backend Portion**:
-- [`_backend/braids/user-management/BRAID.md`](../../_backend/braids/user-management/BRAID.md)
+- [`_braids/user-management/backend/BRAID.md`](../../_braids/user-management/backend/BRAID.md)
 
 ### **API Contracts**:
-- [`_backend/.../layers/application/ELASTIC-BAND-UP.md`](../../_backend/braids/user-management/layers/application/ELASTIC-BAND-UP.md)
+- [`_backend/.../layers/application/ELASTIC-BAND-UP.md`](../../_braids/user-management/backend/layers/application/ELASTIC-BAND-UP.md)
 
 ### **Strands**:
 - Profile Management flow
@@ -527,10 +527,10 @@ interface AdminUsersState {
 **Last Updated**: October 14, 2025  
 **Status**: Complete frontend documentation  
 **Technology**: Svelte 5 + TypeScript  
-**Backend Counterpart**: `_backend/braids/user-management/`
+**Backend Counterpart**: `_braids/user-management/backend/`
 
 ---
 
 **Navigate**:  
-[🏠 Master Index](../../../BRAIDS_INDEX.md) | [⬅️ Backend Braid](../../_backend/braids/user-management/BRAID.md) | [🔗 Auth Braid](../authentication/BRAID.md)
+[🏠 Master Index](../../../BRAIDS_INDEX.md) | [⬅️ Backend Braid](../../_braids/user-management/backend/BRAID.md) | [🔗 Auth Braid](../authentication/BRAID.md)
 

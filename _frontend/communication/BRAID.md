@@ -6,7 +6,7 @@
 ## 🔗 **Cross-Repository Braid**
 
 > **⚠️ IMPORTANT**: This is the **frontend portion** of the Communication Braid.  
-> **Backend portion**: See `_backend/braids/communication/BRAID.md`  
+> **Backend portion**: See `_braids/communication/backend/BRAID.md`  
 > **Unified context**: Both directories are part of the same braid!
 
 ---
@@ -410,7 +410,7 @@ analytics.track('email_unsubscribed', {
 ## 🔗 **Related Documentation**
 
 ### **Backend Portion**:
-- [`_backend/braids/communication/BRAID.md`](../../_backend/braids/communication/BRAID.md)
+- [`_braids/communication/backend/BRAID.md`](../../_braids/communication/backend/BRAID.md)
 
 ### **API Contracts** (Future):
 - Email preferences API
@@ -446,10 +446,10 @@ analytics.track('email_unsubscribed', {
 **Last Updated**: October 14, 2025  
 **Status**: Core structure defined, implementation in progress  
 **Technology**: Svelte 5 + TypeScript  
-**Backend Counterpart**: `_backend/braids/communication/`
+**Backend Counterpart**: `_braids/communication/backend/`
 
 ---
 
 **Navigate**:  
-[🏠 Master Index](../../../BRAIDS_INDEX.md) | [⬅️ Backend Braid](../../_backend/braids/communication/BRAID.md) | [🔗 User Mgmt Braid](../user-management/BRAID.md)
+[🏠 Master Index](../../../BRAIDS_INDEX.md) | [⬅️ Backend Braid](../../_braids/communication/backend/BRAID.md) | [🔗 User Mgmt Braid](../user-management/BRAID.md)
 

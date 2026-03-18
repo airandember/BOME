@@ -1,131 +1,15 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { auth } from '$lib/auth';
 	import { goto } from '$app/navigation';
-	import { browser } from '$app/environment';
 	import Navigation from '$lib/components/Navigation.svelte';
-	import Footer from '$lib/components/Footer.svelte';
 
 	let isAuthenticated = false;
-	let currentSection = 0;
-	let isScrolling = false;
-	let scrollContainer: HTMLElement;
-	let sections: HTMLElement[] = [];
+	let openFaq: number | null = null;
 
 	// Subscribe to auth store
 	auth.subscribe(state => {
 		isAuthenticated = state.isAuthenticated;
 	});
-
-	onMount(() => {
-		if (!browser) return; // Skip initialization during SSR
-		
-		// Initialize scroll snapping and animation triggers
-		setupScrollAnimations();
-		
-		// Add wheel event listener for smooth scroll snapping
-		const handleWheel = (e: WheelEvent) => {
-			e.preventDefault();
-			if (isScrolling) return;
-			
-			const direction = e.deltaY > 0 ? 1 : -1;
-			const nextSection = currentSection + direction;
-			
-			if (nextSection >= 0 && nextSection < sections.length) {
-				scrollToSection(nextSection);
-			}
-		};
-
-		// Add touch events for mobile
-		let startY = 0;
-		const handleTouchStart = (e: TouchEvent) => {
-			startY = e.touches[0].clientY;
-		};
-
-		const handleTouchEnd = (e: TouchEvent) => {
-			if (isScrolling) return;
-			const endY = e.changedTouches[0].clientY;
-			const diff = startY - endY;
-			
-			if (Math.abs(diff) > 50) { // Minimum swipe distance
-				const direction = diff > 0 ? 1 : -1;
-				const nextSection = currentSection + direction;
-				
-				if (nextSection >= 0 && nextSection < sections.length) {
-					scrollToSection(nextSection);
-				}
-			}
-		};
-
-		// Add keyboard navigation
-		const handleKeyDown = (e: KeyboardEvent) => {
-			if (isScrolling) return;
-			
-			let direction = 0;
-			if (e.key === 'ArrowDown' || e.key === 'PageDown') direction = 1;
-			if (e.key === 'ArrowUp' || e.key === 'PageUp') direction = -1;
-			
-			if (direction !== 0) {
-				e.preventDefault();
-				const nextSection = currentSection + direction;
-				if (nextSection >= 0 && nextSection < sections.length) {
-					scrollToSection(nextSection);
-				}
-			}
-		};
-
-		window.addEventListener('wheel', handleWheel, { passive: false });
-		window.addEventListener('touchstart', handleTouchStart);
-		window.addEventListener('touchend', handleTouchEnd);
-		window.addEventListener('keydown', handleKeyDown);
-
-		return () => {
-			window.removeEventListener('wheel', handleWheel);
-			window.removeEventListener('touchstart', handleTouchStart);
-			window.removeEventListener('touchend', handleTouchEnd);
-			window.removeEventListener('keydown', handleKeyDown);
-		};
-	});
-
-	function setupScrollAnimations() {
-		if (!browser) return; // Skip during SSR
-		sections = Array.from(document.querySelectorAll('.zoom-section'));
-		// Start with first section
-		updateSectionStates(0);
-	}
-
-	function scrollToSection(index: number) {
-		if (isScrolling || index === currentSection) return;
-		
-		isScrolling = true;
-		currentSection = index;
-		
-		// Smooth scroll to section
-		sections[index].scrollIntoView({ 
-			behavior: 'smooth',
-			block: 'start'
-		});
-		
-		// Update animation states
-		updateSectionStates(index);
-		
-		// Reset scrolling flag after animation
-		setTimeout(() => {
-			isScrolling = false;
-		}, 1000);
-	}
-
-	function updateSectionStates(activeIndex: number) {
-		sections.forEach((section, index) => {
-			const isActive = index === activeIndex;
-			const isPast = index < activeIndex;
-			const isFuture = index > activeIndex;
-			
-			section.classList.toggle('active', isActive);
-			section.classList.toggle('past', isPast);
-			section.classList.toggle('future', isFuture);
-		});
-	}
 
 	const handleGetStarted = () => {
 		if (isAuthenticated) {
@@ -135,12 +19,13 @@
 		}
 	};
 
-	// Navigation dots
-	function goToSection(index: number) {
-		if (!isScrolling) {
-			scrollToSection(index);
-		}
-	}
+	const handleSubscribe = () => {
+		goto('/subscription');
+	};
+
+	const toggleFaq = (index: number) => {
+		openFaq = openFaq === index ? null : index;
+	};
 </script>
 
 <svelte:head>
@@ -151,261 +36,321 @@
 
 <Navigation />
 
-<!-- Fixed Header for Slide 1 Only -->
-{#if currentSection === 0}
-	<div class="home_page_fixed_header">
-		<!-- Content for the fixed header can be added here -->
-	</div>
-{/if}
-
-<div class="scroll-container" bind:this={scrollContainer}>
-	<!-- Section 1: Book Close-up -->
-	<section class="zoom-section book-section active" data-section="0">
+<div class="page-wrapper home-page">
+	<!-- Section 1: Hero (Book Close-up) — data-slot for future admin injection -->
+	<section class="hero-section book-section" data-slot="hero">
 		<div class="zoom-content">
 			<div class="book-container">
 				<img src="/Images/BOME-Background.webp" alt="Book of Mormon Close-up" class="book-image" />
 				<div class="book-glow"></div>
 			</div>
-			
-			<!-- Main Title Outside Glass Container -->
-			<!--<div class="main-title-container">
-				h1 class="hero-title"><span class="hero-title-book">BOOK OF MORMON</span><br> <span class="hero-title-evidence">EVIDENCE</span><br>
-					<span class="hero-title-beta">BETA</span></h1
-				<blockquote class="hero-quote">
-					"The Book of Mormon was the most correct of any book on earth, and the keystone of our religion, and a man would get nearer to God by abiding by its precepts, than by any other book."
-					<cite>– Joseph Smith</cite>
-				</blockquote>
-			</div>-->
 
-			<!-- Three Navigation Cards -->
-			 
-			<div class="navigation-cards">
-				<blockquote class="hero-quote">
-					<p>"The Book of Mormon was the most correct of any book on earth, and the keystone of our religion, and a man would get nearer to God by abiding by its precepts, than by any other book."</p>
-					<cite>– Joseph Smith</cite>
-				</blockquote>
-				<!-- REMOVE WHEN ARTICLES SITE IS UP
-				<a href="/articles" class="nav-card">
-					<div class="card-action">READ</div>
-					<div class="nav-card-content">
-						<div class="card-icon">
-							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-								<polyline points="14,2 14,8 20,8"></polyline>
-								<line x1="16" y1="13" x2="8" y2="13"></line>
-								<line x1="16" y1="17" x2="8" y2="17"></line>
-								<polyline points="10,9 9,9 8,9"></polyline>
-							</svg>
-						</div>
-						<h3>Articles & Research</h3>
-						<p>Explore scholarly articles and archaeological evidence</p>
-					</div>
-				</a>-->
-
-				<a href="/videos" class="watch-card" on:click|preventDefault={handleGetStarted}>
-					<div class="outer">
-						<div class="dot"></div>
-						<div class="card">
-						  <div class="ray"></div>
-						  <div class="text" style="text-align: center;">WATCH NOW</div>
-						  <div></div>
-						  <div class="line topl"></div>
-						  <div class="line leftl"></div>
-						  <div class="line bottoml"></div>
-						  <div class="line rightl"></div>
-						</div>
-					  </div>
-					 <!--
-					<div class="card-action">WATCH</div>
-					<div class="nav-card-content">
-						<div class="card-icon">
-							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<polygon points="23 7 16 12 23 17 23 7"></polygon>
-								<rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
-							</svg>
-						</div>
-						<h3>Streaming Videos</h3>
-						<p>Watch exclusive documentaries and presentations</p>
-					</div>--> 
+			<!-- Hero content slot: headline, copy, CTA — editable from admin -->
+			<div class="hero-content-slot navigation-cards" data-slot="hero-content">
+				<!--<img src="/Images/bome-evidence-logo.png" alt="Book of Mormon Evidence" class="hero-logo" />-->
+				<div class="hero-copy">
+					<h1 class="hero-headline">1,600+ Videos. 20 Years of Research.<br>One Streaming Library.</h1>
+					<p class="hero-sub">
+						The largest collection of Heartland Book of Mormon evidence ever assembled — plus conferences on the Signs of the Times, the Constitution, self-reliance, and health. All in one place. Watch anytime.
+					</p>
+				</div>
+				<a href="/subscription" class="btn btn--gold btn--large subscribe-btn" on:click|preventDefault={handleSubscribe}>
+					Subscribe Now
 				</a>
-				<!-- REMOVE WHEN EVENTS SITE IS UP
-				<a href="/events" class="nav-card">
-					<div class="card-action">ATTEND</div>
-					<div class="nav-card-content">
-						<div class="card-icon">
-							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-								<line x1="16" y1="2" x2="16" y2="6"></line>
-								<line x1="8" y1="2" x2="8" y2="6"></line>
-								<line x1="3" y1="10" x2="21" y2="10"></line>
-							</svg>
+				<p class="hero-pricing">
+					Just $9.97/mo — or save 20% with an annual plan at $7.97/mo. Cancel anytime.
+				</p>
+			</div>
+		</div>
+	</section>
+
+	<!-- Section 2: Problem / Tension — data-slot for future admin injection -->
+	<section class="section section--white" data-slot="body-1">
+		<div class="container container--narrow text-center tension">
+			<h2 class="section-heading" style="color: var(--sales-navy);">You Believe. But the Questions Don't Stop.</h2>
+			<p>
+				You've felt the Spirit confirm the Book of Mormon is true. That hasn't changed. But the questions keep coming — from your kids, from investigators, from critics online, and sometimes from the quiet part of your own mind that just wants to see the evidence laid out clearly.
+			</p>
+			<p>
+				The problem isn't a lack of evidence. It's that the evidence is scattered across decades of research, buried in conference recordings, and mixed in with material that ranges from careful scholarship to pure speculation. You shouldn't have to sort through all of that alone.
+			</p>
+			<p>What if someone already did?</p>
+		</div>
+	</section>
+
+	<!-- Section 3: Library Overview — data-slot for future admin injection -->
+	<section class="section section--off-white" data-slot="body-2">
+		<div class="container  text-center">
+			<div class="container-grove">
+				<h2 class="section-heading" style="color: var(--sales-navy);">Five Libraries. One Subscription.</h2>
+				<p class="section-subheading">
+					Every video from 37 FIRM Foundation Expos and years of independent research — organized into five core categories and growing every quarter.
+				</p>
+				<div class="categories-grid">
+					<div class="category-card">
+						<h3>Book of Mormon Evidence</h3>
+						<p>The core of the collection. Heartland geography, archaeological findings in ancient North America, DNA research including Haplogroup X, prophetic promises tied to the Land of Promise, and Joseph Smith's own words about where the events of the Book of Mormon took place.</p>
+					</div>
+					<div class="category-card">
+						<h3>Signs of the Times</h3>
+						<p>Latter-day prophecy examined through current events and scripture. What the prophets said would happen, what's happening now, and what the scriptures indicate is still ahead. Grounded in text, not in speculation.</p>
+					</div>
+					<div class="category-card">
+						<h3>Constitution</h3>
+						<p>America's founding as a covenant land. The prophetic role of the Constitution, the faith of the founders, the scriptural promises attached to this nation, and why it matters today. This isn't political commentary — it's scriptural context.</p>
+					</div>
+					<div class="category-card">
+						<h3>Self-Reliance</h3>
+						<p>Practical preparedness and temporal self-sufficiency. Food storage, financial readiness, skill-building, and the principles behind the counsel the prophets have given for decades. Grounded, actionable, no fear-mongering.</p>
+					</div>
+					<div class="category-card">
+						<h3>Health &amp; Wellness</h3>
+						<p>Physical stewardship — your body as a temple, taken literally. Practical health topics, nutrition, and wellness principles drawn from both modern research and scriptural guidance.</p>
+					</div>
+				</div>	
+				<p class="library-closing">New content is added regularly from live conferences, events, and ongoing research. The library keeps growing.</p>
+
+			</div>
+				<img class="image-grove-left" src="https://assets.cdn.filesafe.space/xar8tXZK2mQ4CKH0W84j/media/68a793c35727bdfd60a74f73.jpeg" alt="Grove1"/>
+				<img class="image-grove-right" src="https://assets.cdn.filesafe.space/xar8tXZK2mQ4CKH0W84j/media/68a793c35727bdfd60a74f73.jpeg" alt="Grove2" />
+			
+		</div>
+	</section>
+
+	<!-- Section 4: Stats Banner — data-slot for future admin injection -->
+	<section class="section section--navy stats-banner" data-slot="body-3">
+		<div class="container">
+			<div class="sales-stats-grid">
+				<div class="sales-stat-item">
+					<div class="stat-item__number">1,600+</div>
+					<div class="stat-item__label">Videos in the Library</div>
+				</div>
+				<div class="sales-stat-item">
+					<div class="stat-item__number">20+</div>
+					<div class="stat-item__label">Years of Research</div>
+				</div>
+				<div class="sales-stat-item">
+					<div class="stat-item__number">37</div>
+					<div class="stat-item__label">FIRM Foundation Expos</div>
+				</div>
+				<div class="sales-stat-item">
+					<div class="stat-item__number">7+</div>
+					<div class="stat-item__label">Expert Speakers</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- Section 5: Featured Speakers — data-slot for future admin injection -->
+	<section class="section section--white" data-slot="body-4">
+		<div class="container text-center">
+			<h2 class="section-heading" style="color: var(--sales-navy);">The Researchers Behind the Evidence</h2>
+			<div class="speakers-grid">
+				<div class="speaker-card">
+					<div class="speaker-card__icon"><span>RM</span></div>
+					<h4>Rod Meldrum</h4>
+					<p>Founder of Book of Mormon Evidence. Twenty years of Heartland research, author, and the most-watched presenter in the field.</p>
+				</div>
+				<div class="speaker-card">
+					<div class="speaker-card__icon"><span>HS</span></div>
+					<h4>Hannah Stoddard</h4>
+					<p>Executive Director of the Joseph Smith Foundation. Researcher, author, and advocate for the prophetic foundations of the Restoration.</p>
+				</div>
+				<div class="speaker-card">
+					<div class="speaker-card__icon"><span>RB</span></div>
+					<h4>Russell H. Barlow</h4>
+					<p>Founder of TruthSeekers Foundation. Author of <em>Water — Another Testament of Christ</em>. Faith-based science researcher and educator.</p>
+				</div>
+				<div class="speaker-card">
+					<div class="speaker-card__icon"><span>DB</span></div>
+					<h4>Don Bradley</h4>
+					<p>Historian, researcher, and author. One of the most respected independent scholars working on early Restoration history.</p>
+				</div>
+				<div class="speaker-card">
+					<div class="speaker-card__icon"><span>JB</span></div>
+					<h4>Jonah Barnes</h4>
+					<p>Researcher and conference presenter. Focused on scriptural geography and Book of Mormon historicity.</p>
+				</div>
+				<div class="speaker-card">
+					<div class="speaker-card__icon"><span>CE</span></div>
+					<h4>Carden Ellis</h4>
+					<p>Presenter and researcher featured at FIRM Foundation conferences on archaeology and scriptural evidence.</p>
+				</div>
+				<div class="speaker-card">
+					<div class="speaker-card__icon"><span>SJ</span></div>
+					<h4>The Stick of Joseph</h4>
+					<p>A featured series exploring the prophetic significance of the Book of Mormon as the Stick of Joseph referenced in Ezekiel 37.</p>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- Section 6: Who This Is For — data-slot for future admin injection -->
+	<section class="section section--off-white" data-slot="body-5">
+		<div class="container container--narrow">
+			<h2 class="section-heading text-center" style="color: var(--sales-navy);">This Is For You If...</h2>
+			<ul class="for-you-list">
+				<li>You study Come, Follow Me every week and want deeper historical and geographic context for what you're reading in the Book of Mormon.</li>
+				<li>You've been asked hard questions by your children, by missionaries you support, or by friends outside the faith — and you want clear, evidence-based answers to point them to.</li>
+				<li>You believe the Book of Mormon is a real history of real people in a real place — and you want to see what 20 years of Heartland research has uncovered.</li>
+				<li>You're tired of critics controlling the conversation. You want to study the evidence yourself, at your own pace, and draw your own conclusions.</li>
+				<li>You've watched Rod's YouTube videos and thought, "There has to be more." There is. This is the full library.</li>
+			</ul>
+			<div class="text-center" style="margin-top: 40px;">
+				<a href="/subscription" class="btn btn--charcoal" on:click|preventDefault={handleSubscribe}>Subscribe Now</a>
+			</div>
+		</div>
+	</section>
+
+	<!-- Section 7: Sample Content — data-slot for future admin injection -->
+	<section class="section section--navy" data-slot="body-6">
+		<div class="container text-center">
+			<h2 class="section-heading" style="color: var(--sales-gold);">Inside the Library: A Preview</h2>
+			<div class="content-grid" style="text-align: left;">
+				<div class="content-tile">
+					<span class="content-tile__number">01</span>
+					<h4>Where Is the River Sidon? A Geographic Case for the Mississippi</h4>
+					<p>Heartland geography examined through the text of the Book of Mormon itself.</p>
+				</div>
+				<div class="content-tile">
+					<span class="content-tile__number">02</span>
+					<h4>Haplogroup X: The DNA That Points to Ancient North America</h4>
+					<p>What mitochondrial DNA research indicates about Book of Mormon populations — and why mainstream archaeology has ignored it.</p>
+				</div>
+				<div class="content-tile">
+					<span class="content-tile__number">03</span>
+					<h4>The Fortifications of Alma 50: Archaeological Parallels in the Eastern United States</h4>
+					<p>Ancient fortification patterns in Ohio and the surrounding region that match the descriptions in the text.</p>
+				</div>
+				<div class="content-tile">
+					<span class="content-tile__number">04</span>
+					<h4>Joseph Smith's Own Words on Book of Mormon Geography</h4>
+					<p>What the Prophet actually said — and didn't say — about the location of Book of Mormon events. Documented. Sourced. In context.</p>
+				</div>
+				<div class="content-tile">
+					<span class="content-tile__number">05</span>
+					<h4>America as the Land of Promise: The Prophetic Covenant</h4>
+					<p>What the Book of Mormon, the Doctrine and Covenants, and the founding generation all point to regarding this land.</p>
+				</div>
+				<div class="content-tile">
+					<span class="content-tile__number">06</span>
+					<h4>The Signs Are Accelerating: A Scriptural Framework for Current Events</h4>
+					<p>Latter-day prophecy and what the scriptures indicate about the times we're living in. No speculation — just text and timeline.</p>
+				</div>
+				<div class="content-tile">
+					<span class="content-tile__number">07</span>
+					<h4>The Stick of Joseph: Why Ezekiel 37 Matters More Than You Think</h4>
+					<p>A deep reading of the prophecy, the historical context, and what it means for the Book of Mormon's role in the last days.</p>
+				</div>
+				<div class="content-tile">
+					<span class="content-tile__number">08</span>
+					<h4>Preparing Temporally: Self-Reliance Beyond 72-Hour Kits</h4>
+					<p>Practical, prophetically grounded preparedness — what to actually do, and why the counsel has never been more relevant.</p>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- Section 8: Pricing — data-slot for future admin injection -->
+	<section class="section section--white" data-slot="body-7">
+		<div class="container text-center">
+			<h2 class="section-heading" style="color: var(--sales-navy);">Choose Your Plan</h2>
+			<p class="section-subheading">
+				Both plans include full access to every video in the library — plus all new content as it's added.
+			</p>
+			<div class="pricing-grid">
+				<div class="pricing-card">
+					<div class="pricing-card__plan">Monthly</div>
+					<div class="pricing-card__price">$9<span>.97/mo</span></div>
+					<div class="pricing-card__billed">&nbsp;</div>
+					<ul class="pricing-card__features">
+						<li>Full library access — 1,600+ videos</li>
+						<li>New content added regularly</li>
+						<li>Watch on any device</li>
+						<li>Cancel anytime</li>
+					</ul>
+					<a href="/subscription" class="btn btn--charcoal pricing-btn" on:click|preventDefault={handleSubscribe}>Subscribe Monthly</a>
+				</div>
+				<div class="pricing-card pricing-card--featured">
+					<div class="pricing-badge">Best Value</div>
+					<div class="pricing-card__plan">Annual</div>
+					<div class="pricing-card__price">$7<span>.97/mo</span></div>
+					<div class="pricing-card__billed">Billed annually at $95.64/year</div>
+					<ul class="pricing-card__features">
+						<li>Full library access — 1,600+ videos</li>
+						<li>New content added regularly</li>
+						<li>Watch on any device</li>
+						<li>Cancel anytime</li>
+						<li>Save $24 per year vs. monthly</li>
+					</ul>
+					<a href="/subscription" class="btn btn--gold pricing-btn" on:click|preventDefault={handleSubscribe}>Subscribe Annually</a>
+				</div>
+			</div>
+			<p class="pricing-reassurance">Cancel anytime from your account — no questions asked.</p>
+		</div>
+	</section>
+
+	<!-- Section 9: FAQ — data-slot for future admin injection -->
+	<section class="section section--off-white" data-slot="body-8">
+		<div class="container container--narrow">
+			<h2 class="section-heading text-center" style="color: var(--sales-navy);">Frequently Asked Questions</h2>
+			<div class="faq-list">
+				{#each [
+					{ q: "What devices can I watch on?", a: "You can stream from any device with a web browser — desktop, laptop, tablet, or phone. No special app required. Just log in and watch." },
+					{ q: "How often is new content added?", a: "New videos are added regularly, including recordings from live FIRM Foundation conferences, new research presentations, and special series. The library is always growing." },
+					{ q: "Is this the same content as on YouTube?", a: "Some introductory and highlight content is available on our YouTube channel, but the streaming library contains the full archive — over 1,600 videos, including complete conference sessions, deep-dive series, and content that has never been published on YouTube. This is the full collection." },
+					{ q: "Can I share my account with my family?", a: "Your subscription is for individual use, but household members watching on shared devices in your home is fine. We trust your judgment." },
+					{ q: "What happens if I cancel?", a: "You keep full access through the end of your current billing period. After that, your account becomes inactive. No penalty, no hassle. You can resubscribe anytime." },
+					{ q: "How do I get started?", a: "Choose your plan — monthly or annual — and you'll have instant access to the full library the moment you subscribe." }
+				] as faq, i}
+					<div class="faq-item" class:active={openFaq === i}>
+						<button class="faq-question" on:click={() => toggleFaq(i)}>
+							{faq.q}
+						</button>
+						<div class="faq-answer">
+							<p>{faq.a}</p>
 						</div>
-						<h3>Events & Expo</h3>
-						<p>Join conferences, seminars, and exhibitions</p>
 					</div>
-				</a>-->
+				{/each}
 			</div>
 		</div>
 	</section>
 
-	<!-- Section 2: New York State -->
-	<section class="zoom-section newyork-section" data-section="1">
-		<div class="zoom-content">
-			<div class="map-container">
-				<img src="/HOMEPAGE_TEST_ASSETS/new_york_state_map_1830.jpg" alt="New York State Map 1830" class="map-image" />
-				<div class="location-marker hill-cumorah">
-					<div class="marker-pulse"></div>
-					<div class="marker-dot"></div>
-				</div>
-			</div>
-			<div class="content-overlay">
-				<h2 class="section-title">Where It All Began</h2>
-				<p class="section-description">Hill Cumorah, New York - The sacred hill where Joseph Smith received the golden plates</p>
-				<!--<div class="info-card">
-					<h3>Historical Significance</h3>
-					<p>The restoration began in upstate New York, where ancient records were preserved for centuries.</p>
-				</div>-->
-			</div>
+	<!-- Section 10: Final CTA — data-slot for future admin injection -->
+	<section class="section section--navy final-cta-section" data-slot="body-9">
+		<div class="container container--narrow text-center">
+			<h2 class="section-heading" style="color: white;">The Evidence Is Here. It Always Has Been.</h2>
+			<p class="final-cta__body">
+				For over twenty years, I've been gathering, organizing, and presenting the evidence for the Book of Mormon as a real history of real people in ancient North America. Not to replace faith — but to strengthen it. Not to settle every question — but to show that the questions have answers worth studying.
+			</p>
+			<p class="final-cta__body">
+				This library represents the work of my life and the contributions of researchers I deeply respect. It's here for you to study at your own pace, on your own time, and to share with the people in your life who are searching for solid ground.
+			</p>
+			<p class="final-cta__body" style="font-weight: 500; color: white;">
+				The evidence shows something. Come see for yourself.
+			</p>
+			<div class="final-cta__signature">— Rod Meldrum</div>
+			<a href="/subscription" class="btn btn--gold btn--large" on:click|preventDefault={handleSubscribe}>Subscribe Now</a>
+			<p class="final-cta__fine-print">
+				$9.97/mo or $7.97/mo billed annually. Cancel anytime. Full access to the entire library from day one.
+			</p>
 		</div>
 	</section>
 
-	<!-- Section 3: United States 1830 -->
-	<section class="zoom-section usa1830-section" data-section="2">
-		<div class="zoom-content">
-			<div class="map-container">
-				<img src="/HOMEPAGE_TEST_ASSETS/united_states_map_1830.png" alt="United States Map 1830" class="map-image vintage" />
-				<div class="location-marker palmyra">
-					<div class="marker-pulse"></div>
-					<div class="marker-dot"></div>
-				</div>
-				<div class="location-marker kirtland">
-					<div class="marker-pulse"></div>
-					<div class="marker-dot"></div>
-				</div>
+	<!-- Footer — sales page style -->
+	<footer class="sales-footer">
+		<div class="container">
+			<img src="/Images/Logo.png" alt="Book of Mormon Evidence" class="footer__logo" />
+			<p>&copy; 2026 Book of Mormon Evidence / FIRM Foundation. All rights reserved.</p>
+			<div class="footer__links">
+				
 			</div>
-			<div class="content-overlay">
-				<h2 class="section-title">America in 1830</h2>
-				<!--<p class="section-description">The United States during the time of the Book of Mormon's publication</p>-->
-				<div class="timeline-info">
-					<div class="timeline-item">
-						<!--<span class="year">1830</span>-->
-						<span class="event">Book of Mormon Published</span>
-					</div>
-					<div class="timeline-item">
-						<!--<span class="year">1830</span>-->
-						<span class="event">Church Organized</span>
-					</div>
-				</div>
-			</div>
+			<p class="footer__disclaimer">
+				This research and content represent independent scholarship and are not produced by, affiliated with, or endorsed by The Church of Jesus Christ of Latter-day Saints.
+			</p>
 		</div>
-	</section>
-
-	<!-- Section 4: Modern United States -->
-	<section class="zoom-section usa-modern-section" data-section="3">
-		<div class="zoom-content">
-			<div class="map-container">
-				<img src="/HOMEPAGE_TEST_ASSETS/united_states_map_modern.jpg" alt="Modern United States Map" class="map-image modern" />
-				<div class="location-marker utah">
-					<div class="marker-pulse"></div>
-					<div class="marker-dot"></div>
-				</div>
-				<div class="location-marker missouri">
-					<div class="marker-pulse"></div>
-					<div class="marker-dot"></div>
-				</div>
-			</div>
-			<div class="content-overlay">
-				<h2 class="section-title">Modern Discoveries</h2>
-				<p class="section-description">Archaeological evidence continues to emerge across the Americas</p>
-				<div class="stats-grid">
-					<div class="stat-item">
-						<span class="stat-number">500+</span>
-						<span class="stat-label">Archaeological Sites</span>
-					</div>
-					<div class="stat-item">
-						<span class="stat-number">50+</span>
-						<span class="stat-label">Expert Researchers</span>
-					</div>
-				</div>
-			</div>
-		</div>
-	</section>
-
-	<!-- Section 5: World Map -->
-	<section class="zoom-section world-section" data-section="4">
-		<div class="zoom-content">
-			<div class="map-container">
-				<img src="/HOMEPAGE_TEST_ASSETS/world-physical-maps-international-flat.jpg" alt="World Physical Map" class="map-image world" />
-				<div class="location-marker americas">
-					<div class="marker-pulse"></div>
-					<div class="marker-dot"></div>
-				</div>
-				<div class="location-marker middle-east">
-					<div class="marker-pulse"></div>
-					<div class="marker-dot"></div>
-				</div>
-			</div>
-			<div class="content-overlay">
-				<h2 class="section-title">Global Connections</h2>
-				<p class="section-description">Evidence spans continents, connecting ancient civilizations</p>
-				<div class="connection-lines">
-					<div class="connection-line"></div>
-					<div class="connection-line"></div>
-				</div>
-			</div>
-		</div>
-	</section>
-
-	<!-- Section 6: Globe -->
-	<section class="zoom-section globe-section" data-section="5">
-		<div class="zoom-content">
-			<div class="globe-container">
-				<div class="globe">
-					<img src="/HOMEPAGE_TEST_ASSETS/The_Globe_World.png" alt="Earth Globe" class="globe-image" />
-					<div class="globe-atmosphere"></div>
-					<div class="globe-rotation"></div>
-				</div>
-			</div>
-			<div class="content-overlay">
-				<h2 class="section-title">A Global Message</h2>
-				<p class="section-description">The Book of Mormon's message reaches every nation, kindred, tongue, and people</p>
-				<div class="final-cta">
-					<button class="explore-button" on:click={handleGetStarted}>
-						Explore the Evidence
-					</button>
-					<a href="/subscription" class="join-button">Join Our Community</a>
-				</div>
-			</div>
-		</div>
-	</section>
+	</footer>
 </div>
-
-<!-- Navigation Dots -->
-<div class="scroll-navigation">
-	{#each Array(6) as _, index}
-		<button 
-			class="nav-dot" 
-			class:active={currentSection === index}
-			on:click={() => goToSection(index)}
-			aria-label="Go to section {index + 1}"
-		>
-			<span class="dot-inner"></span>
-		</button>
-	{/each}
-</div>
-
-<!-- Scroll Indicator 
-<div class="scroll-indicator" class:hidden={currentSection === 5}>
-	<div class="scroll-text">Scroll to explore</div>
-	<div class="scroll-arrow">
-		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-			<path d="M7 13l3 3 7-3"></path>
-			<path d="M7 6l3 3 7-3"></path>
-		</svg>
-	</div>
-</div>-->
-
-<!--<Footer />-->
 
 <style>
 	:global(html) {
@@ -534,21 +479,28 @@
 }
 
 
-	.scroll-container {
-		height: 100vh;
-		overflow: hidden;
+	.page-wrapper {
 		position: relative;
 	}
 
-	.zoom-section {
-		height: 100vh;
+	.hero-section {
+		min-height: 100vh;
 		width: 100%;
 		position: relative;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		overflow: hidden;
-		transition: all 1s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+	}
+
+	.zoom-section {
+		min-height: 100vh;
+		width: 100%;
+		position: relative;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		overflow: hidden;
 	}
 
 	.zoom-content {
@@ -572,11 +524,6 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		transform: scale(1.5);
-		transition: transform 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-	}
-
-	.book-section.active .book-container {
 		transform: scale(1);
 	}
 
@@ -1074,7 +1021,611 @@
 		font-family: 'Ayres';
 	}
 
-	/* Navigation Cards - Base Styles */
+	/* Sales-page design tokens (from streaming-sales-page) */
+	.page-wrapper.home-page {
+		--sales-navy: #0D1B3E;
+		--sales-gold: #B7953B;
+		--sales-gold-light: #D4B255;
+		--sales-charcoal: #1E2022;
+		--sales-white: #FFFFFF;
+		--sales-off-white: #F7F8FA;
+		--sales-light-gray: #E8EAF0;
+		--sales-text-muted: #9CA3AF;
+		--sales-heading-font: 'Playfair Display', Georgia, serif;
+		--sales-body-font: 'Poppins', 'Roboto', sans-serif;
+	}
+
+	/* Sales page sections */
+	.section {
+		padding: 80px 0;
+	}
+	.section--navy {
+		background: var(--sales-navy);
+		color: var(--sales-white);
+	}
+	.section--white {
+		background: var(--sales-white);
+		color: var(--sales-charcoal);
+	}
+	.section--off-white {
+		background: var(--sales-off-white);
+		color: var(--sales-charcoal);
+	}
+
+	.container {
+		position: relative;
+		max-width: 100vw;
+		margin: 0 auto;
+		padding: 0 24px;
+	}
+
+	.container--narrow {
+		max-width: 780px;
+		margin: 0 auto;
+		padding: 0 24px;
+	}
+
+	.section-heading {
+		font-family: var(--sales-heading-font);
+		font-size: 38px;
+		font-weight: 600;
+		line-height: 1.25;
+		margin-bottom: 20px;
+	}
+	.section-subheading {
+		font-family: var(--sales-body-font);
+		font-size: 17px;
+		font-weight: 300;
+		line-height: 1.8;
+		max-width: 700px;
+		margin: 0 auto;
+	}
+
+	.tension p {
+		font-size: 17px;
+		line-height: 1.9;
+		margin-bottom: 20px;
+		color: var(--sales-charcoal);
+	}
+	.tension p:last-child {
+		font-weight: 600;
+		font-style: italic;
+		color: var(--sales-navy);
+		margin-bottom: 0;
+	}
+
+	.container-grove {
+		background: linear-gradient(to right, rgb(255, 255, 255, 0) 0%, rgb(247, 248, 250, 1) 30%, rgb(247, 248, 250, 1) 70%, rgba(255, 255, 255, 0) 100%);
+		position: relative;
+		z-index: 1;
+		width: 100%;
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.image-grove-left {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: auto;
+		height: 100%;
+		z-index: 0;
+	}
+	.image-grove-right {
+		position: absolute;
+		right: 0;
+		top: 0;
+		width: auto;
+		height: 100%;
+		
+		z-index: 0;
+	}
+
+	.categories-grid {
+		position: relative;
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 24px;
+		margin-top: 48px;
+		margin: auto 0;
+		width: 100%;
+		justify-content: center;
+		z-index: 1;
+	}
+	.category-card {
+		background: var(--sales-white);
+		border: 1px solid var(--sales-light-gray);
+		border-left: 4px solid var(--sales-gold);
+		padding: 32px 28px;
+		transition: box-shadow 0.3s ease;
+		width: 250px;
+	}
+	.category-card:hover {
+		box-shadow: 5px 5px 20px rgba(0,0,0,0.08);
+	}
+	.category-card h3 {
+		font-size: 20px;
+		color: var(--sales-navy);
+		margin-bottom: 12px;
+	}
+	.category-card p {
+		font-size: 15px;
+		line-height: 1.75;
+		color: #555;
+	}
+	.categories-grid .category-card:nth-child(5) {
+		grid-column: 1 / -1;
+		max-width: 520px;
+		justify-self: center;
+	}
+	.library-closing {
+		text-align: center;
+		margin-top: 40px;
+		font-size: 15px;
+		font-style: italic;
+		color: var(--sales-text-muted);
+	}
+
+	.stats-banner {
+		padding: 60px 0;
+	}
+	.sales-stats-grid {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 20px;
+		text-align: center;
+	}
+	.sales-stat-item .stat-item__number {
+		font-family: var(--sales-heading-font);
+		font-size: 48px;
+		font-weight: 700;
+		color: var(--sales-gold);
+		line-height: 1;
+		margin-bottom: 8px;
+	}
+	.sales-stat-item .stat-item__label {
+		font-size: 14px;
+		text-transform: uppercase;
+		letter-spacing: 1.5px;
+		color: rgba(255,255,255,0.7);
+		font-weight: 400;
+	}
+
+	.speakers-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 32px;
+		margin-top: 48px;
+		text-align: center;
+	}
+	.speaker-card {
+		padding: 24px 16px;
+		transition: all 0.3s ease;
+	}
+	.speaker-card:hover {
+		box-shadow: 5px 5px 20px rgba(0,0,0,0.08);
+		transform: translateY(-5px);
+	}
+	.speaker-card__icon {
+		width: 80px;
+		height: 80px;
+		border-radius: 50%;
+		background: var(--sales-navy);
+		margin: 0 auto 20px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.speaker-card__icon span {
+		font-family: var(--sales-heading-font);
+		font-size: 28px;
+		font-weight: 700;
+		color: var(--sales-gold);
+	}
+	.speaker-card h4 {
+		font-size: 18px;
+		color: var(--sales-navy);
+		margin-bottom: 8px;
+	}
+	.speaker-card p {
+		font-size: 14px;
+		line-height: 1.6;
+		color: #666;
+	}
+
+	.for-you-list {
+		list-style: none;
+		margin-top: 40px;
+	}
+	.for-you-list li {
+		position: relative;
+		padding: 16px 0 16px 36px;
+		font-size: 16px;
+		line-height: 1.8;
+		border-bottom: 1px solid var(--sales-light-gray);
+	}
+	.for-you-list li:last-child {
+		border-bottom: none;
+	}
+	.for-you-list li::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		top: 24px;
+		width: 12px;
+		height: 12px;
+		border: 2px solid var(--sales-gold);
+		border-radius: 2px;
+		background: transparent;
+	}
+	.for-you-list li::after {
+		content: '';
+		position: absolute;
+		left: 3px;
+		top: 28px;
+		width: 6px;
+		height: 3px;
+		border-left: 2px solid var(--sales-gold);
+		border-bottom: 2px solid var(--sales-gold);
+		transform: rotate(-45deg);
+	}
+
+	.content-grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 20px;
+		margin-top: 48px;
+	}
+	.content-tile {
+		background: rgba(255,255,255,0.06);
+		border: 1px solid rgba(255,255,255,0.1);
+		padding: 28px 24px;
+		transition: all 0.3s ease;
+	}
+	.content-tile:hover {
+		background: rgba(255,255,255,0.1);
+		border-color: var(--sales-gold);
+	}
+	.content-tile__number {
+		font-family: var(--sales-heading-font);
+		font-size: 14px;
+		color: var(--sales-gold);
+		margin-bottom: 8px;
+		display: block;
+	}
+	.content-tile h4 {
+		font-size: 17px;
+		font-weight: 600;
+		font-family: var(--sales-body-font);
+		color: var(--sales-white);
+		margin-bottom: 8px;
+		line-height: 1.4;
+	}
+	.content-tile p {
+		font-size: 14px;
+		line-height: 1.65;
+		color: rgba(255,255,255,0.6);
+	}
+
+	.pricing-grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 32px;
+		margin-top: 48px;
+		max-width: 800px;
+		margin-left: auto;
+		margin-right: auto;
+	}
+	.pricing-card {
+		border: 1px solid var(--sales-light-gray);
+		padding: 40px 32px;
+		text-align: center;
+		position: relative;
+		background: var(--sales-white);
+		transition: box-shadow 0.3s ease;
+	}
+	.pricing-card:hover {
+		box-shadow: 5px 5px 20px rgba(0,0,0,0.08);
+	}
+	.pricing-card--featured {
+		border: 2px solid var(--sales-gold);
+	}
+	.pricing-badge {
+		position: absolute;
+		top: -14px;
+		left: 50%;
+		transform: translateX(-50%);
+		background: var(--sales-gold);
+		color: var(--sales-navy);
+		font-size: 12px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 1px;
+		padding: 6px 20px;
+	}
+	.pricing-card__plan {
+		font-family: var(--sales-heading-font);
+		font-size: 20px;
+		color: var(--sales-navy);
+		margin-bottom: 16px;
+	}
+	.pricing-card__price {
+		font-size: 48px;
+		font-weight: 700;
+		color: var(--sales-navy);
+		line-height: 1;
+	}
+	.pricing-card__price span {
+		font-size: 18px;
+		font-weight: 400;
+		color: var(--sales-text-muted);
+	}
+	.pricing-card__billed {
+		font-size: 13px;
+		color: var(--sales-text-muted);
+		margin-top: 4px;
+		margin-bottom: 28px;
+		min-height: 20px;
+	}
+	.pricing-card__features {
+		list-style: none;
+		text-align: left;
+		margin-bottom: 32px;
+	}
+	.pricing-card__features li {
+		padding: 8px 0;
+		font-size: 14px;
+		color: #555;
+		border-bottom: 1px solid #f0f0f0;
+		padding-left: 24px;
+		position: relative;
+	}
+	.pricing-card__features li::before {
+		content: "\2713";
+		position: absolute;
+		left: 0;
+		color: var(--sales-gold);
+		font-weight: 700;
+	}
+	.pricing-card__features li:last-child {
+		border-bottom: none;
+	}
+	.pricing-btn {
+		width: 100%;
+	}
+	.pricing-reassurance {
+		text-align: center;
+		margin-top: 32px;
+		font-size: 14px;
+		color: var(--sales-text-muted);
+	}
+
+	.btn--charcoal {
+		background: var(--sales-charcoal);
+		color: var(--sales-white);
+		border-color: var(--sales-charcoal);
+	}
+	.btn--charcoal:hover {
+		background: transparent;
+		color: var(--sales-charcoal);
+		border-color: var(--sales-charcoal);
+	}
+
+	.faq-list {
+		margin-top: 48px;
+	}
+	.faq-item {
+		border-bottom: 1px solid var(--sales-light-gray);
+		padding: 24px 0;
+	}
+	.faq-item:first-child {
+		border-top: 1px solid var(--sales-light-gray);
+	}
+	.faq-question {
+		font-family: var(--sales-body-font);
+		font-weight: 600;
+		font-size: 16px;
+		color: var(--sales-navy);
+		cursor: pointer;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 16px;
+		width: 100%;
+		text-align: left;
+		background: none;
+		border: none;
+	}
+	.faq-question::after {
+		content: "+";
+		font-size: 22px;
+		font-weight: 300;
+		color: var(--sales-gold);
+		flex-shrink: 0;
+		transition: transform 0.3s ease;
+	}
+	.faq-item.active .faq-question::after {
+		content: "\2212";
+	}
+	.faq-answer {
+		max-height: 0;
+		overflow: hidden;
+		transition: max-height 0.4s ease, padding 0.4s ease;
+	}
+	.faq-item.active .faq-answer {
+		max-height: 300px;
+		padding-top: 16px;
+	}
+	.faq-answer p {
+		font-size: 15px;
+		line-height: 1.8;
+		color: #555;
+	}
+
+	.final-cta-section {
+		padding: 100px 0 !important;
+	}
+	.final-cta__body {
+		font-size: 17px;
+		line-height: 1.9;
+		color: rgba(255,255,255,0.85);
+		max-width: 700px;
+		margin: 0 auto 12px;
+	}
+	.final-cta__signature {
+		font-family: var(--sales-heading-font);
+		font-size: 20px;
+		font-style: italic;
+		color: var(--sales-gold);
+		margin-top: 24px;
+		margin-bottom: 40px;
+	}
+	.final-cta__fine-print {
+		margin-top: 16px;
+		font-size: 13px;
+		color: rgba(255,255,255,0.45);
+	}
+
+	.sales-footer {
+		background: #080F21;
+		color: rgba(255,255,255,0.5);
+		padding: 40px 0;
+		text-align: center;
+		font-size: 13px;
+		line-height: 1.8;
+	}
+	.sales-footer .footer__logo {
+		width: 140px;
+		margin: 0 auto 16px;
+		opacity: 0.6;
+	}
+	.sales-footer .footer__links {
+		margin-top: 12px;
+	}
+	.sales-footer .footer__links a {
+		color: rgba(255,255,255,0.5);
+		margin: 0 12px;
+		font-size: 13px;
+		transition: color 0.3s ease;
+	}
+	.sales-footer .footer__links a:hover {
+		color: var(--sales-gold);
+	}
+	.sales-footer .footer__disclaimer {
+		margin-top: 20px;
+		font-style: italic;
+		font-size: 12px;
+		color: rgba(255,255,255,0.35);
+		max-width: 600px;
+		margin-left: auto;
+		margin-right: auto;
+	}
+
+	/* Hero content slot — sales copy + Subscribe CTA */
+	.hero-content-slot {
+		flex-direction: column;
+		justify-content: flex-end;
+		align-items: center;
+		gap: clamp(1rem, 2vw, 1.5rem);
+		text-align: center;
+		bottom: 8%;
+		padding: 0 2rem;
+	}
+
+	.hero-logo {
+		width: clamp(140px, 12vw, 220px);
+		margin-bottom: clamp(1rem, 2vw, 2rem);
+		opacity: 0.95;
+	}
+
+	.hero-copy {
+		max-width: 850px;
+		padding: clamp(1.5rem, 3vw, 2.5rem);
+		background: rgba(13, 27, 62, 0.85);
+		border-radius: 16px;
+		backdrop-filter: blur(12px);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+		opacity: 0;
+		animation: hero-copy-fade-in 2.6s ease-out 5s forwards;
+	}
+
+	@keyframes hero-copy-fade-in {
+		to { opacity: 1; }
+	}
+
+	.hero-headline {
+		font-family: var(--sales-heading-font);
+		font-size: clamp(2rem, 4.5vw, 3rem);
+		font-weight: 700;
+		line-height: 1.15;
+		color: white;
+		text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+		margin: 0 0 1rem;
+	}
+
+	.hero-sub {
+		font-family: var(--sales-body-font);
+		font-size: clamp(1rem, 1.3vw, 1.125rem);
+		font-weight: 300;
+		line-height: 1.8;
+		color: rgba(255, 255, 255, 0.95);
+		max-width: 680px;
+		margin: 0 auto;
+		text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+	}
+
+	.hero-pricing {
+		font-family: var(--sales-body-font);
+		font-size: clamp(0.8rem, 1vw, 0.875rem);
+		color: rgba(255, 255, 255, 0.85);
+		font-weight: 300;
+		margin: 0.5rem 0 0;
+		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+	}
+
+	/* Sales page button styles (from streaming-sales-page.html) */
+	.btn {
+		display: inline-block;
+		font-family: var(--sales-body-font);
+		font-weight: 600;
+		font-size: 14px;
+		letter-spacing: 1px;
+		text-transform: uppercase;
+		padding: 16px 40px;
+		border: 2px solid transparent;
+		cursor: pointer;
+		transition: all 0.3s ease;
+		text-decoration: none;
+		border-radius: 4px;
+	}
+
+	.btn--gold {
+		background: var(--sales-gold);
+		color: var(--sales-navy);
+		border-color: var(--sales-gold);
+	}
+
+	.btn--gold:hover {
+		background: transparent;
+		color: var(--sales-gold);
+		border-color: var(--sales-gold);
+	}
+
+	.btn--large {
+		padding: 18px 48px;
+		font-size: 15px;
+	}
+
+	.subscribe-btn {
+		align-self: center;
+	}
+
+	/* Navigation Cards - Base Styles (legacy nav-card layout) */
 	.navigation-cards {
 		width: 100vw;
 		position: absolute;
@@ -1479,6 +2030,53 @@
 		}
 	}
 
+	/* Sales sections responsive */
+	@media (max-width: 768px) {
+		.section-heading {
+			font-size: 28px;
+		}
+		.sales-stats-grid {
+			grid-template-columns: repeat(2, 1fr);
+			gap: 32px;
+		}
+		.sales-stat-item .stat-item__number {
+			font-size: 36px;
+		}
+		.content-grid {
+			grid-template-columns: 1fr;
+		}
+		.pricing-grid {
+			grid-template-columns: 1fr;
+			max-width: 400px;
+		}
+		.speakers-grid {
+			grid-template-columns: repeat(2, 1fr);
+			gap: 20px;
+		}
+		.categories-grid {
+			grid-template-columns: 1fr;
+		}
+		.categories-grid .category-card:nth-child(5) {
+			max-width: 100%;
+		}
+		.btn {
+			padding: 14px 32px;
+			font-size: 13px;
+		}
+		.btn--large {
+			padding: 16px 36px;
+		}
+	}
+
+	@media (max-width: 480px) {
+		.speakers-grid {
+			grid-template-columns: 1fr;
+		}
+		.sales-stats-grid {
+			grid-template-columns: repeat(2, 1fr);
+		}
+	}
+
 	@media (max-width: 768px) {
 		.main-title-container {
 			top: 5%;
@@ -1506,9 +2104,12 @@
 			font-size: 3rem;
 		}
 
-		.hero-quote {
-			font-size: 1.2rem;
-			padding: 0 1rem;
+		.hero-headline {
+			font-size: clamp(1.75rem, 4vw, 2.5rem);
+		}
+
+		.hero-sub {
+			font-size: 1rem;
 		}
 
 		.navigation-cards {
@@ -1687,13 +2288,16 @@
 			font-size: 3rem;
 		}
 
-		.hero-quote {
-			width: 95vw;
-			font-size: clamp(1.5rem, 32px, 2.5rem) !important;
-			padding: 1rem;
-			margin-bottom: 2rem;
-			border-radius: 15px;
-			
+		.hero-headline {
+			font-size: clamp(1.5rem, 6vw, 2rem);
+		}
+
+		.hero-sub {
+			font-size: 0.95rem;
+		}
+
+		.hero-pricing {
+			font-size: 0.8rem;
 		}
 
 		/* Navigation cards mobile optimization */

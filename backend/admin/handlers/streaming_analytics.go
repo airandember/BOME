@@ -18,32 +18,32 @@ func SetupStreamingAnalyticsRoutes(router *gin.RouterGroup, db *database.DB) {
 	{
 		// GET /admin/streaming/analytics/overview
 		analytics.GET("/overview", func(c *gin.Context) {
-			GetAnalyticsOverviewHandler(c, service, db)
+			GetAnalyticsOverviewHandler(c, service)
 		})
 
 		// GET /admin/streaming/analytics/executive-summary
 		analytics.GET("/executive-summary", func(c *gin.Context) {
-			GetExecutiveSummaryHandler(c, service, db)
+			GetExecutiveSummaryHandler(c, service)
 		})
 
 		// GET /admin/streaming/analytics/funnel
 		analytics.GET("/funnel", func(c *gin.Context) {
-			GetFunnelAnalysisHandler(c, service, db)
+			GetFunnelAnalysisHandler(c, service)
 		})
 
 		// GET /admin/streaming/analytics/revenue-impact
 		analytics.GET("/revenue-impact", func(c *gin.Context) {
-			GetRevenueImpactHandler(c, service, db)
+			GetRevenueImpactHandler(c, service)
 		})
 
 		// GET /admin/streaming/analytics/customer-journey
 		analytics.GET("/customer-journey", func(c *gin.Context) {
-			GetCustomerJourneyHandler(c, service, db)
+			GetCustomerJourneyHandler(c, service)
 		})
 
 		// GET /admin/streaming/analytics/promotions
 		analytics.GET("/promotions", func(c *gin.Context) {
-			GetPromotionsAnalyticsHandler(c, service, db)
+			GetPromotionsAnalyticsHandler(c, service)
 		})
 
 		// GET /admin/streaming/analytics/real-time
@@ -60,14 +60,78 @@ func SetupStreamingAnalyticsRoutes(router *gin.RouterGroup, db *database.DB) {
 	log.Println("✅ Streaming analytics routes registered")
 }
 
+// metricsFromAnalytics builds video_stats, subscriber_metrics, view_analytics from braid GetAnalytics result
+func metricsFromAnalytics(overview map[string]interface{}) (videoStats, subscriberMetrics, viewAnalytics map[string]interface{}) {
+	v, _ := overview["videos"].(map[string]interface{})
+	s, _ := overview["subscriptions"].(map[string]interface{})
+	videoStats = map[string]interface{}{
+		"total_videos":    numOrZero(v, "total"),
+		"synced_videos":  numOrZero(v, "published"),
+		"needs_attention": numOrZero(v, "pending"),
+		"total_views":    numOrZero(v, "total_views"),
+	}
+	subscriberMetrics = map[string]interface{}{
+		"total_subscribers":    numOrZero(s, "active"),
+		"active_subscriptions": numOrZero(s, "active"),
+		"monthly_revenue":      floatOrZero(s, "mrr"),
+		"churn_rate":           0.0,
+	}
+	viewAnalytics = map[string]interface{}{
+		"total_views": numOrZero(v, "total_views"),
+		"views_today": 0,
+		"views_week":  0,
+		"growth_rate": 0.0,
+	}
+	return videoStats, subscriberMetrics, viewAnalytics
+}
+
+func numOrZero(m map[string]interface{}, key string) int {
+	if m == nil {
+		return 0
+	}
+	v, ok := m[key]
+	if !ok {
+		return 0
+	}
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	default:
+		return 0
+	}
+}
+
+func floatOrZero(m map[string]interface{}, key string) float64 {
+	if m == nil {
+		return 0
+	}
+	v, ok := m[key]
+	if !ok {
+		return 0
+	}
+	switch n := v.(type) {
+	case float64:
+		return n
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	default:
+		return 0
+	}
+}
+
 // GetAnalyticsOverviewHandler handles GET /admin/streaming/analytics/overview
-func GetAnalyticsOverviewHandler(c *gin.Context, service *analyticsServices.AnalyticsService, db *database.DB) {
+func GetAnalyticsOverviewHandler(c *gin.Context, service *analyticsServices.AnalyticsService) {
 	log.Println("📊 GetAnalyticsOverviewHandler: Fetching analytics overview...")
 
 	period := c.DefaultQuery("period", "30d")
 
-	// Get comprehensive overview from database model
-	overview, err := db.GetAnalyticsOverview(period)
+	overview, err := service.GetAnalytics(period)
 	if err != nil {
 		log.Printf("❌ Error fetching analytics overview: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -76,43 +140,7 @@ func GetAnalyticsOverviewHandler(c *gin.Context, service *analyticsServices.Anal
 		return
 	}
 
-	// Get video analytics
-	videoStats, err := db.GetVideoStats()
-	if err != nil {
-		log.Printf("⚠️ Warning: Could not fetch video stats: %v", err)
-		videoStats = map[string]interface{}{
-			"total_videos":    0,
-			"synced_videos":   0,
-			"needs_attention": 0,
-			"total_views":     0,
-		}
-	}
-
-	// Get subscriber metrics
-	subscriberMetrics, err := db.GetSubscriberMetrics()
-	if err != nil {
-		log.Printf("⚠️ Warning: Could not fetch subscriber metrics: %v", err)
-		subscriberMetrics = map[string]interface{}{
-			"total_subscribers":    0,
-			"active_subscriptions": 0,
-			"monthly_revenue":      0.0,
-			"churn_rate":           0.0,
-		}
-	}
-
-	// Get view analytics
-	viewAnalytics, err := db.GetViewAnalytics()
-	if err != nil {
-		log.Printf("⚠️ Warning: Could not fetch view analytics: %v", err)
-		viewAnalytics = map[string]interface{}{
-			"total_views": 0,
-			"views_today": 0,
-			"views_week":  0,
-			"growth_rate": 0.0,
-		}
-	}
-
-	// Combine all metrics
+	videoStats, subscriberMetrics, viewAnalytics := metricsFromAnalytics(overview)
 	overview["video_stats"] = videoStats
 	overview["subscriber_metrics"] = subscriberMetrics
 	overview["view_analytics"] = viewAnalytics
@@ -123,36 +151,19 @@ func GetAnalyticsOverviewHandler(c *gin.Context, service *analyticsServices.Anal
 }
 
 // GetExecutiveSummaryHandler handles GET /admin/streaming/analytics/executive-summary
-func GetExecutiveSummaryHandler(c *gin.Context, service *analyticsServices.AnalyticsService, db *database.DB) {
+func GetExecutiveSummaryHandler(c *gin.Context, service *analyticsServices.AnalyticsService) {
 	log.Println("📈 GetExecutiveSummaryHandler: Fetching executive summary...")
 
 	period := c.DefaultQuery("period", "30d")
 
-	// Get subscriber metrics
-	subscriberMetrics, err := db.GetSubscriberMetrics()
+	overview, err := service.GetAnalytics(period)
 	if err != nil {
-		log.Printf("❌ Error fetching subscriber metrics: %v", err)
-		subscriberMetrics = map[string]interface{}{
-			"total_subscribers":    0,
-			"active_subscriptions": 0,
-			"monthly_revenue":      0.0,
-			"churn_rate":           0.0,
-		}
+		log.Printf("❌ Error fetching analytics: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch executive summary"})
+		return
 	}
+	videoStats, subscriberMetrics, _ := metricsFromAnalytics(overview)
 
-	// Get video stats
-	videoStats, err := db.GetVideoStats()
-	if err != nil {
-		log.Printf("❌ Error fetching video stats: %v", err)
-		videoStats = map[string]interface{}{
-			"total_videos":    0,
-			"synced_videos":   0,
-			"needs_attention": 0,
-			"total_views":     0,
-		}
-	}
-
-	// Build executive summary
 	summary := gin.H{
 		"period": period,
 		"revenue_impact": gin.H{
@@ -185,45 +196,26 @@ func GetExecutiveSummaryHandler(c *gin.Context, service *analyticsServices.Analy
 }
 
 // GetFunnelAnalysisHandler handles GET /admin/streaming/analytics/funnel
-func GetFunnelAnalysisHandler(c *gin.Context, service *analyticsServices.AnalyticsService, db *database.DB) {
+func GetFunnelAnalysisHandler(c *gin.Context, service *analyticsServices.AnalyticsService) {
 	log.Println("🔍 GetFunnelAnalysisHandler: Fetching funnel analysis...")
 
 	period := c.DefaultQuery("period", "30d")
 
-	// Get subscriber metrics for funnel data
-	subscriberMetrics, err := db.GetSubscriberMetrics()
+	overview, err := service.GetAnalytics(period)
 	if err != nil {
-		log.Printf("❌ Error fetching subscriber metrics: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to fetch funnel analysis",
-		})
+		log.Printf("❌ Error fetching analytics: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch funnel analysis"})
 		return
 	}
+	_, subscriberMetrics, _ := metricsFromAnalytics(overview)
 
-	// Build funnel data
 	funnel := gin.H{
 		"period": period,
 		"stages": []gin.H{
-			{
-				"name":       "Visitors",
-				"count":      0,
-				"conversion": 0,
-			},
-			{
-				"name":       "Sign-ups",
-				"count":      subscriberMetrics["total_subscribers"],
-				"conversion": 0,
-			},
-			{
-				"name":       "Trial Users",
-				"count":      0,
-				"conversion": 0,
-			},
-			{
-				"name":       "Active Subscribers",
-				"count":      subscriberMetrics["active_subscriptions"],
-				"conversion": 0,
-			},
+			{"name": "Visitors", "count": 0, "conversion": 0},
+			{"name": "Sign-ups", "count": subscriberMetrics["total_subscribers"], "conversion": 0},
+			{"name": "Trial Users", "count": 0, "conversion": 0},
+			{"name": "Active Subscribers", "count": subscriberMetrics["active_subscriptions"], "conversion": 0},
 		},
 		"overall_conversion": 0,
 		"drop_off_points":    []gin.H{},
@@ -234,29 +226,23 @@ func GetFunnelAnalysisHandler(c *gin.Context, service *analyticsServices.Analyti
 }
 
 // GetRevenueImpactHandler handles GET /admin/streaming/analytics/revenue-impact
-func GetRevenueImpactHandler(c *gin.Context, service *analyticsServices.AnalyticsService, db *database.DB) {
+func GetRevenueImpactHandler(c *gin.Context, service *analyticsServices.AnalyticsService) {
 	log.Println("💰 GetRevenueImpactHandler: Fetching revenue impact...")
 
 	period := c.DefaultQuery("period", "30d")
 
-	// Get subscriber metrics
-	subscriberMetrics, err := db.GetSubscriberMetrics()
+	overview, err := service.GetAnalytics(period)
 	if err != nil {
-		log.Printf("❌ Error fetching subscriber metrics: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to fetch revenue impact",
-		})
+		log.Printf("❌ Error fetching analytics: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch revenue impact"})
 		return
 	}
+	_, subscriberMetrics, _ := metricsFromAnalytics(overview)
 
-	// Build revenue impact data
 	revenueImpact := gin.H{
 		"period": period,
 		"revenue_by_source": []gin.H{
-			{
-				"source": "Subscriptions",
-				"amount": subscriberMetrics["monthly_revenue"],
-			},
+			{"source": "Subscriptions", "amount": subscriberMetrics["monthly_revenue"]},
 		},
 		"total_revenue": subscriberMetrics["monthly_revenue"],
 		"mrr":           subscriberMetrics["monthly_revenue"],
@@ -270,45 +256,27 @@ func GetRevenueImpactHandler(c *gin.Context, service *analyticsServices.Analytic
 }
 
 // GetCustomerJourneyHandler handles GET /admin/streaming/analytics/customer-journey
-func GetCustomerJourneyHandler(c *gin.Context, service *analyticsServices.AnalyticsService, db *database.DB) {
+func GetCustomerJourneyHandler(c *gin.Context, service *analyticsServices.AnalyticsService) {
 	log.Println("🗺️ GetCustomerJourneyHandler: Fetching customer journey...")
 
 	period := c.DefaultQuery("period", "30d")
 
-	// Get subscriber metrics
-	subscriberMetrics, err := db.GetSubscriberMetrics()
+	overview, err := service.GetAnalytics(period)
 	if err != nil {
-		log.Printf("❌ Error fetching subscriber metrics: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to fetch customer journey",
-		})
+		log.Printf("❌ Error fetching analytics: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch customer journey"})
 		return
 	}
+	_, subscriberMetrics, _ := metricsFromAnalytics(overview)
 
-	// Build customer journey data
 	journey := gin.H{
 		"period": period,
 		"lifecycle_stages": []gin.H{
-			{
-				"stage": "Prospect",
-				"count": 0,
-			},
-			{
-				"stage": "Trial",
-				"count": 0,
-			},
-			{
-				"stage": "Active",
-				"count": subscriberMetrics["active_subscriptions"],
-			},
-			{
-				"stage": "At Risk",
-				"count": 0,
-			},
-			{
-				"stage": "Churned",
-				"count": 0,
-			},
+			{"stage": "Prospect", "count": 0},
+			{"stage": "Trial", "count": 0},
+			{"stage": "Active", "count": subscriberMetrics["active_subscriptions"]},
+			{"stage": "At Risk", "count": 0},
+			{"stage": "Churned", "count": 0},
 		},
 		"avg_time_to_conversion": "0 days",
 		"retention_rate":         0,
@@ -320,12 +288,11 @@ func GetCustomerJourneyHandler(c *gin.Context, service *analyticsServices.Analyt
 }
 
 // GetPromotionsAnalyticsHandler handles GET /admin/streaming/analytics/promotions
-func GetPromotionsAnalyticsHandler(c *gin.Context, service *analyticsServices.AnalyticsService, db *database.DB) {
+func GetPromotionsAnalyticsHandler(c *gin.Context, service *analyticsServices.AnalyticsService) {
 	log.Println("🎁 GetPromotionsAnalyticsHandler: Fetching promotions analytics...")
 
 	period := c.DefaultQuery("period", "30d")
 
-	// Build promotions analytics data
 	promotions := gin.H{
 		"period":            period,
 		"active_promotions": []gin.H{},
@@ -341,6 +308,7 @@ func GetPromotionsAnalyticsHandler(c *gin.Context, service *analyticsServices.An
 			"lift":          0,
 		},
 	}
+	_ = service
 
 	log.Printf("✅ Promotions analytics retrieved successfully")
 	c.JSON(http.StatusOK, promotions)

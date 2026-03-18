@@ -1,4 +1,4 @@
-﻿# Braid: user-management
+# Braid: user-management
 
 **Architecture:** Full-Stack Braid (Frontend to Backend)
 **Last Updated:** 2025-10-17
@@ -25,6 +25,35 @@
 **Technology**: Go, PostgreSQL, JWT-based authorization  
 **Complexity**: Medium-High (RBAC, Profile Management, Admin Operations)  
 **Dependencies**: Authentication Braid (user identity)
+
+---
+
+## 📁 **Production File Map**
+
+### **Backend Files (Go)**
+```
+backend/
+├── user-management/
+│   ├── handlers/admin.go              # Admin user management routes
+│   └── models/user-profile.go         # User profile model
+├── internal/
+│   ├── routes/                         # User profile, admin routes
+│   ├── database/user.go               # User DB operations
+│   └── middleware/                     # RBAC middleware
+└── authentication/
+    └── models/user.go                  # Shared user model (from auth braid)
+```
+
+### **Frontend Files (Svelte)**
+```
+frontend/src/
+├── routes/
+│   ├── account/                        # User account pages
+│   ├── profile/                        # Profile pages
+│   └── settings/                       # Settings pages
+└── lib/
+    └── components/                     # Profile, settings components
+```
 
 ---
 
@@ -468,7 +497,7 @@ Admin operations from dashboard to database
 ## ðŸ”— **Cross-Repository Braid**
 
 > **âš ï¸ IMPORTANT**: This is the **frontend portion** of the User Management Braid.  
-> **Backend portion**: See `_backend/braids/user-management/BRAID.md`  
+> **Backend portion**: See `_braids/user-management/backend/BRAID.md`  
 > **Unified context**: Both directories are part of the same braid!
 
 ---
@@ -951,10 +980,10 @@ interface AdminUsersState {
 ## ðŸ”— **Related Documentation**
 
 ### **Backend Portion**:
-- [`_backend/braids/user-management/BRAID.md`](../../_backend/braids/user-management/BRAID.md)
+- [`_braids/user-management/backend/BRAID.md`](../../_braids/user-management/backend/BRAID.md)
 
 ### **API Contracts**:
-- [`_backend/.../layers/application/ELASTIC-BAND-UP.md`](../../_backend/braids/user-management/layers/application/ELASTIC-BAND-UP.md)
+- [`_backend/.../layers/application/ELASTIC-BAND-UP.md`](../../_braids/user-management/backend/layers/application/ELASTIC-BAND-UP.md)
 
 ### **Strands**:
 - Profile Management flow
@@ -989,12 +1018,12 @@ interface AdminUsersState {
 **Last Updated**: October 14, 2025  
 **Status**: Complete frontend documentation  
 **Technology**: Svelte 5 + TypeScript  
-**Backend Counterpart**: `_backend/braids/user-management/`
+**Backend Counterpart**: `_braids/user-management/backend/`
 
 ---
 
 **Navigate**:  
-[ðŸ  Master Index](../../../BRAIDS_INDEX.md) | [â¬…ï¸ Backend Braid](../../_backend/braids/user-management/BRAID.md) | [ðŸ”— Auth Braid](../authentication/BRAID.md)
+[ðŸ  Master Index](../../../BRAIDS_INDEX.md) | [â¬…ï¸ Backend Braid](../../_braids/user-management/backend/BRAID.md) | [ðŸ”— Auth Braid](../authentication/BRAID.md)
 
 
 

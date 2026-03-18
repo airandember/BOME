@@ -6,16 +6,16 @@ import (
 	"fmt"
 	"time"
 
-	"bome-backend/authentication/models"
+	"bome-backend/internal/database"
 )
 
 // AdvertisementService handles advertisement business logic
 type AdvertisementService struct {
-	db *models.DB
+	db *database.DB
 }
 
 // NewAdvertisementService creates a new advertisement service
-func NewAdvertisementService(db *models.DB) *AdvertisementService {
+func NewAdvertisementService(db *database.DB) *AdvertisementService {
 	return &AdvertisementService{db: db}
 }
 
@@ -237,7 +237,7 @@ func (s *AdvertisementService) RejectCampaign(campaignID, approverID int, notes 
 }
 
 // CreateAdvertisement creates a new advertisement
-func (s *AdvertisementService) CreateAdvertisement(campaignID int, req *CreateAdRequest) (*models.Advertisement, error) {
+func (s *AdvertisementService) CreateAdvertisement(campaignID int, req *CreateAdRequest) (*database.Advertisement, error) {
 	// Verify campaign exists and is approved
 	campaign, err := s.GetAdCampaignByID(campaignID)
 	if err != nil {
@@ -262,8 +262,8 @@ func (s *AdvertisementService) CreateAdvertisement(campaignID int, req *CreateAd
 }
 
 // GetAdvertisementByID retrieves an advertisement by ID
-func (s *AdvertisementService) GetAdvertisementByID(id int) (*models.Advertisement, error) {
-	ad := &models.Advertisement{}
+func (s *AdvertisementService) GetAdvertisementByID(id int) (*database.Advertisement, error) {
+	ad := &database.Advertisement{}
 	err := s.db.QueryRow(`
 		SELECT id, campaign_id, title, content, image_url, click_url, ad_type, width, height, priority, status, created_at, updated_at
 		FROM advertisements WHERE id = $1
@@ -276,7 +276,7 @@ func (s *AdvertisementService) GetAdvertisementByID(id int) (*models.Advertiseme
 }
 
 // GetActiveAdsForPlacement retrieves active ads for a specific placement
-func (s *AdvertisementService) GetActiveAdsForPlacement(placementID int) ([]*models.Advertisement, error) {
+func (s *AdvertisementService) GetActiveAdsForPlacement(placementID int) ([]*database.Advertisement, error) {
 	rows, err := s.db.Query(`
 		SELECT a.id, a.campaign_id, a.title, a.content, a.image_url, a.click_url, a.ad_type, a.width, a.height, a.priority, a.status, a.created_at, a.updated_at
 		FROM advertisements a
@@ -294,9 +294,9 @@ func (s *AdvertisementService) GetActiveAdsForPlacement(placementID int) ([]*mod
 	}
 	defer rows.Close()
 
-	var ads []*models.Advertisement
+	var ads []*database.Advertisement
 	for rows.Next() {
-		ad := &models.Advertisement{}
+		ad := &database.Advertisement{}
 		err := rows.Scan(&ad.ID, &ad.CampaignID, &ad.Title, &ad.Content, &ad.ImageURL, &ad.ClickURL, &ad.AdType, &ad.Width, &ad.Height, &ad.Priority, &ad.Status, &ad.CreatedAt, &ad.UpdatedAt)
 		if err != nil {
 			return nil, err

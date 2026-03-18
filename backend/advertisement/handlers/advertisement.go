@@ -6,12 +6,35 @@ import (
 	"strconv"
 	"time"
 
-	"bome-backend/authentication/models"
+	"bome-backend/advertisement/services"
 	"bome-backend/authentication/middleware"
-	"bome-backend/authentication/services"
+	"bome-backend/internal/database"
 
 	"github.com/gin-gonic/gin"
 )
+
+// RoleRequired middleware that requires specific roles
+func RoleRequired(allowedRoles ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userRole, exists := c.Get("user_role")
+		if !exists {
+			c.JSON(401, gin.H{"error": "Authentication required"})
+			c.Abort()
+			return
+		}
+
+		roleStr := userRole.(string)
+		for _, role := range allowedRoles {
+			if roleStr == role {
+				c.Next()
+				return
+			}
+		}
+
+		c.JSON(403, gin.H{"error": "Insufficient permissions"})
+		c.Abort()
+	}
+}
 
 // SetupAdvertisementRoutes configures advertisement-related routes
 func SetupAdvertisementRoutes(

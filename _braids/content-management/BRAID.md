@@ -1,4 +1,4 @@
-﻿# Braid: content-management
+# Braid: content-management
 
 **Architecture:** Full-Stack Braid (Frontend to Backend)
 **Last Updated:** 2025-10-17
@@ -28,7 +28,20 @@
 
 ---
 
-## ðŸŽ¯ **Key Features**
+## **File Map** (Production Code)
+
+| Layer | Production Path | Description |
+|-------|-----------------|-------------|
+| Handlers | `backend/content/handlers/tags.go` | Tag CRUD API handlers |
+| Models | `backend/content/models/tags.go` | Tag/category data models |
+| Routes | `backend/internal/routes/tags.go`, `backend/internal/routes/articles.go` | Tag and article API routes |
+| Database | `backend/internal/database/` | Migrations for articles, tags, categories |
+
+**Frontend:** `frontend/src/routes/articles/`, `frontend/src/lib/` (tag components)
+
+---
+
+## **Key Features**
 
 ### **1. Article Management**:
 - Create, read, update, delete articles
@@ -572,7 +585,7 @@ database.PublishArticle(article.ID)
 ## ðŸ”— **Cross-Repository Braid**
 
 > **âš ï¸ IMPORTANT**: This is the **frontend portion** of the Content Management Braid.  
-> **Backend portion**: See `_backend/braids/content-management/BRAID.md`  
+> **Backend portion**: See `_braids/content-management/backend/BRAID.md`  
 > **Unified context**: Both directories are part of the same braid!
 
 ---
@@ -1177,12 +1190,12 @@ export function calculateReadTime(content: string): number {
 **Last Updated**: October 14, 2025  
 **Status**: Core structure defined, implementation in progress  
 **Technology**: Svelte 5 + TypeScript  
-**Backend Counterpart**: `_backend/braids/content-management/`
+**Backend Counterpart**: `_braids/content-management/backend/`
 
 ---
 
 **Navigate**:  
-[ðŸ  Master Index](../../../BRAIDS_INDEX.md) | [â¬…ï¸ Backend Braid](../../_backend/braids/content-management/BRAID.md)
+[ðŸ  Master Index](../../../BRAIDS_INDEX.md) | [â¬…ï¸ Backend Braid](../../_braids/content-management/backend/BRAID.md)
 
 
 

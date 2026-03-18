@@ -1,4 +1,4 @@
-﻿# Braid: admin-dashboard
+# Braid: admin-dashboard
 
 **Architecture:** Full-Stack Braid (Frontend to Backend)
 **Last Updated:** 2025-10-17
@@ -17,12 +17,35 @@
 **Technology**: Go, PostgreSQL, RBAC  
 **Complexity**: **Very High** (15+ subsystems, Complex UI, Multi-role Access)  
 
-**Critical Files**:
-- `backend/internal/routes/admin.go`
-- `backend/internal/routes/admin_streaming.go`
-- `backend/internal/routes/analytics.go`
-- `backend/internal/routes/database_monitoring.go`
-- `backend/internal/services/admin_cache.go`
+---
+
+## 📁 **Production File Map**
+
+### **Backend Files (Go)**
+```
+backend/
+├── admin/
+│   ├── handlers/
+│   │   ├── admin-routes.go        # Admin route handlers
+│   │   ├── admin_streaming.go    # Streaming analytics
+│   │   ├── stripe/               # Stripe sync, webhooks
+│   │   ├── subscription_plans.go
+│   │   └── subscribers.go
+│   └── handlers/
+│       └── streaming_analytics.go
+├── internal/
+│   ├── routes/
+│   │   ├── admin.go               # Admin API routes
+│   │   ├── admin_streaming.go    # Admin streaming routes
+│   │   └── database_monitoring.go
+│   └── services/
+│       └── admin_cache.go        # Admin cache layer
+```
+
+### **Frontend Files**
+```
+frontend/src/routes/admin/         # Admin dashboard pages
+```
 
 ---
 
@@ -522,7 +545,7 @@ LogAdminAction(adminID, "DELETE_USER", map[string]interface{}{
 ---
 
 **Last Updated**: October 14, 2025  
-**Backend**: `_backend/braids/admin-dashboard/`
+**Backend**: `_braids/admin-dashboard/backend/`
 
 
 

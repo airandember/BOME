@@ -81,7 +81,7 @@ type Session struct {
 }
 
 // CreateUser inserts a new user into the database
-func (db *database.DB) CreateUser(email, passwordHash, firstName, lastName, role string) (*User, error) {
+func CreateUser(db *database.DB, email, passwordHash, firstName, lastName, role string) (*User, error) {
 	var id int
 	err := db.QueryRow(
 		`INSERT INTO users (email, password_hash, first_name, last_name, role, password_changed, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) RETURNING id`,
@@ -90,11 +90,11 @@ func (db *database.DB) CreateUser(email, passwordHash, firstName, lastName, role
 	if err != nil {
 		return nil, err
 	}
-	return db.GetUserByID(id)
+	return GetUserByID(db, id)
 }
 
 // CreateUserWithDetails creates a new user with all available fields
-func (db *database.DB) CreateUserWithDetails(userData map[string]interface{}) (*User, error) {
+func CreateUserWithDetails(db *database.DB, userData map[string]interface{}) (*User, error) {
 	// Build dynamic INSERT query based on provided fields
 	fields := []string{}
 	placeholders := []string{}
@@ -178,11 +178,11 @@ func (db *database.DB) CreateUserWithDetails(userData map[string]interface{}) (*
 	if err != nil {
 		return nil, err
 	}
-	return db.GetUserByID(id)
+	return GetUserByID(db, id)
 }
 
 // GetUserByID retrieves a user by ID
-func (db *database.DB) GetUserByID(id int) (*User, error) {
+func GetUserByID(db *database.DB, id int) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
 		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
@@ -199,7 +199,7 @@ func (db *database.DB) GetUserByID(id int) (*User, error) {
 }
 
 // GetUserByEmail retrieves a user by email
-func (db *database.DB) GetUserByEmail(email string) (*User, error) {
+func GetUserByEmail(db *database.DB, email string) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
 		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
@@ -216,8 +216,8 @@ func (db *database.DB) GetUserByEmail(email string) (*User, error) {
 }
 
 // GetUserProfile retrieves a user's public profile data
-func (db *database.DB) GetUserProfile(userID int) (*UserProfile, error) {
-	user, err := db.GetUserByID(userID)
+func GetUserProfile(db *database.DB, userID int) (*UserProfile, error) {
+	user, err := GetUserByID(db, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +265,7 @@ func (db *database.DB) GetUserProfile(userID int) (*UserProfile, error) {
 }
 
 // UpdateUserProfile updates a user's profile information
-func (db *database.DB) UpdateUserProfile(userID int, updates map[string]interface{}) error {
+func UpdateUserProfile(db *database.DB, userID int, updates map[string]interface{}) error {
 	// Build dynamic query based on provided fields
 	query := "UPDATE users SET updated_at = NOW()"
 	args := []interface{}{}
@@ -309,19 +309,19 @@ func (db *database.DB) UpdateUserProfile(userID int, updates map[string]interfac
 }
 
 // UpdateLastLogin updates a user's last login timestamp
-func (db *database.DB) UpdateLastLogin(userID int) error {
+func UpdateLastLogin(db *database.DB, userID int) error {
 	_, err := db.Exec(`UPDATE users SET last_login = NOW(), updated_at = NOW() WHERE id = $1`, userID)
 	return err
 }
 
 // UpdateLastLogout updates the last logout timestamp for a user
-func (db *database.DB) UpdateLastLogout(userID int) error {
+func UpdateLastLogout(db *database.DB, userID int) error {
 	_, err := db.Exec(`UPDATE users SET last_logout = NOW(), updated_at = NOW() WHERE id = $1`, userID)
 	return err
 }
 
 // CheckUserExists checks if a user exists by email
-func (db *database.DB) CheckUserExists(email string) (bool, error) {
+func CheckUserExists(db *database.DB, email string) (bool, error) {
 	var count int
 	err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE email = $1`, email).Scan(&count)
 	if err != nil {
@@ -331,31 +331,31 @@ func (db *database.DB) CheckUserExists(email string) (bool, error) {
 }
 
 // UpdateUserPassword updates a user's password hash
-func (db *database.DB) UpdateUserPassword(userID int, newPasswordHash string) error {
+func UpdateUserPassword(db *database.DB, userID int, newPasswordHash string) error {
 	_, err := db.Exec(`UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`, newPasswordHash, userID)
 	return err
 }
 
 // UpdateUserPasswordWithChange updates a user's password hash and marks it as changed
-func (db *database.DB) UpdateUserPasswordWithChange(userID int, newPasswordHash string) error {
+func UpdateUserPasswordWithChange(db *database.DB, userID int, newPasswordHash string) error {
 	_, err := db.Exec(`UPDATE users SET password_hash = $1, password_changed = TRUE, updated_at = NOW() WHERE id = $2`, newPasswordHash, userID)
 	return err
 }
 
 // SetUserEmailVerified sets a user's email as verified
-func (db *database.DB) SetUserEmailVerified(userID int) error {
+func SetUserEmailVerified(db *database.DB, userID int) error {
 	_, err := db.Exec(`UPDATE users SET email_verified = TRUE, updated_at = NOW() WHERE id = $1`, userID)
 	return err
 }
 
 // SetPasswordResetToken sets a password reset token for a user
-func (db *database.DB) SetPasswordResetToken(userID int, token string, expiry time.Time) error {
+func SetPasswordResetToken(db *database.DB, userID int, token string, expiry time.Time) error {
 	_, err := db.Exec(`UPDATE users SET reset_token = $1, reset_token_expiry = $2, updated_at = NOW() WHERE id = $3`, token, expiry, userID)
 	return err
 }
 
 // GetUserByResetToken retrieves a user by reset token
-func (db *database.DB) GetUserByResetToken(token string) (*User, error) {
+func GetUserByResetToken(db *database.DB, token string) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
 		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed FROM users WHERE reset_token = $1 AND reset_token_expiry > NOW()`,
@@ -368,19 +368,19 @@ func (db *database.DB) GetUserByResetToken(token string) (*User, error) {
 }
 
 // ClearPasswordResetToken clears the reset token after use
-func (db *database.DB) ClearPasswordResetToken(userID int) error {
+func ClearPasswordResetToken(db *database.DB, userID int) error {
 	_, err := db.Exec(`UPDATE users SET reset_token = NULL, reset_token_expiry = NULL, updated_at = NOW() WHERE id = $1`, userID)
 	return err
 }
 
 // SetVerificationToken sets an email verification token for a user with expiration
-func (db *database.DB) SetVerificationToken(userID int, token string) error {
+func SetVerificationToken(db *database.DB, userID int, token string) error {
 	_, err := db.Exec(`UPDATE users SET verification_token = $1, updated_at = NOW() WHERE id = $2`, token, userID)
 	return err
 }
 
 // GetUserByVerificationToken retrieves a user by verification token (with expiration check)
-func (db *database.DB) GetUserByVerificationToken(token string) (*User, error) {
+func GetUserByVerificationToken(db *database.DB, token string) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
 		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, location, website, phone, avatar_url, preferences, last_login, last_logout, max_sessions, created_at, updated_at, role_id, is_active, sub_id, has_subbed FROM users WHERE verification_token = $1 AND updated_at > NOW() - INTERVAL '3 hours'`,
@@ -393,20 +393,20 @@ func (db *database.DB) GetUserByVerificationToken(token string) (*User, error) {
 }
 
 // ClearVerificationToken clears the verification token after use
-func (db *database.DB) ClearVerificationToken(userID int) error {
+func ClearVerificationToken(db *database.DB, userID int) error {
 	_, err := db.Exec(`UPDATE users SET verification_token = NULL, updated_at = NOW() WHERE id = $1`, userID)
 	return err
 }
 
 // SetPasswordSetupToken sets a password setup token for a user (reuses reset_token field)
-func (db *database.DB) SetPasswordSetupToken(userID int, token string) error {
+func SetPasswordSetupToken(db *database.DB, userID int, token string) error {
 	expiry := time.Now().Add(24 * time.Hour) // 24 hour expiry for password setup
 	_, err := db.Exec(`UPDATE users SET reset_token = $1, reset_token_expiry = $2, updated_at = NOW() WHERE id = $3`, token, expiry, userID)
 	return err
 }
 
 // GetUserByPasswordSetupToken retrieves a user by password setup token
-func (db *database.DB) GetUserByPasswordSetupToken(token string) (*User, error) {
+func GetUserByPasswordSetupToken(db *database.DB, token string) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(
 		`SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
@@ -424,19 +424,19 @@ func (db *database.DB) GetUserByPasswordSetupToken(token string) (*User, error) 
 }
 
 // ClearPasswordSetupToken clears the password setup token after use
-func (db *database.DB) ClearPasswordSetupToken(userID int) error {
+func ClearPasswordSetupToken(db *database.DB, userID int) error {
 	_, err := db.Exec(`UPDATE users SET reset_token = NULL, reset_token_expiry = NULL, updated_at = NOW() WHERE id = $1`, userID)
 	return err
 }
 
 // UpdateUserStripeCustomerID updates a user's Stripe customer ID (legacy method)
-func (db *database.DB) UpdateUserStripeCustomerID(userID int, stripeCustomerID string) error {
+func UpdateUserStripeCustomerID(db *database.DB, userID int, stripeCustomerID string) error {
 	_, err := db.Exec(`UPDATE users SET stripe_customer_id = $1, updated_at = NOW() WHERE id = $2`, stripeCustomerID, userID)
 	return err
 }
 
 // AddStripeCustomerID adds a new Stripe customer ID to a user's array
-func (db *database.DB) AddStripeCustomerID(userID int, stripeCustomerID string) error {
+func AddStripeCustomerID(db *database.DB, userID int, stripeCustomerID string) error {
 	// First check if the ID already exists in the array or as primary
 	var exists bool
 	err := db.QueryRow(`
@@ -476,7 +476,7 @@ func (db *database.DB) AddStripeCustomerID(userID int, stripeCustomerID string) 
 }
 
 // GetUserByAnyStripeID finds a user by any of their Stripe customer IDs
-func (db *database.DB) GetUserByAnyStripeID(stripeCustomerID string) (*User, error) {
+func GetUserByAnyStripeID(db *database.DB, stripeCustomerID string) (*User, error) {
 	user := &User{}
 	err := db.QueryRow(`
 		SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
@@ -503,19 +503,19 @@ func (db *database.DB) GetUserByAnyStripeID(stripeCustomerID string) (*User, err
 }
 
 // UpdateUserActiveStatus updates a user's active status
-func (db *database.DB) UpdateUserActiveStatus(userID int, isActive bool) error {
+func UpdateUserActiveStatus(db *database.DB, userID int, isActive bool) error {
 	_, err := db.Exec(`UPDATE users SET is_active = $1, updated_at = NOW() WHERE id = $2`, isActive, userID)
 	return err
 }
 
 // UpdateUserSubscriptionInfo updates a user's subscription information
-func (db *database.DB) UpdateUserSubscriptionInfo(userID int, subID string, hasSubbed bool) error {
+func UpdateUserSubscriptionInfo(db *database.DB, userID int, subID string, hasSubbed bool) error {
 	_, err := db.Exec(`UPDATE users SET sub_id = $1, has_subbed = $2, updated_at = NOW() WHERE id = $3`, subID, hasSubbed, userID)
 	return err
 }
 
 // HasActiveStripeSubscription checks if user has active subscription using Stripe sync tables
-func (db *database.DB) HasActiveStripeSubscription(userID int) (bool, *StripeSubscriptionInfo, error) {
+func HasActiveStripeSubscription(db *database.DB, userID int) (bool, *StripeSubscriptionInfo, error) {
 	query := `
 		SELECT 
 			ss.stripe_id, ss.status, ss.current_period_start, ss.current_period_end,
@@ -563,7 +563,7 @@ type StripeSubscriptionInfo struct {
 }
 
 // FixStripeCustomerMetadata fixes incorrect metadata in stripe_customers table
-func (db *database.DB) FixStripeCustomerMetadata() error {
+func FixStripeCustomerMetadata(db *database.DB) error {
 	// Update metadata to have correct local_customer_id (user ID, not stripe_customers.id)
 	query := `
 		UPDATE stripe_customers sc
@@ -595,7 +595,7 @@ func (db *database.DB) FixStripeCustomerMetadata() error {
 }
 
 // FixUserStripeCustomerID fixes a specific user's Stripe customer ID linkage
-func (db *database.DB) FixUserStripeCustomerID(userID int, correctStripeCustomerID string) error {
+func FixUserStripeCustomerID(db *database.DB, userID int, correctStripeCustomerID string) error {
 	// Update user's primary Stripe customer ID
 	_, err := db.Exec(`
 		UPDATE users 
@@ -627,7 +627,7 @@ func (db *database.DB) FixUserStripeCustomerID(userID int, correctStripeCustomer
 }
 
 // GetStripeMetadataHealthCheck returns metadata health statistics
-func (db *database.DB) GetStripeMetadataHealthCheck() (*StripeMetadataHealth, error) {
+func GetStripeMetadataHealthCheck(db *database.DB) (*StripeMetadataHealth, error) {
 	health := &StripeMetadataHealth{}
 
 	// Count total customers
@@ -715,13 +715,13 @@ type StripeMetadataHealth struct {
 }
 
 // UpdateUserRoleID updates a user's role ID (separate from the legacy role field)
-func (db *database.DB) UpdateUserRoleID(userID int, roleID string) error {
+func UpdateUserRoleID(db *database.DB, userID int, roleID string) error {
 	_, err := db.Exec(`UPDATE users SET role_id = $1, updated_at = NOW() WHERE id = $2`, roleID, userID)
 	return err
 }
 
 // GetActiveUsers retrieves all active users
-func (db *database.DB) GetActiveUsers() ([]*User, error) {
+func GetActiveUsers(db *database.DB) ([]*User, error) {
 	rows, err := db.Query(`
 		SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
 		       stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, 
@@ -753,7 +753,7 @@ func (db *database.DB) GetActiveUsers() ([]*User, error) {
 }
 
 // GetSubscribedUsers retrieves all users who have subscribed
-func (db *database.DB) GetSubscribedUsers() ([]*User, error) {
+func GetSubscribedUsers(db *database.DB) ([]*User, error) {
 	rows, err := db.Query(`
 		SELECT id, email, password_hash, first_name, last_name, role, email_verified, 
 		       stripe_customer_id, reset_token, reset_token_expiry, verification_token, bio, 
@@ -785,7 +785,7 @@ func (db *database.DB) GetSubscribedUsers() ([]*User, error) {
 }
 
 // CreateSession creates a new user session
-func (db *database.DB) CreateSession(userID int, tokenID, deviceInfo, ipAddress, userAgent string, expiresAt time.Time) (*Session, error) {
+func CreateSession(db *database.DB, userID int, tokenID, deviceInfo, ipAddress, userAgent string, expiresAt time.Time) (*Session, error) {
 	sessionID := fmt.Sprintf("sess_%d_%s", userID, time.Now().Format("20060102150405"))
 
 	_, err := db.Exec(`
@@ -812,7 +812,7 @@ func (db *database.DB) CreateSession(userID int, tokenID, deviceInfo, ipAddress,
 }
 
 // GetActiveSessions retrieves all active sessions for a user
-func (db *database.DB) GetActiveSessions(userID int) ([]*Session, error) {
+func GetActiveSessions(db *database.DB, userID int) ([]*Session, error) {
 	rows, err := db.Query(`
 		SELECT session_id, user_id, token_id, device_info, ip_address, user_agent, last_activity, is_active, created_at, expires_at
 		FROM user_sessions 
@@ -838,45 +838,45 @@ func (db *database.DB) GetActiveSessions(userID int) ([]*Session, error) {
 }
 
 // DeactivateSession deactivates a specific session
-func (db *database.DB) DeactivateSession(sessionID string) error {
+func DeactivateSession(db *database.DB, sessionID string) error {
 	_, err := db.Exec(`UPDATE user_sessions SET is_active = FALSE WHERE session_id = $1`, sessionID)
 	return err
 }
 
 // DeactivateAllUserSessions deactivates all sessions for a user
-func (db *database.DB) DeactivateAllUserSessions(userID int) error {
+func DeactivateAllUserSessions(db *database.DB, userID int) error {
 	_, err := db.Exec(`UPDATE user_sessions SET is_active = FALSE WHERE user_id = $1`, userID)
 	return err
 }
 
 // UpdateSessionActivity updates the last activity time for a session
-func (db *database.DB) UpdateSessionActivity(sessionID string) error {
+func UpdateSessionActivity(db *database.DB, sessionID string) error {
 	_, err := db.Exec(`UPDATE user_sessions SET last_activity = NOW() WHERE session_id = $1`, sessionID)
 	return err
 }
 
 // UpdateSessionActivityByTokenID updates the last activity time for a session by token ID
-func (db *database.DB) UpdateSessionActivityByTokenID(tokenID string) error {
+func UpdateSessionActivityByTokenID(db *database.DB, tokenID string) error {
 	_, err := db.Exec(`UPDATE user_sessions SET last_activity = NOW() WHERE token_id = $1 AND is_active = TRUE AND expires_at > NOW()`, tokenID)
 	return err
 }
 
 // CleanupExpiredSessions removes expired sessions
-func (db *database.DB) CleanupExpiredSessions() error {
+func CleanupExpiredSessions(db *database.DB) error {
 	_, err := db.Exec(`DELETE FROM user_sessions WHERE expires_at < NOW()`)
 	return err
 }
 
 // GetSessionCount returns the number of active sessions for a user
-func (db *database.DB) GetSessionCount(userID int) (int, error) {
+func GetSessionCount(db *database.DB, userID int) (int, error) {
 	var count int
 	err := db.QueryRow(`SELECT COUNT(*) FROM user_sessions WHERE user_id = $1 AND is_active = TRUE AND expires_at > NOW()`, userID).Scan(&count)
 	return count, err
 }
 
 // CheckSessionLimit checks if user has reached maximum allowed sessions
-func (db *database.DB) CheckSessionLimit(userID int, maxSessions int) (bool, error) {
-	count, err := db.GetSessionCount(userID)
+func CheckSessionLimit(db *database.DB, userID int, maxSessions int) (bool, error) {
+	count, err := GetSessionCount(db, userID)
 	if err != nil {
 		return false, err
 	}
@@ -884,7 +884,7 @@ func (db *database.DB) CheckSessionLimit(userID int, maxSessions int) (bool, err
 }
 
 // CleanupExpiredTokens removes expired verification and reset tokens
-func (db *database.DB) CleanupExpiredTokens() error {
+func CleanupExpiredTokens(db *database.DB) error {
 	// Clean up expired verification tokens (older than 3 hours)
 	_, err := db.Exec(`UPDATE users SET verification_token = NULL WHERE updated_at < NOW() - INTERVAL '3 hours' AND verification_token IS NOT NULL`)
 	if err != nil {
@@ -897,7 +897,7 @@ func (db *database.DB) CleanupExpiredTokens() error {
 }
 
 // GetUsers retrieves a list of users with pagination and filtering
-func (db *database.DB) GetUsers(limit, offset int, role, search string) ([]*User, error) {
+func GetUsers(db *database.DB, limit, offset int, role, search string) ([]*User, error) {
 	// First, check if max_sessions column exists
 	var maxSessionsExists bool
 	err := db.QueryRow(`
@@ -969,28 +969,28 @@ func (db *database.DB) GetUsers(limit, offset int, role, search string) ([]*User
 }
 
 // UpdateUserRole updates a user's role
-func (db *database.DB) UpdateUserRole(userID int, newRole string) error {
+func UpdateUserRole(db *database.DB, userID int, newRole string) error {
 	query := `UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2`
 	_, err := db.Exec(query, newRole, userID)
 	return err
 }
 
 // DeleteUser deletes a user from the system
-func (db *database.DB) DeleteUser(userID int) error {
+func DeleteUser(db *database.DB, userID int) error {
 	query := `DELETE FROM users WHERE id = $1`
 	_, err := db.Exec(query, userID)
 	return err
 }
 
 // GetUserCount returns the total number of users
-func (db *database.DB) GetUserCount() (int, error) {
+func GetUserCount(db *database.DB) (int, error) {
 	var count int
 	err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count)
 	return count, err
 }
 
 // GetUserStats returns comprehensive user statistics
-func (db *database.DB) GetUserStats() (map[string]interface{}, error) {
+func GetUserStats(db *database.DB) (map[string]interface{}, error) {
 	stats := make(map[string]interface{})
 
 	// Total users
@@ -1053,7 +1053,7 @@ func (db *database.DB) GetUserStats() (map[string]interface{}, error) {
 }
 
 // GetFilteredUserCount returns the total number of users with filters applied
-func (db *database.DB) GetFilteredUserCount(role, search string) (int, error) {
+func GetFilteredUserCount(db *database.DB, role, search string) (int, error) {
 	query := `SELECT COUNT(*) FROM users WHERE 1=1`
 	args := []interface{}{}
 	argCount := 1
@@ -1078,7 +1078,7 @@ func (db *database.DB) GetFilteredUserCount(role, search string) (int, error) {
 }
 
 // GetUsersWithRoles retrieves a list of users with their roles using the roles table
-func (db *database.DB) GetUsersWithRoles(limit, offset int, role, search, status string) ([]*User, error) {
+func GetUsersWithRoles(db *database.DB, limit, offset int, role, search, status string) ([]*User, error) {
 	// First, check if max_sessions column exists
 	var maxSessionsExists bool
 	err := db.QueryRow(`
@@ -1165,7 +1165,7 @@ func (db *database.DB) GetUsersWithRoles(limit, offset int, role, search, status
 }
 
 // GetFilteredUserCountWithRoles returns the total number of users with filters applied using roles table
-func (db *database.DB) GetFilteredUserCountWithRoles(role, search, status string) (int, error) {
+func GetFilteredUserCountWithRoles(db *database.DB, role, search, status string) (int, error) {
 	query := `SELECT COUNT(DISTINCT u.id) FROM users u LEFT JOIN user_roles ur ON u.id = ur.user_id WHERE 1=1`
 	args := []interface{}{}
 	argCount := 1

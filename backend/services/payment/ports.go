@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/stripe/stripe-go/v74"
+	"github.com/stripe/stripe-go/v74/price"
+	"github.com/stripe/stripe-go/v74/product"
+	"github.com/stripe/stripe-go/v74/subscription"
 )
 
 // StripePort defines the interface for Stripe payment operations
@@ -29,17 +32,17 @@ type StripePort interface {
 	CreateProduct(name, description string) (*stripe.Product, error)
 	GetProduct(productID string) (*stripe.Product, error)
 	UpdateProduct(productID string, params *stripe.ProductParams) (*stripe.Product, error)
-	ListProducts(params *stripe.ProductListParams) *stripe.ProductIter
+	ListProducts(params *stripe.ProductListParams) *product.Iter
 	CreatePrice(productID string, unitAmount int64, currency string, recurring *stripe.PriceRecurringParams) (*stripe.Price, error)
 	GetPrice(priceID string) (*stripe.Price, error)
-	ListPrices(params *stripe.PriceListParams) *stripe.PriceIter
+	ListPrices(params *stripe.PriceListParams) *price.Iter
 
 	// Subscription Management
 	CreateSubscription(customerID, priceID string, params *stripe.SubscriptionParams) (*stripe.Subscription, error)
 	GetSubscription(subscriptionID string) (*stripe.Subscription, error)
 	UpdateSubscription(subscriptionID string, params *stripe.SubscriptionParams) (*stripe.Subscription, error)
 	CancelSubscription(subscriptionID string, atPeriodEnd bool) error
-	ListSubscriptions(params *stripe.SubscriptionListParams) *stripe.SubscriptionIter
+	ListSubscriptions(params *stripe.SubscriptionListParams) *subscription.Iter
 	GetUpcomingInvoice(customerID string) (*stripe.Invoice, error)
 
 	// Checkout & Billing Portal

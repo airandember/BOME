@@ -396,8 +396,8 @@ auth.login(email, password).then(() => {
 ## 🔗 **Related Documentation**
 
 ### **Backend Portion of This Braid**:
-- [`_backend/braids/authentication/BRAID.md`](../../_backend/braids/authentication/BRAID.md) - Backend overview
-- [`_backend/braids/authentication/layers/application/ELASTIC-BAND-UP.md`](../../_backend/braids/authentication/layers/application/ELASTIC-BAND-UP.md) - API contracts
+- [`_braids/authentication/backend/BRAID.md`](../../_braids/authentication/backend/BRAID.md) - Backend overview
+- [`_braids/authentication/backend/layers/application/ELASTIC-BAND-UP.md`](../../_braids/authentication/backend/layers/application/ELASTIC-BAND-UP.md) - API contracts
 
 ### **Frontend Elastic Band**:
 - [`layers/presentation/ELASTIC-BAND-DOWN.md`](layers/presentation/ELASTIC-BAND-DOWN.md) - Frontend → Backend contract
@@ -422,7 +422,7 @@ auth.login(email, password).then(() => {
 - Navigation: `frontend/src/lib/components/Navigation.svelte`
 
 **API Documentation**:
-- See `_backend/braids/authentication/layers/business-logic/ELASTIC-BAND-UP.md`
+- See `_braids/authentication/backend/layers/business-logic/ELASTIC-BAND-UP.md`
 
 ---
 
@@ -471,10 +471,10 @@ auth.login(email, password).then(() => {
 **Last Updated**: October 14, 2025  
 **Status**: Complete frontend documentation  
 **Technology**: Svelte 5 + TypeScript  
-**Backend Counterpart**: `_backend/braids/authentication/`
+**Backend Counterpart**: `_braids/authentication/backend/`
 
 ---
 
 **Navigate**:  
-[🏠 Master Index](../../../BRAIDS_INDEX.md) | [⬅️ Backend Braid](../../_backend/braids/authentication/BRAID.md) | [📚 Getting Started](../../_backend/braids/authentication/GETTING_STARTED.md)
+[🏠 Master Index](../../../BRAIDS_INDEX.md) | [⬅️ Backend Braid](../../_braids/authentication/backend/BRAID.md) | [📚 Getting Started](../../_braids/authentication/backend/GETTING_STARTED.md)
 

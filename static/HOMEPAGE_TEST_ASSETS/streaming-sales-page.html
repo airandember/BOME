@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Watch Book of Mormon Evidence — Stream 1,600+ Videos</title>
+  <meta name="description" content="The largest collection of Heartland Book of Mormon evidence ever assembled. 1,600+ videos on Book of Mormon evidence, Signs of the Times, Constitution, self-reliance, and health.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ===== RESET ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ===== VARIABLES ===== */
+    :root {
+      --navy: #0D1B3E;
+      --blue: #155EEF;
+      --charcoal: #1E2022;
+      --red: #8B1A1A;
+      --gold: #B7953B;
+      --gold-light: #D4B255;
+      --white: #FFFFFF;
+      --off-white: #F7F8FA;
+      --light-gray: #E8EAF0;
+      --text-muted: #9CA3AF;
+      --heading-font: 'Playfair Display', Georgia, serif;
+      --body-font: 'Poppins', 'Roboto', sans-serif;
+    }
+
+    /* ===== BASE ===== */
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--body-font);
+      color: var(--charcoal);
+      line-height: 1.7;
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+    img { max-width: 100%; height: auto; display: block; }
+    a { text-decoration: none; color: inherit; }
+
+    /* ===== UTILITY ===== */
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    .container--narrow {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    .text-center { text-align: center; }
+
+    /* ===== BUTTONS ===== */
+    .btn {
+      display: inline-block;
+      font-family: var(--body-font);
+      font-weight: 600;
+      font-size: 14px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 16px 40px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    .btn--gold {
+      background: var(--gold);
+      color: var(--navy);
+      border-color: var(--gold);
+    }
+    .btn--gold:hover {
+      background: transparent;
+      color: var(--gold);
+      border-color: var(--gold);
+    }
+    .btn--gold-outline {
+      background: transparent;
+      color: var(--gold);
+      border-color: var(--gold);
+    }
+    .btn--gold-outline:hover {
+      background: var(--gold);
+      color: var(--navy);
+    }
+    .btn--charcoal {
+      background: var(--charcoal);
+      color: var(--white);
+      border-color: var(--charcoal);
+    }
+    .btn--charcoal:hover {
+      background: transparent;
+      color: var(--charcoal);
+      border-color: var(--charcoal);
+    }
+    .btn--large {
+      padding: 18px 48px;
+      font-size: 15px;
+    }
+
+    /* ===== SECTION SPACING ===== */
+    .section {
+      padding: 80px 0;
+    }
+    .section--navy {
+      background: var(--navy);
+      color: var(--white);
+    }
+    .section--white {
+      background: var(--white);
+    }
+    .section--off-white {
+      background: var(--off-white);
+    }
+
+    /* ===== HEADINGS ===== */
+    h1, h2, h3, h4 {
+      font-family: var(--heading-font);
+      font-weight: 600;
+      line-height: 1.25;
+    }
+    .section-heading {
+      font-size: 38px;
+      margin-bottom: 20px;
+    }
+    .section-subheading {
+      font-size: 17px;
+      font-weight: 300;
+      line-height: 1.8;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    /* =========================================
+       SECTION 1: HERO
+       ========================================= */
+    .hero {
+      position: relative;
+      background: linear-gradient(180deg, rgba(13,27,62,0.92) 0%, rgba(13,27,62,0.98) 100%),
+                  url('https://assets.cdn.filesafe.space/xar8tXZK2mQ4CKH0W84j/media/68a793c35727bdfd60a74f73.jpeg') center/cover no-repeat;
+      color: var(--white);
+      text-align: center;
+      padding: 60px 0 80px;
+      min-height: 620px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+    .hero__logo {
+      width: 220px;
+      margin: 0 auto 40px;
+    }
+    .hero h1 {
+      font-size: 48px;
+      font-weight: 700;
+      max-width: 850px;
+      margin: 0 auto 24px;
+      line-height: 1.15;
+    }
+    .hero__sub {
+      font-size: 18px;
+      font-weight: 300;
+      max-width: 680px;
+      margin: 0 auto 40px;
+      line-height: 1.8;
+      color: rgba(255,255,255,0.85);
+    }
+    .hero__pricing {
+      margin-top: 16px;
+      font-size: 14px;
+      color: rgba(255,255,255,0.6);
+      font-weight: 300;
+    }
+
+    /* =========================================
+       SECTION 2: PROBLEM / TENSION
+       ========================================= */
+    .tension p {
+      font-size: 17px;
+      line-height: 1.9;
+      margin-bottom: 20px;
+      color: var(--charcoal);
+    }
+    .tension p:last-child {
+      font-weight: 600;
+      font-style: italic;
+      color: var(--navy);
+      margin-bottom: 0;
+    }
+
+    /* =========================================
+       SECTION 3: LIBRARY OVERVIEW
+       ========================================= */
+    .categories-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+      margin-top: 48px;
+    }
+    .category-card {
+      background: var(--white);
+      border: 1px solid var(--light-gray);
+      border-left: 4px solid var(--gold);
+      padding: 32px 28px;
+      transition: box-shadow 0.3s ease;
+    }
+    .category-card:hover {
+      box-shadow: 5px 5px 20px rgba(0,0,0,0.08);
+    }
+    .category-card h3 {
+      font-size: 20px;
+      color: var(--navy);
+      margin-bottom: 12px;
+    }
+    .category-card p {
+      font-size: 15px;
+      line-height: 1.75;
+      color: #555;
+    }
+    .library-closing {
+      text-align: center;
+      margin-top: 40px;
+      font-size: 15px;
+      font-style: italic;
+      color: var(--text-muted);
+    }
+    /* 5th card centered on its own row */
+    .categories-grid .category-card:nth-child(5) {
+      grid-column: 1 / -1;
+      max-width: 520px;
+      justify-self: center;
+    }
+
+    /* =========================================
+       SECTION 4: STATS BANNER
+       ========================================= */
+    .stats-banner {
+      padding: 60px 0;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+      text-align: center;
+    }
+    .stat-item__number {
+      font-family: var(--heading-font);
+      font-size: 48px;
+      font-weight: 700;
+      color: var(--gold);
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+    .stat-item__label {
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: rgba(255,255,255,0.7);
+      font-weight: 400;
+    }
+
+    /* =========================================
+       SECTION 5: FEATURED SPEAKERS
+       ========================================= */
+    .speakers-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 32px;
+      margin-top: 48px;
+      text-align: center;
+    }
+    .speaker-card {
+      padding: 24px 16px;
+    }
+    .speaker-card__icon {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: var(--navy);
+      margin: 0 auto 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .speaker-card__icon span {
+      font-family: var(--heading-font);
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--gold);
+    }
+    .speaker-card h4 {
+      font-size: 18px;
+      color: var(--navy);
+      margin-bottom: 8px;
+    }
+    .speaker-card p {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #666;
+    }
+
+    /* =========================================
+       SECTION 6: WHO THIS IS FOR
+       ========================================= */
+    .for-you-list {
+      list-style: none;
+      margin-top: 40px;
+    }
+    .for-you-list li {
+      position: relative;
+      padding: 16px 0 16px 36px;
+      font-size: 16px;
+      line-height: 1.8;
+      border-bottom: 1px solid var(--light-gray);
+    }
+    .for-you-list li:last-child {
+      border-bottom: none;
+    }
+    .for-you-list li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 24px;
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--gold);
+      border-radius: 2px;
+      background: transparent;
+    }
+    .for-you-list li::after {
+      content: '';
+      position: absolute;
+      left: 3px;
+      top: 28px;
+      width: 6px;
+      height: 3px;
+      border-left: 2px solid var(--gold);
+      border-bottom: 2px solid var(--gold);
+      transform: rotate(-45deg);
+    }
+
+    /* =========================================
+       SECTION 7: SAMPLE CONTENT
+       ========================================= */
+    .content-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+      margin-top: 48px;
+    }
+    .content-tile {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      padding: 28px 24px;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+    .content-tile:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: var(--gold);
+    }
+    .content-tile__number {
+      font-family: var(--heading-font);
+      font-size: 14px;
+      color: var(--gold);
+      margin-bottom: 8px;
+      display: block;
+    }
+    .content-tile h4 {
+      font-size: 17px;
+      font-weight: 600;
+      font-family: var(--body-font);
+      color: var(--white);
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+    .content-tile p {
+      font-size: 14px;
+      line-height: 1.65;
+      color: rgba(255,255,255,0.6);
+    }
+
+    /* =========================================
+       SECTION 8: PRICING
+       ========================================= */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 32px;
+      margin-top: 48px;
+      max-width: 800px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .pricing-card {
+      border: 1px solid var(--light-gray);
+      padding: 40px 32px;
+      text-align: center;
+      position: relative;
+      background: var(--white);
+      transition: box-shadow 0.3s ease;
+    }
+    .pricing-card:hover {
+      box-shadow: 5px 5px 20px rgba(0,0,0,0.08);
+    }
+    .pricing-card--featured {
+      border: 2px solid var(--gold);
+    }
+    .pricing-badge {
+      position: absolute;
+      top: -14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--gold);
+      color: var(--navy);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 6px 20px;
+    }
+    .pricing-card__plan {
+      font-family: var(--heading-font);
+      font-size: 20px;
+      color: var(--navy);
+      margin-bottom: 16px;
+    }
+    .pricing-card__price {
+      font-size: 48px;
+      font-weight: 700;
+      color: var(--navy);
+      line-height: 1;
+    }
+    .pricing-card__price span {
+      font-size: 18px;
+      font-weight: 400;
+      color: var(--text-muted);
+    }
+    .pricing-card__billed {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      margin-bottom: 28px;
+      min-height: 20px;
+    }
+    .pricing-card__features {
+      list-style: none;
+      text-align: left;
+      margin-bottom: 32px;
+    }
+    .pricing-card__features li {
+      padding: 8px 0;
+      font-size: 14px;
+      color: #555;
+      border-bottom: 1px solid #f0f0f0;
+      padding-left: 24px;
+      position: relative;
+    }
+    .pricing-card__features li::before {
+      content: "\2713";
+      position: absolute;
+      left: 0;
+      color: var(--gold);
+      font-weight: 700;
+    }
+    .pricing-card__features li:last-child {
+      border-bottom: none;
+    }
+    .pricing-reassurance {
+      text-align: center;
+      margin-top: 32px;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    /* =========================================
+       SECTION 9: FAQ
+       ========================================= */
+    .faq-list {
+      margin-top: 48px;
+    }
+    .faq-item {
+      border-bottom: 1px solid var(--light-gray);
+      padding: 24px 0;
+    }
+    .faq-item:first-child {
+      border-top: 1px solid var(--light-gray);
+    }
+    .faq-question {
+      font-family: var(--body-font);
+      font-weight: 600;
+      font-size: 16px;
+      color: var(--navy);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+    .faq-question::after {
+      content: "+";
+      font-size: 22px;
+      font-weight: 300;
+      color: var(--gold);
+      flex-shrink: 0;
+      transition: transform 0.3s ease;
+    }
+    .faq-item.active .faq-question::after {
+      content: "\2212";
+    }
+    .faq-answer {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.4s ease, padding 0.4s ease;
+    }
+    .faq-item.active .faq-answer {
+      max-height: 300px;
+      padding-top: 16px;
+    }
+    .faq-answer p {
+      font-size: 15px;
+      line-height: 1.8;
+      color: #555;
+    }
+
+    /* =========================================
+       SECTION 10: FINAL CTA
+       ========================================= */
+    .final-cta__body {
+      font-size: 17px;
+      line-height: 1.9;
+      color: rgba(255,255,255,0.85);
+      max-width: 700px;
+      margin: 0 auto 12px;
+    }
+    .final-cta__signature {
+      font-family: var(--heading-font);
+      font-size: 20px;
+      font-style: italic;
+      color: var(--gold);
+      margin-top: 24px;
+      margin-bottom: 40px;
+    }
+    .final-cta__fine-print {
+      margin-top: 16px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.45);
+    }
+
+    /* =========================================
+       FOOTER
+       ========================================= */
+    .footer {
+      background: #080F21;
+      color: rgba(255,255,255,0.5);
+      padding: 40px 0;
+      text-align: center;
+      font-size: 13px;
+      line-height: 1.8;
+    }
+    .footer__logo {
+      width: 140px;
+      margin: 0 auto 16px;
+      opacity: 0.6;
+    }
+    .footer__links {
+      margin-top: 12px;
+    }
+    .footer__links a {
+      color: rgba(255,255,255,0.5);
+      margin: 0 12px;
+      font-size: 13px;
+      transition: color 0.3s ease;
+    }
+    .footer__links a:hover {
+      color: var(--gold);
+    }
+    .footer__disclaimer {
+      margin-top: 20px;
+      font-style: italic;
+      font-size: 12px;
+      color: rgba(255,255,255,0.35);
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* =========================================
+       RESPONSIVE
+       ========================================= */
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 32px; }
+      .hero__sub { font-size: 16px; }
+      .section-heading { font-size: 28px; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 32px; }
+      .stat-item__number { font-size: 36px; }
+      .content-grid { grid-template-columns: 1fr; }
+      .pricing-grid { grid-template-columns: 1fr; max-width: 400px; }
+      .speakers-grid { grid-template-columns: repeat(2, 1fr); gap: 20px; }
+      .categories-grid { grid-template-columns: 1fr; }
+      .categories-grid .category-card:nth-child(5) { max-width: 100%; }
+      .btn { padding: 14px 32px; font-size: 13px; }
+      .btn--large { padding: 16px 36px; }
+    }
+
+    @media (max-width: 480px) {
+      .hero { padding: 40px 0 60px; min-height: 500px; }
+      .hero h1 { font-size: 26px; }
+      .hero__logo { width: 160px; }
+      .speakers-grid { grid-template-columns: 1fr; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===== SECTION 1: HERO ===== -->
+  <section class="hero">
+    <div class="container text-center">
+      <img
+        src="https://assets.cdn.filesafe.space/xar8tXZK2mQ4CKH0W84j/media/66ce2cc995f57a69896ef4d5.png"
+        alt="Book of Mormon Evidence"
+        class="hero__logo"
+      >
+      <h1>1,600+ Videos. 20 Years of Research.<br>One Streaming Library.</h1>
+      <p class="hero__sub">
+        The largest collection of Heartland Book of Mormon evidence ever assembled &mdash; plus conferences on the Signs of the Times, the Constitution, self-reliance, and health. All in one place. Watch anytime.
+      </p>
+      <a href="https://watch.bookofmormonevidence.org" class="btn btn--gold btn--large">Subscribe Now</a>
+      <p class="hero__pricing">
+        Just $9.97/mo &mdash; or save 20% with an annual plan at $7.97/mo. Cancel anytime.
+      </p>
+    </div>
+  </section>
+
+  <!-- ===== SECTION 2: PROBLEM / TENSION ===== -->
+  <section class="section section--white">
+    <div class="container--narrow text-center tension">
+      <h2 class="section-heading" style="color: var(--navy);">You Believe. But the Questions Don't Stop.</h2>
+      <p>
+        You've felt the Spirit confirm the Book of Mormon is true. That hasn't changed. But the questions keep coming &mdash; from your kids, from investigators, from critics online, and sometimes from the quiet part of your own mind that just wants to see the evidence laid out clearly.
+      </p>
+      <p>
+        The problem isn't a lack of evidence. It's that the evidence is scattered across decades of research, buried in conference recordings, and mixed in with material that ranges from careful scholarship to pure speculation. You shouldn't have to sort through all of that alone.
+      </p>
+      <p>What if someone already did?</p>
+    </div>
+  </section>
+
+  <!-- ===== SECTION 3: LIBRARY OVERVIEW ===== -->
+  <section class="section section--off-white">
+    <div class="container text-center">
+      <h2 class="section-heading" style="color: var(--navy);">Five Libraries. One Subscription.</h2>
+      <p class="section-subheading">
+        Every video from 37 FIRM Foundation Expos and years of independent research &mdash; organized into five core categories and growing every quarter.
+      </p>
+      <div class="categories-grid">
+        <div class="category-card">
+          <h3>Book of Mormon Evidence</h3>
+          <p>The core of the collection. Heartland geography, archaeological findings in ancient North America, DNA research including Haplogroup X, prophetic promises tied to the Land of Promise, and Joseph Smith's own words about where the events of the Book of Mormon took place.</p>
+        </div>
+        <div class="category-card">
+          <h3>Signs of the Times</h3>
+          <p>Latter-day prophecy examined through current events and scripture. What the prophets said would happen, what's happening now, and what the scriptures indicate is still ahead. Grounded in text, not in speculation.</p>
+        </div>
+        <div class="category-card">
+          <h3>Constitution</h3>
+          <p>America's founding as a covenant land. The prophetic role of the Constitution, the faith of the founders, the scriptural promises attached to this nation, and why it matters today. This isn't political commentary &mdash; it's scriptural context.</p>
+        </div>
+        <div class="category-card">
+          <h3>Self-Reliance</h3>
+          <p>Practical preparedness and temporal self-sufficiency. Food storage, financial readiness, skill-building, and the principles behind the counsel the prophets have given for decades. Grounded, actionable, no fear-mongering.</p>
+        </div>
+        <div class="category-card">
+          <h3>Health &amp; Wellness</h3>
+          <p>Physical stewardship &mdash; your body as a temple, taken literally. Practical health topics, nutrition, and wellness principles drawn from both modern research and scriptural guidance.</p>
+        </div>
+      </div>
+      <p class="library-closing">New content is added regularly from live conferences, events, and ongoing research. The library keeps growing.</p>
+    </div>
+  </section>
+
+  <!-- ===== SECTION 4: STATS BANNER ===== -->
+  <section class="section--navy stats-banner">
+    <div class="container">
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-item__number">1,600+</div>
+          <div class="stat-item__label">Videos in the Library</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-item__number">20+</div>
+          <div class="stat-item__label">Years of Research</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-item__number">37</div>
+          <div class="stat-item__label">FIRM Foundation Expos</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-item__number">7+</div>
+          <div class="stat-item__label">Expert Speakers</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SECTION 5: FEATURED SPEAKERS ===== -->
+  <section class="section section--white">
+    <div class="container text-center">
+      <h2 class="section-heading" style="color: var(--navy);">The Researchers Behind the Evidence</h2>
+      <div class="speakers-grid">
+        <div class="speaker-card">
+          <div class="speaker-card__icon"><span>RM</span></div>
+          <h4>Rod Meldrum</h4>
+          <p>Founder of Book of Mormon Evidence. Twenty years of Heartland research, author, and the most-watched presenter in the field.</p>
+        </div>
+        <div class="speaker-card">
+          <div class="speaker-card__icon"><span>HS</span></div>
+          <h4>Hannah Stoddard</h4>
+          <p>Executive Director of the Joseph Smith Foundation. Researcher, author, and advocate for the prophetic foundations of the Restoration.</p>
+        </div>
+        <div class="speaker-card">
+          <div class="speaker-card__icon"><span>RB</span></div>
+          <h4>Russell H. Barlow</h4>
+          <p>Founder of TruthSeekers Foundation. Author of <em>Water &mdash; Another Testament of Christ</em>. Faith-based science researcher and educator.</p>
+        </div>
+        <div class="speaker-card">
+          <div class="speaker-card__icon"><span>DB</span></div>
+          <h4>Don Bradley</h4>
+          <p>Historian, researcher, and author. One of the most respected independent scholars working on early Restoration history.</p>
+        </div>
+        <div class="speaker-card">
+          <div class="speaker-card__icon"><span>JB</span></div>
+          <h4>Jonah Barnes</h4>
+          <p>Researcher and conference presenter. Focused on scriptural geography and Book of Mormon historicity.</p>
+        </div>
+        <div class="speaker-card">
+          <div class="speaker-card__icon"><span>CE</span></div>
+          <h4>Carden Ellis</h4>
+          <p>Presenter and researcher featured at FIRM Foundation conferences on archaeology and scriptural evidence.</p>
+        </div>
+        <div class="speaker-card">
+          <div class="speaker-card__icon"><span>SJ</span></div>
+          <h4>The Stick of Joseph</h4>
+          <p>A featured series exploring the prophetic significance of the Book of Mormon as the Stick of Joseph referenced in Ezekiel 37.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SECTION 6: WHO THIS IS FOR ===== -->
+  <section class="section section--off-white">
+    <div class="container--narrow">
+      <h2 class="section-heading text-center" style="color: var(--navy);">This Is For You If...</h2>
+      <ul class="for-you-list">
+        <li>You study Come, Follow Me every week and want deeper historical and geographic context for what you're reading in the Book of Mormon.</li>
+        <li>You've been asked hard questions by your children, by missionaries you support, or by friends outside the faith &mdash; and you want clear, evidence-based answers to point them to.</li>
+        <li>You believe the Book of Mormon is a real history of real people in a real place &mdash; and you want to see what 20 years of Heartland research has uncovered.</li>
+        <li>You're tired of critics controlling the conversation. You want to study the evidence yourself, at your own pace, and draw your own conclusions.</li>
+        <li>You've watched Rod's YouTube videos and thought, "There has to be more." There is. This is the full library.</li>
+      </ul>
+      <div class="text-center" style="margin-top: 40px;">
+        <a href="https://watch.bookofmormonevidence.org" class="btn btn--charcoal">Subscribe Now</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SECTION 7: SAMPLE CONTENT ===== -->
+  <section class="section section--navy">
+    <div class="container text-center">
+      <h2 class="section-heading" style="color: var(--gold);">Inside the Library: A Preview</h2>
+      <div class="content-grid" style="text-align: left;">
+        <div class="content-tile">
+          <span class="content-tile__number">01</span>
+          <h4>Where Is the River Sidon? A Geographic Case for the Mississippi</h4>
+          <p>Heartland geography examined through the text of the Book of Mormon itself.</p>
+        </div>
+        <div class="content-tile">
+          <span class="content-tile__number">02</span>
+          <h4>Haplogroup X: The DNA That Points to Ancient North America</h4>
+          <p>What mitochondrial DNA research indicates about Book of Mormon populations &mdash; and why mainstream archaeology has ignored it.</p>
+        </div>
+        <div class="content-tile">
+          <span class="content-tile__number">03</span>
+          <h4>The Fortifications of Alma 50: Archaeological Parallels in the Eastern United States</h4>
+          <p>Ancient fortification patterns in Ohio and the surrounding region that match the descriptions in the text.</p>
+        </div>
+        <div class="content-tile">
+          <span class="content-tile__number">04</span>
+          <h4>Joseph Smith's Own Words on Book of Mormon Geography</h4>
+          <p>What the Prophet actually said &mdash; and didn't say &mdash; about the location of Book of Mormon events. Documented. Sourced. In context.</p>
+        </div>
+        <div class="content-tile">
+          <span class="content-tile__number">05</span>
+          <h4>America as the Land of Promise: The Prophetic Covenant</h4>
+          <p>What the Book of Mormon, the Doctrine and Covenants, and the founding generation all point to regarding this land.</p>
+        </div>
+        <div class="content-tile">
+          <span class="content-tile__number">06</span>
+          <h4>The Signs Are Accelerating: A Scriptural Framework for Current Events</h4>
+          <p>Latter-day prophecy and what the scriptures indicate about the times we're living in. No speculation &mdash; just text and timeline.</p>
+        </div>
+        <div class="content-tile">
+          <span class="content-tile__number">07</span>
+          <h4>The Stick of Joseph: Why Ezekiel 37 Matters More Than You Think</h4>
+          <p>A deep reading of the prophecy, the historical context, and what it means for the Book of Mormon's role in the last days.</p>
+        </div>
+        <div class="content-tile">
+          <span class="content-tile__number">08</span>
+          <h4>Preparing Temporally: Self-Reliance Beyond 72-Hour Kits</h4>
+          <p>Practical, prophetically grounded preparedness &mdash; what to actually do, and why the counsel has never been more relevant.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SECTION 8: PRICING ===== -->
+  <section class="section section--white">
+    <div class="container text-center">
+      <h2 class="section-heading" style="color: var(--navy);">Choose Your Plan</h2>
+      <p class="section-subheading">
+        Both plans include full access to every video in the library &mdash; plus all new content as it's added.
+      </p>
+      <div class="pricing-grid" style="margin-top: 48px;">
+        <!-- Monthly -->
+        <div class="pricing-card">
+          <div class="pricing-card__plan">Monthly</div>
+          <div class="pricing-card__price">$9<span>.97/mo</span></div>
+          <div class="pricing-card__billed">&nbsp;</div>
+          <ul class="pricing-card__features">
+            <li>Full library access &mdash; 1,600+ videos</li>
+            <li>New content added regularly</li>
+            <li>Watch on any device</li>
+            <li>Cancel anytime</li>
+          </ul>
+          <a href="https://watch.bookofmormonevidence.org" class="btn btn--charcoal" style="width: 100%;">Subscribe Monthly</a>
+        </div>
+        <!-- Annual -->
+        <div class="pricing-card pricing-card--featured">
+          <div class="pricing-badge">Best Value</div>
+          <div class="pricing-card__plan">Annual</div>
+          <div class="pricing-card__price">$7<span>.97/mo</span></div>
+          <div class="pricing-card__billed">Billed annually at $95.64/year</div>
+          <ul class="pricing-card__features">
+            <li>Full library access &mdash; 1,600+ videos</li>
+            <li>New content added regularly</li>
+            <li>Watch on any device</li>
+            <li>Cancel anytime</li>
+            <li>Save $24 per year vs. monthly</li>
+          </ul>
+          <a href="https://watch.bookofmormonevidence.org" class="btn btn--gold" style="width: 100%;">Subscribe Annually</a>
+        </div>
+      </div>
+      <p class="pricing-reassurance">Cancel anytime from your account &mdash; no questions asked.</p>
+    </div>
+  </section>
+
+  <!-- ===== SECTION 9: FAQ ===== -->
+  <section class="section section--off-white">
+    <div class="container--narrow">
+      <h2 class="section-heading text-center" style="color: var(--navy);">Frequently Asked Questions</h2>
+      <div class="faq-list">
+        <div class="faq-item">
+          <div class="faq-question" onclick="this.parentElement.classList.toggle('active')">
+            What devices can I watch on?
+          </div>
+          <div class="faq-answer">
+            <p>You can stream from any device with a web browser &mdash; desktop, laptop, tablet, or phone. No special app required. Just log in and watch.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-question" onclick="this.parentElement.classList.toggle('active')">
+            How often is new content added?
+          </div>
+          <div class="faq-answer">
+            <p>New videos are added regularly, including recordings from live FIRM Foundation conferences, new research presentations, and special series. The library is always growing.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-question" onclick="this.parentElement.classList.toggle('active')">
+            Is this the same content as on YouTube?
+          </div>
+          <div class="faq-answer">
+            <p>Some introductory and highlight content is available on our YouTube channel, but the streaming library contains the full archive &mdash; over 1,600 videos, including complete conference sessions, deep-dive series, and content that has never been published on YouTube. This is the full collection.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-question" onclick="this.parentElement.classList.toggle('active')">
+            Can I share my account with my family?
+          </div>
+          <div class="faq-answer">
+            <p>Your subscription is for individual use, but household members watching on shared devices in your home is fine. We trust your judgment.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-question" onclick="this.parentElement.classList.toggle('active')">
+            What happens if I cancel?
+          </div>
+          <div class="faq-answer">
+            <p>You keep full access through the end of your current billing period. After that, your account becomes inactive. No penalty, no hassle. You can resubscribe anytime.</p>
+          </div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-question" onclick="this.parentElement.classList.toggle('active')">
+            How do I get started?
+          </div>
+          <div class="faq-answer">
+            <p>Choose your plan &mdash; monthly or annual &mdash; and you'll have instant access to the full library the moment you subscribe.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SECTION 10: FINAL CTA ===== -->
+  <section class="section section--navy" style="padding: 100px 0;">
+    <div class="container--narrow text-center">
+      <h2 class="section-heading" style="color: var(--white);">The Evidence Is Here. It Always Has Been.</h2>
+      <p class="final-cta__body">
+        For over twenty years, I've been gathering, organizing, and presenting the evidence for the Book of Mormon as a real history of real people in ancient North America. Not to replace faith &mdash; but to strengthen it. Not to settle every question &mdash; but to show that the questions have answers worth studying.
+      </p>
+      <p class="final-cta__body">
+        This library represents the work of my life and the contributions of researchers I deeply respect. It's here for you to study at your own pace, on your own time, and to share with the people in your life who are searching for solid ground.
+      </p>
+      <p class="final-cta__body" style="font-weight: 500; color: var(--white);">
+        The evidence shows something. Come see for yourself.
+      </p>
+      <div class="final-cta__signature">&mdash; Rod Meldrum</div>
+      <a href="https://watch.bookofmormonevidence.org" class="btn btn--gold btn--large">Subscribe Now</a>
+      <p class="final-cta__fine-print">
+        $9.97/mo or $7.97/mo billed annually. Cancel anytime. Full access to the entire library from day one.
+      </p>
+    </div>
+  </section>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="footer">
+    <div class="container">
+      <img
+        src="https://assets.cdn.filesafe.space/xar8tXZK2mQ4CKH0W84j/media/66ce2cc995f57a69896ef4d5.png"
+        alt="Book of Mormon Evidence"
+        class="footer__logo"
+      >
+      <p>&copy; 2026 Book of Mormon Evidence / FIRM Foundation. All rights reserved.</p>
+      <div class="footer__links">
+        <a href="https://bookofmormonevidence.org">Home</a>
+        <a href="https://store.bookofmormonevidence.org">Store</a>
+        <a href="https://bookofmormonevidence.org/contact">Contact</a>
+      </div>
+      <p class="footer__disclaimer">
+        This research and content represent independent scholarship and are not produced by, affiliated with, or endorsed by The Church of Jesus Christ of Latter-day Saints.
+      </p>
+    </div>
+  </footer>
+
+</body>
+</html>

@@ -6,7 +6,7 @@
 ## 🔗 **Cross-Repository Braid**
 
 > **⚠️ IMPORTANT**: This is the **frontend portion** of the Subscription & Billing Braid.  
-> **Backend portion**: See `_backend/braids/subscription-billing/BRAID.md`  
+> **Backend portion**: See `_braids/subscription-billing/backend/BRAID.md`  
 > **Unified context**: Both directories are part of the same braid!
 
 ---
@@ -731,10 +731,10 @@ export const subscriptionStore = {
 **Last Updated**: October 14, 2025  
 **Status**: Critical revenue UI  
 **Technology**: Svelte 5 + Stripe.js  
-**Backend Counterpart**: `_backend/braids/subscription-billing/`
+**Backend Counterpart**: `_braids/subscription-billing/backend/`
 
 ---
 
 **Navigate**:  
-[🏠 Master Index](../../../BRAIDS_INDEX.md) | [⬅️ Backend Braid](../../_backend/braids/subscription-billing/BRAID.md)
+[🏠 Master Index](../../../BRAIDS_INDEX.md) | [⬅️ Backend Braid](../../_braids/subscription-billing/backend/BRAID.md)
 

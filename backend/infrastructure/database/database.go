@@ -317,12 +317,68 @@ func (db *DB) GetRedisClient() *redis.Client {
 
 // Alert represents a system alert (TODO: Move to analytics braid)
 type Alert struct {
-	ID            int       `json:"id"`
-	Severity      string    `json:"severity"`
-	Title         string    `json:"title"`
-	Message       string    `json:"message"`
-	CreatedAt     time.Time `json:"created_at"`
-	Acknowledged  bool      `json:"acknowledged"`
+	ID              int        `json:"id"`
+	Severity        string     `json:"severity"`
+	Title           string     `json:"title"`
+	Message         string     `json:"message"`
+	Subsite         string     `json:"subsite"`
+	Acknowledged    bool       `json:"acknowledged"`
+	AcknowledgedBy  *int       `json:"acknowledged_by"`
+	AcknowledgedAt  *time.Time `json:"acknowledged_at"`
+	CreatedAt       time.Time  `json:"created_at"`
+}
+
+// Activity represents a system activity for analytics.
+type Activity struct {
+	Type      string    `json:"type"`
+	UserID    int       `json:"user_id"`
+	Action    string    `json:"action"`
+	Details   string    `json:"details"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// DBSystemMetrics represents system metrics for a time range (used by analytics).
+type DBSystemMetrics struct {
+	ID             int
+	Timestamp      time.Time
+	CPUUsage       float64
+	MemoryUsage    float64
+	DiskUsage      float64
+	NetworkIn      int64
+	NetworkOut     int64
+	ActiveSessions int
+	ErrorRate      float64
+	ResponseTime   int
+	DatabaseSize   int64
+	CreatedAt      time.Time
+}
+
+// WebhookEvent represents a webhook event row.
+type WebhookEvent struct {
+	ID           int       `json:"id"`
+	EventType    string    `json:"event_type"`
+	Subsite      string    `json:"subsite"`
+	Endpoint     string    `json:"endpoint"`
+	Status       string    `json:"status"`
+	ResponseTime int       `json:"response_time"`
+	PayloadSize  int       `json:"payload_size"`
+	StatusCode   int       `json:"status_code"`
+	ErrorMessage string    `json:"error_message"`
+	RetryCount   int       `json:"retry_count"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// CrossSubsiteStats represents cross-subsite analytics.
+type CrossSubsiteStats struct {
+	ID             int       `json:"id"`
+	Date           time.Time `json:"date"`
+	Subsite        string    `json:"subsite"`
+	Users          int       `json:"users"`
+	Content        int       `json:"content"`
+	Views          int       `json:"views"`
+	Revenue        float64   `json:"revenue"`
+	EngagementRate float64   `json:"engagement_rate"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // CreateAlert creates a new system alert
@@ -2098,6 +2154,339 @@ func (db *DB) DeleteOAuth2Account(userID int, provider string) error {
 	query := `DELETE FROM oauth2_accounts WHERE user_id = $1 AND provider = $2`
 	_, err := db.DB.Exec(query, userID, provider)
 	return err
+}
+
+// AnalyticsSystemHealth is returned by GetSystemHealth for use by analytics/health consumers.
+type AnalyticsSystemHealth struct {
+	Status      string  `json:"status"`
+	Uptime      int64   `json:"uptime"`
+	CPUUsage    float64 `json:"cpu_usage"`
+	MemoryUsage float64 `json:"memory_usage"`
+	DiskUsage   float64 `json:"disk_usage"`
+}
+
+// GetLiveEvents returns recent analytics events within the given duration.
+func (db *DB) GetLiveEvents(duration time.Duration) ([]map[string]interface{}, error) {
+	query := `
+		SELECT event_type, event_data, created_at
+		FROM analytics_events
+		WHERE created_at >= $1
+		ORDER BY created_at DESC
+		LIMIT 20
+	`
+	startTime := time.Now().Add(-duration)
+	rows, err := db.DB.Query(query, startTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []map[string]interface{}
+	for rows.Next() {
+		var eventType, eventData string
+		var createdAt time.Time
+		if err := rows.Scan(&eventType, &eventData, &createdAt); err != nil {
+			return nil, err
+		}
+		events = append(events, map[string]interface{}{
+			"time":    createdAt.Format(time.RFC3339),
+			"event":   eventType,
+			"details": eventData,
+		})
+	}
+	return events, rows.Err()
+}
+
+// GetTopContentNow returns current top content by view count.
+func (db *DB) GetTopContentNow(limit int) ([]map[string]interface{}, error) {
+	query := `
+		SELECT title, view_count
+		FROM videos
+		WHERE status = 'ready'
+		ORDER BY view_count DESC
+		LIMIT $1
+	`
+	rows, err := db.DB.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var content []map[string]interface{}
+	for rows.Next() {
+		var title string
+		var viewers int
+		if err := rows.Scan(&title, &viewers); err != nil {
+			return nil, err
+		}
+		content = append(content, map[string]interface{}{
+			"title":   title,
+			"viewers": viewers,
+		})
+	}
+	return content, rows.Err()
+}
+
+// GetServerLoad returns current server load (placeholder; in production use system monitoring).
+func (db *DB) GetServerLoad() (float64, error) {
+	return 0.25, nil
+}
+
+// GetBandwidthUsage returns current bandwidth usage (placeholder; in production use system metrics).
+func (db *DB) GetBandwidthUsage() (string, error) {
+	return "45.2 MB/s", nil
+}
+
+// GetErrorRate returns current error rate from request_logs if present.
+func (db *DB) GetErrorRate() (float64, error) {
+	query := `
+		SELECT COALESCE(
+			CAST(COUNT(CASE WHEN status_code >= 400 THEN 1 END) AS FLOAT) /
+			NULLIF(COUNT(*), 0) * 100, 0)
+		FROM request_logs
+		WHERE created_at >= $1
+	`
+	startTime := time.Now().Add(-1 * time.Hour)
+	var rate float64
+	err := db.DB.QueryRow(query, startTime).Scan(&rate)
+	if err != nil {
+		return 0.0, nil
+	}
+	return rate, nil
+}
+
+// GetAverageResponseTime returns average response time from request_logs if present.
+func (db *DB) GetAverageResponseTime() (int, error) {
+	query := `
+		SELECT COALESCE(AVG(response_time), 0)
+		FROM request_logs
+		WHERE created_at >= $1
+	`
+	startTime := time.Now().Add(-1 * time.Hour)
+	var avg int
+	err := db.DB.QueryRow(query, startTime).Scan(&avg)
+	if err != nil {
+		return 0, nil
+	}
+	return avg, nil
+}
+
+// GetSystemHealth returns system health for analytics/health consumers.
+func (db *DB) GetSystemHealth() (*AnalyticsSystemHealth, error) {
+	var cpuUsage, memoryUsage, diskUsage float64
+	err := db.DB.QueryRow(`
+		SELECT cpu_usage, memory_usage, disk_usage
+		FROM system_metrics
+		ORDER BY timestamp DESC
+		LIMIT 1
+	`).Scan(&cpuUsage, &memoryUsage, &diskUsage)
+	if err != nil {
+		return &AnalyticsSystemHealth{
+			Status: "ok", Uptime: 0, CPUUsage: 0, MemoryUsage: 0, DiskUsage: 0,
+		}, nil
+	}
+	return &AnalyticsSystemHealth{
+		Status:      "ok",
+		Uptime:      0,
+		CPUUsage:    cpuUsage,
+		MemoryUsage: memoryUsage,
+		DiskUsage:   diskUsage,
+	}, nil
+}
+
+// GetRecentActivity returns recent activity from audit_logs.
+func (db *DB) GetRecentActivity(limit int) ([]*Activity, error) {
+	query := `
+		SELECT target_type, user_id, action, COALESCE(details::text, ''), created_at
+		FROM audit_logs
+		WHERE target_type IN ('video', 'user')
+		ORDER BY created_at DESC
+		LIMIT $1
+	`
+	rows, err := db.DB.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var activities []*Activity
+	for rows.Next() {
+		a := &Activity{}
+		if err := rows.Scan(&a.Type, &a.UserID, &a.Action, &a.Details, &a.CreatedAt); err != nil {
+			return nil, err
+		}
+		activities = append(activities, a)
+	}
+	return activities, rows.Err()
+}
+
+// GetRealTimeMetrics returns current real-time metrics.
+func (db *DB) GetRealTimeMetrics() (map[string]interface{}, error) {
+	metrics := make(map[string]interface{})
+
+	var activeUsers int
+	_ = db.DB.QueryRow(`
+		SELECT COUNT(DISTINCT user_id) FROM user_sessions
+		WHERE last_activity > NOW() - INTERVAL '5 minutes' AND is_active = true AND user_id IS NOT NULL
+	`).Scan(&activeUsers)
+	metrics["active_users"] = activeUsers
+
+	var currentStreams int
+	_ = db.DB.QueryRow(`
+		SELECT COUNT(*) FROM analytics_events
+		WHERE event_type = 'video_view' AND created_at > NOW() - INTERVAL '1 minute'
+	`).Scan(&currentStreams)
+	metrics["current_streams"] = currentStreams
+
+	var recentSignups int
+	_ = db.DB.QueryRow(`SELECT COUNT(*) FROM users WHERE created_at > NOW() - INTERVAL '1 hour'`).Scan(&recentSignups)
+	metrics["recent_signups"] = recentSignups
+
+	var recentSubscriptions int
+	_ = db.DB.QueryRow(`
+		SELECT COUNT(*) FROM subscriptions WHERE created_at > NOW() - INTERVAL '1 hour' AND status = 'active'
+	`).Scan(&recentSubscriptions)
+	metrics["recent_subscriptions"] = recentSubscriptions
+
+	return metrics, nil
+}
+
+// GetSystemMetrics returns system metrics for a time range.
+func (db *DB) GetSystemMetrics(startTime, endTime time.Time) ([]*DBSystemMetrics, error) {
+	query := `
+		SELECT id, timestamp, cpu_usage, memory_usage, disk_usage, network_in, network_out,
+		       active_sessions, error_rate, response_time, database_size, created_at
+		FROM system_metrics
+		WHERE timestamp BETWEEN $1 AND $2
+		ORDER BY timestamp DESC
+	`
+	rows, err := db.DB.Query(query, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []*DBSystemMetrics
+	for rows.Next() {
+		m := &DBSystemMetrics{}
+		if err := rows.Scan(
+			&m.ID, &m.Timestamp, &m.CPUUsage, &m.MemoryUsage, &m.DiskUsage,
+			&m.NetworkIn, &m.NetworkOut, &m.ActiveSessions, &m.ErrorRate,
+			&m.ResponseTime, &m.DatabaseSize, &m.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		list = append(list, m)
+	}
+	return list, rows.Err()
+}
+
+// GetWebhookEvents returns webhook events for a time range.
+func (db *DB) GetWebhookEvents(startTime, endTime time.Time, limit int) ([]*WebhookEvent, error) {
+	var tableExists bool
+	if err := db.DB.QueryRow(`
+		SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'webhook_events')
+	`).Scan(&tableExists); err != nil || !tableExists {
+		return []*WebhookEvent{}, nil
+	}
+
+	query := `
+		SELECT id, event_type, subsite, endpoint, status, response_time, payload_size,
+		       status_code, error_message, retry_count, created_at
+		FROM webhook_events
+		WHERE created_at BETWEEN $1 AND $2
+		ORDER BY created_at DESC
+		LIMIT $3
+	`
+	rows, err := db.DB.Query(query, startTime, endTime, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []*WebhookEvent
+	for rows.Next() {
+		e := &WebhookEvent{}
+		if err := rows.Scan(
+			&e.ID, &e.EventType, &e.Subsite, &e.Endpoint, &e.Status,
+			&e.ResponseTime, &e.PayloadSize, &e.StatusCode, &e.ErrorMessage,
+			&e.RetryCount, &e.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}
+
+// GetAlerts returns system alerts.
+func (db *DB) GetAlerts(limit int) ([]*Alert, error) {
+	var tableExists bool
+	if err := db.DB.QueryRow(`
+		SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'alerts')
+	`).Scan(&tableExists); err != nil || !tableExists {
+		return []*Alert{}, nil
+	}
+
+	query := `
+		SELECT id, severity, title, message, COALESCE(subsite, ''), acknowledged, acknowledged_by, acknowledged_at, created_at
+		FROM alerts
+		ORDER BY created_at DESC
+		LIMIT $1
+	`
+	rows, err := db.DB.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var alerts []*Alert
+	for rows.Next() {
+		a := &Alert{}
+		if err := rows.Scan(
+			&a.ID, &a.Severity, &a.Title, &a.Message, &a.Subsite,
+			&a.Acknowledged, &a.AcknowledgedBy, &a.AcknowledgedAt, &a.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		alerts = append(alerts, a)
+	}
+	return alerts, rows.Err()
+}
+
+// GetCrossSubsiteStats returns cross-subsite statistics.
+func (db *DB) GetCrossSubsiteStats(startDate, endDate time.Time) ([]*CrossSubsiteStats, error) {
+	query := `
+		SELECT id, date, subsite, users, content, views, revenue, engagement_rate, created_at
+		FROM cross_subsite_stats
+		WHERE date BETWEEN $1 AND $2
+		ORDER BY date DESC, subsite
+	`
+	rows, err := db.DB.Query(query, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []*CrossSubsiteStats
+	for rows.Next() {
+		s := &CrossSubsiteStats{}
+		if err := rows.Scan(
+			&s.ID, &s.Date, &s.Subsite, &s.Users, &s.Content,
+			&s.Views, &s.Revenue, &s.EngagementRate, &s.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		stats = append(stats, s)
+	}
+	return stats, rows.Err()
+}
+
+// GetNewUsersCount returns the number of new users in a date range.
+func (db *DB) GetNewUsersCount(startDate, endDate time.Time) (int, error) {
+	var count int
+	err := db.DB.QueryRow(`SELECT COUNT(*) FROM users WHERE created_at BETWEEN $1 AND $2`, startDate, endDate).Scan(&count)
+	return count, err
 }
 
 // Monthly email usage table for tracking monthly email limits

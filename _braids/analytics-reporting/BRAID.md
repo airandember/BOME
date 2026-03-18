@@ -1,4 +1,4 @@
-﻿# Braid: analytics-reporting
+# Braid: analytics-reporting
 
 **Architecture:** Full-Stack Braid (Frontend to Backend)
 **Last Updated:** 2025-10-17
@@ -17,16 +17,24 @@
 **Technology**: Go, PostgreSQL, Time-series data  
 **Complexity**: High (Data Processing, Aggregation, Real-time Metrics)  
 
-**Critical Files**:
-- `backend/internal/services/analytics.go`
-- `backend/internal/services/business_intelligence.go`
-- `backend/internal/services/subscription_analytics.go`
-- `backend/internal/routes/analytics.go`
-- `backend/internal/database/analytics.go`
+---
+
+## **File Map** (Production Code)
+
+| Layer | Production Path | Description |
+|-------|-----------------|-------------|
+| Services | `backend/internal/services/analytics.go` | Core analytics logic |
+| Services | `backend/internal/services/business_intelligence.go` | BI metrics |
+| Services | `backend/analytics/services/analytics.go` | Analytics service |
+| Handlers | `backend/analytics/handlers/analytics.go` | Analytics API handlers |
+| Routes | `backend/internal/routes/analytics.go`, `unified_analytics.go` | Analytics endpoints |
+| Database | `backend/internal/database/` | Analytics tables, metrics |
+
+**Frontend:** `frontend/src/routes/analytics/`
 
 ---
 
-## ðŸŽ¯ **Key Analytics Domains**
+## **Key Analytics Domains**
 
 ### **1. User Analytics**:
 - Active users (DAU, WAU, MAU)
@@ -272,7 +280,7 @@ func AggregateDaily Metrics(date time.Time) error
 ---
 
 **Last Updated**: October 14, 2025  
-**Backend**: `_backend/braids/analytics-reporting/`
+**Backend**: `_braids/analytics-reporting/backend/`
 
 
 

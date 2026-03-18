@@ -6,19 +6,21 @@ import (
 	"net/http"
 	"strconv"
 
-	"bome-backend/authentication/models"
+	contentModels "bome-backend/content/models"
+	"bome-backend/infrastructure/database"
+	videoModels "bome-backend/video-streaming/models"
 
 	"github.com/gin-gonic/gin"
 )
 
 // SetupTagRoutes configures tag and category routes for the category modal
-func SetupTagRoutes(router *gin.Engine, db *models.DB) {
+func SetupTagRoutes(router *gin.Engine, db *database.DB) {
 	// Tag Categories Management - Primary focus for category modal
 	tagCategories := router.Group("/api/v1/tag-categories")
 	{
 		// Get all tag categories
 		tagCategories.GET("", func(c *gin.Context) {
-			categories, err := db.GetTagCategoriesBySubsite(1) // Hardcode streaming subsite for now
+			categories, err := contentModels.GetTagCategoriesBySubsite(db, 1) // Hardcode streaming subsite for now
 			if err != nil {
 				log.Printf("❌ Failed to get tag categories: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -39,7 +41,7 @@ func SetupTagRoutes(router *gin.Engine, db *models.DB) {
 				return
 			}
 
-			category, err := db.GetTagCategoryByID(categoryID)
+			category, err := contentModels.GetTagCategoryByID(db, categoryID)
 			if err != nil {
 				log.Printf("❌ Failed to get category %d: %v", categoryID, err)
 				c.JSON(http.StatusNotFound, gin.H{
@@ -67,7 +69,7 @@ func SetupTagRoutes(router *gin.Engine, db *models.DB) {
 				return
 			}
 
-			category, err := db.CreateTagCategory(req.Name, req.Color, req.Description, req.SubsiteID)
+			category, err := contentModels.CreateTagCategory(db, req.Name, req.Color, req.Description, req.SubsiteID)
 			if err != nil {
 				log.Printf("❌ Failed to create category '%s': %v", req.Name, err)
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -100,7 +102,7 @@ func SetupTagRoutes(router *gin.Engine, db *models.DB) {
 				return
 			}
 
-			err = db.UpdateTagCategoryFields(categoryID, req.Name, req.Color, req.Description)
+			err = contentModels.UpdateTagCategoryFields(db, categoryID, req.Name, req.Color, req.Description)
 			if err != nil {
 				log.Printf("❌ Failed to update category %d: %v", categoryID, err)
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -122,7 +124,7 @@ func SetupTagRoutes(router *gin.Engine, db *models.DB) {
 				return
 			}
 
-			err = db.DeleteTagCategory(categoryID)
+			err = contentModels.DeleteTagCategory(db, categoryID)
 			if err != nil {
 				log.Printf("❌ Failed to delete category %d: %v", categoryID, err)
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -150,7 +152,7 @@ func SetupTagRoutes(router *gin.Engine, db *models.DB) {
 				return
 			}
 
-			err = db.AddTagToCategory(tagID, categoryID)
+			err = contentModels.AddTagToCategory(db, tagID, categoryID)
 			if err != nil {
 				log.Printf("❌ Failed to add tag %d to category %d: %v", tagID, categoryID, err)
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -178,7 +180,7 @@ func SetupTagRoutes(router *gin.Engine, db *models.DB) {
 				return
 			}
 
-			err = db.TagRemoveFromCategory(tagID, categoryID)
+			err = contentModels.TagRemoveFromCategory(db, tagID, categoryID)
 			if err != nil {
 				log.Printf("❌ Failed to remove tag %d from category %d: %v", tagID, categoryID, err)
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -200,7 +202,7 @@ func SetupTagRoutes(router *gin.Engine, db *models.DB) {
 				return
 			}
 
-			tags, err := db.GetTagsByCategory(categoryID)
+			tags, err := contentModels.GetTagsByCategory(db, categoryID)
 			if err != nil {
 				log.Printf("❌ Failed to get tags for category %d: %v", categoryID, err)
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -225,7 +227,7 @@ func SetupTagRoutes(router *gin.Engine, db *models.DB) {
 			page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 
-			videos, totalCount, err := db.GetVideosByTagCategory(categoryID, page, limit)
+			videos, totalCount, err := videoModels.GetVideosByTagCategory(db, categoryID, page, limit)
 			if err != nil {
 				log.Printf("❌ Failed to get videos for category %d: %v", categoryID, err)
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -282,7 +284,7 @@ func SetupTagRoutes(router *gin.Engine, db *models.DB) {
 						return
 					}
 
-					err := db.AddTagToCategory(change.TagID, *change.CategoryID)
+					err := contentModels.AddTagToCategory(db, change.TagID, *change.CategoryID)
 					if err != nil {
 						log.Printf("❌ Failed to add tag %d to category %d: %v",
 							change.TagID, *change.CategoryID, err)
@@ -296,7 +298,7 @@ func SetupTagRoutes(router *gin.Engine, db *models.DB) {
 				case "remove":
 					if change.CategoryID == nil {
 						// Remove from all categories
-						err := db.RemoveTagFromAllCategories(change.TagID)
+						err := contentModels.RemoveTagFromAllCategories(db, change.TagID)
 						if err != nil {
 							log.Printf("❌ Failed to remove tag %d from all categories: %v", change.TagID, err)
 							c.JSON(http.StatusInternalServerError, gin.H{
@@ -307,7 +309,7 @@ func SetupTagRoutes(router *gin.Engine, db *models.DB) {
 						}
 					} else {
 						// Remove from specific category
-						err := db.TagRemoveFromCategory(change.TagID, *change.CategoryID)
+						err := contentModels.TagRemoveFromCategory(db, change.TagID, *change.CategoryID)
 						if err != nil {
 							log.Printf("❌ Failed to remove tag %d from category %d: %v",
 								change.TagID, *change.CategoryID, err)
@@ -342,7 +344,7 @@ func SetupTagRoutes(router *gin.Engine, db *models.DB) {
 	{
 		// Get all tags
 		tags.GET("", func(c *gin.Context) {
-			tags, err := db.GetTagsBySubsite(1) // Hardcode streaming subsite for now
+			tags, err := contentModels.GetTagsBySubsite(db, 1) // Hardcode streaming subsite for now
 			if err != nil {
 				log.Printf("❌ Failed to get tags: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -363,7 +365,7 @@ func SetupTagRoutes(router *gin.Engine, db *models.DB) {
 				return
 			}
 
-			tag, err := db.GetTagByID(tagID)
+			tag, err := contentModels.GetTagByID(db, tagID)
 			if err != nil {
 				log.Printf("❌ Failed to get tag %d: %v", tagID, err)
 				c.JSON(http.StatusNotFound, gin.H{
@@ -385,7 +387,7 @@ func SetupTagRoutes(router *gin.Engine, db *models.DB) {
 				return
 			}
 
-			categories, err := db.GetCategoriesForTag(tagID)
+			categories, err := contentModels.GetCategoriesForTag(db, tagID)
 			if err != nil {
 				log.Printf("❌ Failed to get categories for tag %d: %v", tagID, err)
 				c.JSON(http.StatusInternalServerError, gin.H{

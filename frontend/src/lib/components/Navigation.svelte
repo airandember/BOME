@@ -454,7 +454,7 @@
 	.brand-text {
 		font-size: var(--text-xl);
 		color: var(--text-primary);
-		font-family: 'Euphorigenic';
+		font-family: 'Playfair Display', Georgia, serif;
 		letter-spacing: 0.2rem;
 	}
 
@@ -467,7 +467,7 @@
 	.nav-link {
 		text-decoration: none;
 		color: var(--text-primary);
-		font-family: 'Quicksand_';
+		font-family: 'Poppins', 'Roboto', sans-serif;
 		letter-spacing: 0.1rem;
 		font-size: 1rem;
 		font-weight: 500;
@@ -835,6 +835,10 @@
 		border-radius: var(--radius-sm);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
+	}
+
+	.mobile-auth-buttons {
+		display: none;
 	}
 
 	.premium-badge {
