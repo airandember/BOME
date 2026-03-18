@@ -1204,6 +1204,11 @@
 	}
 	.speaker-card {
 		padding: 24px 16px;
+		transition: all 0.3s ease;
+	}
+	.speaker-card:hover {
+		box-shadow: 5px 5px 20px rgba(0,0,0,0.08);
+		transform: translateY(-5px);
 	}
 	.speaker-card__icon {
 		width: 80px;

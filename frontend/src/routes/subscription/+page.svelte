@@ -388,12 +388,23 @@
 		return itemNames[Number(itemId)] || `Item ${itemId}`;
 	};
 
-	/** Features to show in pricing card (excludes season: markers) */
+	/** Features to show in pricing card — matches home page pricing-card__features */
 	const getDisplayFeatures = (plan: PublicSubscriptionPlan): string[] => {
-		if (!plan.features || !Array.isArray(plan.features)) return [];
-		return plan.features.filter(f => 
-			typeof f === 'string' && !f.toLowerCase().startsWith('season:')
-		);
+		const baseFeatures = [
+			'Full library access — 1,600+ videos',
+			'New content added regularly',
+			'Watch on any device',
+			'Cancel anytime'
+		];
+		const features = [...baseFeatures];
+		// Add savings line for annual plans (matches home page Annual card)
+		if (plan.interval === 'year') {
+			const savings = calculateAnnualSavings(plan);
+			if (savings && savings.amount > 0) {
+				features.push(`Save ${formatPrice(savings.amount, plan.currency)} per year vs. monthly`);
+			}
+		}
+		return features;
 	};
 
 	/** Format price for pricing-card display (matches home page: $9<span>.97/mo</span>) */

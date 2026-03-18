@@ -76,7 +76,7 @@
 /* Auth card - white, light border, matches pricing card */
 .auth-card-sales {
 	width: 100%;
-	max-width: 480px;
+	max-width: 552px;
 	padding: 40px 32px;
 	background: var(--sales-white);
 	border: 1px solid var(--sales-light-gray);
