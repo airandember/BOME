@@ -1237,7 +1237,7 @@
 		}
 	}
 
-	@media (max-width: 480px) {
+	@media (max-width: 540px) {
 		.wordSymbolCombiner {
 			width: 100%;
 		}
@@ -1266,7 +1266,7 @@
 		}
 
 		.brand-text {
-			font-size: var(--text-lg);
+			font-size: clamp(0.5rem, 4vw, 1rem) !important;
 		}
 
 		.brand-logo {
@@ -1277,6 +1277,10 @@
 		.brand-logo svg {
 			width: 16px;
 			height: 16px;
+		}
+
+		.container-grove {
+			overflow: hidden !important;
 		}
 
 		.mobile-auth-buttons {

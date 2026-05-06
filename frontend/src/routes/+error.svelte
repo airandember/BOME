@@ -15,7 +15,7 @@
 
 <div class="error-page">
 	<div class="error-container">
-		<h1>Something went wrong</h1>
+		<h1 class="error-title">Something went wrong</h1>
 		<p class="error-message">
 			{#if $page.error?.message}
 				{$page.error.message}
@@ -44,6 +44,15 @@
 </div>
 
 <style>
+
+
+	.error-title {
+		font-family: var(--sales-heading-font);
+		color: var(--sales-gold);
+		margin-bottom: 1rem;
+		text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.75);
+	}
+
 	.error-page {
 		min-height: 100vh;
 		display: flex;
@@ -56,7 +65,7 @@
 	.error-container {
 		max-width: 600px;
 		text-align: center;
-		background: var(--primary-gold-dark);
+		background:  linear-gradient(135deg, var(--primary-bom-dark) 0%, var(--primary-bom-light) 70%);
 		padding: 2rem;
 		border-radius: 8px;
 		box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
@@ -69,7 +78,7 @@
 	}
 	
 	.error-message {
-		color: var(--font-display);
+		color: var(--sales-gold);
 		margin-bottom: 1.5rem;
 		font-size: 1.1rem;
 	}
@@ -98,7 +107,7 @@
 		padding: 0.5rem 1rem;
 		border: none;
 		border-radius: 4px;
-		background: var(--primary-bom-light);
+		background: var(--primary-dark);
 		color: white;
 		text-decoration: none;
 		cursor: pointer;
