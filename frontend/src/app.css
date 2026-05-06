@@ -260,6 +260,18 @@
 	--z-popover: 1060;
 	--z-tooltip: 1070;
 	--z-toast: 1080;
+
+	/* Sales Design Tokens */
+	--sales-navy: #0D1B3E;
+	--sales-gold: #B7953B;
+	--sales-gold-light: #D4B255;
+	--sales-charcoal: #1E2022;
+	--sales-white: #FFFFFF;
+	--sales-off-white: #F7F8FA;
+	--sales-light-gray: #E8EAF0;
+	--sales-text-muted: #9CA3AF;
+	--sales-heading-font: 'Playfair Display', Georgia, serif;
+	--sales-body-font: 'Poppins', 'Roboto', sans-serif;
 }
 
 /* Dark Mode Variables */
@@ -913,4 +925,127 @@ select:focus {
 	.modern-theme {
 		--custom-property: value;
 	}
-} 
+}
+
+/*
+ * Metallic text shimmer (global utilities)
+ * Add class .shine or .chrome to any element — inherits font-size from parent.
+ * Opacity knobs: --shine-highlight-a, --shine-glow-* (see :root below).
+ */
+:root {
+	--shine-duration: 5s;
+	--shine-text-mute: rgb(255, 255, 255);
+	--shine-track: #0f0f0f;
+
+	/* Peak sweep color — fourth value is opacity (0–1) */
+	--shine-highlight-a: 1;
+	--shine-highlight: rgba(255, 255, 255, var(--shine-highlight-a));
+
+	/* Halo rings around the text (inner → outer) */
+	--shine-glow-core-a: 1;
+	--shine-glow-mid-a: 0.695;
+	--shine-glow-outer-a: 0.42;
+	--shine-text-glow: 0 0 14px rgba(255, 255, 255, var(--shine-glow-core-a)),
+		0 0 30px rgba(255, 255, 255, var(--shine-glow-mid-a)),
+		0 0 50px rgba(255, 255, 255, var(--shine-glow-outer-a));
+}
+
+.shine,
+.chrome {
+	display: inline-block;
+	font-weight: 700;
+	margin: 0;
+	color: var(--shine-text-mute);
+	background-color: var(--shine-track);
+	background-repeat: no-repeat;
+	-webkit-background-clip: text;
+	background-clip: text;
+	-webkit-animation-name: shine;
+	animation-name: shine;
+	-webkit-animation-duration: var(--shine-duration);
+	animation-duration: var(--shine-duration);
+	-webkit-animation-iteration-count: infinite;
+	animation-iteration-count: infinite;
+	text-shadow: var(--shine-text-glow);
+}
+
+/* Wider vertical band → stronger flash as it sweeps */
+.shine {
+	background-image: linear-gradient(
+		90deg,
+		var(--shine-track) 0%,
+		var(--shine-track) 32%,
+		var(--shine-highlight) 50%,
+		var(--shine-track) 68%,
+		var(--shine-track) 100%
+	);
+	-webkit-background-size: 150px 100%;
+	background-size: 150px 100%;
+}
+
+.shine {
+	background-image: linear-gradient(
+		90deg,
+		var(--shine-track) 0%,
+		var(--shine-track) 32%,
+		var(--shine-highlight) 50%,
+		var(--shine-track) 68%,
+		var(--shine-track) 100%
+	);
+	-webkit-background-size: 150px 100%;
+	background-size: 150px 100%;
+}
+/* Wider angled band */
+.chrome {
+	background-image: linear-gradient(
+		-40deg,
+		var(--shine-track) 0%,
+		var(--shine-track) 28%,
+		var(--shine-highlight) 50%,
+		var(--shine-track) 72%,
+		var(--shine-track) 100%
+	);
+	-webkit-background-size: 200px 100%;
+	background-size: 200px 100%;
+}
+
+@-webkit-keyframes shine {
+	0%,
+	10% {
+		background-position: -1000px 0;
+	}
+	20% {
+		background-position: 0 0;
+	}
+	90% {
+		background-position: 100% 0;
+	}
+	100% {
+		background-position: 1000px 0;
+	}
+}
+
+@keyframes shine {
+	0%,
+	10% {
+		background-position: -1000px 0;
+	}
+	20% {
+		background-position: 0 0;
+	}
+	90% {
+		background-position: 100% 0;
+	}
+	100% {
+		background-position: 1000px 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.shine,
+	.chrome {
+		-webkit-animation: none;
+		animation: none;
+		background-position: 0 0;
+	}
+}

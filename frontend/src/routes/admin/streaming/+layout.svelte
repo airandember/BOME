@@ -95,8 +95,8 @@
 			// Subscribe to auth store to get current user info (NO auth checks - parent handles that)
 			const unsubscribe = auth.subscribe((authState: any) => {
 				currentUser = authState.user;
-                console.log("❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌");
-				console.log(currentUser);
+              //  console.log("❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌");
+			//	console.log(currentUser);
 			});
 
 			// NOTE: Parent /admin/+layout.svelte already verified admin status
@@ -117,18 +117,18 @@
 
 	async function loadQuickStats() {
 		try {
-			console.log('🔍 [STREAMING] About to call /admin/streaming/dashboard');
-			console.log('🔍 [STREAMING] Current user:', currentUser);
-			console.log('🔍 [STREAMING] User role:', currentUser?.role);
+			//console.log('🔍 [STREAMING] About to call /admin/streaming/dashboard');
+			//console.log('🔍 [STREAMING] Current user:', currentUser);
+			//console.log('🔍 [STREAMING] User role:', currentUser?.role);
 			
 			const response = await api.get('/admin/streaming/dashboard');
-			console.log('🔍 [STREAMING] Dashboard API response:', response);
+			//console.log('🔍 [STREAMING] Dashboard API response:', response);
 			const raw = (response?.data as any) || {};
 			const data = raw.dashboard?.metrics as any;
 			if (data) {
 				quickActiveSubscriptions = data.active_subscriptions || 0;
 				// Prefer a monthly figure if provided; fallback to revenue_30_days total
-				quickMonthlyRevenue = (data.monthly_revenue || data.revenue_30_days?.total || 0);
+				quickMonthlyRevenue = (data.monthly_revenue || data.revenue_30_days?.total || 0) ;
 				quickChurnRate = (data.churn_rate?.rate || 0);
 			}
 			// If empty, derive from subscribers
@@ -178,7 +178,7 @@
 
 		const activeSubs = subs.filter(isWithinPeriod);
 		quickActiveSubscriptions = activeSubs.length;
-		quickMonthlyRevenue = Math.round(activeSubs.reduce((sum, s) => sum + toMonthly(s.plan_price, s.plan_interval, s.plan_interval_count), 0) * 100) / 100;
+		quickMonthlyRevenue = Math.round(activeSubs.reduce((sum, s) => sum + toMonthly(s.plan_price, s.plan_interval, s.plan_interval_count), 0) ) / 100;
 
 		const canceledThisPeriod = subs.filter(s => s.subscription_status === 'canceled' && s.updated_at && new Date(s.updated_at) >= thirtyDaysAgo).length;
 		const previousActiveBase = quickActiveSubscriptions + canceledThisPeriod;

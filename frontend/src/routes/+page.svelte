@@ -1,10 +1,12 @@
-<script lang="ts">
+﻿<script lang="ts">
 	import { auth } from '$lib/auth';
 	import { goto } from '$app/navigation';
 	import Navigation from '$lib/components/Navigation.svelte';
+	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 
 	let isAuthenticated = false;
 	let openFaq: number | null = null;
+	let loading = $state(false);
 
 	// Subscribe to auth store
 	auth.subscribe(state => {
@@ -49,21 +51,29 @@
 			<div class="hero-content-slot navigation-cards" data-slot="hero-content">
 				<!--<img src="/Images/bome-evidence-logo.png" alt="Book of Mormon Evidence" class="hero-logo" />-->
 				<div class="hero-copy">
-					<h1 class="hero-headline">1,600+ Videos. 20 Years of Research.<br>One Streaming Library.</h1>
+					<h1 class="hero-headline">1,600+ Videos.<br>20 Years of Research.<br>One Streaming Library.</h1>
 					<p class="hero-sub">
-						The largest collection of Heartland Book of Mormon evidence ever assembled — plus conferences on the Signs of the Times, the Constitution, self-reliance, and health. All in one place. Watch anytime.
+						The largest collection of Heartland Book of Mormon evidence ever assembled — plus conferences on the Signs of the Times, 
+						the Constitution, self-reliance, and health. <br>
+					</p>
+					<p class="hero-sub hero-sub-bottom shine">
+						All in one place. Watch anytime.
 					</p>
 				</div>
-				<a href="/subscription" class="btn btn--gold btn--large subscribe-btn" on:click|preventDefault={handleSubscribe}>
-					Subscribe Now
-				</a>
-				<p class="hero-pricing">
+				<div class="hero-subscribe-container shine">
+					<a href="/subscription" class="btn btn--gold btn--large subscribe-btn" on:click|preventDefault={handleSubscribe}>
+						Subscribe Now
+					</a>
+					<p class="hero-pricing">
 					Just $9.97/mo — or save 20% with an annual plan at $7.97/mo. Cancel anytime.
-				</p>
+					</p>	
+				</div>
 			</div>
 		</div>
 	</section>
-
+<!--{#if !loading}
+	<LoadingSpinner />
+{/if}-->
 	<!-- Section 2: Problem / Tension — data-slot for future admin injection -->
 	<section class="section section--white" data-slot="body-1">
 		<div class="container container--narrow text-center tension">
@@ -108,7 +118,7 @@
 						<p>Physical stewardship — your body as a temple, taken literally. Practical health topics, nutrition, and wellness principles drawn from both modern research and scriptural guidance.</p>
 					</div>
 				</div>	
-				<p class="library-closing">New content is added regularly from live conferences, events, and ongoing research. The library keeps growing.</p>
+				<p class="library-closing">New content is added regularly from live conferences, events, and ongoing research. <br>The library keeps growing.</p>
 
 			</div>
 				<img class="image-grove-left" src="https://assets.cdn.filesafe.space/xar8tXZK2mQ4CKH0W84j/media/68a793c35727bdfd60a74f73.jpeg" alt="Grove1"/>
@@ -494,10 +504,10 @@
 	}
 
 	.zoom-section {
-		min-height: 100vh;
 		width: 100%;
 		position: relative;
 		display: flex;
+		flex-direction: column;
 		align-items: center;
 		justify-content: center;
 		overflow: hidden;
@@ -508,6 +518,7 @@
 		width: 100%;
 		height: 100%;
 		display: flex;
+		flex-direction: column;
 		align-items: center;
 		justify-content: center;
 	}
@@ -1074,11 +1085,13 @@
 	}
 	.section-subheading {
 		font-family: var(--sales-body-font);
+		color: var(--sales-charcoal);
 		font-size: 17px;
 		font-weight: 300;
 		line-height: 1.8;
 		max-width: 700px;
 		margin: 0 auto;
+		padding-bottom: 1rem;
 	}
 
 	.tension p {
@@ -1532,8 +1545,9 @@
 		align-items: center;
 		gap: clamp(1rem, 2vw, 1.5rem);
 		text-align: center;
-		bottom: 8%;
+		top: 8%;
 		padding: 0 2rem;
+		max-height: 80vh;
 	}
 
 	.hero-logo {
@@ -1579,13 +1593,23 @@
 		text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
 	}
 
+	.hero-sub-bottom {
+		font-family: var(--sales-body-font);
+		font-size: clamp(0.8rem, 2vw, 2rem);
+		font-weight: 100;
+		line-height: 1.8;
+		color: var(--sales-gold) !important;
+	}
+
 	.hero-pricing {
+		position: relative;
 		font-family: var(--sales-body-font);
 		font-size: clamp(0.8rem, 1vw, 0.875rem);
 		color: rgba(255, 255, 255, 0.85);
 		font-weight: 300;
 		margin: 0.5rem 0 0;
 		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+		z-index: 1;
 	}
 
 	/* Sales page button styles (from streaming-sales-page.html) */
@@ -1629,7 +1653,7 @@
 	.navigation-cards {
 		width: 100vw;
 		position: absolute;
-		bottom: 11%;
+		top: 10%;
 		left: 50%;
 		transform: translateX(-50%);
 		display: flex;
@@ -1914,7 +1938,7 @@
 		
 		.navigation-cards {
 			gap: 5rem;
-			bottom: 5%;
+			bottom: 3%;
 			left: 50%;
 			width: 100vw;
 			box-sizing: border-box;
@@ -2212,12 +2236,16 @@
 		}
 	}
 
-	@media (max-width: 480px) {
+	@media (max-width: 500px) {
 		/* Universal box-sizing fix */
 		*,
 		*::before,
 		*::after {
 			box-sizing: border-box;
+		}
+
+        .container-grove {
+			background: linear-gradient(to right, rgb(255, 255, 255, 0) 0%, rgb(247, 248, 250, 0.55) 2%, rgb(247, 248, 250, 1) 30%, rgb(247, 248, 250, 1) 70%, rgb(247, 248, 250, 0.55) 98%, rgba(255, 255, 255, 0) 100%) !important;
 		}
 
 		.scroll-container {

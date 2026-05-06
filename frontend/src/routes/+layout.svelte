@@ -3,6 +3,7 @@
 	import { auth, initializeAuth } from '$lib/auth';
 	import { onMount } from 'svelte';
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
+	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import { initializeSecurity } from '$lib/utils/security';
 	import { authStore } from '$lib/stores/api';
 
@@ -55,20 +56,26 @@
 {:else}
 	<div class="loading-screen">
 		<div class="loading-content">
-			<div class="brand-logo">
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-					<path d="M2 17l10 5 10-5"></path>
-					<path d="M2 12l10 5 10-5"></path>
-				</svg>
+			<h1 class="brand-text">BOOK of MORMON</h1>
+			<div class="loading-book">
+				<LoadingSpinner size="large" color="white" />
+				<p class="loading-text">Loading...</p>
+
 			</div>
-			<h1>BOME</h1>
-			<p>Loading...</p>
+			<h1 class="brand-text">EVIDENCE</h1>
 		</div>
 	</div>
 {/if}
 
 <style>
+
+    .brand-text {
+		font-size: var(--text-xl);
+		color: var(--text-primary);
+		font-family: 'Playfair Display', Georgia, serif;
+		letter-spacing: 0.2rem;
+	}
+	
 	.app {
 		min-height: 100vh;
 		background: var(--bg-gray);
@@ -90,31 +97,26 @@
 		animation: fadeIn 0.6s ease-out;
 	}
 
-	.brand-logo {
-		width: 80px;
-		height: 80px;
-		background: rgba(255, 255, 255, 0.1);
-		border-radius: var(--radius-xl);
+	.loading-book {
 		display: flex;
-		align-items: center;
+		flex-direction: column;
 		justify-content: center;
-		margin: 0 auto var(--space-lg);
+		align-items: center;
+		margin: 0 auto var(--space-xl);
+		padding: var(--space-md);
+		background: rgba(255, 255, 255, 0.08);
+		border-radius: var(--radius-xl);
 		backdrop-filter: blur(10px);
 		-webkit-backdrop-filter: blur(10px);
+		width: fit-content;
 	}
 
-	.brand-logo svg {
-		width: 40px;
-		height: 40px;
-		color: var(--white);
-	}
-
-	.loading-content h1 {
+	/*.loading-content h1 {
 		font-size: var(--text-4xl);
 		font-weight: 800;
 		margin-bottom: var(--space-md);
 		font-family: var(--font-display);
-	}
+	} */
 
 	.loading-content p {
 		font-size: var(--text-lg);

@@ -254,11 +254,12 @@
 			<div class="sidebar-header">
 				<div class="brand-logo">
 					<a href="/" aria-label="BOME Admin">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<!--<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 							<path d="M12 2L2 7l10 5 10-5-10-5z"></path>
 							<path d="M2 17l10 5 10-5"></path>
 							<path d="M2 12l10 5 10-5"></path>
-						</svg>
+						</svg>-->
+						<img class="brand-logo-img" src="/Images/Logo.png" alt="BOME Logo" />
 					</a>
 				</div>
 				<div class="brand-text">
@@ -648,7 +649,7 @@
 		flex-shrink: 0;
 	}
 
-	.brand-logo svg {
+	.brand-logo img {
 		width: 20px;
 		height: 20px;
 		color: white;

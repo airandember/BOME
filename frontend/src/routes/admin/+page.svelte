@@ -77,11 +77,12 @@
 	<div class="login-container">
 		<div class="login-header">
 			<div class="brand-logo">
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<!--<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<path d="M12 2L2 7l10 5 10-5-10-5z"></path>
 					<path d="M2 17l10 5 10-5"></path>
 					<path d="M2 12l10 5 10-5"></path>
-				</svg>
+				</svg>-->
+				<img class="brand-logo-img" src="/Images/Logo.png" alt="BOME Logo" />
 			</div>
 			<h1>BOME Admin</h1>
 			<p>Administrative Access Portal</p>
@@ -195,8 +196,8 @@
 	}
 
 	.brand-logo {
-		width: 60px;
-		height: 60px;
+		width: 140px;
+		height: 140px;
 		background: var(--primary-gradient, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
 		border-radius: 15px;
 		display: flex;
@@ -206,9 +207,9 @@
 		box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
 	}
 
-	.brand-logo svg {
-		width: 30px;
-		height: 30px;
+	.brand-logo img {
+		width: 70px;
+		height: 70px;
 		color: white;
 	}
 

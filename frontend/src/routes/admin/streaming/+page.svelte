@@ -101,18 +101,22 @@
 
 		// Monthly revenue (projected): normalize any interval to monthly
 		function toMonthly(price: number | undefined, interval?: string, count?: number): number {
-			const p = price || 0;
-			const c = count && count > 0 ? count : 1;
-			const unit = (interval || 'month').toLowerCase();
-			switch (unit) {
-				case 'year': return (p / 12) * c;
-				case 'week': return (p * 4.345) * c; // avg weeks/month
-				case 'day': return (p * 30) * c; // approx days/month
-				case 'month': default: return p * c;
+			try {
+				const p = (price || 0) / 100;
+				const c = count && count > 0 ? count : 1;
+				const unit = (interval || 'month').toLowerCase();
+				switch (unit) {
+					case 'year': return (p / 12) * c;
+					case 'week': return (p * 4.345) * c; // avg weeks/month
+					case 'day': return (p * 30) * c; // approx days/month
+					case 'month': default: return p * c;
+				};
+			} catch (error) {
+				console.error('🔴 [STREAMING-PAGE] Error in toMonthly:', error);
+				return 0;
 			}
 		}
 		const monthlyRevenue = activeSubs.reduce((sum, s) => sum + toMonthly(s.plan_price, s.plan_interval, s.plan_interval_count), 0);
-
 		// New subs this month: created_at within current month
 		const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 		const newSubscriptions = subs.filter(s => {
