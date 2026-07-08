@@ -15,6 +15,13 @@
 	let showLogs = $state(true);
 	let retryingEvents = $state(new Set<number>()); // Track which events are being retried
 	let expandedRows = $state(new Set<number>()); // Track which rows are expanded
+    
+	//Webhook Status Label Spinner	
+	let label = $derived(getHealthStatusLabel(webhookStatus?.health_status));
+    let [first, ...restParts] = $derived(Array.from(label));
+    let rest = $derived(restParts.join(''));
+
+
 	
 	// Pagination and filtering
 	let currentPage = $state(1);
@@ -183,12 +190,12 @@
 			case 'monitoring':
 				return '🔵 Monitoring';
 			case 'inactive':
-				return '⚫ Inactive';
+				return '🕝 On Standby';
 			case 'no_activity':
 				return '🟣 No Recent Activity';
 			default:
 				// Fallback to inactive for professional appearance
-				return '⚫ Inactive';
+				return '🕧 On Standby';
 		}
 	}
 
@@ -321,8 +328,8 @@
 				<div class="card-header">
 					<h2>📊 Webhook Status</h2>
 					<div class="status-indicator {getHealthStatusClass(webhookStatus?.health_status)}">
-						<div class="status-dot"></div>
-						<span>{getHealthStatusLabel(webhookStatus?.health_status)}</span>
+						<!--<div class="status-dot"></div>-->
+							<span class="spinMe">{first}</span>{rest}
 					</div>
 				</div>
 
@@ -856,6 +863,12 @@
 		border-radius: 50%;
 		animation: spin 1s linear infinite;
 		margin-right: var(--space-sm);
+	}
+
+	.spinMe {
+		font-size: 1.5rem;
+		display: inline-block;
+		animation: spin 5s linear infinite;
 	}
 
 	@keyframes spin {
