@@ -297,7 +297,7 @@
 	--bg-glass-dark: rgba(0, 0, 0, 0.2);
 	--bg-glass-darker: rgba(0, 0, 0, 0.3);
 	--bg-ghost-white: rgba(255, 255, 255, 1);
-	--bg-ghost: rgba(150, 142, 132, 0) ;
+	--bg-ghost: rgba(150, 142, 132, 0.35) ;
 	--bg-large-gradient: linear-gradient(135deg, var(--secondary-bom-dark) 30%, var(--primary-bom-dark) 100%);
 	--bg-large-gradient2: linear-gradient(135deg, var(--secondary-bom-dark) 30%, var(--primary-bom-dark) 100%);
 
