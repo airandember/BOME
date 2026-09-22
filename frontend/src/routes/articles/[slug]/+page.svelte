@@ -621,6 +621,7 @@
 
 	.article-body :global(p) {
 		margin-bottom: 1.5rem;
+		color: var(--text-primary);
 	}
 
 	.article-body :global(h2) {

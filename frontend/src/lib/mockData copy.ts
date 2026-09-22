@@ -813,9 +813,7 @@ export const ARTICLE_TAGS = [
 	'Warfare', 'Trade Routes', 'Linguistics', 'Archaeology', 'Anthropology', 'Geography',
 	'Mesoamerica', 'North America', 'Biblical Parallels', 'Ancient Texts', 'Chiasmus',
 	'Hebrew Influences', 'Egyptian Connections', 'Pre-Columbian', 'Carbon Dating',
-	'Excavations', 'Artifacts', 'Civilizations', 'Migration Patterns',
-	'Heartland Model', 'Hopewell', 'Adena', 'Mound Builders', 'Great Lakes', 'Hill Cumorah',
-	'Mississippi River', 'Zarahemla', 'Copper', 'Haplogroup X2a', 'Promised Land', 'Prophecy'
+	'Excavations', 'Artifacts', 'Civilizations', 'Migration Patterns'
 ];
 
 // Article Authors
@@ -825,8 +823,8 @@ export const ARTICLE_AUTHORS = [
 		name: 'Dr. Sarah Mitchell',
 		title: 'Professor of Archaeology',
 		institution: 'Brigham Young University',
-		bio: 'Leading expert in Eastern Woodlands and Hopewell archaeology with 20+ years of field experience.',
-		avatar: 'https://i.pravatar.cc/100?img=47',
+		bio: 'Leading expert in Mesoamerican archaeology with 20+ years of field experience.',
+		avatar: '/api/placeholder/100/100',
 		articlesCount: 8
 	},
 	{
@@ -835,7 +833,7 @@ export const ARTICLE_AUTHORS = [
 		title: 'Biblical Scholar',
 		institution: 'Harvard Divinity School',
 		bio: 'Specialist in ancient Near Eastern texts and comparative religion.',
-		avatar: 'https://i.pravatar.cc/100?img=33',
+		avatar: '/api/placeholder/100/100',
 		articlesCount: 6
 	},
 	{
@@ -844,7 +842,7 @@ export const ARTICLE_AUTHORS = [
 		title: 'Linguistic Anthropologist',
 		institution: 'Stanford University',
 		bio: 'Expert in pre-Columbian languages and migration patterns.',
-		avatar: 'https://i.pravatar.cc/100?img=44',
+		avatar: '/api/placeholder/100/100',
 		articlesCount: 5
 	},
 	{
@@ -853,7 +851,7 @@ export const ARTICLE_AUTHORS = [
 		title: 'Geneticist',
 		institution: 'University of Utah',
 		bio: 'Specialist in population genetics and ancient DNA analysis.',
-		avatar: 'https://i.pravatar.cc/100?img=53',
+		avatar: '/api/placeholder/100/100',
 		articlesCount: 4
 	},
 	{
@@ -862,7 +860,7 @@ export const ARTICLE_AUTHORS = [
 		title: 'Cultural Historian',
 		institution: 'Yale University',
 		bio: 'Expert in ancient American civilizations and cultural exchange.',
-		avatar: 'https://i.pravatar.cc/100?img=48',
+		avatar: '/api/placeholder/100/100',
 		articlesCount: 7
 	},
 	{
@@ -871,7 +869,7 @@ export const ARTICLE_AUTHORS = [
 		title: 'Archaeological Scientist',
 		institution: 'University of Pennsylvania',
 		bio: 'Specialist in archaeological dating methods and scientific analysis.',
-		avatar: 'https://i.pravatar.cc/100?img=57',
+		avatar: '/api/placeholder/100/100',
 		articlesCount: 3
 	}
 ];
@@ -880,28 +878,27 @@ export const ARTICLE_AUTHORS = [
 export const MOCK_ARTICLES = [
 	{
 		id: 1,
-		title: 'Earthworks and Palisades: How the Hopewell and Adena Mound Builders Fit the Nephite Record',
-		slug: 'hopewell-adena-mound-builders-nephite-record',
-		excerpt: 'The Book of Mormon describes cities defended by banks of earth and timber pickets, not stone pyramids. North America\'s Mound Builder cultures match that description far better than the Maya ever could.',
-		content: `For decades, Book of Mormon geography has been pulled south toward the stone temples of Guatemala and southern Mexico. But when we read the text on its own terms, a very different picture emerges, one that points squarely at the ancient cultures of the Ohio and Mississippi river valleys.
+		title: 'Recent Archaeological Discoveries in Mesoamerica: New Evidence for Book of Mormon Civilizations',
+		slug: 'mesoamerican-archaeological-discoveries-2024',
+		excerpt: 'Groundbreaking excavations in Guatemala reveal complex urban centers that align with Book of Mormon descriptions of Nephite and Lamanite civilizations.',
+		content: `Recent archaeological work in the Mirador Basin of Guatemala has uncovered evidence of sophisticated urban planning, advanced agricultural systems, and complex trade networks that bear striking similarities to civilizations described in the Book of Mormon.
 
-The Adena (c. 800 BC - AD 100) and Hopewell (c. 100 BC - AD 500) cultures flourished during exactly the centuries covered by the Nephite record. They built monumental earthworks, geometric enclosures, burial mounds, and fortified hilltop sites across what is now Ohio, Indiana, Illinois, Kentucky, and West Virginia.
+The latest excavations, led by Dr. Richard Hansen, have revealed massive stone complexes dating to the Late Preclassic period (400 BC - 250 AD), precisely coinciding with the timeframe described in the Book of Mormon for major Nephite and Lamanite civilizations.
 
-Consider how Captain Moroni fortified the Nephite cities in Alma 48-50: he had the people dig ditches, throw up banks of earth, and build works of timbers and pickets on top of them. That is precisely what archaeologists find at Eastern Woodlands sites such as Fort Ancient in Ohio, where miles of earthen walls encircle a defensible plateau.
+Key findings include:
+- Advanced water management systems
+- Evidence of large-scale agriculture supporting dense populations
+- Sophisticated road networks connecting distant cities
+- Defensive fortifications matching Book of Mormon descriptions
+- Metallurgical evidence including copper and bronze artifacts
 
-Why the Heartland fits better than Mesoamerica:
-- Nephite defenses are described in terms of earth and timber, which matches Hopewell and Adena earthworks, not Maya stone architecture
-- The Hopewell Interaction Sphere shows a continent-wide trade network flourishing in Book of Mormon times
-- Burial mounds and ceremonial enclosures reflect a society very different from the Maya's idol-centered temple cults
-- The Heartland places the Nephites in the same land the Lord later called a land of liberty
-
-The Mesoamerican model asks readers to set aside the plain language of the text in favor of monuments the Book of Mormon never describes. The Heartland model lets the text speak for itself.`,
+These discoveries continue to challenge previous assumptions about the complexity of ancient American civilizations and provide compelling archaeological context for Book of Mormon narratives.`,
 		featuredImage: '/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 		authorId: 1,
 		categoryId: 1,
-		tags: ['Heartland Model', 'Hopewell', 'Adena', 'Mound Builders', 'Archaeology', 'Warfare'],
+		tags: ['Archaeology', 'Mesoamerica', 'Nephites', 'Lamanites', 'Excavations'],
 		publishedAt: '2024-12-15T10:00:00Z',
-		updatedAt: '2024-12-15T10:00:00Z',
+		updatedAt: '2024-12-15T10:00:0Z',
 		readTime: 8,
 		views: 2847,
 		likes: 156,
@@ -910,25 +907,22 @@ The Mesoamerican model asks readers to set aside the plain language of the text 
 	},
 	{
 		id: 2,
-		title: 'Haplogroup X2a: The DNA Question the Mesoamerican Model Can\'t Answer',
-		slug: 'haplogroup-x2a-dna-heartland-model',
-		excerpt: 'A rare maternal DNA lineage with Old World ties shows up among Native peoples of the Great Lakes region and is essentially absent in Central America. Heartland researchers think that matters.',
-		content: `Critics of the Book of Mormon often point to DNA studies showing that most Native American ancestry traces back to Asia. Mesoamerican-model scholars have largely responded by arguing that any Israelite genetic signal would have been too small to detect. Heartland researchers point to something more interesting.
+		title: 'DNA Studies and Ancient American Populations: Understanding Genetic Diversity',
+		slug: 'dna-studies-ancient-american-populations',
+		excerpt: 'New genetic research provides insights into the complex population history of ancient America and its implications for Book of Mormon studies.',
+		content: `Recent advances in ancient DNA analysis have revolutionized our understanding of population movements and genetic diversity in pre-Columbian America. This research provides important context for discussions about Book of Mormon peoples and their potential genetic signatures.
 
-Mitochondrial haplogroup X2a is a maternal lineage found among several Native American peoples. What makes it notable:
-- It is concentrated in North America, particularly around the Great Lakes and northern plains
-- Its broader X family has relatives in the Near East and Europe rather than East Asia
-- It is essentially absent from Mesoamerican and South American populations
+Key research developments include:
+- Improved extraction techniques for ancient DNA
+- Broader sampling of ancient American populations
+- Better understanding of population bottlenecks and founder effects
+- Evidence for multiple migration events over thousands of years
 
-Heartland researchers see this distribution as consistent with a North American setting for at least some Book of Mormon peoples. If Lehi's descendants had lived in Guatemala, there is no comparable genetic marker pointing there.
-
-Honesty requires noting the counterargument: most geneticists date the arrival of X2a in the Americas to many thousands of years before Lehi, and an X2a sample was identified in remains over 8,000 years old. X2a is therefore not proof, and responsible Heartland researchers do not present it as such.
-
-But the contrast still stands. The Heartland model at least has a genetic conversation worth having. The Mesoamerican model has none.`,
+Dr. Robert Chen's latest research demonstrates the complexity of ancient American genetics and challenges oversimplified models of population history. The evidence suggests a much more nuanced picture of ancient American peoples than previously understood.`,
 		featuredImage: '/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 		authorId: 4,
 		categoryId: 6,
-		tags: ['Heartland Model', 'DNA Studies', 'Haplogroup X2a', 'Great Lakes', 'Migration Patterns'],
+		tags: ['DNA Studies', 'Ancient America', 'Migration Patterns', 'Genetics'],
 		publishedAt: '2024-12-12T14:30:00Z',
 		updatedAt: '2024-12-12T14:30:00Z',
 		readTime: 12,
@@ -939,25 +933,22 @@ But the contrast still stands. The Heartland model at least has a genetic conver
 	},
 	{
 		id: 3,
-		title: 'One Cumorah, Not Two: What Oliver Cowdery and Joseph Smith Taught About the Hill in New York',
-		slug: 'one-cumorah-new-york-letter-vii',
-		excerpt: 'The Mesoamerican model requires a second, unnamed "Cumorah" somewhere in Mexico. Early Church leaders never taught such a thing.',
-		content: `Every Mesoamerican geography faces the same problem: the plates were buried in a hill in upstate New York, while the model places the Nephite lands thousands of miles away. The usual solution is the "two Cumorahs" theory, which holds that the hill where Moroni buried the plates is not the same Cumorah where the Nephites fought their final battle (Mormon 6:6).
+		title: 'Chiasmus in Ancient Literature: Patterns in the Book of Mormon',
+		slug: 'chiasmus-ancient-literature-book-of-mormon',
+		excerpt: 'Analysis of chiastic structures in the Book of Mormon reveals sophisticated literary patterns consistent with ancient Hebrew writing.',
+		content: `Chiasmus, a literary device common in ancient Hebrew and Near Eastern texts, appears throughout the Book of Mormon in complex and sophisticated forms. This analysis examines the most compelling examples and their implications for Book of Mormon authorship.
 
-Early Church leaders did not teach two Cumorahs.
+Notable chiastic passages include:
+- Alma 36: Alma's conversion narrative
+- Mosiah 3-5: King Benjamin's speech
+- Helaman 6: The cycle of righteousness and wickedness
+- 3 Nephi 17: Christ's ministry among the Nephites
 
-In 1835, Oliver Cowdery, the Second Elder of the Church and a witness of the plates, published Letter VII in the Messenger and Advocate. In it he identified the hill near Palmyra as the very place where the Nephite and Jaredite nations were destroyed. Joseph Smith assisted with these letters and they were reprinted in Church publications during his lifetime.
-
-The Heartland pattern appears elsewhere in early Church history as well:
-- During Zion's Camp in 1834, Joseph Smith's companions recorded him identifying a man buried in an Illinois mound as a Lamanite warrior
-- Doctrine and Covenants 125:3 names a town across the river from Nauvoo, Iowa, as Zarahemla
-- Doctrine and Covenants 28:9 and 54:8 speak of the Lamanites living on the borders of Missouri
-
-Heartland researchers argue that the Mesoamerican model grew out of 20th-century academic assumptions rather than the teachings of the Restoration. When the founding witnesses speak plainly about where Cumorah is, that testimony deserves more weight than a theory that needs a second hill to work.`,
+The complexity and consistency of these patterns suggest familiarity with ancient Hebrew literary traditions that would have been unknown to 19th-century Americans. Dr. James Peterson's comparative analysis with Dead Sea Scroll texts reveals remarkable parallels in structure and style.`,
 		featuredImage: '/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 		authorId: 2,
-		categoryId: 2,
-		tags: ['Heartland Model', 'Hill Cumorah', 'Church History', 'Letter VII', 'North America'],
+		categoryId: 3,
+		tags: ['Chiasmus', 'Hebrew Influences', 'Ancient Texts', 'Biblical Parallels'],
 		publishedAt: '2024-12-10T09:15:00Z',
 		updatedAt: '2024-12-10T09:15:00Z',
 		readTime: 10,
@@ -968,27 +959,22 @@ Heartland researchers argue that the Mesoamerican model grew out of 20th-century
 	},
 	{
 		id: 4,
-		title: 'The River Sidon and the Mississippi: Reading Book of Mormon Geography Without "Mesoamerican North"',
-		slug: 'river-sidon-mississippi-heartland-geography',
-		excerpt: 'To make Central America fit, Mesoamerican models rotate the compass. The Heartland model keeps north pointing north.',
-		content: `Central America runs roughly east to west. The Book of Mormon describes a land northward and a land southward, with a sea east and a sea west. To reconcile the two, many Mesoamerican models introduce a "Mesoamerican north" that is skewed dozens of degrees from true north.
+		title: 'Ancient Trade Routes and the Book of Mormon: Economic Networks in Pre-Columbian America',
+		slug: 'ancient-trade-routes-book-of-mormon-economic-networks',
+		excerpt: 'Archaeological evidence reveals extensive trade networks in ancient America that align with Book of Mormon descriptions of economic activity.',
+		content: `Recent research has mapped extensive trade networks throughout ancient America, revealing economic systems of remarkable sophistication. These networks distributed goods across thousands of miles and created the economic foundation for the large civilizations described in the Book of Mormon.
 
-Heartland researchers find that difficult to accept. Nephi, Mormon, and Moroni were writing to future readers, and nothing in the text suggests their directions meant something other than what they say.
+Evidence includes:
+- Obsidian sourcing studies showing trade across Central America
+- Cacao distribution networks extending from Mexico to South America
+- Copper bell trade routes connecting distant regions
+- Standardized weights and measures suggesting organized commerce
 
-Read with a normal compass, the Heartland offers a coherent map:
-- The Mississippi River as the great river Sidon, running through the heart of Nephite lands
-- Zarahemla on the west bank near the site the Lord named in D&C 125:3
-- The Great Lakes as waters to the north
-- The Atlantic and the Gulf of Mexico as seas to the east and south
-- The Hill Cumorah in western New York as the site of the final battles
-
-The Heartland also explains why Nephite records emphasize rivers, wilderness, and timber, the landscape of the eastern United States, rather than the volcanoes, jungles, and limestone cities of the Yucatan.
-
-When a model can only work by redefining the cardinal directions, that is a sign the model, not the text, needs adjusting.`,
+Dr. Emily Thompson's research demonstrates that these trade networks were not only extensive but also highly organized, requiring the kind of political and social structures described in Book of Mormon accounts of Nephite and Lamanite societies.`,
 		featuredImage: '/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 		authorId: 5,
 		categoryId: 4,
-		tags: ['Heartland Model', 'Geography', 'Mississippi River', 'Zarahemla', 'North America'],
+		tags: ['Trade Routes', 'Economics', 'Pre-Columbian', 'Civilizations'],
 		publishedAt: '2024-12-08T16:45:00Z',
 		updatedAt: '2024-12-08T16:45:00Z',
 		readTime: 9,
@@ -999,24 +985,22 @@ When a model can only work by redefining the cardinal directions, that is a sign
 	},
 	{
 		id: 5,
-		title: 'Great Lakes Copper: North America\'s Ancient Metalworkers and the Nephite Record',
-		slug: 'great-lakes-copper-nephite-metallurgy',
-		excerpt: 'Metallurgy appears in Mesoamerica centuries after the Book of Mormon ends. In the Great Lakes region, people were working copper thousands of years earlier.',
-		content: `The Book of Mormon repeatedly mentions metals. Nephi worked ore (1 Nephi 17:9-16), the Nephites had "all manner of" metals (2 Nephi 5:15), and the people of Limhi found breastplates of copper and brass among Jaredite remains (Mosiah 8:10).
+		title: 'Metallurgy in Ancient America: Evidence for Advanced Technology',
+		slug: 'metallurgy-ancient-america-advanced-technology',
+		excerpt: 'Archaeological discoveries of sophisticated metalworking in pre-Columbian America support Book of Mormon descriptions of advanced technology.',
+		content: `Contrary to popular misconceptions, advanced metallurgy was practiced throughout ancient America. Recent discoveries provide compelling evidence for the sophisticated metalworking described in the Book of Mormon.
 
-This is a serious problem for the Mesoamerican model. Metalworking in Mesoamerica appears only around AD 600-800, after the close of the Nephite record, and it was introduced largely from South America.
+Key discoveries include:
+- Bronze artifacts from Poverty Point culture (1700-1100 BC)
+- Copper mining operations in the Great Lakes region
+- Advanced smelting techniques in South America
+- Iron artifacts from pre-Columbian contexts
 
-North America tells a different story:
-- The Old Copper Complex around Lake Superior produced copper tools and ornaments for thousands of years before Lehi's day
-- Native copper from the Great Lakes was traded across the continent through Hopewell networks
-- Hopewell burials include copper breastplates, headdresses, and ornaments, the very kinds of objects the Book of Mormon mentions
-- Copper mining pits on Isle Royale and the Keweenaw Peninsula show organized, large-scale extraction
-
-Heartland researchers argue that a people who knew metals would naturally settle near the continent's richest copper deposits. The Mesoamerican model must explain away the text's metals. The Heartland model finds them right where the text says they should be.`,
+Dr. Michael Davis's analysis of these artifacts demonstrates technological capabilities that align with Book of Mormon descriptions of Nephite and Jaredite metallurgy. The evidence challenges assumptions about technological limitations in ancient America.`,
 		featuredImage: '/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 		authorId: 6,
 		categoryId: 6,
-		tags: ['Heartland Model', 'Metallurgy', 'Copper', 'Great Lakes', 'Hopewell'],
+		tags: ['Metallurgy', 'Technology', 'Bronze', 'Copper', 'Ancient America'],
 		publishedAt: '2024-12-05T11:20:00Z',
 		updatedAt: '2024-12-05T11:20:00Z',
 		readTime: 7,
@@ -1027,62 +1011,27 @@ Heartland researchers argue that a people who knew metals would naturally settle
 	},
 	{
 		id: 6,
-		title: 'Five Problems with the Mesoamerican Model',
-		slug: 'five-problems-mesoamerican-model',
-		excerpt: 'The Mesoamerican model dominates academic apologetics, but it asks readers to accept a long list of workarounds. Here are the biggest ones.',
-		content: `The Mesoamerican model has been the favored approach among many academic apologists since the mid-20th century. Heartland researchers argue that its popularity has outpaced its fit with the text. These are the problems they raise most often.
+		title: 'Linguistic Analysis: Hebrew and Egyptian Influences in Mesoamerican Languages',
+		slug: 'linguistic-analysis-hebrew-egyptian-mesoamerican-languages',
+		excerpt: 'Comparative linguistic studies reveal potential connections between Old World and New World languages that may support Book of Mormon claims.',
+		content: `Dr. Maria Rodriguez's groundbreaking linguistic research has identified potential connections between ancient Hebrew and Egyptian languages and certain Mesoamerican language families. This research provides intriguing support for Book of Mormon claims about the linguistic heritage of its peoples.
 
-1. Two Cumorahs. The model requires the final battle to have taken place at a hill in Mexico, even though Oliver Cowdery and other early leaders identified it as the hill in New York.
+Key findings include:
+- Shared grammatical structures between Hebrew and Maya languages
+- Potential Egyptian loanwords in Olmec-related languages
+- Syntactic patterns suggesting ancient contact
+- Phonological similarities in religious terminology
 
-2. Rotated directions. To fit Central America's east-west orientation, the model introduces a "Mesoamerican north" the text never mentions.
-
-3. Late metallurgy. Metalworking arrives in Mesoamerica after the Book of Mormon period ends, leaving the text's many references to metals unexplained.
-
-4. The wrong culture. Maya civilization is known for stone pyramids, hieroglyphic monuments, and human sacrifice. The Nephite record emphasizes earth-and-timber fortifications and never describes the monumental stone architecture that defines the Maya.
-
-5. The promised land. The Book of Mormon describes a land of liberty that Gentiles would cross the waters to inherit and where a New Jerusalem would be built (1 Nephi 13; 2 Nephi 1:7; Ether 13). Latter-day revelation places that New Jerusalem in Missouri (D&C 57:1-3).
-
-Each of these problems can be answered individually with enough special pleading. Taken together, Heartland researchers argue, they point to a simpler explanation: the Book of Mormon happened in North America.`,
+While the evidence is still being evaluated by the linguistic community, these findings suggest the possibility of ancient trans-oceanic contact that could explain the linguistic sophistication evident in the Book of Mormon text.`,
 		featuredImage: '/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
 		authorId: 3,
-		categoryId: 7,
-		tags: ['Heartland Model', 'Mesoamerica', 'Hill Cumorah', 'Geography', 'Scholarly Reviews'],
+		categoryId: 3,
+		tags: ['Linguistics', 'Hebrew Influences', 'Egyptian Connections', 'Mesoamerica'],
 		publishedAt: '2024-12-03T13:30:00Z',
 		updatedAt: '2024-12-03T13:30:00Z',
 		readTime: 11,
 		views: 1567,
 		likes: 95,
-		featured: false,
-		status: 'published'
-	},
-	{
-		id: 7,
-		title: 'A Land of Liberty: Why the Promised Land Prophecies Point to the United States',
-		slug: 'land-of-liberty-promised-land-prophecies',
-		excerpt: 'Nephi saw Gentiles cross the waters, fight for their freedom, and inherit the promised land. Those prophecies fit the United States far better than Central America.',
-		content: `Some of the most striking passages in the Book of Mormon are prophecies about the future of the promised land. Heartland researchers argue these passages only make full sense if that land is North America.
-
-In 1 Nephi 13, Nephi sees a man among the Gentiles cross the many waters, followed by other Gentiles who go forth out of captivity. He sees them humble themselves before the Lord, and he sees their mother Gentiles gathered against them in battle, only for the Gentiles in the promised land to be delivered by the power of God.
-
-Lehi adds that this would be a land of liberty to its inhabitants, so long as they serve God (2 Nephi 1:7). And Ether 13 foretells a New Jerusalem to be built upon this land.
-
-How these prophecies line up with the Heartland:
-- European settlers crossing the Atlantic to North America
-- Colonists fleeing religious persecution in the Old World
-- The American Revolution against Great Britain
-- A nation founded on liberty where the Restoration could take place
-- A New Jerusalem that latter-day revelation locates in Jackson County, Missouri
-
-Mesoamerican models must treat these prophecies as referring to a much broader region than the one where the story supposedly took place. The Heartland model keeps the prophecy and the history on the same ground.`,
-		featuredImage: '/HOMEPAGE_TEST_ASSETS/16X10_Placeholder_IMG.png',
-		authorId: 5,
-		categoryId: 5,
-		tags: ['Heartland Model', 'Promised Land', 'Prophecy', 'North America', 'Biblical Parallels'],
-		publishedAt: '2024-12-01T10:00:00Z',
-		updatedAt: '2024-12-01T10:00:00Z',
-		readTime: 8,
-		views: 1411,
-		likes: 102,
 		featured: false,
 		status: 'published'
 	}

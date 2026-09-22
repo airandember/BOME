@@ -15,6 +15,10 @@
 		getRecentArticles
 	} from '$lib/mockData';
 
+	// Under construction disclaimer
+	let showDisclaimer = true;
+	function dismissDisclaimer() { showDisclaimer = false; }
+
 	// State management
 	let articles = MOCK_ARTICLES;
 	let filteredArticles = articles;
@@ -147,11 +151,59 @@
 
 <Navigation />
 
+<!-- Under Construction Disclaimer Overlay -->
+{#if showDisclaimer}
+	<div class="disclaimer-backdrop" on:click|self={dismissDisclaimer} role="dialog" aria-modal="true" aria-label="Under construction notice">
+		<div class="disclaimer-modal">
+			<!-- Animated stripes -->
+			<div class="caution-stripe top"></div>
+
+			<!-- Icon + title -->
+			<div class="disclaimer-icon">
+				<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+					<circle cx="32" cy="32" r="30" stroke="#ffd700" stroke-width="3" opacity="0.3" class="pulse-ring" />
+					<circle cx="32" cy="32" r="30" stroke="#ffd700" stroke-width="3" opacity="0.15" class="pulse-ring delay" />
+					<path d="M32 10 L56 52 H8 Z" fill="#ffd700" opacity="0.15" stroke="#ffd700" stroke-width="2" stroke-linejoin="round"/>
+					<text x="32" y="43" text-anchor="middle" font-size="22" font-weight="bold" fill="#ffd700">!</text>
+				</svg>
+			</div>
+
+			<h2 class="disclaimer-title">
+				<span class="hard-hat">🚧</span> Under Construction <span class="hard-hat">🚧</span>
+			</h2>
+
+			<p class="disclaimer-subtitle">This section is not yet live</p>
+
+			<div class="disclaimer-body">
+				<p>The articles, authors, research, categories, and all other content displayed on this page are <strong>placeholder mock data only</strong> — they are not real publications, real people, or actual research affiliated with BOME.</p>
+				<p>A full articles &amp; the research section is being developed. Check back soon!</p>
+			</div>
+
+			<ul class="disclaimer-list">
+				<li>📄 Articles are fictional placeholders</li>
+				<li>👤 Authors are not real individuals</li>
+				<li>🏛️ Institutions are not affiliated with BOME</li>
+				<li>📊 Statistics (views, likes) are fabricated</li>
+			</ul>
+
+			<button class="disclaimer-btn" on:click={dismissDisclaimer}>
+				I Understand — Continue Anyway
+			</button>
+
+			<p class="disclaimer-fine">By continuing you acknowledge this content is non-final and for internal preview only.</p>
+
+			<!-- Animated stripes -->
+			<div class="caution-stripe bottom"></div>
+		</div>
+	</div>
+{/if}
+
 <main class="blog-container">
 	<!-- Hero Section with Featured Articles -->
 	<section class="hero-section">
 		<div class="hero-content">
-			<h1 class="hero-title">Articles & Research</h1>
+			<h1 class="hero-title">Articles & Research is UNDER CONSTRUCTION</h1>
+			<h2 style="color: red;">The articles and this page are not real, it is part of the development process.</h2>
 			<p class="hero-description">
 				Explore the latest scholarly articles, archaeological discoveries, and research supporting the Book of Mormon. 
 				Expert analysis from leading academics and researchers worldwide.
@@ -1235,5 +1287,174 @@
 			flex-direction: column;
 			gap: 0.5rem;
 		}
+	}
+
+	/* ── Under Construction Disclaimer ── */
+	.disclaimer-backdrop {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.75);
+		backdrop-filter: blur(6px);
+		-webkit-backdrop-filter: blur(6px);
+		z-index: 9999;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 1rem;
+		animation: backdropIn 0.35s ease-out;
+	}
+
+	@keyframes backdropIn {
+		from { opacity: 0; }
+		to   { opacity: 1; }
+	}
+
+	.disclaimer-modal {
+		position: relative;
+		background: linear-gradient(160deg, #1a1a2e 0%, #0f3460 100%);
+		border: 1px solid rgba(255, 215, 0, 0.35);
+		border-radius: 20px;
+		max-width: 540px;
+		width: 100%;
+		overflow: hidden;
+		box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 215, 0, 0.15);
+		animation: modalIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+		text-align: center;
+		padding: 0 2.5rem 2rem;
+	}
+
+	@keyframes modalIn {
+		from { opacity: 0; transform: scale(0.85) translateY(30px); }
+		to   { opacity: 1; transform: scale(1)    translateY(0);    }
+	}
+
+	/* Caution-tape stripes */
+	.caution-stripe {
+		height: 14px;
+		background: repeating-linear-gradient(
+			-45deg,
+			#ffd700 0px,
+			#ffd700 12px,
+			#1a1a1a 12px,
+			#1a1a1a 24px
+		);
+		position: relative;
+		left: -2.5rem;
+		width: calc(100% + 5rem);
+		opacity: 0.85;
+	}
+	.caution-stripe.top  { margin-bottom: 1.75rem; }
+	.caution-stripe.bottom { margin-top: 1.75rem; }
+
+	/* Pulsing rings */
+	.disclaimer-icon {
+		width: 80px;
+		height: 80px;
+		margin: 0 auto 1.25rem;
+	}
+	.disclaimer-icon svg { width: 100%; height: 100%; }
+
+	@keyframes pulseRing {
+		0%   { transform: scale(1);   opacity: 0.3; }
+		70%  { transform: scale(1.4); opacity: 0;   }
+		100% { transform: scale(1.4); opacity: 0;   }
+	}
+	.pulse-ring       { animation: pulseRing 2.2s ease-out infinite; transform-origin: center; transform-box: fill-box; }
+	.pulse-ring.delay { animation-delay: 1.1s; }
+
+	/* Hard-hat bounce */
+	.hard-hat {
+		display: inline-block;
+		animation: bounce 1.4s ease-in-out infinite;
+	}
+	.hard-hat:last-child { animation-delay: 0.7s; }
+	@keyframes bounce {
+		0%, 100% { transform: translateY(0);    }
+		50%       { transform: translateY(-6px); }
+	}
+
+	.disclaimer-title {
+		font-size: 1.6rem;
+		font-weight: 900;
+		color: #ffd700;
+		text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+		margin-bottom: 0.4rem;
+		line-height: 1.3;
+	}
+
+	.disclaimer-subtitle {
+		color: rgba(255, 255, 255, 0.55);
+		font-size: 0.9rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		margin-bottom: 1.5rem;
+	}
+
+	.disclaimer-body {
+		background: rgba(255, 255, 255, 0.06);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 12px;
+		padding: 1.25rem 1.5rem;
+		margin-bottom: 1.25rem;
+		text-align: left;
+	}
+	.disclaimer-body p {
+		color: rgba(255, 255, 255, 0.85);
+		font-size: 0.95rem;
+		line-height: 1.65;
+		margin: 0 0 0.75rem;
+	}
+	.disclaimer-body p:last-child { margin-bottom: 0; }
+	.disclaimer-body strong { color: #ffd700; }
+
+	.disclaimer-list {
+		list-style: none;
+		padding: 0;
+		margin: 0 0 1.75rem;
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.5rem 1rem;
+		text-align: left;
+	}
+	.disclaimer-list li {
+		color: rgba(255, 255, 255, 0.7);
+		font-size: 0.88rem;
+		padding: 0.4rem 0.75rem;
+		background: rgba(255, 255, 255, 0.05);
+		border-radius: 8px;
+		border: 1px solid rgba(255, 255, 255, 0.08);
+	}
+
+	.disclaimer-btn {
+		background: linear-gradient(135deg, #ffd700 0%, #ffaa00 100%);
+		color: #1a1a1a;
+		border: none;
+		padding: 0.85rem 2rem;
+		border-radius: 50px;
+		font-size: 0.95rem;
+		font-weight: 700;
+		cursor: pointer;
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
+		box-shadow: 0 4px 20px rgba(255, 215, 0, 0.4);
+		letter-spacing: 0.02em;
+	}
+	.disclaimer-btn:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 8px 30px rgba(255, 215, 0, 0.55);
+	}
+	.disclaimer-btn:active { transform: translateY(0); }
+
+	.disclaimer-fine {
+		color: rgba(255, 255, 255, 0.3);
+		font-size: 0.75rem;
+		margin-top: 0.85rem;
+		margin-bottom: 0;
+		line-height: 1.5;
+	}
+
+	@media (max-width: 540px) {
+		.disclaimer-modal { padding: 0 1.25rem 1.5rem; }
+		.disclaimer-list  { grid-template-columns: 1fr; }
+		.disclaimer-title { font-size: 1.3rem; }
 	}
 </style> 
