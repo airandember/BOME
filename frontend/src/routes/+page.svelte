@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import Navigation from '$lib/components/Navigation.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import FooterBottom from '$lib/components/FooterBottom.svelte';
 
 	let isAuthenticated = false;
 	let openFaq: number | null = null;
@@ -351,15 +352,13 @@
 	<footer class="sales-footer">
 		<div class="container">
 			<img src="/Images/Logo.png" alt="Book of Mormon Evidence" class="footer__logo" />
-			<p>&copy; 2026 Book of Mormon Evidence / FIRM Foundation. All rights reserved.</p>
-			<div class="footer__links">
-				
-			</div>
+			
 			<p class="footer__disclaimer">
 				This research and content represent independent scholarship and are not produced by, affiliated with, or endorsed by The Church of Jesus Christ of Latter-day Saints.
 			</p>
 		</div>
 	</footer>
+	<FooterBottom />
 </div>
 
 <style>
